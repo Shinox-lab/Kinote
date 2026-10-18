@@ -20,6 +20,7 @@ import {
 import {
   createPage,
   getPageDetails,
+  issueCollabToken,
   submitPageSnapshot,
   approveVersion,
   rejectVersion,
@@ -130,6 +131,11 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
   app.get('/api/v1/pages/:id', async (req, reply) => {
     const actor = actorOf(req);
     const res = await getPageDetails(actor, (req.params as any).id);
+    return reply.send(res);
+  });
+
+  app.post('/api/v1/pages/:id/collab-token', async (req, reply) => {
+    const res = await issueCollabToken(actorOf(req), (req.params as any).id);
     return reply.send(res);
   });
 

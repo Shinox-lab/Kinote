@@ -15,6 +15,7 @@ import { objectStorage } from '../src/storage.js';
 import { collabServer } from '../../collab/src/server.js';
 import { runPendingJobsForTenant } from '../../worker/src/runner.js';
 import { defaultEmbeddingProvider } from '@living-wiki/core';
+import { signCollabToken, getCollabTokenSecret } from '@living-wiki/shared';
 import { formatApiError } from '../../web/src/App.js';
 import {
   buildTestApp,
@@ -24,6 +25,19 @@ import {
   setMemberRole,
   asUser,
 } from './support/testkit.js';
+
+/** A real signed collab token (what the API route would issue), write access. */
+function collabToken(
+  tenantId: string,
+  pageId: string,
+  principalType: 'user' | 'agent',
+  principalId: string
+): string {
+  return signCollabToken(
+    { tenantId, pageId, principalType, principalId, access: 'write' },
+    getCollabTokenSecret()
+  );
+}
 
 describe('Living Wiki — Slice 0 (Foundations) & Slice 1 (Live Pages)', () => {
   const app = buildTestApp();
@@ -349,11 +363,11 @@ describe('Living Wiki — Slice 0 (Foundations) & Slice 1 (Live Pages)', () => {
     const docName = `${tenant.id}:${pageId}`;
     const session1 = await collabServer.openSession({
       documentName: docName,
-      token: `user:${editor1.userId}:member`,
+      token: collabToken(tenant.id, pageId, 'user', editor1.userId),
     });
     const session2 = await collabServer.openSession({
       documentName: docName,
-      token: `user:${editor2.userId}:member`,
+      token: collabToken(tenant.id, pageId, 'user', editor2.userId),
     });
 
     // Editor 1 updates block-2
@@ -527,7 +541,7 @@ describe('Living Wiki — Slice 0 (Foundations) & Slice 1 (Live Pages)', () => {
     // Rule S3: Agent edits the page -> even in a no-review space, agent changes ALWAYS wait for human approval!
     const agentSession = await collabServer.openSession({
       documentName: `${tenant.id}:${parentPage.id}`,
-      token: `agent:${agentId}:member`,
+      token: collabToken(tenant.id, parentPage.id, 'agent', agentId),
     });
     await agentSession.transact(
       { source: 'agent', actorId: agentId, changedBlockIds: ['block-1'] },

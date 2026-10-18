@@ -8,6 +8,9 @@ export default defineConfig({
     include: ['**/*.test.ts'],
     exclude: ['**/*.pg.test.ts', '**/node_modules/**', 'e2e/**'],
     testTimeout: 30000,
+    env: {
+      COLLAB_TOKEN_SECRET: 'test-collab-token-secret-0123456789abcdef',
+    },
   },
   resolve: {
     alias: {

@@ -217,6 +217,13 @@ export const ApproveVersionRequestSchema = z.object({
   review_note: z.string().trim().max(300).optional(),
 });
 
+export const CollabTokenResponseSchema = z.object({
+  token: z.string(),
+  expiresAt: z.string(),
+  access: z.enum(['read', 'write']),
+});
+export type CollabTokenResponse = z.infer<typeof CollabTokenResponseSchema>;
+
 export const SearchRequestSchema = z.object({
   query: z.string().trim().min(1).max(500),
   space_ids: z.array(z.string().uuid()).optional(),

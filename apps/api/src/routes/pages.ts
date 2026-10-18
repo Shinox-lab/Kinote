@@ -18,9 +18,11 @@ import {
   MovePageRequestSchema,
   ApproveVersionRequestSchema,
   RejectVersionRequestSchema,
+  CollabTokenResponseSchema,
   AppError,
 } from '@living-wiki/contracts';
 import { requireSpaceRole, assertValidUuid, takePageSnapshot, type Actor } from '@living-wiki/core';
+import { signCollabToken, getCollabTokenSecret, COLLAB_TOKEN_TTL_SECONDS } from '@living-wiki/shared';
 import { computePageBadge } from '../pages/badge.js';
 
 const blockNote = ServerBlockNoteEditor.create();
@@ -563,5 +565,51 @@ export async function withdrawPage(actor: Actor, pageId: string) {
     });
 
     return updated;
+  });
+}
+
+/**
+ * Issues a short-lived collab (live editing) token for a page. Readable pages
+ * only, checked exactly like getPageDetails (archived pages included); the
+ * token carries `write` only for effective space role editor or higher. The
+ * collab server re-reads the role from the database on connect.
+ */
+export async function issueCollabToken(actor: Actor, pageId: string) {
+  assertValidUuid(pageId, 'page_not_found');
+
+  const { access, documentId } = await withTenantTx(actor.tenantId, async (tx) => {
+    const [doc] = await tx
+      .select()
+      .from(documents)
+      .where(and(eq(documents.tenantId, actor.tenantId), eq(documents.id, pageId)));
+
+    if (!doc || doc.kind !== 'page') {
+      throw new AppError('page_not_found', 'Page not found.');
+    }
+
+    const { effectiveRole } = await requireSpaceRole(tx, actor, doc.spaceId, 'viewer');
+    return {
+      documentId: doc.id,
+      access: effectiveRole === 'viewer' ? ('read' as const) : ('write' as const),
+    };
+  });
+
+  const now = new Date();
+  const token = signCollabToken(
+    {
+      tenantId: actor.tenantId,
+      pageId: documentId,
+      principalType: 'user',
+      principalId: actor.principalId,
+      access,
+    },
+    getCollabTokenSecret(),
+    now
+  );
+  return CollabTokenResponseSchema.parse({
+    token,
+    // Same second-resolution expiry the token itself carries.
+    expiresAt: new Date((Math.floor(now.getTime() / 1000) + COLLAB_TOKEN_TTL_SECONDS) * 1000).toISOString(),
+    access,
   });
 }

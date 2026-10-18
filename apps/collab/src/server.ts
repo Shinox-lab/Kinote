@@ -3,7 +3,8 @@ import { Database } from '@hocuspocus/extension-database';
 import { ServerBlockNoteEditor } from '@blocknote/server-util';
 import { and, eq } from 'drizzle-orm';
 import { withTenantTx, pages, blockActivity, jobs } from '@living-wiki/db';
-import { verifyCollabToken, type CollabContext } from './auth.js';
+import { parseDocumentName } from '@living-wiki/shared';
+import { authenticateCollabConnection, type CollabContext } from './auth.js';
 
 export interface TransactionOrigin {
   source: 'human' | 'agent' | 'restore';
@@ -15,6 +16,12 @@ export interface TransactionOrigin {
 // blocks. Must stay in sync with apps/api (encodePageYDoc) and apps/worker
 // (snapshot handler).
 const BLOCK_FRAGMENT = 'document-store';
+
+function requireDocumentName(name: string): { tenantId: string; pageId: string } {
+  const parsed = parseDocumentName(name);
+  if (!parsed) throw new Error(`Malformed collab document name: ${name}`);
+  return parsed;
+}
 
 const blocknoteEditor = ServerBlockNoteEditor.create();
 
@@ -42,6 +49,9 @@ interface CollabServerLike {
     clear(): void;
   };
   documents: Map<string, { destroy(): void }>;
+  listen(port?: number): Promise<unknown>;
+  destroy(): Promise<unknown>;
+  address: { port: number };
   openDirectConnection(documentName: string, context: unknown): Promise<any>;
 }
 
@@ -122,9 +132,9 @@ async function openSession({
   documentName: string;
   token: string;
 }): Promise<CollabSession> {
-  // documentName format: "{tenantId}:{pageDocumentId}"
-  const [tenantId, pageId] = documentName.split(':');
-  const context = await verifyCollabToken(token, tenantId, pageId);
+  // Same verification as a websocket connection (signature, expiry, document
+  // match, role re-read from the database).
+  const context = await authenticateCollabConnection(token, documentName);
   const conn = await (collabServer as unknown as CollabServerLike).openDirectConnection(
     documentName,
     context
@@ -242,12 +252,14 @@ export const collabServer = Server.configure({
   async onDisconnect({ documentName, socketId, document }) {
     console.log(`[collab] ws disconnect ${documentName} (${socketId})`);
   },
-  async onAuthenticate({ token, documentName }) {
+  async onAuthenticate({ token, documentName, connection }) {
     console.log(`[collab] ws auth ${documentName}`);
-    // documentName format: "{tenantId}:{pageDocumentId}"
-    const [tenantId, pageId] = documentName.split(':');
-    const context = await verifyCollabToken(token, tenantId, pageId);
-    return context; // { tenantId, pageId, spaceId, actorType, actorId, quietSeconds }
+    // Throws (refusing the connection) for a bad, expired, or mismatched token.
+    const context = await authenticateCollabConnection(token, documentName);
+    // Hocuspocus 2.x: a connection flagged readOnly may sync but its updates
+    // are dropped and answered with a negative sync status.
+    connection.readOnly = context.readOnly;
+    return context;
   },
 
   async onChange(args: { documentName: string; context: CollabContext; transactionOrigin: unknown }) {
@@ -262,7 +274,7 @@ export const collabServer = Server.configure({
   extensions: [
     new Database({
       async fetch({ documentName }) {
-        const [tenantId, pageId] = documentName.split(':');
+        const { tenantId, pageId } = requireDocumentName(documentName);
         return withTenantTx(tenantId, async (tx) => {
           const [row] = await tx
             .select({ ydocState: pages.ydocState })
@@ -272,7 +284,7 @@ export const collabServer = Server.configure({
         });
       },
       async store({ documentName, state }) {
-        const [tenantId, pageId] = documentName.split(':');
+        const { tenantId, pageId } = requireDocumentName(documentName);
         await withTenantTx(tenantId, async (tx) => {
           await tx
             .update(pages)

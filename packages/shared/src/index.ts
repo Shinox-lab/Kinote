@@ -1,1 +1,10 @@
 export { sha256Hex } from './hash.js';
+export {
+  COLLAB_TOKEN_TTL_SECONDS,
+  signCollabToken,
+  verifyCollabToken,
+  documentName,
+  parseDocumentName,
+  getCollabTokenSecret,
+  type CollabClaims,
+} from './collabToken.js';

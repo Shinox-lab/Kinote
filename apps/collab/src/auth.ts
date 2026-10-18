@@ -1,7 +1,8 @@
-import { and, eq } from 'drizzle-orm';
-import { withTenantTx, documents, pages } from '@living-wiki/db';
+import { and, eq, isNull } from 'drizzle-orm';
+import { withTenantTx, documents, pages, memberships, tenants } from '@living-wiki/db';
 import { requireSpaceRole, type Actor } from '@living-wiki/core';
 import { AppError } from '@living-wiki/contracts';
+import { getCollabTokenSecret, parseDocumentName, verifyCollabToken } from '@living-wiki/shared';
 
 export interface CollabContext {
   tenantId: string;
@@ -10,33 +11,76 @@ export interface CollabContext {
   actorType: 'user' | 'agent';
   actorId: string;
   quietSeconds: number;
+  /** True when the connection may read the page but must not change it. */
+  readOnly: boolean;
 }
 
-export async function verifyCollabToken(
+/**
+ * Authenticates a websocket connection to a page document.
+ *
+ * The token only proves who the holder is and what the API granted at issue
+ * time (it lives five minutes). The role is always re-read from the database
+ * here, so a holder demoted since issuance gets a read-only connection and a
+ * removed holder is refused. Any failure throws; callers treat that as a
+ * refused connection.
+ *
+ * Agents have no membership row and no agent authentication yet: for
+ * `principalType: 'agent'` the membership lookup is skipped and permissions
+ * come from the agent's space grants, capped by `requireSpaceRole`.
+ */
+export async function authenticateCollabConnection(
   token: string,
-  tenantId: string,
-  pageId: string
+  documentNameRaw: string
 ): Promise<CollabContext> {
-  // Token format in v1/tests: "{principalType}:{principalId}:{tenantRole}"
-  const [principalTypeRaw, principalId, tenantRoleRaw] = token.split(':');
-  const actor: Actor = {
-    tenantId,
-    principalType: principalTypeRaw === 'agent' ? 'agent' : 'user',
-    principalId: principalId ?? '',
-    tenantRole: (tenantRoleRaw as Actor['tenantRole']) ?? 'member',
-  };
+  const doc = parseDocumentName(documentNameRaw);
+  if (!doc) throw new AppError('page_not_found', 'Page not found.');
+
+  const claims = verifyCollabToken(token, getCollabTokenSecret());
+  if (
+    !claims ||
+    claims.tenantId.toLowerCase() !== doc.tenantId ||
+    claims.pageId.toLowerCase() !== doc.pageId
+  ) {
+    throw new AppError('unauthenticated', 'Invalid collab token.');
+  }
+  const { tenantId, pageId } = doc;
 
   return withTenantTx(tenantId, async (tx) => {
-    const [doc] = await tx
+    let tenantRole: Actor['tenantRole'] = 'member';
+    if (claims.principalType === 'user') {
+      const [membership] = await tx
+        .select({ role: memberships.role })
+        .from(memberships)
+        .innerJoin(tenants, eq(tenants.id, memberships.tenantId))
+        .where(
+          and(
+            eq(memberships.tenantId, tenantId),
+            eq(memberships.userId, claims.principalId),
+            eq(tenants.id, tenantId),
+            isNull(tenants.deletedAt)
+          )
+        );
+      if (!membership) throw new AppError('page_not_found', 'Page not found.');
+      tenantRole = membership.role;
+    }
+
+    const actor: Actor = {
+      tenantId,
+      principalType: claims.principalType,
+      principalId: claims.principalId,
+      tenantRole,
+    };
+
+    const [row] = await tx
       .select()
       .from(documents)
       .where(and(eq(documents.tenantId, tenantId), eq(documents.id, pageId)));
 
-    if (!doc || doc.kind !== 'page' || doc.archivedAt) {
+    if (!row || row.kind !== 'page') {
       throw new AppError('page_not_found', 'Page not found.');
     }
 
-    const { space } = await requireSpaceRole(tx, actor, doc.spaceId, 'editor');
+    const { space, effectiveRole } = await requireSpaceRole(tx, actor, row.spaceId, 'viewer');
 
     const [page] = await tx
       .select()
@@ -47,6 +91,7 @@ export async function verifyCollabToken(
       throw new AppError('page_not_found', 'Page not found.');
     }
 
+    const canWrite = effectiveRole !== 'viewer';
     return {
       tenantId,
       pageId,
@@ -54,6 +99,8 @@ export async function verifyCollabToken(
       actorType: actor.principalType,
       actorId: actor.principalId,
       quietSeconds: space.quietSeconds,
+      // Archived pages stay readable but are never live-edited.
+      readOnly: claims.access === 'read' || !canWrite || row.archivedAt !== null,
     };
   });
 }
