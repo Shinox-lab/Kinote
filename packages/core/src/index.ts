@@ -5,7 +5,7 @@ export {
   type Actor,
   type SpaceRole,
 } from './permissions.js';
-export { takePageSnapshot } from './snapshot.js';
+export { takePageSnapshot, type TakePageSnapshotHooks } from './snapshot.js';
 export { indexVersion, type IndexVersionResult } from './indexing/indexVersion.js';
 export {
   chunkPageBlocks,

@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import * as Y from 'yjs';
 import { ServerBlockNoteEditor } from '@blocknote/server-util';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import {
   withTenantTx,
   documents,
@@ -13,40 +13,112 @@ import {
   links,
   enqueueJob,
   writeAuditEvent,
+  lockDocument,
+  type DbTransaction,
+  type DocumentRow,
 } from '@living-wiki/db';
 import { AppError } from '@living-wiki/contracts';
+import { flattenBlocks, type BlockLike } from '@living-wiki/shared';
 
 const editor = ServerBlockNoteEditor.create();
 
-export async function takePageSnapshot(params: {
-  tenantId: string;
-  pageId: string;
-  reason: 'quiet' | 'submit' | 'agent' | 'restore';
-  actorType: 'user' | 'agent';
-  actorId: string;
-  manual: boolean;
-}) {
+const WIKI_LINK = /\[\[([0-9a-f-]{36})\]\]/gi;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+/**
+ * The `[[document-id]]` links of a page's blocks (nested children included),
+ * one per (block, target), self-links and malformed ids dropped. Ids are
+ * lower-cased so they compare equal to what Postgres returns.
+ */
+export function extractWikiLinks(
+  blocks: BlockLike[],
+  pageId: string
+): Array<{ blockId: string; targetId: string }> {
+  const self = pageId.toLowerCase();
+  const seen = new Set<string>();
+  const out: Array<{ blockId: string; targetId: string }> = [];
+  for (const block of flattenBlocks(blocks)) {
+    for (const match of block.text.matchAll(WIKI_LINK)) {
+      const targetId = match[1]!.toLowerCase();
+      if (!UUID.test(targetId) || targetId === self) continue;
+      const key = `${block.id}\u0000${targetId}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({ blockId: block.id, targetId });
+    }
+  }
+  return out;
+}
+
+export interface TakePageSnapshotHooks {
+  /**
+   * Test seam: runs inside the snapshot transaction, under the document lock,
+   * right after the page row is read (the last of the rows the snapshot
+   * decides on: document, space, latest version, page).
+   */
+  afterRead?: (tx: DbTransaction) => Promise<void>;
+}
+
+/**
+ * Snapshots a page's live state as a new version. Takes the document lock
+ * first (lock order everywhere: document row, then version rows), so the
+ * space a concurrent move put the page in is the one that decides review,
+ * and withdraw, approve and indexing run before or after it, never between.
+ * The page is marked "not changed since snapshot" only if no live change
+ * landed after its row was read.
+ */
+export async function takePageSnapshot(
+  params: {
+    tenantId: string;
+    pageId: string;
+    reason: 'quiet' | 'submit' | 'agent' | 'restore';
+    actorType: 'user' | 'agent';
+    actorId: string;
+    manual: boolean;
+  },
+  hooks: TakePageSnapshotHooks = {}
+) {
   const { tenantId, pageId, reason, actorType, actorId, manual } = params;
 
   return withTenantTx(tenantId, async (tx) => {
-    const [pageRow] = await tx
-      .select()
-      .from(pages)
-      .where(and(eq(pages.tenantId, tenantId), eq(pages.documentId, pageId)));
-
-    const [docRow] = await tx
-      .select()
-      .from(documents)
-      .where(and(eq(documents.tenantId, tenantId), eq(documents.id, pageId)));
-
-    if (!pageRow || !docRow) {
-      throw new AppError('page_not_found', 'Page not found.');
+    let docRow: DocumentRow;
+    try {
+      docRow = await lockDocument(tx, tenantId, pageId);
+    } catch (err) {
+      if (err instanceof AppError && err.code === 'document_not_found') {
+        throw new AppError('page_not_found', 'Page not found.');
+      }
+      throw err;
     }
 
     const [spaceRow] = await tx
       .select()
       .from(spaces)
       .where(and(eq(spaces.tenantId, tenantId), eq(spaces.id, docRow.spaceId)));
+
+    const [latestVersion = null] = await tx
+      .select()
+      .from(versions)
+      .where(and(eq(versions.tenantId, tenantId), eq(versions.documentId, pageId)))
+      .orderBy(desc(versions.number))
+      .limit(1);
+
+    // live_updated_at as text keeps Postgres' microseconds (a JS Date would
+    // round them away and never compare equal again).
+    const [pageRow] = await tx
+      .select({
+        ydocState: pages.ydocState,
+        agentChangedAt: pages.agentChangedAt,
+        liveUpdatedAt: sql<string>`${pages.liveUpdatedAt}::text`,
+      })
+      .from(pages)
+      .where(and(eq(pages.tenantId, tenantId), eq(pages.documentId, pageId)));
+
+    if (!pageRow || !spaceRow) {
+      throw new AppError('page_not_found', 'Page not found.');
+    }
+
+    if (hooks.afterRead) await hooks.afterRead(tx);
 
     const ydoc = new Y.Doc();
     Y.applyUpdate(ydoc, pageRow.ydocState);
@@ -66,14 +138,6 @@ export async function takePageSnapshot(params: {
     const indexedPayload = `# ${title}\n\n${markdown}`;
     const contentHash = createHash('sha256').update(indexedPayload, 'utf8').digest('hex');
 
-    const existingVersions = await tx
-      .select()
-      .from(versions)
-      .where(and(eq(versions.tenantId, tenantId), eq(versions.documentId, pageId)))
-      .orderBy(desc(versions.number));
-
-    const latestVersion = existingVersions[0] ?? null;
-
     if (latestVersion && latestVersion.contentHash === contentHash) {
       if (manual) {
         throw new AppError('no_changes', 'No changes since the latest snapshot.');
@@ -81,12 +145,19 @@ export async function takePageSnapshot(params: {
       return latestVersion;
     }
 
-    // Supersede any existing pending_review snapshot so reviewers always review the newest state
+    // Supersede any existing pending_review snapshot so reviewers always review
+    // the newest state. Only a version still pending: never a withdrawn one.
     if (latestVersion && latestVersion.status === 'pending_review') {
       await tx
         .update(versions)
         .set({ status: 'superseded' })
-        .where(and(eq(versions.tenantId, tenantId), eq(versions.id, latestVersion.id)));
+        .where(
+          and(
+            eq(versions.tenantId, tenantId),
+            eq(versions.id, latestVersion.id),
+            eq(versions.status, 'pending_review')
+          )
+        );
     }
 
     const nextNumber = (latestVersion?.number ?? 0) + 1;
@@ -155,19 +226,26 @@ export async function takePageSnapshot(params: {
       .delete(links)
       .where(and(eq(links.tenantId, tenantId), eq(links.fromPageId, pageId)));
 
-    const wikiLinkRegex = /\[\[([0-9a-f-]{36})\]\]/gi;
-    for (const blk of blocks as Array<{ id: string; content?: string }>) {
-      const textContent = typeof blk.content === 'string' ? blk.content : JSON.stringify(blk);
-      let match: RegExpExecArray | null;
-      while ((match = wikiLinkRegex.exec(textContent)) !== null) {
-        await tx.insert(links).values({
+    // Only targets that exist as documents of this tenant are recorded: an
+    // unknown id (or another tenant's) is plain text, not a failed snapshot.
+    const found = extractWikiLinks(blocks as BlockLike[], pageId);
+    if (found.length > 0) {
+      const targetIds = [...new Set(found.map((l) => l.targetId))];
+      const existing = await tx
+        .select({ id: documents.id })
+        .from(documents)
+        .where(and(eq(documents.tenantId, tenantId), inArray(documents.id, targetIds)));
+      const known = new Set(existing.map((d) => d.id));
+      const rows = found
+        .filter((l) => known.has(l.targetId))
+        .map((l) => ({
           tenantId,
           fromPageId: pageId,
-          fromBlockId: blk.id ?? 'root',
-          toDocumentId: match[1],
-          kind: 'link',
-        });
-      }
+          fromBlockId: l.blockId,
+          toDocumentId: l.targetId,
+          kind: 'link' as const,
+        }));
+      if (rows.length > 0) await tx.insert(links).values(rows);
     }
 
     await tx
@@ -175,10 +253,18 @@ export async function takePageSnapshot(params: {
       .set({ title, latestVersionId: newVersion.id })
       .where(and(eq(documents.tenantId, tenantId), eq(documents.id, pageId)));
 
+    // A live change that landed after the page row was read moved
+    // live_updated_at on, so the page stays "changed since" this snapshot.
     await tx
       .update(pages)
       .set({ liveChangedSinceSnapshot: false })
-      .where(and(eq(pages.tenantId, tenantId), eq(pages.documentId, pageId)));
+      .where(
+        and(
+          eq(pages.tenantId, tenantId),
+          eq(pages.documentId, pageId),
+          sql`${pages.liveUpdatedAt} = ${pageRow.liveUpdatedAt}::timestamptz`
+        )
+      );
 
     await writeAuditEvent(tx, {
       tenantId,

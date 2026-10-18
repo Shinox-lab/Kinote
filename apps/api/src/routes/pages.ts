@@ -24,14 +24,54 @@ import {
   RejectVersionRequestSchema,
   CollabTokenResponseSchema,
   RetryVersionResponseSchema,
+  VersionSummarySchema,
   AppError,
   type RetryVersionResponse,
+  type VersionSummary,
 } from '@living-wiki/contracts';
 import { requireSpaceRole, assertValidUuid, takePageSnapshot, type Actor } from '@living-wiki/core';
 import { signCollabToken, getCollabTokenSecret, COLLAB_TOKEN_TTL_SECONDS } from '@living-wiki/shared';
 import { computePageBadge } from '../pages/badge.js';
 
 const blockNote = ServerBlockNoteEditor.create();
+
+/** The `versions` columns a VersionSummary is built from (no markdown, blocks or Yjs bytes). */
+const versionSummaryColumns = {
+  id: versions.id,
+  number: versions.number,
+  status: versions.status,
+  reason: versions.reason,
+  createdByType: versions.createdByType,
+  createdBy: versions.createdBy,
+  createdAt: versions.createdAt,
+  reviewedBy: versions.reviewedBy,
+  reviewedAt: versions.reviewedAt,
+  reviewNote: versions.reviewNote,
+  indexedAt: versions.indexedAt,
+  error: versions.error,
+};
+
+type VersionSummaryRow = {
+  [K in keyof typeof versionSummaryColumns]: (typeof versions.$inferSelect)[K];
+};
+
+/** A version row (or its summary columns) as the published VersionSummary. */
+function toVersionSummary(row: VersionSummaryRow): VersionSummary {
+  return VersionSummarySchema.parse({
+    id: row.id,
+    number: row.number,
+    status: row.status,
+    reason: row.reason,
+    createdByType: row.createdByType,
+    createdBy: row.createdBy,
+    createdAt: row.createdAt.toISOString(),
+    reviewedBy: row.reviewedBy,
+    reviewedAt: row.reviewedAt?.toISOString() ?? null,
+    reviewNote: row.reviewNote,
+    indexedAt: row.indexedAt?.toISOString() ?? null,
+    error: row.error,
+  });
+}
 
 export async function encodePageYDoc(title: string, markdown: string): Promise<Buffer> {
   const blocks = await blockNote.tryParseMarkdownToBlocks(markdown);
@@ -130,11 +170,13 @@ export async function getPageDetails(actor: Actor, pageId: string) {
       .from(pages)
       .where(and(eq(pages.tenantId, actor.tenantId), eq(pages.documentId, pageId)));
 
-    const pageVersions = await tx
-      .select()
-      .from(versions)
-      .where(and(eq(versions.tenantId, actor.tenantId), eq(versions.documentId, pageId)))
-      .orderBy(desc(versions.number));
+    const pageVersions = (
+      await tx
+        .select(versionSummaryColumns)
+        .from(versions)
+        .where(and(eq(versions.tenantId, actor.tenantId), eq(versions.documentId, pageId)))
+        .orderBy(desc(versions.number))
+    ).map(toVersionSummary);
 
     const latestVersion = pageVersions[0] ?? null;
     const indexedVersion = doc.indexedVersionId
@@ -398,13 +440,7 @@ export async function retryVersion(actor: Actor, versionId: string): Promise<Ret
           eq(versions.status, 'failed')
         )
       )
-      .returning({
-        id: versions.id,
-        documentId: versions.documentId,
-        number: versions.number,
-        status: versions.status,
-        error: versions.error,
-      });
+      .returning({ ...versionSummaryColumns, documentId: versions.documentId });
 
     await enqueueJob(tx, {
       tenantId: actor.tenantId,
@@ -423,7 +459,10 @@ export async function retryVersion(actor: Actor, versionId: string): Promise<Ret
       payload: { documentId: doc.id, number: ver.number },
     });
 
-    return RetryVersionResponseSchema.parse(updated);
+    return RetryVersionResponseSchema.parse({
+      ...toVersionSummary(updated),
+      documentId: updated.documentId,
+    });
   });
 }
 

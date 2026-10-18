@@ -217,18 +217,30 @@ export const ApproveVersionRequestSchema = z.object({
   review_note: z.string().trim().max(300).optional(),
 });
 
-/** A version without its heavy columns (markdown, blocks, Yjs snapshot). */
+/**
+ * A version without its heavy columns (markdown, blocks, Yjs snapshot), as
+ * GET /api/v1/pages/:id lists them. Timestamps are ISO 8601 strings.
+ */
 export const VersionSummarySchema = z.object({
   id: z.string().uuid(),
-  documentId: z.string().uuid(),
   number: z.number().int(),
   status: VersionStatusSchema,
+  reason: VersionReasonSchema,
+  createdByType: z.enum(['user', 'agent', 'connector']),
+  createdBy: z.string(),
+  createdAt: z.string(),
+  reviewedBy: z.string().nullable(),
+  reviewedAt: z.string().nullable(),
+  reviewNote: z.string().nullable(),
+  indexedAt: z.string().nullable(),
   error: z.string().nullable(),
 });
 export type VersionSummary = z.infer<typeof VersionSummarySchema>;
 
-/** Reply of POST /api/v1/versions/:id/retry (no request body). */
-export const RetryVersionResponseSchema = VersionSummarySchema;
+/** Reply of POST /api/v1/versions/:id/retry (no request body): the summary plus its document. */
+export const RetryVersionResponseSchema = VersionSummarySchema.extend({
+  documentId: z.string().uuid(),
+});
 export type RetryVersionResponse = z.infer<typeof RetryVersionResponseSchema>;
 
 export const CollabTokenResponseSchema = z.object({
