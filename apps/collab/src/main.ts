@@ -58,7 +58,7 @@ async function main(): Promise<void> {
   process.on('unhandledRejection', (reason: unknown) => {
     console.error(
       'collab: unhandled rejection (still running):',
-      reason instanceof Error ? reason.message : reason
+      reason instanceof Error ? (reason.stack ?? reason.message) : reason
     );
   });
   process.on('SIGTERM', () => void shutdown());

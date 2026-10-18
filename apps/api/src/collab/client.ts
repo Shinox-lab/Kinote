@@ -24,8 +24,11 @@ export const COLLAB_CALL_TIMEOUT_MS = 5_000;
 
 /**
  * Calls the collab internal endpoints over HTTP with the shared secret in
- * `x-internal-secret`. Any failure (unreachable, timeout, non-2xx) is an
- * `internal_error`: the caller must not carry on as if the call succeeded.
+ * `x-internal-secret`. Success is 204 No Content, what the internal
+ * endpoints answer, and nothing else: any other status (a 200 page from
+ * something that is not the collab server, a redirect, an error),
+ * unreachable or timeout is an `internal_error`: the caller must not carry
+ * on as if the call succeeded.
  * The secret is never logged.
  */
 export class HttpCollabClient implements CollabClient {
@@ -58,6 +61,8 @@ export class HttpCollabClient implements CollabClient {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-internal-secret': this.#secret },
         body: JSON.stringify(body),
+        // A redirect is not the collab server answering: never follow one.
+        redirect: 'manual',
         signal: AbortSignal.timeout(COLLAB_CALL_TIMEOUT_MS),
       });
     } catch (err) {
@@ -67,7 +72,7 @@ export class HttpCollabClient implements CollabClient {
       );
       throw new AppError('internal_error');
     }
-    if (!res.ok) {
+    if (res.status !== 204) {
       // Drain the body so the connection can be reused; log only the status.
       await res.arrayBuffer().catch(() => undefined);
       console.error(`[api] collab ${path} answered ${res.status}`);
