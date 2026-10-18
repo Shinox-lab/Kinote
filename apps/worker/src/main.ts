@@ -1,12 +1,9 @@
 import { closeDb, initDb } from '@living-wiki/db';
 import { defaultEmbeddingProvider } from '@living-wiki/core';
 import { loadConfig } from '@living-wiki/shared';
-import { runPendingJobsForTenant } from './runner.js';
+import { runWorkerLoop } from './runner.js';
 
-// The runner processes one tenant at a time; discovering which tenants have
-// due jobs needs the due-jobs function added in Task 2.3 and the loop is wired
-// in Task 2.4. Referenced so the entry point stays type-checked against it.
-export const runTenantJobs = runPendingJobsForTenant;
+const POLL_INTERVAL_MS = 1000;
 
 async function main(): Promise<void> {
   const config = loadConfig();
@@ -18,29 +15,26 @@ async function main(): Promise<void> {
     );
   }
   initDb({ url: config.DATABASE_URL });
-  console.log('worker started; the job loop is wired in Task 2.4 (idle until then)');
 
-  // Keep the process alive until SIGTERM.
-  const keepAlive = setInterval(() => undefined, 60_000);
+  const controller = new AbortController();
+  const stop = () => controller.abort();
+  process.once('SIGTERM', stop);
+  process.once('SIGINT', stop);
 
-  let stopping = false;
-  const shutdown = async (): Promise<void> => {
-    if (stopping) return;
-    stopping = true;
-    clearInterval(keepAlive);
-    try {
-      await closeDb();
-      process.exit(0);
-    } catch (err) {
-      console.error('worker shutdown failed:', err);
-      process.exit(1);
-    }
-  };
-  process.on('SIGTERM', () => void shutdown());
-  process.on('SIGINT', () => void shutdown());
+  console.log('[worker] started');
+  try {
+    await runWorkerLoop({
+      intervalMs: POLL_INTERVAL_MS,
+      signal: controller.signal,
+      embeddingProvider: provider,
+    });
+  } finally {
+    await closeDb();
+  }
+  console.log('[worker] stopped');
 }
 
 main().catch((err: unknown) => {
-  console.error('worker failed to start:', err instanceof Error ? err.message : err);
+  console.error('worker failed:', err instanceof Error ? err.message : err);
   process.exit(1);
 });

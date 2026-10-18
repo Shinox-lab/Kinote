@@ -2,7 +2,7 @@ import { Server } from '@hocuspocus/server';
 import { Database } from '@hocuspocus/extension-database';
 import { ServerBlockNoteEditor } from '@blocknote/server-util';
 import { and, eq } from 'drizzle-orm';
-import { withTenantTx, pages, blockActivity, jobs } from '@living-wiki/db';
+import { withTenantTx, pages, blockActivity, enqueueJob } from '@living-wiki/db';
 import { AppError } from '@living-wiki/contracts';
 import { parseDocumentName } from '@living-wiki/shared';
 import { authenticateCollabConnection, type CollabContext } from './auth.js';
@@ -230,24 +230,18 @@ async function handleCollabChange(args: {
 
     // Schedule or push out the debounced quiet snapshot job
     const runAt = new Date(Date.now() + quietSeconds * 1000);
-    await tx
-      .insert(jobs)
-      .values({
-        tenantId,
-        queue: 'page.snapshot',
-        idempotencyKey: `quiet:${pageId}`,
-        payload: {
-          pageId,
-          reason: 'quiet',
-          actorType: source === 'agent' ? 'agent' : 'user',
-          actorId,
-        },
-        runAt,
-      })
-      .onConflictDoUpdate({
-        target: [jobs.tenantId, jobs.queue, jobs.idempotencyKey],
-        set: { runAt, status: 'queued' },
-      });
+    await enqueueJob(tx, {
+      tenantId,
+      queue: 'page.snapshot',
+      idempotencyKey: `quiet:${pageId}`,
+      payload: {
+        pageId,
+        reason: 'quiet',
+        actorType: source === 'agent' ? 'agent' : 'user',
+        actorId,
+      },
+      runAt,
+    });
   });
 }
 
