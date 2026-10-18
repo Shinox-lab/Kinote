@@ -1,15 +1,17 @@
 import type * as Y from 'yjs';
 import type { Hocuspocus } from '@hocuspocus/server';
 import { AppError } from '@living-wiki/contracts';
-import { authenticateCollabConnection } from './auth.js';
+import { authenticateCollabConnection, type CollabContext } from './auth.js';
 import type { DirectOrigin, DirectSessionContext } from './origin.js';
-import { collabServerDeps, collabSettle } from './serverState.js';
+import { collabServerDeps, collabSettle, storeDocumentNow } from './serverState.js';
 
 export interface DirectSession {
   /**
    * Runs `fn` as one Yjs transaction on the live document. The change is
    * attributed to `origin` (see `resolveOriginActor`), stored to Postgres
-   * right away, and its change bookkeeping has landed when this resolves.
+   * right away, and its own change bookkeeping has landed when this
+   * resolves. A store that fails rejects with `internal_error` (the edit
+   * stays in memory and is retried by later stores).
    */
   transact(origin: DirectOrigin, fn: (doc: Y.Doc) => void): Promise<void>;
   close(): Promise<void>;
@@ -31,6 +33,19 @@ export async function openDirectSession(
   if (context.readOnly) {
     throw new AppError('forbidden', 'This collab session is read-only.');
   }
+  return openTrustedDirectSession(server, documentName, context);
+}
+
+/**
+ * A direct session on `documentName` for a context the caller has already
+ * established (no token check). Only for callers that authenticated the
+ * request some other way, i.e. the internal endpoints behind the shared secret.
+ */
+export async function openTrustedDirectSession(
+  server: Hocuspocus,
+  documentName: string,
+  context: CollabContext
+): Promise<DirectSession> {
   const conn = await server.openDirectConnection(documentName, context);
   let closed = false;
 
@@ -47,7 +62,8 @@ export async function openDirectSession(
       // Hocuspocus 4 stamps each direct transaction with
       // `{ source: 'local', context: conn.context }`, read when transact is
       // called. A fresh context object per call carries this call's actor
-      // without leaking into earlier or later transactions.
+      // without leaking into earlier or later transactions, and keys the
+      // onChange bookkeeping this call triggers (see `collabSettle`).
       const txContext: DirectSessionContext = {
         ...context,
         directOrigin: {
@@ -65,20 +81,14 @@ export async function openDirectSession(
 
       // Server-side edits are persisted immediately rather than waiting out
       // the store debounce, so a caller that snapshots right after sees them.
-      const document = conn.document;
-      await server.storeDocumentHooks(
-        document,
-        {
-          clientsCount: document.getConnectionsCount(),
-          lastContext: txContext,
-          lastTransactionOrigin: { source: 'local', context: txContext },
-          document,
-          documentName,
-          instance: server,
-        },
-        true
-      );
-      await collabSettle(server);
+      // The transaction queued the onChange hook chain's first microtask
+      // (the core extension runs first, priority 1000) before `conn.transact`
+      // returned, so its work is registered under txContext by now.
+      try {
+        await storeDocumentNow(server, conn.document, txContext);
+      } finally {
+        await collabSettle(server, txContext);
+      }
     },
     async close() {
       if (closed) return;

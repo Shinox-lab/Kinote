@@ -1,13 +1,17 @@
 import { assertEmbeddingDimensions, closeDb, initDb } from '@living-wiki/db';
 import { loadConfig } from '@living-wiki/shared';
 import { buildApiServer } from './server.js';
+import { HttpCollabClient } from './collab/client.js';
 
 async function main(): Promise<void> {
   const config = loadConfig();
   const db = initDb({ url: config.DATABASE_URL });
   await assertEmbeddingDimensions(db, config.EMBEDDING_DIMENSIONS);
 
-  const app = buildApiServer({ trustProxy: config.TRUST_PROXY });
+  const app = buildApiServer({
+    trustProxy: config.TRUST_PROXY,
+    collab: new HttpCollabClient(config.COLLAB_INTERNAL_URL, config.INTERNAL_SECRET),
+  });
   await app.listen({ port: config.API_PORT, host: config.HOST });
   console.log(`api listening on ${config.HOST}:${config.API_PORT}`);
 

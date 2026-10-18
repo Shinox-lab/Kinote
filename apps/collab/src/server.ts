@@ -5,11 +5,20 @@ import { withTenantTx, pages, blockActivity, enqueueJob } from '@living-wiki/db'
 import { parseDocumentName } from '@living-wiki/shared';
 import { authenticateCollabConnection, type CollabContext } from './auth.js';
 import { directOriginOf, resolveOriginActor } from './origin.js';
-import { registerCollabServer, type CollabServerDeps } from './serverState.js';
+import { handleInternalRequest } from './internal.js';
+import {
+  markStored,
+  newServerState,
+  registerCollabServer,
+  trackWork,
+  type CollabServerDeps,
+} from './serverState.js';
 
 export { resolveOriginActor, type OriginActor, type DirectOrigin } from './origin.js';
 export { openDirectSession, type DirectSession } from './directSession.js';
-export { collabServerDeps, collabSettle } from './serverState.js';
+export { collabServerDeps, collabSettle, trackCollabWork } from './serverState.js';
+export { flushDocument, replaceDocumentBlocks, INTERNAL_PATHS } from './internal.js';
+export { BLOCK_FRAGMENT } from './fragment.js';
 
 export type { CollabServerDeps } from './serverState.js';
 
@@ -18,11 +27,6 @@ export type { CollabServerDeps } from './serverState.js';
  * always attached (`server.server.listen(port)`, `server.server.destroy()`).
  */
 export type CollabServer = Hocuspocus<CollabContext> & { server: Server<CollabContext> };
-
-// The Y.XmlFragment name inside each page's Y.Doc that holds the BlockNote
-// blocks. Must stay in sync with apps/api (encodePageYDoc) and apps/worker
-// (snapshot handler).
-export const BLOCK_FRAGMENT = 'document-store';
 
 const DEFAULT_DEBOUNCE_MS = 1000;
 const DEFAULT_MAX_DEBOUNCE_MS = 5000;
@@ -138,7 +142,7 @@ export function createCollabServer(
   deps: CollabServerDeps,
   extraHooks?: Partial<Extension<CollabContext>>
 ): CollabServer {
-  const inflight = new Set<Promise<void>>();
+  const state = newServerState(deps);
 
   const core: Extension<CollabContext> = {
     extensionName: 'LivingWikiCollab',
@@ -174,12 +178,19 @@ export function createCollabServer(
           );
         }
       );
-      inflight.add(work);
-      try {
-        await work;
-      } finally {
-        inflight.delete(work);
-      }
+      // Keyed by the change's context: a direct-session call stamps a fresh
+      // context per transaction, so it can wait for exactly its own work.
+      trackWork(state, work, context && typeof context === 'object' ? context : undefined);
+      await work;
+    },
+    async afterStoreDocument(payload) {
+      // Runs only when every onStoreDocument hook succeeded: the evidence
+      // `storeDocumentNow` checks, since Hocuspocus swallows store errors.
+      markStored(state, payload);
+    },
+    async onRequest({ request, response, instance }) {
+      // The internal endpoints; every other path falls through untouched.
+      await handleInternalRequest(instance, request, response);
     },
   };
 
@@ -194,6 +205,6 @@ export function createCollabServer(
   });
 
   const hocuspocus = server.hocuspocus as CollabServer;
-  registerCollabServer(hocuspocus, { deps, inflight });
+  registerCollabServer(hocuspocus, state);
   return hocuspocus;
 }

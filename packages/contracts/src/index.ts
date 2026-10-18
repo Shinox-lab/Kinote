@@ -260,3 +260,29 @@ export const AskRequestSchema = z.object({
   question: z.string().trim().min(1).max(1000),
   space_ids: z.array(z.string().uuid()).optional(),
 });
+
+/**
+ * Internal (API-to-collab) endpoints. Authenticated by the shared
+ * `x-internal-secret` header, never exposed to browsers.
+ */
+export const CollabFlushRequestSchema = z.object({
+  documentName: z.string().min(1).max(200),
+});
+export type CollabFlushRequest = z.infer<typeof CollabFlushRequestSchema>;
+
+/**
+ * Replaces a live page's BlockNote content and title. `source` decides the
+ * attribution: an `agent` change marks the page agent-changed, a `restore`
+ * never does.
+ */
+export const CollabReplaceBlocksRequestSchema = z.object({
+  documentName: z.string().min(1).max(200),
+  title: z.string().trim().min(1).max(200),
+  blocks: z.array(z.record(z.unknown())).max(10_000),
+  actor: z.object({
+    type: z.enum(['user', 'agent']),
+    id: z.string().uuid(),
+  }),
+  source: z.enum(['restore', 'agent']),
+});
+export type CollabReplaceBlocksRequest = z.infer<typeof CollabReplaceBlocksRequestSchema>;

@@ -2,7 +2,7 @@ import * as Y from 'yjs';
 import { HocuspocusProvider, HocuspocusProviderWebsocket } from '@hocuspocus/provider';
 import WebSocket from 'ws';
 import { getCollabTokenSecret } from '@living-wiki/shared';
-import { createCollabServer, type CollabServer } from '../../src/server.js';
+import { createCollabServer, type CollabServer, type CollabServerDeps } from '../../src/server.js';
 
 /** Internal secret the test servers are built with (Task 4.2 endpoints). */
 export const TEST_INTERNAL_SECRET = 'test-internal-secret-0123456789abcdef!!';
@@ -10,12 +10,18 @@ export const TEST_INTERNAL_SECRET = 'test-internal-secret-0123456789abcdef!!';
 /**
  * Builds a collab server through the factory with the test secrets and
  * listens on a free port. Callers tear it down with `server.server.destroy()`.
+ * `deps` overrides the factory dependencies (e.g. a long store debounce).
  */
 export async function startCollabServer(
-  extraHooks?: Parameters<typeof createCollabServer>[1]
+  extraHooks?: Parameters<typeof createCollabServer>[1],
+  deps: Partial<CollabServerDeps> = {}
 ): Promise<{ server: CollabServer; port: number }> {
   const server = createCollabServer(
-    { collabTokenSecret: getCollabTokenSecret(), internalSecret: TEST_INTERNAL_SECRET },
+    {
+      collabTokenSecret: getCollabTokenSecret(),
+      internalSecret: TEST_INTERNAL_SECRET,
+      ...deps,
+    },
     extraHooks
   );
   await server.server.listen(0);

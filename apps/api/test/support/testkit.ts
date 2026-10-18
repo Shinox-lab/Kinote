@@ -5,7 +5,7 @@ import type { FastifyInstance } from 'fastify';
 import { and, eq } from 'drizzle-orm';
 import { withTenantTx, memberships } from '@living-wiki/db';
 import { createTestDb, type TestDb } from '@living-wiki/db/testing';
-import { buildApiServer } from '../../src/server.js';
+import { buildApiServer, type ApiServerOptions } from '../../src/server.js';
 
 /**
  * Gives the enclosing describe (or file) its own in-memory database: created
@@ -35,9 +35,10 @@ export interface TestSession {
  * The API server as tests use it: identical to production except for a
  * generous auth rate limit, so suites that sign up many users are not
  * throttled. The rate-limit test builds its own server with the default.
+ * `opts` adds or overrides server options (e.g. a collab client).
  */
-export function buildTestApp(): FastifyInstance {
-  return buildApiServer({ authRateLimit: { max: 1000, timeWindow: '1 minute' } });
+export function buildTestApp(opts: ApiServerOptions = {}): FastifyInstance {
+  return buildApiServer({ authRateLimit: { max: 1000, timeWindow: '1 minute' }, ...opts });
 }
 
 /** Signs a new user up through the real sign-up route and returns its session. */

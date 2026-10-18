@@ -34,6 +34,7 @@ import { requireSession, resolveActor, type AuthSession } from './auth/actor.js'
 import { registerErrorHandler } from './errors.js';
 import { searchWiki } from './search/hybridSearch.js';
 import { askWiki } from './search/ask.js';
+import type { CollabClient } from './collab/client.js';
 
 export interface ApiServerOptions {
   /** Per-IP limit for sign-up and sign-in (each route counted separately). */
@@ -44,6 +45,12 @@ export interface ApiServerOptions {
    * proxy in front the header is client-controlled and must be ignored.
    */
   trustProxy?: boolean;
+  /**
+   * The collab server's internal endpoints. A manual snapshot flushes the
+   * live document through it first. Production always passes one (main.ts);
+   * without it (tests that do not run collab) the flush is skipped.
+   */
+  collab?: CollabClient;
 }
 
 const DEFAULT_AUTH_RATE_LIMIT: AuthRateLimit = { max: 10, timeWindow: '1 minute' };
@@ -147,7 +154,7 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
   });
 
   app.post('/api/v1/pages/:id/snapshot', async (req, reply) => {
-    const res = await submitPageSnapshot(actorOf(req), (req.params as any).id);
+    const res = await submitPageSnapshot(actorOf(req), (req.params as any).id, opts.collab);
     return reply.status(201).send(res);
   });
 

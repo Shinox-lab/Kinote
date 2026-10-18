@@ -1,8 +1,8 @@
 import type * as Y from 'yjs';
 import { ServerBlockNoteEditor } from '@blocknote/server-util';
+import { BLOCK_FRAGMENT } from '../../src/server.js';
 
-/** The XmlFragment that holds a page's BlockNote blocks (see apps/collab/src/server.ts). */
-export const BLOCK_FRAGMENT = 'document-store';
+export { BLOCK_FRAGMENT };
 
 const editor = ServerBlockNoteEditor.create();
 

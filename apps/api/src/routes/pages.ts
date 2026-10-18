@@ -36,8 +36,14 @@ import {
   chunkInboxOwner,
   type Actor,
 } from '@living-wiki/core';
-import { signCollabToken, getCollabTokenSecret, COLLAB_TOKEN_TTL_SECONDS } from '@living-wiki/shared';
+import {
+  signCollabToken,
+  getCollabTokenSecret,
+  documentName,
+  COLLAB_TOKEN_TTL_SECONDS,
+} from '@living-wiki/shared';
 import { computePageBadge } from '../pages/badge.js';
+import type { CollabClient } from '../collab/client.js';
 
 const blockNote = ServerBlockNoteEditor.create();
 
@@ -233,9 +239,16 @@ export async function getPageDetails(actor: Actor, pageId: string) {
 /**
  * Manual snapshot of a page's live state (the "submit" button, or an agent's
  * explicit snapshot). The actor must be able to read the page.
+ *
+ * The live document is flushed through `collab` first, so the snapshot holds
+ * what was typed a moment ago rather than the last debounced store. A failed
+ * flush fails the snapshot (`internal_error`): it never snapshots stale state.
  */
-export async function submitPageSnapshot(actor: Actor, pageId: string) {
+export async function submitPageSnapshot(actor: Actor, pageId: string, collab?: CollabClient) {
   await getPageDetails(actor, pageId);
+  if (collab) {
+    await collab.flush(documentName(actor.tenantId, pageId));
+  }
   return takePageSnapshot({
     tenantId: actor.tenantId,
     pageId,
