@@ -36,6 +36,20 @@
       "when": 1792344640388,
       "tag": "0004_grants",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1792345654248,
+      "tag": "0005_job_lease_columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1792345654559,
+      "tag": "0006_due_jobs_function",
+      "breakpoints": true
     }
   ]
 }

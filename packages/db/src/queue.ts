@@ -1,6 +1,18 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { jobs } from './schema/foundations.js';
-import type { DbTransaction } from './client.js';
+import { getDb, rowsOf, type DbTransaction } from './client.js';
+
+/**
+ * Tenants that have a due job: queued and past `run_at`, or running with an
+ * expired lease. Calls the SECURITY DEFINER function `tenants_with_due_jobs`,
+ * so it needs no tenant context and no superuser; RLS still hides job rows.
+ */
+export async function tenantsWithDueJobs(now: Date, leaseSeconds: number): Promise<string[]> {
+  const result = await getDb().execute(
+    sql`SELECT tenants_with_due_jobs(${now.toISOString()}::timestamptz, ${leaseSeconds}::int) AS tenant_id`
+  );
+  return rowsOf<{ tenant_id: string }>(result).map((r) => r.tenant_id);
+}
 
 export async function enqueueJob(
   tx: DbTransaction,
