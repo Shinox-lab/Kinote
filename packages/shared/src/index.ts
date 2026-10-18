@@ -16,3 +16,4 @@ export {
   type ObjectStorage,
   type S3ObjectStorageOptions,
 } from './objectStorage.js';
+export { flattenBlocks, type FlatBlock, type BlockLike } from './blocks.js';

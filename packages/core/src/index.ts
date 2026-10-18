@@ -6,7 +6,13 @@ export {
   type SpaceRole,
 } from './permissions.js';
 export { takePageSnapshot } from './snapshot.js';
-export { indexVersion, chunkPageBlocks } from './indexing/indexVersion.js';
+export { indexVersion } from './indexing/indexVersion.js';
+export {
+  chunkPageBlocks,
+  DEFAULT_CHUNK_OPTIONS,
+  type ChunkOptions,
+  type RawChunk,
+} from './indexing/chunkPage.js';
 export {
   DeterministicEmbeddingProvider,
   defaultEmbeddingProvider,

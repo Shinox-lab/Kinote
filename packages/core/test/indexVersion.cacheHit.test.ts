@@ -4,6 +4,7 @@ import { and, eq } from 'drizzle-orm';
 import { chunks, documents, embeddingCache, spaces, tenants, versions, withTenantTx } from '@living-wiki/db';
 import { createTestDb, type TestDb } from '@living-wiki/db/testing';
 import { DeterministicEmbeddingProvider, indexVersion } from '../src/index.js';
+import { blocksFromMarkdown } from './fixtures/realBlocks.js';
 
 let testDb: TestDb;
 beforeAll(async () => {
@@ -22,7 +23,7 @@ describe('indexVersion embedding cache hit', () => {
     const v1 = randomUUID();
     const v2 = randomUUID();
     const provider = new DeterministicEmbeddingProvider();
-    const blocks = [{ id: 'b1', type: 'paragraph', markdown: 'Remote work is allowed three days per week.' }];
+    const blocks = await blocksFromMarkdown('Remote work is allowed three days per week.');
 
     await withTenantTx(tenantId, async (tx) => {
       await tx.insert(tenants).values({ id: tenantId, name: 't', slug: `t-${tenantId}` });
@@ -68,6 +69,8 @@ describe('indexVersion embedding cache hit', () => {
     );
     expect(rows).toHaveLength(1);
     expect(rows[0].versionId).toBe(v2);
+    expect(rows[0].blockIds).toEqual([blocks[0].id]);
+    expect(rows[0].text).toBe('# Policy\n\nRemote work is allowed three days per week.');
     expect(Array.isArray(rows[0].embedding)).toBe(true);
     expect(rows[0].embedding).toHaveLength(1536);
 

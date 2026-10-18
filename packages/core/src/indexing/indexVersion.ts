@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
 import {
   withTenantTx,
@@ -7,101 +6,12 @@ import {
   chunks,
   embeddingCache,
   writeAuditEvent,
+  NonRetryableError,
 } from '@living-wiki/db';
 import { defaultEmbeddingProvider, type EmbeddingProvider } from '../embedding.js';
 import { AppError } from '@living-wiki/contracts';
-
-export interface RawChunk {
-  ordinal: number;
-  headingPath: string[];
-  blockIds: string[];
-  text: string;
-  tokenCount: number;
-  contentHash: string;
-}
-
-/**
- * Splits a page's blocks at headings (never inside a block).
- * Each chunk's indexed text starts with the document title and heading path.
- */
-export function chunkPageBlocks(
-  title: string,
-  blocks: Array<{ id?: string; type?: string; level?: number; text?: string; markdown?: string }>,
-  fallbackMarkdown: string
-): RawChunk[] {
-  const sourceBlocks =
-    Array.isArray(blocks) && blocks.length > 0
-      ? blocks
-      : fallbackMarkdown
-          .split(/\n\n+/)
-          .filter(Boolean)
-          .map((line, idx) => ({
-            id: `block-${idx + 1}`,
-            type: line.startsWith('#') ? 'heading' : 'paragraph',
-            level: line.match(/^#+/)?.[0].length ?? 1,
-            text: line.replace(/^#+\s*/, ''),
-            markdown: line,
-          }));
-
-  const sections: Array<{ headingPath: string[]; blockIds: string[]; lines: string[] }> = [];
-  let currentHeadingStack: string[] = [];
-  let currentBlockIds: string[] = [];
-  let currentLines: string[] = [];
-
-  const flushSection = () => {
-    if (currentLines.length === 0) return;
-    sections.push({
-      headingPath: [...currentHeadingStack],
-      blockIds: [...currentBlockIds],
-      lines: [...currentLines],
-    });
-    currentBlockIds = [];
-    currentLines = [];
-  };
-
-  for (const b of sourceBlocks) {
-    const isHeading = b.type === 'heading' || (b.markdown && /^#{1,6}\s+/.test(b.markdown));
-    const blockText = (b.markdown ?? b.text ?? '').trim();
-    if (!blockText) continue;
-
-    if (isHeading) {
-      flushSection();
-      const headingText = blockText.replace(/^#{1,6}\s+/, '').trim();
-      const level = b.level ?? (blockText.match(/^#+/)?.[0].length || 1);
-      currentHeadingStack = currentHeadingStack.slice(0, Math.max(0, level - 1));
-      currentHeadingStack.push(headingText);
-    }
-
-    currentBlockIds.push(b.id ?? `block-${currentBlockIds.length + 1}`);
-    currentLines.push(blockText);
-  }
-  flushSection();
-
-  if (sections.length === 0 && fallbackMarkdown.trim()) {
-    sections.push({
-      headingPath: [],
-      blockIds: ['block-1'],
-      lines: [fallbackMarkdown.trim()],
-    });
-  }
-
-  return sections.map((sec, idx) => {
-    const pathPrefix =
-      sec.headingPath.length > 0 ? `${title} > ${sec.headingPath.join(' > ')}` : title;
-    const text = `# ${pathPrefix}\n\n${sec.lines.join('\n\n')}`;
-    const tokenCount = text.split(/\s+/).filter(Boolean).length;
-    const contentHash = createHash('sha256').update(text, 'utf8').digest('hex');
-
-    return {
-      ordinal: idx,
-      headingPath: sec.headingPath,
-      blockIds: sec.blockIds,
-      text,
-      tokenCount,
-      contentHash,
-    };
-  });
-}
+import type { BlockLike } from '@living-wiki/shared';
+import { chunkPageBlocks } from './chunkPage.js';
 
 export async function indexVersion(
   params: { tenantId: string; versionId: string },
@@ -128,11 +38,13 @@ export async function indexVersion(
       throw new AppError('document_not_found', 'Document not found.');
     }
 
-    const rawChunks = chunkPageBlocks(
-      ver.title,
-      (ver.blocks as any[]) ?? [],
-      ver.markdown ?? ''
-    );
+    if (!Array.isArray(ver.blocks)) {
+      throw new NonRetryableError('version has no blocks');
+    }
+    const rawChunks = chunkPageBlocks(ver.title, ver.blocks as BlockLike[]);
+    if (rawChunks.length === 0) {
+      throw new NonRetryableError('version has no indexable content');
+    }
 
     // Resolve embeddings using embedding_cache first
     const existingCacheRows = await tx

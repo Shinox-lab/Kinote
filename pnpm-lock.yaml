@@ -184,6 +184,9 @@ importers:
       '@living-wiki/db':
         specifier: workspace:*
         version: link:../db
+      '@living-wiki/shared':
+        specifier: workspace:*
+        version: link:../shared
       drizzle-orm:
         specifier: ^0.44.5
         version: 0.44.7(@electric-sql/pglite@0.2.17)(@types/pg@8.23.1)(pg@8.23.1)
@@ -227,6 +230,10 @@ importers:
       zod:
         specifier: ^3.25.76
         version: 3.25.76
+    devDependencies:
+      '@blocknote/server-util':
+        specifier: ^0.49.0
+        version: 0.49.0(prosemirror-model@1.25.12)(prosemirror-state@1.4.4)(prosemirror-view@1.42.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
 
 packages:
 

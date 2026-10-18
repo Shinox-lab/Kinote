@@ -1,11 +1,12 @@
 import { test, describe, beforeEach, afterAll } from 'vitest';
 import assert from 'node:assert/strict';
-import { sql } from 'drizzle-orm';
+import { sql, asc, eq } from 'drizzle-orm';
 import {
   rowsOf,
   withTenantTx,
   withUntenantedTx,
   spaces,
+  chunks,
   jobs,
   enqueueJob,
   markJobOutcome,
@@ -466,6 +467,23 @@ describe('Living Wiki — Slice 0 (Foundations) & Slice 1 (Live Pages)', () => {
       })
     ).json();
     assert.equal(pageAfterV2.badge, 'Indexed · v2');
+
+    // Real BlockNote blocks chunk per heading section
+    const v2Chunks = await withTenantTx(tenant.id, (tx) =>
+      tx.select().from(chunks).where(eq(chunks.documentId, pageId)).orderBy(asc(chunks.ordinal))
+    );
+    assert.deepEqual(
+      v2Chunks.map((c) => c.headingPath),
+      [['Eligibility'], ['Eligibility', 'Equipment Stipend']]
+    );
+    // ids are the ones the collab edits gave the blocks (v2 blocks block-1..4), one pair per section
+    assert.deepEqual(
+      v2Chunks.map((c) => c.blockIds),
+      [
+        ['block-1', 'block-2'],
+        ['block-3', 'block-4'],
+      ]
+    );
 
     // Search and Ask now cite v2!
     const searchAfterApproval = (
