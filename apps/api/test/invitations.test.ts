@@ -109,6 +109,11 @@ describe('authenticated tenants and accept-by-token invitations', () => {
     assert.equal(wrong.statusCode, 404);
     assert.equal(wrong.json().error, 'invitation_invalid');
     assert.deepEqual((await me(other)).memberships, []);
+    // The failed attempt rolled back: the invitation is still pending.
+    const [pending] = await withTenantTx(tenant.id, (tx) =>
+      tx.select().from(invitations).where(eq(invitations.tenantId, tenant.id))
+    );
+    assert.equal(pending.acceptedAt, null);
 
     const right = await accept(invitee, acceptToken);
     assert.equal(right.statusCode, 200, right.body);
@@ -253,6 +258,55 @@ describe('authenticated tenants and accept-by-token invitations', () => {
     const admin = await signUpMember(app, tenant.id, 'admin');
     const ok = await invite(admin.headers, 'x@example.test');
     assert.equal(ok.statusCode, 201, ok.body);
+  });
+
+  test('a non-admin with an invalid body gets 403, not 400', async () => {
+    const { tenant } = await bootstrapTenant(app, { name: 'Acme', slug: 'acme' });
+    const member = await signUpMember(app, tenant.id, 'member');
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/invitations',
+      headers: member.headers,
+      payload: { email: 'not-an-email', role: 'owner' },
+    });
+    assert.equal(res.statusCode, 403);
+    assert.equal(res.json().error, 'forbidden');
+  });
+
+  test('two simultaneous accepts of one token: exactly one 200, one 404, one member.joined', async () => {
+    // PGlite has a single connection and may serialise these calls; the test
+    // still pins the outcome, and the claim-first UPDATE keeps it true under
+    // real READ COMMITTED concurrency.
+    const { tenant, headers } = await bootstrapTenant(app, { name: 'Acme', slug: 'acme' });
+    const invitee = await signUp(app, 'invitee@example.test');
+    const { acceptToken } = (await invite(headers, 'invitee@example.test')).json();
+
+    const results = await Promise.all([accept(invitee, acceptToken), accept(invitee, acceptToken)]);
+    const codes = results.map((r) => r.statusCode).sort();
+    assert.deepEqual(codes, [200, 404]);
+    const loser = results.find((r) => r.statusCode === 404)!;
+    assert.equal(loser.json().error, 'invitation_invalid');
+
+    const joined = await withTenantTx(tenant.id, (tx) =>
+      tx
+        .select()
+        .from(auditEvents)
+        .where(and(eq(auditEvents.tenantId, tenant.id), eq(auditEvents.type, 'member.joined')))
+    );
+    assert.equal(joined.length, 1);
+  });
+
+  test('concurrent re-invites of one email both succeed and leave a single pending invitation', async () => {
+    const { tenant, headers } = await bootstrapTenant(app, { name: 'Acme', slug: 'acme' });
+    const results = await Promise.all([
+      invite(headers, 'invitee@example.test', 'member'),
+      invite(headers, 'invitee@example.test', 'viewer'),
+    ]);
+    for (const r of results) assert.equal(r.statusCode, 201, r.body);
+    const rows = await withTenantTx(tenant.id, (tx) =>
+      tx.select().from(invitations).where(eq(invitations.tenantId, tenant.id))
+    );
+    assert.equal(rows.length, 1);
   });
 
   test('inviting as owner (or any unknown role) answers 400 validation_failed', async () => {

@@ -252,29 +252,22 @@ const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
  * stops working).
  */
 export async function inviteMember(actor: Actor, input: unknown): Promise<InviteMemberResponse> {
+  // Authorization first: a non-admin gets 403 whatever the body looks like.
+  if (
+    actor.principalType !== 'user' ||
+    (actor.tenantRole !== 'owner' && actor.tenantRole !== 'admin')
+  ) {
+    throw new AppError('forbidden', 'Only tenant admins can invite members.');
+  }
   const parsed = InviteMemberRequestSchema.parse(input);
 
   return withTenantTx(actor.tenantId, async (tx) => {
-    if (
-      actor.principalType !== 'user' ||
-      (actor.tenantRole !== 'owner' && actor.tenantRole !== 'admin')
-    ) {
-      throw new AppError('forbidden', 'Only tenant admins can invite members.');
-    }
-
     const secret = randomBytes(32).toString('base64url');
     const expiresAt = new Date(Date.now() + INVITATION_TTL_MS);
 
-    await tx
-      .delete(invitations)
-      .where(
-        and(
-          eq(invitations.tenantId, actor.tenantId),
-          eq(invitations.email, parsed.email),
-          isNull(invitations.acceptedAt)
-        )
-      );
-
+    // Replace-in-place for a pending invitation (the partial unique index
+    // decides, so concurrent re-invites cannot fail with a raw 500); the old
+    // token's hash is overwritten and therefore stops working.
     const [invitation] = await tx
       .insert(invitations)
       .values({
@@ -284,6 +277,16 @@ export async function inviteMember(actor: Actor, input: unknown): Promise<Invite
         invitedBy: actor.principalId,
         tokenHash: sha256Hex(secret),
         expiresAt,
+      })
+      .onConflictDoUpdate({
+        target: [invitations.tenantId, invitations.email],
+        targetWhere: isNull(invitations.acceptedAt),
+        set: {
+          role: parsed.role,
+          invitedBy: actor.principalId,
+          tokenHash: sha256Hex(secret),
+          expiresAt,
+        },
       })
       .returning();
 
@@ -336,9 +339,13 @@ export async function acceptInvitation(
   const { tenantId, secret } = parsedToken;
 
   return withTenantTx(tenantId, async (tx) => {
+    // Claim the invitation atomically before anything else: only one
+    // concurrent accept can flip accepted_at from NULL. A failure below (wrong
+    // email) throws and rolls this claim back with the transaction, so a wrong
+    // user never consumes the token.
     const [invitation] = await tx
-      .select()
-      .from(invitations)
+      .update(invitations)
+      .set({ acceptedAt: new Date() })
       .where(
         and(
           eq(invitations.tenantId, tenantId),
@@ -346,7 +353,8 @@ export async function acceptInvitation(
           isNull(invitations.acceptedAt),
           gt(invitations.expiresAt, new Date())
         )
-      );
+      )
+      .returning();
     if (!invitation) throw invalid();
 
     const [user] = await tx.select({ email: users.email }).from(users).where(eq(users.id, userId));
@@ -366,11 +374,6 @@ export async function acceptInvitation(
       .select({ role: memberships.role })
       .from(memberships)
       .where(and(eq(memberships.tenantId, tenantId), eq(memberships.userId, userId)));
-
-    await tx
-      .update(invitations)
-      .set({ acceptedAt: new Date() })
-      .where(and(eq(invitations.tenantId, tenantId), eq(invitations.id, invitation.id)));
 
     await writeAuditEvent(tx, {
       tenantId,
