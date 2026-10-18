@@ -11,11 +11,14 @@ import {
   markJobOutcome,
 } from '@living-wiki/db';
 import { submitPageSnapshot } from '../src/routes/pages.js';
-import { objectStorage } from '../src/storage.js';
 import { collabServer } from '../../collab/src/server.js';
 import { runPendingJobsForTenant } from '../../worker/src/runner.js';
 import { defaultEmbeddingProvider } from '@living-wiki/core';
-import { signCollabToken, getCollabTokenSecret } from '@living-wiki/shared';
+import {
+  signCollabToken,
+  getCollabTokenSecret,
+  InMemoryObjectStorage,
+} from '@living-wiki/shared';
 import { formatApiError } from '../../web/src/App.js';
 import {
   buildTestApp,
@@ -128,15 +131,16 @@ describe('Living Wiki — Slice 0 (Foundations) & Slice 1 (Live Pages)', () => {
     assert.equal(malformedRes.json().error, 'space_not_found');
 
     // 6. Object storage enforces per-tenant prefix
-    const stored = await objectStorage.putObject(
+    const objectStorage = new InMemoryObjectStorage();
+    const stored = await objectStorage.put(
       tenantA,
       'uploads/spec.pdf',
-      Buffer.from('PDF-BYTES'),
+      new TextEncoder().encode('PDF-BYTES'),
       'application/pdf'
     );
     assert.equal(stored.objectKey.startsWith(`${tenantA}/`), true);
     await assert.rejects(
-      () => objectStorage.getObject(tenantB, stored.objectKey),
+      () => objectStorage.get(tenantB, stored.objectKey),
       (err: any) => err.statusCode === 404 && err.code === 'document_not_found'
     );
   });

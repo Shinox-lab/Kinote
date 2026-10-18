@@ -9,3 +9,10 @@ export {
   type CollabClaims,
 } from './collabToken.js';
 export { ConfigSchema, loadConfig, type Config } from './config.js';
+export {
+  InMemoryObjectStorage,
+  S3ObjectStorage,
+  assertTenantKey,
+  type ObjectStorage,
+  type S3ObjectStorageOptions,
+} from './objectStorage.js';
