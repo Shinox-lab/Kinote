@@ -474,7 +474,7 @@ describe('Living Wiki — Slice 0 (Foundations) & Slice 1 (Live Pages)', () => {
     );
     assert.deepEqual(
       v2Chunks.map((c) => c.headingPath),
-      [['Eligibility'], ['Eligibility', 'Equipment Stipend']]
+      [['Eligibility'], ['Equipment Stipend']]
     );
     // ids are the ones the collab edits gave the blocks (v2 blocks block-1..4), one pair per section
     assert.deepEqual(

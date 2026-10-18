@@ -86,7 +86,9 @@ describe('chunkPageBlocks with real BlockNote blocks', () => {
     const paras = Array.from({ length: 15 }, (_, i) => words(100, `p${i}w`));
     const blocks = await blocksFromMarkdown(`# Long\n\n${paras.join('\n\n')}`);
     const chunks = chunkPageBlocks('Doc', blocks);
-    expect(chunks.length).toBeGreaterThanOrEqual(4);
+    // heading + 3 paragraphs (301 words <= 350), then 3 per chunk: 5 chunks
+    expect(chunks).toHaveLength(5);
+    expect(chunks.map((c) => c.blockIds.length)).toEqual([4, 3, 3, 3, 3]);
     for (const c of chunks) {
       expect(wordCount(bodyOf(c.text))).toBeLessThanOrEqual(600);
       expect(c.headingPath).toEqual(['Long']);
@@ -113,6 +115,64 @@ describe('chunkPageBlocks with real BlockNote blocks', () => {
     expect(mchunks[1].blockIds).toEqual([mixed[1].id]);
   });
 
+  describe('heading path is an ancestor stack', () => {
+    const paths = async (md: string) =>
+      chunkPageBlocks('Doc', await blocksFromMarkdown(md)).map((c) => c.headingPath);
+
+    it('sibling h2s with no h1 are siblings', async () => {
+      expect(await paths('## A\n\nx\n\n## B\n\ny')).toEqual([['A'], ['B']]);
+    });
+    it('h1, h3, h3: second h3 replaces the first', async () => {
+      expect(await paths('# A\n\nx\n\n### B\n\ny\n\n### C\n\nz')).toEqual([
+        ['A'],
+        ['A', 'B'],
+        ['A', 'C'],
+      ]);
+    });
+    it('a document opening with h2 then h3', async () => {
+      expect(await paths('## A\n\nx\n\n### B\n\ny')).toEqual([['A'], ['A', 'B']]);
+    });
+    it('h1, h2, h3, h2: the second h2 pops h3 and replaces the first h2', async () => {
+      expect(await paths('# A\n\nx\n\n## B\n\ny\n\n### C\n\nz\n\n## D\n\nw')).toEqual([
+        ['A'],
+        ['A', 'B'],
+        ['A', 'B', 'C'],
+        ['A', 'D'],
+      ]);
+    });
+    it('h1, h1: the second h1 replaces the first', async () => {
+      const blocks = await blocksFromMarkdown('# A\n\n# B');
+      const chunks = chunkPageBlocks('Doc', blocks);
+      expect(chunks.map((c) => c.headingPath)).toEqual([['A'], ['B']]);
+      expect(chunks.map((c) => c.blockIds)).toEqual([[blocks[0].id], [blocks[1].id]]);
+    });
+  });
+
+  it('keeps a heading with a following oversized paragraph in one chunk', async () => {
+    const big = words(900, 'big');
+    const blocks = await blocksFromMarkdown(`# H\n\n${big}`);
+    const chunks = chunkPageBlocks('Doc', blocks);
+    expect(chunks).toHaveLength(1);
+    expect(chunks[0].blockIds).toEqual([blocks[0].id, blocks[1].id]);
+    expect(chunks[0].text).toBe(`# Doc > H\n\nH\n\n${big}`);
+
+    // later blocks still do not join the oversized block
+    const more = await blocksFromMarkdown(`# H\n\n${big}\n\nafter`);
+    expect(chunkPageBlocks('Doc', more).map((c) => c.blockIds)).toEqual([
+      [more[0].id, more[1].id],
+      [more[2].id],
+    ]);
+  });
+
+  it('merges a bare heading into the chunk of the deeper heading that follows it', async () => {
+    const blocks = await blocksFromMarkdown('# T\n\n## S\n\nsmall');
+    const chunks = chunkPageBlocks('Doc', blocks);
+    expect(chunks).toHaveLength(1);
+    expect(chunks[0].headingPath).toEqual(['T', 'S']);
+    expect(chunks[0].blockIds).toEqual(blocks.map((b) => b.id));
+    expect(chunks[0].text).toBe('# Doc > T > S\n\nT\n\nS\n\nsmall');
+  });
+
   it('indexes a heading-only page as one chunk containing the heading text', async () => {
     const blocks = await blocksFromMarkdown('# Only Heading');
     const chunks = chunkPageBlocks('Doc', blocks);
@@ -132,7 +192,7 @@ describe('chunkPageBlocks with real BlockNote blocks', () => {
     const section = (h: string, tail: string) => `## ${h}\n\n${words(40, h)} ${tail}`;
     const build = (tail: string) =>
       blocksFromMarkdown(
-        ['# Top', section('S1', 'x'), section('S2', tail), section('S3', 'x')].join('\n\n')
+        ['# Top\n\nintro', section('S1', 'x'), section('S2', tail), section('S3', 'x')].join('\n\n')
       );
     const a = chunkPageBlocks('Doc', await build('before'));
     const b = chunkPageBlocks('Doc', await build('after'));

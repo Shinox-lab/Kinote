@@ -26,6 +26,8 @@ interface Draft {
   words: number;
   /** True once a non-heading block is in the chunk. */
   hasBody: boolean;
+  /** Level of the last heading in the chunk (0 when it has none). */
+  lastLevel: number;
   /** True when the chunk holds a block above maxWords (which then stays alone). */
   oversized: boolean;
 }
@@ -44,16 +46,18 @@ export function chunkPageBlocks(
   opts: ChunkOptions = DEFAULT_CHUNK_OPTIONS
 ): RawChunk[] {
   const drafts: Draft[] = [];
-  let stack: string[] = [];
+  // Ancestor stack: each entry is a heading still "open" at the current position.
+  let stack: Array<{ level: number; text: string }> = [];
   let current: Draft | null = null;
 
   const start = (): Draft => {
     const draft: Draft = {
-      headingPath: [...stack],
+      headingPath: stack.map((h) => h.text),
       blockIds: [],
       texts: [],
       words: 0,
       hasBody: false,
+      lastLevel: 0,
       oversized: false,
     };
     drafts.push(draft);
@@ -68,16 +72,28 @@ export function chunkPageBlocks(
 
     if (flat.type === 'heading') {
       const level = flat.level ?? 1;
-      stack = stack.slice(0, Math.max(0, level - 1));
-      stack.push(text);
-      current = start();
+      // Pop every heading at the same or a deeper level (they are closed), then push.
+      while (stack.length > 0 && stack[stack.length - 1].level >= level) stack.pop();
+      stack.push({ level, text });
+      if (current && !current.hasBody && level > current.lastLevel) {
+        // A bare heading (no body yet) directly followed by a deeper heading is not
+        // emitted on its own: its text and block id travel in the next chunk, whose
+        // path is that of the deeper heading. Keeps "no chunk has an empty body".
+        current.headingPath = stack.map((h) => h.text);
+      } else {
+        current = start();
+      }
+      current.lastLevel = level;
     } else if (
       !current ||
       (current.blockIds.length > 0 &&
-        (oversized ||
-          current.oversized ||
-          (current.hasBody && current.words + words > opts.targetWords)))
+        (current.hasBody
+          ? oversized || current.oversized || current.words + words > opts.targetWords
+          : current.oversized))
     ) {
+      // A heading-only chunk never gets left behind just because the next block is
+      // large: the heading travels with it (an oversized block still stays alone
+      // from other body blocks, because later blocks start a new chunk).
       current = start();
     }
 
