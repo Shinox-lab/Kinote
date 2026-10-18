@@ -1,6 +1,6 @@
 import { sql } from 'drizzle-orm';
 import type { DbTransaction } from '@living-wiki/db';
-import type { Actor } from '../permissions.js';
+import type { Actor } from '@living-wiki/core';
 
 export interface SearchPassage {
   chunkId: string;

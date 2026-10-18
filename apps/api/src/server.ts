@@ -1,7 +1,12 @@
 import Fastify from 'fastify';
 import { withTenantTx } from '@living-wiki/db';
 import { SearchRequestSchema, AskRequestSchema } from '@living-wiki/contracts';
-import { getReadableSpaceIds, type Actor } from './permissions.js';
+import {
+  getReadableSpaceIds,
+  takePageSnapshot,
+  defaultEmbeddingProvider,
+  type Actor,
+} from '@living-wiki/core';
 import {
   createTenantWithInbox,
   createSpace,
@@ -22,8 +27,6 @@ import {
 } from './routes/pages.js';
 import { searchWiki } from './search/hybridSearch.js';
 import { askWiki } from './search/ask.js';
-import { takePageSnapshot } from '../../worker/src/handlers/snapshot.js';
-import { defaultEmbeddingProvider } from '../../worker/src/embedding.js';
 
 export function buildApiServer() {
   const app = Fastify({ logger: false });

@@ -1,6 +1,6 @@
 import { and, eq } from 'drizzle-orm';
 import { withTenantTx, documents, pages } from '@living-wiki/db';
-import { requireSpaceRole, type Actor } from '../../api/src/permissions.js';
+import { requireSpaceRole, type Actor } from '@living-wiki/core';
 
 export interface CollabContext {
   tenantId: string;

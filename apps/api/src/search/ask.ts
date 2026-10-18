@@ -1,5 +1,5 @@
 import type { DbTransaction } from '@living-wiki/db';
-import type { Actor } from '../permissions.js';
+import type { Actor } from '@living-wiki/core';
 import { searchWiki, type SearchPassage } from './hybridSearch.js';
 
 export interface AskResponse {

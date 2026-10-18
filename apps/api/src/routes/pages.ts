@@ -19,7 +19,7 @@ import {
   ApproveVersionRequestSchema,
   RejectVersionRequestSchema,
 } from '@living-wiki/contracts';
-import { requireSpaceRole, assertValidUuid, type Actor } from '../permissions.js';
+import { requireSpaceRole, assertValidUuid, type Actor } from '@living-wiki/core';
 import { computePageBadge } from '../pages/badge.js';
 
 const blockNote = ServerBlockNoteEditor.create();

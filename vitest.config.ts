@@ -12,6 +12,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@living-wiki/contracts': r('./packages/contracts/src/index.ts'),
+      '@living-wiki/core': r('./packages/core/src/index.ts'),
       '@living-wiki/db': r('./packages/db/src/index.ts'),
       '@living-wiki/api': r('./apps/api/src/server.ts'),
       '@living-wiki/collab': r('./apps/collab/src/server.ts'),

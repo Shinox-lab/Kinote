@@ -1,8 +1,11 @@
 import { and, eq } from 'drizzle-orm';
 import { withTenantTx, jobs, markJobOutcome } from '@living-wiki/db';
-import { takePageSnapshot } from './handlers/snapshot.js';
-import { indexVersion } from './handlers/indexVersion.js';
-import { defaultEmbeddingProvider, type EmbeddingProvider } from './embedding.js';
+import {
+  takePageSnapshot,
+  indexVersion,
+  defaultEmbeddingProvider,
+  type EmbeddingProvider,
+} from '@living-wiki/core';
 
 export async function runPendingJobsForTenant(
   tenantId: string,

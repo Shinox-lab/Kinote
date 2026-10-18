@@ -14,7 +14,7 @@ import { buildApiServer } from '../src/server.js';
 import { objectStorage } from '../src/storage.js';
 import { collabServer } from '../../collab/src/server.js';
 import { runPendingJobsForTenant } from '../../worker/src/runner.js';
-import { defaultEmbeddingProvider } from '../../worker/src/embedding.js';
+import { defaultEmbeddingProvider } from '@living-wiki/core';
 import { formatApiError } from '../../web/src/App.js';
 
 describe('Living Wiki — Slice 0 (Foundations) & Slice 1 (Live Pages)', () => {

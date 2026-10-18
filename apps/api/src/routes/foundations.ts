@@ -19,7 +19,7 @@ import {
   UpdateSpaceSettingsSchema,
   UpsertSpaceGrantSchema,
 } from '@living-wiki/contracts';
-import { requireSpaceRole, getReadableSpaceIds, type Actor } from '../permissions.js';
+import { requireSpaceRole, getReadableSpaceIds, type Actor } from '@living-wiki/core';
 
 export async function createTenantWithInbox(input: unknown) {
   const parsed = CreateTenantRequestSchema.parse(input);
