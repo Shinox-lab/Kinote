@@ -3,6 +3,7 @@ import { Database } from '@hocuspocus/extension-database';
 import { ServerBlockNoteEditor } from '@blocknote/server-util';
 import { and, eq } from 'drizzle-orm';
 import { withTenantTx, pages, blockActivity, jobs } from '@living-wiki/db';
+import { AppError } from '@living-wiki/contracts';
 import { parseDocumentName } from '@living-wiki/shared';
 import { authenticateCollabConnection, type CollabContext } from './auth.js';
 
@@ -135,6 +136,11 @@ async function openSession({
   // Same verification as a websocket connection (signature, expiry, document
   // match, role re-read from the database).
   const context = await authenticateCollabConnection(token, documentName);
+  // A read-only context (viewer, read token, archived page) must not edit the
+  // document through the direct connection either.
+  if (context.readOnly) {
+    throw new AppError('forbidden', 'This collab session is read-only.');
+  }
   const conn = await (collabServer as unknown as CollabServerLike).openDirectConnection(
     documentName,
     context

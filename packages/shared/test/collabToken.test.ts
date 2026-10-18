@@ -8,8 +8,8 @@ import {
 } from '../src/index.js';
 
 const SECRET = 'a-unit-test-secret-of-at-least-32-chars!';
-const TENANT = '11111111-1111-4111-8111-111111111111';
-const PAGE = '22222222-2222-4222-8222-222222222222';
+const TENANT = 'aaaaaaaa-1111-4111-8111-bbbbbbbbbbbb';
+const PAGE = 'cccccccc-2222-4222-8222-dddddddddddd';
 const USER = '33333333-3333-4333-8333-333333333333';
 const claims = {
   tenantId: TENANT,
@@ -96,6 +96,10 @@ describe('document names', () => {
       `${TENANT}:${PAGE}:extra`,
       `${TENANT}:not-a-uuid`,
       `not-a-uuid:${PAGE}`,
+      // Non-canonical (upper-case) ids would key a second server document.
+      `${TENANT.toUpperCase()}:${PAGE.toUpperCase()}`,
+      `${TENANT}:${PAGE.toUpperCase()}`,
+      `${TENANT.toUpperCase()}:${PAGE}`,
     ]) {
       expect(parseDocumentName(bad)).toBeNull();
     }

@@ -599,7 +599,7 @@ export async function issueCollabToken(actor: Actor, pageId: string) {
     {
       tenantId: actor.tenantId,
       pageId: documentId,
-      principalType: 'user',
+      principalType: actor.principalType,
       principalId: actor.principalId,
       access,
     },

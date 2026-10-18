@@ -105,6 +105,7 @@ describe('POST /api/v1/pages/:id/collab-token', () => {
     const nobody = await signUpMember(app, w.tenant.id, 'member');
     const res = await issue(nobody.headers, w.page.id);
     expect(res.statusCode).toBe(404);
+    expect(res.json().error).toBe('space_not_found');
   });
 
   test('requires a session', async () => {

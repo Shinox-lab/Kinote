@@ -38,8 +38,8 @@ export async function authenticateCollabConnection(
   const claims = verifyCollabToken(token, getCollabTokenSecret());
   if (
     !claims ||
-    claims.tenantId.toLowerCase() !== doc.tenantId ||
-    claims.pageId.toLowerCase() !== doc.pageId
+    claims.tenantId !== doc.tenantId ||
+    claims.pageId !== doc.pageId
   ) {
     throw new AppError('unauthenticated', 'Invalid collab token.');
   }

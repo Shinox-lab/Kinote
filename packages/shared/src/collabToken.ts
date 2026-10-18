@@ -89,14 +89,20 @@ export function documentName(tenantId: string, pageId: string): string {
   return `${tenantId}:${pageId}`;
 }
 
-/** Inverse of `documentName`; null unless the name is exactly two UUID segments. */
+/**
+ * Inverse of `documentName`; null unless the name is exactly the canonical
+ * form of two UUIDs (lower-case). Hocuspocus keys its in-memory documents by
+ * the raw name, so accepting any other spelling of the same ids would open a
+ * second Y.Doc for one page and let the two overwrite each other on store.
+ */
 export function parseDocumentName(name: string): { tenantId: string; pageId: string } | null {
   if (typeof name !== 'string') return null;
   const parts = name.split(':');
   if (parts.length !== 2) return null;
   const [tenantId, pageId] = parts;
   if (!UUID_REGEX.test(tenantId) || !UUID_REGEX.test(pageId)) return null;
-  return { tenantId: tenantId.toLowerCase(), pageId: pageId.toLowerCase() };
+  if (documentName(tenantId, pageId) !== name || name !== name.toLowerCase()) return null;
+  return { tenantId, pageId };
 }
 
 /**

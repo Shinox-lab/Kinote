@@ -1,7 +1,8 @@
 import { describe, test, beforeAll, beforeEach, afterAll, expect } from 'vitest';
 import assert from 'node:assert/strict';
 import type * as Y from 'yjs';
-import { db } from '@living-wiki/db';
+import { and, eq } from 'drizzle-orm';
+import { db, withTenantTx, memberships } from '@living-wiki/db';
 import {
   signCollabToken,
   getCollabTokenSecret,
@@ -125,7 +126,18 @@ describe('collab connection authentication', () => {
     throw new Error('condition not met in time');
   }
 
-  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  /**
+   * Asserts `fn` stays true for a bounded window. A read-only client gets a
+   * negative sync-status ack but no event the tests can hook, so the check
+   * polls for a short window instead of a single long sleep.
+   */
+  async function stays(fn: () => boolean, ms = 300) {
+    const end = Date.now() + ms;
+    while (Date.now() < end) {
+      expect(fn()).toBe(true);
+      await new Promise((r) => setTimeout(r, 20));
+    }
+  }
 
   test('rejects the old forgeable string token', async () => {
     const w = await world();
@@ -187,8 +199,7 @@ describe('collab connection authentication', () => {
     editorClient.doc.getMap('probe').set('editor', 'edit');
 
     await waitFor(() => serverDoc(name).getMap('probe').get('editor') === 'edit');
-    await sleep(300);
-    expect(serverDoc(name).getMap('probe').get('viewer')).toBeUndefined();
+    await stays(() => serverDoc(name).getMap('probe').get('viewer') === undefined);
     // The viewer still receives the editor's edit live.
     await waitFor(() => viewerClient.doc.getMap('probe').get('editor') === 'edit');
   });
@@ -208,8 +219,7 @@ describe('collab connection authentication', () => {
 
     const client = await connect({ documentName: name, token });
     client.doc.getMap('probe').set('demoted', 'edit');
-    await sleep(400);
-    expect(serverDoc(name).getMap('probe').get('demoted')).toBeUndefined();
+    await stays(() => serverDoc(name).getMap('probe').get('demoted') === undefined, 400);
   });
 
   test('a read token is read-only even for an editor; a write token for an editor is writable', async () => {
@@ -239,5 +249,75 @@ describe('collab connection authentication', () => {
     for (const bad of ['', 'nope', `${w.tenant.id}:${w.pageA.id}:x`, `${w.tenant.id}:zzz`]) {
       await expect(authenticateCollabConnection(token, bad)).rejects.toBeTruthy();
     }
+  });
+
+  test('rejects an upper-case (non-canonical) document name with an otherwise valid token', async () => {
+    const w = await world();
+    const token = tokenFor(w, w.pageA.id, w.editor.userId, 'write');
+    const upper = `${w.tenant.id.toUpperCase()}:${w.pageA.id.toUpperCase()}`;
+    await expect(connect({ documentName: upper, token })).rejects.toThrow(/authentication failed/);
+    await expect(authenticateCollabConnection(token, upper)).rejects.toBeTruthy();
+    // No second in-memory document was created for the page.
+    expect((collabServer as any).documents.has(upper)).toBe(false);
+  });
+
+  test('rejects a token whose tenant does not match the document tenant', async () => {
+    const w = await world();
+    const other = await bootstrapTenant(app, { name: 'Other Co', slug: 'other-co' });
+    const token = signCollabToken(
+      {
+        tenantId: other.tenant.id,
+        pageId: w.pageA.id,
+        principalType: 'user',
+        principalId: w.editor.userId,
+        access: 'write',
+      },
+      getCollabTokenSecret()
+    );
+    await expect(
+      connect({ documentName: documentName(w.tenant.id, w.pageA.id), token })
+    ).rejects.toThrow(/authentication failed/);
+  });
+
+  test('a user whose membership was removed after the token was issued is refused', async () => {
+    const w = await world();
+    const name = documentName(w.tenant.id, w.pageA.id);
+    const token = tokenFor(w, w.pageA.id, w.editor.userId, 'write');
+    await withTenantTx(w.tenant.id, (tx) =>
+      tx
+        .delete(memberships)
+        .where(and(eq(memberships.tenantId, w.tenant.id), eq(memberships.userId, w.editor.userId)))
+        .then(() => undefined)
+    );
+    await expect(connect({ documentName: name, token })).rejects.toThrow(/authentication failed/);
+    await expect(authenticateCollabConnection(token, name)).rejects.toBeTruthy();
+  });
+
+  test('openSession refuses read-only contexts: a read token cannot transact', async () => {
+    const w = await world();
+    const name = documentName(w.tenant.id, w.pageA.id);
+
+    // A viewer (database role) holding a write token.
+    await expect(
+      collabServer.openSession({ documentName: name, token: tokenFor(w, w.pageA.id, w.viewer.userId, 'write') })
+    ).rejects.toMatchObject({ code: 'forbidden' });
+    // An editor holding a read token.
+    await expect(
+      collabServer.openSession({ documentName: name, token: tokenFor(w, w.pageA.id, w.editor.userId, 'read') })
+    ).rejects.toMatchObject({ code: 'forbidden' });
+
+    // An editor with write access still works, and the page is unchanged by the refusals.
+    const session = await collabServer.openSession({
+      documentName: name,
+      token: tokenFor(w, w.pageA.id, w.editor.userId, 'write'),
+    });
+    await session.transact(
+      { source: 'human', actorId: w.editor.userId },
+      (ydoc: any) => {
+        ydoc.getMap('probe').set('direct', 'ok');
+      }
+    );
+    expect(serverDoc(name).getMap('probe').get('direct')).toBe('ok');
+    await session.close();
   });
 });
