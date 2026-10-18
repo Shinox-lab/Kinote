@@ -13,6 +13,16 @@ export const ConfigSchema = z.object({
   COLLAB_INTERNAL_URL: z.string().min(1).default('http://127.0.0.1:1234'),
   API_PORT: z.coerce.number().int().min(0).max(65535).default(8787),
   COLLAB_PORT: z.coerce.number().int().min(0).max(65535).default(1234),
+  /** Bind address of the api. */
+  HOST: z.string().min(1).default('0.0.0.0'),
+  /**
+   * `true` when the api sits behind a reverse proxy: Fastify then takes the
+   * client IP from X-Forwarded-For, so rate limits key on the real client.
+   */
+  TRUST_PROXY: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
   EMBEDDING_PROVIDER: z.enum(['deterministic']).default('deterministic'),
   EMBEDDING_DIMENSIONS: z.coerce.number().int().positive().max(4000).default(1536),
   S3_ENDPOINT: z.string().min(1).optional(),

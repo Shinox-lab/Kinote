@@ -80,8 +80,8 @@ export async function enqueueJob(
 
 /**
  * Claims up to `limit` due jobs of one tenant: queued with `run_at <= now`, or
- * running with a lease older than `leaseSeconds`. A single UPDATE over a
- * `FOR UPDATE SKIP LOCKED` selection sets `status = 'running'` and
+ * running with a lease older than `leaseSeconds`. A `FOR UPDATE SKIP LOCKED`
+ * selection locks them, then one UPDATE sets `status = 'running'` and
  * `locked_at = now` together, so concurrent workers never claim the same job.
  *
  * Reclaiming an expired lease counts the abandoned run as an attempt
@@ -98,7 +98,12 @@ export async function claimJobs(
   o: { now: Date; limit: number; leaseSeconds: number }
 ): Promise<Job[]> {
   const leaseExpiredBefore = new Date(o.now.getTime() - o.leaseSeconds * 1000);
-  const due = tx
+  // Lock the due rows first, in their own statement. Inlining this SELECT as
+  // `id IN (... LIMIT n FOR UPDATE SKIP LOCKED)` inside the UPDATE is unsafe:
+  // Postgres may plan it as a nested-loop semi join that re-runs the subquery
+  // per outer row, and each re-run can lock a different set, so one claim
+  // could take more than `limit` jobs. The locks are held until commit.
+  const due = await tx
     .select({ id: jobs.id })
     .from(jobs)
     .where(
@@ -113,6 +118,7 @@ export async function claimJobs(
     .orderBy(asc(jobs.runAt), asc(jobs.id))
     .limit(o.limit)
     .for('update', { skipLocked: true });
+  if (due.length === 0) return [];
 
   // In SET, column references are the row's values before this update.
   const reclaim = sql`"jobs"."status" = 'running'`;
@@ -128,7 +134,7 @@ export async function claimJobs(
         THEN 'lease expired after ' || ${o.leaseSeconds}::int || ' s on the final attempt'
         ELSE "jobs"."last_error" END`,
     })
-    .where(and(eq(jobs.tenantId, tenantId), inArray(jobs.id, due)))
+    .where(and(eq(jobs.tenantId, tenantId), inArray(jobs.id, due.map((d) => d.id))))
     .returning();
 
   return claimed.sort(

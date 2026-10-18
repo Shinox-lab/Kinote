@@ -74,9 +74,18 @@ importers:
       '@hocuspocus/server':
         specifier: ^2.15.3
         version: 2.15.3(y-protocols@1.0.7(yjs@13.6.33))(yjs@13.6.33)
+      '@living-wiki/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@living-wiki/core':
+        specifier: workspace:*
+        version: link:../../packages/core
       '@living-wiki/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@living-wiki/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       drizzle-orm:
         specifier: ^0.44.5
         version: 0.44.7(@electric-sql/pglite@0.2.17)(@types/pg@8.23.1)(pg@8.23.1)
@@ -139,9 +148,18 @@ importers:
       '@blocknote/server-util':
         specifier: ^0.49.0
         version: 0.49.0(prosemirror-model@1.25.12)(prosemirror-state@1.4.4)(prosemirror-view@1.42.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+      '@living-wiki/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@living-wiki/core':
+        specifier: workspace:*
+        version: link:../../packages/core
       '@living-wiki/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@living-wiki/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       drizzle-orm:
         specifier: ^0.44.5
         version: 0.44.7(@electric-sql/pglite@0.2.17)(@types/pg@8.23.1)(pg@8.23.1)
@@ -191,6 +209,9 @@ importers:
         specifier: ^3.25.76
         version: 3.25.76
     devDependencies:
+      '@living-wiki/shared':
+        specifier: workspace:*
+        version: link:../shared
       '@types/pg':
         specifier: ^8.23.1
         version: 8.23.1

@@ -1,0 +1,118 @@
+# Local stack: Postgres 17 + pgvector, MinIO, the one-shot migration and the
+# api, collab and worker services. Every host port binds to 127.0.0.1 only.
+#
+# Secrets have no defaults: export them (or put them in an untracked .env next
+# to this file; see .env.example) before running compose, e.g.
+#   POSTGRES_PASSWORD APP_DB_PASSWORD COLLAB_TOKEN_SECRET INTERNAL_SECRET
+#   S3_ACCESS_KEY S3_SECRET_KEY
+#
+#   pnpm stack:up                 # postgres + minio, then pnpm db:migrate
+#   docker compose up -d --build  # the whole stack
+#   pnpm stack:down               # stop and delete containers and data
+#
+# Data lives in the images' anonymous volumes: it survives `restart` and
+# `stop`/`start`, and `down -v` deletes it.
+name: living-wiki
+
+x-app-env: &app-env
+  DATABASE_URL: postgres://living_wiki_app:${APP_DB_PASSWORD:?set APP_DB_PASSWORD}@postgres:5432/living_wiki
+  COLLAB_TOKEN_SECRET: ${COLLAB_TOKEN_SECRET:?set COLLAB_TOKEN_SECRET}
+  INTERNAL_SECRET: ${INTERNAL_SECRET:?set INTERNAL_SECRET}
+  COLLAB_INTERNAL_URL: http://collab:1234
+  API_PORT: "8787"
+  COLLAB_PORT: "1234"
+  HOST: 0.0.0.0
+  TRUST_PROXY: ${TRUST_PROXY:-false}
+  EMBEDDING_PROVIDER: deterministic
+  EMBEDDING_DIMENSIONS: "1536"
+  S3_ENDPOINT: http://minio:9000
+  S3_BUCKET: ${S3_BUCKET:-living-wiki}
+  S3_ACCESS_KEY: ${S3_ACCESS_KEY:?set S3_ACCESS_KEY}
+  S3_SECRET_KEY: ${S3_SECRET_KEY:?set S3_SECRET_KEY}
+  S3_REGION: us-east-1
+
+services:
+  postgres:
+    # pgvector/pgvector:pg17 with infra/postgres/01-roles.sh copied into
+    # /docker-entrypoint-initdb.d/ (see infra/postgres/Dockerfile).
+    build:
+      context: ./infra/postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: living_wiki
+      # Read by infra/postgres/01-roles.sh to create the living_wiki_app login.
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?set APP_DB_PASSWORD}
+    ports:
+      - "127.0.0.1:55543:5432"
+    healthcheck:
+      # TCP, not the socket: the entrypoint's temporary init server listens on
+      # the socket only, so this passes once the real server is up.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres -d living_wiki"]
+      interval: 2s
+      timeout: 3s
+      retries: 60
+
+  minio:
+    # minio/minio is no longer published on Docker Hub; pgsty/minio is a
+    # community build of the same server (same CLI, ports and env).
+    image: pgsty/minio:RELEASE.2026-08-04T00-00-00Z
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:?set S3_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:?set S3_SECRET_KEY}
+    ports:
+      - "127.0.0.1:59000:9000"
+      - "127.0.0.1:59001:9001"
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 2s
+      timeout: 3s
+      retries: 60
+
+  migrate:
+    build:
+      context: .
+      target: migrate
+    environment:
+      # The postgres superuser: RLS is forced on every table and the
+      # SECURITY DEFINER functions run as the migration owner.
+      DATABASE_MIGRATE_URL: postgres://postgres:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/living_wiki
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    build:
+      context: .
+      target: api
+    environment: *app-env
+    ports:
+      - "127.0.0.1:8787:8787"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  collab:
+    build:
+      context: .
+      target: collab
+    environment: *app-env
+    ports:
+      - "127.0.0.1:1234:1234"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: .
+      target: worker
+    environment: *app-env
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped

@@ -9,8 +9,6 @@ export const schema = { ...foundations, ...pagesAndIndex };
 /** Driver-agnostic Drizzle database: node-postgres in production, PGlite in tests. */
 export type Db = PgDatabase<PgQueryResultHKT, typeof schema>;
 export type DbTransaction = Parameters<Parameters<Db['transaction']>[0]>[0];
-/** @deprecated use `Db`. */
-export type DbClient = Db;
 
 export interface InitDbOptions {
   url: string;
@@ -28,17 +26,44 @@ export type DbSource = InitDbOptions | { db: Db; close?: () => Promise<void> };
 let instance: Db | undefined;
 let closer: (() => Promise<void>) | undefined;
 
-/** Creates the process database client. Call once at start-up (or per test file). */
+/**
+ * Creates the process database client. Call once at start-up (or per test file).
+ *
+ * Calling it again while an instance exists replaces that instance: the
+ * previous pool (or test database) is closed in the background, so a second
+ * call never leaks connections. Idle-client errors on the pool (the server
+ * restarting, a dropped connection) are logged rather than crashing the
+ * process; the pool replaces the client on the next query.
+ */
 export function initDb(source: DbSource): Db {
+  const previous = closer;
+  if (previous) {
+    instance = undefined;
+    closer = undefined;
+    void previous().catch((err: unknown) => {
+      console.error('db: closing the previous instance failed:', errorSummary(err));
+    });
+  }
+
   if ('db' in source) {
     instance = source.db;
     closer = source.close;
     return instance;
   }
   const pool = new pg.Pool({ connectionString: source.url, max: source.max });
+  pool.on('error', (err) => {
+    console.error('db: idle connection error:', errorSummary(err));
+  });
   instance = drizzle({ client: pool, schema });
   closer = () => pool.end();
   return instance;
+}
+
+/** Message and SQLSTATE only: never the connection string or its password. */
+function errorSummary(err: unknown): string {
+  if (!(err instanceof Error)) return String(err);
+  const code = (err as { code?: unknown }).code;
+  return typeof code === 'string' ? `${err.message} (${code})` : err.message;
 }
 
 export function getDb(): Db {

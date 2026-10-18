@@ -37,6 +37,12 @@ import { askWiki } from './search/ask.js';
 export interface ApiServerOptions {
   /** Per-IP limit for sign-up and sign-in (each route counted separately). */
   authRateLimit?: AuthRateLimit;
+  /**
+   * Trust X-Forwarded-For from a reverse proxy, so `req.ip` (and the per-IP
+   * auth rate limit) is the real client address. Default false: without a
+   * proxy in front the header is client-controlled and must be ignored.
+   */
+  trustProxy?: boolean;
 }
 
 const DEFAULT_AUTH_RATE_LIMIT: AuthRateLimit = { max: 10, timeWindow: '1 minute' };
@@ -53,7 +59,7 @@ function sessionOf(req: FastifyRequest): AuthSession {
 }
 
 export function buildApiServer(opts: ApiServerOptions = {}) {
-  const app = Fastify({ logger: false });
+  const app = Fastify({ logger: false, trustProxy: opts.trustProxy ?? false });
   registerErrorHandler(app);
 
   // Identity comes only from the session token and, for tenant routes, the

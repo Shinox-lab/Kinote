@@ -1,9 +1,9 @@
 import { randomUUID } from 'node:crypto';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { sql } from 'drizzle-orm';
 import { loadConfig } from '@living-wiki/shared';
 import { createTestDb } from '../src/testing.js';
-import { getDb, rowsOf, withTenantTx } from '../src/index.js';
+import { closeDb, getDb, initDb, rowsOf, withTenantTx, type Db } from '../src/index.js';
 
 const VALID_ENV = {
   DATABASE_URL: 'postgres://living_wiki_app:pw@localhost:5432/living_wiki',
@@ -44,6 +44,33 @@ describe('db client factory', () => {
   });
 });
 
+describe('initDb', () => {
+  afterEach(async () => {
+    vi.restoreAllMocks();
+    await closeDb();
+  });
+
+  it('closes the previous instance when called again', async () => {
+    const firstClose = vi.fn(async () => {});
+    initDb({ db: {} as Db, close: firstClose });
+    const second = {} as Db;
+    initDb({ db: second, close: async () => {} });
+    await vi.waitFor(() => expect(firstClose).toHaveBeenCalledTimes(1));
+    expect(getDb()).toBe(second);
+  });
+
+  it('logs an idle-client pool error instead of crashing the process', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const db = initDb({ url: 'postgres://living_wiki_app:not-a-real-pw@127.0.0.1:1/none' });
+    const pool = (db as unknown as { $client: import('node:events').EventEmitter }).$client;
+    expect(() => pool.emit('error', new Error('Connection terminated unexpectedly'))).not.toThrow();
+    expect(log).toHaveBeenCalledTimes(1);
+    const logged = log.mock.calls[0]!.join(' ');
+    expect(logged).toContain('Connection terminated unexpectedly');
+    expect(logged).not.toContain('not-a-real-pw');
+  });
+});
+
 describe('loadConfig', () => {
   it('throws naming the missing variables', () => {
     expect(() => loadConfig({})).toThrow(/DATABASE_URL/);
@@ -59,6 +86,18 @@ describe('loadConfig', () => {
     expect(cfg.COLLAB_INTERNAL_URL).toBe('http://127.0.0.1:1234');
     expect(cfg.S3_REGION).toBe('us-east-1');
     expect(cfg.DATABASE_MIGRATE_URL).toBeUndefined();
+  });
+
+  it('defaults HOST to 0.0.0.0 and TRUST_PROXY to false', () => {
+    const cfg = loadConfig(VALID_ENV);
+    expect(cfg.HOST).toBe('0.0.0.0');
+    expect(cfg.TRUST_PROXY).toBe(false);
+  });
+
+  it('parses TRUST_PROXY as a boolean flag', () => {
+    expect(loadConfig({ ...VALID_ENV, TRUST_PROXY: 'true' }).TRUST_PROXY).toBe(true);
+    expect(loadConfig({ ...VALID_ENV, TRUST_PROXY: 'false' }).TRUST_PROXY).toBe(false);
+    expect(() => loadConfig({ ...VALID_ENV, TRUST_PROXY: 'yes' })).toThrow(/TRUST_PROXY/);
   });
 
   it('coerces numeric variables from strings', () => {

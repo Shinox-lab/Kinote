@@ -284,6 +284,32 @@ describe('sessions and the database-derived actor', () => {
     }
   });
 
+  test('X-Forwarded-For keys the rate limit only when trustProxy is set', async () => {
+    const attempt = (server: ReturnType<typeof buildApiServer>, ip: string) =>
+      server.inject({
+        method: 'POST',
+        url: '/api/v1/auth/sign-in',
+        headers: { 'x-forwarded-for': ip },
+        payload: { email: 'nobody@example.test', password: 'not-the-password' },
+      });
+    const authRateLimit = { max: 1, timeWindow: '1 minute' };
+
+    const proxied = buildApiServer({ authRateLimit, trustProxy: true });
+    const direct = buildApiServer({ authRateLimit });
+    try {
+      assert.equal((await attempt(proxied, '203.0.113.1')).statusCode, 401);
+      assert.equal((await attempt(proxied, '203.0.113.2')).statusCode, 401);
+      assert.equal((await attempt(proxied, '203.0.113.1')).statusCode, 429);
+
+      // Without trustProxy the header is client-controlled and ignored.
+      assert.equal((await attempt(direct, '203.0.113.1')).statusCode, 401);
+      assert.equal((await attempt(direct, '203.0.113.2')).statusCode, 429);
+    } finally {
+      await proxied.close();
+      await direct.close();
+    }
+  });
+
   test('GET /api/v1/me lists every tenant the user belongs to, with roles, via my_tenants', async () => {
     const a = await bootstrapTenant(app, { name: 'Tenant A', slug: 'tenant-a' });
     const b = await bootstrapTenant(app, { name: 'Tenant B', slug: 'tenant-b' });

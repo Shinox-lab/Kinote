@@ -6,10 +6,9 @@ async function main(): Promise<void> {
   const config = loadConfig();
   initDb({ url: config.DATABASE_URL });
 
-  const app = buildApiServer();
-  const host = process.env.HOST ?? '0.0.0.0';
-  await app.listen({ port: config.API_PORT, host });
-  console.log(`api listening on ${host}:${config.API_PORT}`);
+  const app = buildApiServer({ trustProxy: config.TRUST_PROXY });
+  await app.listen({ port: config.API_PORT, host: config.HOST });
+  console.log(`api listening on ${config.HOST}:${config.API_PORT}`);
 
   let stopping = false;
   const shutdown = async (): Promise<void> => {

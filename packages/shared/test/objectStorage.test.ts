@@ -1,30 +1,61 @@
 import { randomUUID } from 'node:crypto';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import {
+  CreateBucketCommand,
+  HeadBucketCommand,
+  S3Client,
+} from '@aws-sdk/client-s3';
 import {
   InMemoryObjectStorage,
   S3ObjectStorage,
   type ObjectStorage,
 } from '../src/index.js';
 
+// The S3 case runs against a real endpoint (the MinIO of docker-compose.yml)
+// only when S3_ENDPOINT is set; the bucket is created if missing.
 const s3Configured = Boolean(process.env.S3_ENDPOINT);
+
+function s3Options(bucket: string) {
+  return {
+    endpoint: process.env.S3_ENDPOINT,
+    bucket,
+    accessKey: process.env.S3_ACCESS_KEY ?? '',
+    secretKey: process.env.S3_SECRET_KEY ?? '',
+    region: process.env.S3_REGION ?? 'us-east-1',
+  };
+}
+
+async function ensureBucket(bucket: string): Promise<void> {
+  const o = s3Options(bucket);
+  const client = new S3Client({
+    region: o.region,
+    endpoint: o.endpoint,
+    forcePathStyle: true,
+    credentials: { accessKeyId: o.accessKey, secretAccessKey: o.secretKey },
+  });
+  try {
+    await client.send(new HeadBucketCommand({ Bucket: bucket }));
+  } catch {
+    await client.send(new CreateBucketCommand({ Bucket: bucket }));
+  } finally {
+    client.destroy();
+  }
+}
 
 const implementations: Array<{
   name: string;
   skip: boolean;
-  make: () => ObjectStorage;
+  make: () => Promise<ObjectStorage>;
 }> = [
-  { name: 'InMemoryObjectStorage', skip: false, make: () => new InMemoryObjectStorage() },
+  { name: 'InMemoryObjectStorage', skip: false, make: async () => new InMemoryObjectStorage() },
   {
     name: 'S3ObjectStorage',
     skip: !s3Configured,
-    make: () =>
-      new S3ObjectStorage({
-        endpoint: process.env.S3_ENDPOINT,
-        bucket: process.env.S3_BUCKET ?? 'living-wiki',
-        accessKey: process.env.S3_ACCESS_KEY ?? '',
-        secretKey: process.env.S3_SECRET_KEY ?? '',
-        region: process.env.S3_REGION ?? 'us-east-1',
-      }),
+    make: async () => {
+      const bucket = process.env.S3_BUCKET ?? 'living-wiki';
+      await ensureBucket(bucket);
+      return new S3ObjectStorage(s3Options(bucket));
+    },
   },
 ];
 
@@ -33,18 +64,26 @@ const notFound = { code: 'document_not_found' };
 
 describe.each(implementations)('ObjectStorage contract: $name', ({ skip, make }) => {
   describe.skipIf(skip)('contract', () => {
-    const storage = make();
+    // Built in beforeAll, not at collection time, so a skipped or filtered
+    // run never constructs an S3 client.
+    let storage: ObjectStorage;
+    beforeAll(async () => {
+      storage = await make();
+    });
     const tenantA = randomUUID();
     const tenantB = randomUUID();
 
     it('put then get returns identical bytes and mime type', async () => {
       const bytes = new Uint8Array([0, 1, 2, 250, 251, 255]);
-      const stored = await storage.put(tenantA, `uploads/${randomUUID()}.bin`, bytes, 'application/octet-stream');
+      // A distinctive type under a key whose extension does not imply it: a
+      // dropped ContentType would read back as a default (or a type guessed
+      // from the extension) and fail this assertion.
+      const stored = await storage.put(tenantA, `uploads/${randomUUID()}.bin`, bytes, 'application/pdf');
       expect(stored.objectKey.startsWith(`${tenantA}/`)).toBe(true);
       expect(stored.sizeBytes).toBe(6);
       const got = await storage.get(tenantA, stored.objectKey);
       expect(Array.from(got.bytes)).toEqual(Array.from(bytes));
-      expect(got.mimeType).toBe('application/octet-stream');
+      expect(got.mimeType).toBe('application/pdf');
     });
 
     it('sizeBytes is the byte length, not the character count', async () => {
@@ -68,6 +107,9 @@ describe.each(implementations)('ObjectStorage contract: $name', ({ skip, make })
       ['double slash', (t: string) => `${t}//x`],
       ['inner double slash', (t: string) => `${t}/a//x`],
       ['backslash', (t: string) => `${t}/a\\x`],
+      ['dot segment', (t: string) => `${t}/a/./x`],
+      ['leading dot segment', (t: string) => `${t}/./x`],
+      ['trailing dot', (t: string) => `${t}/uploads/.`],
       ['outside prefix', () => `${randomUUID()}/x`],
       ['bare tenant id', (t: string) => t],
     ])('rejects a %s key for get and delete', async (_label, keyFor) => {
@@ -81,6 +123,10 @@ describe.each(implementations)('ObjectStorage contract: $name', ({ skip, make })
       ['inner dot-dot', 'a/../x'],
       ['double slash', 'a//x'],
       ['backslash', 'a\\x'],
+      ['dot segment', 'a/./x'],
+      ['leading dot segment', './x'],
+      ['trailing dot', 'uploads/.'],
+      ['bare dot', '.'],
       ['empty', ''],
     ])('rejects a %s relative path on put', async (_label, rel) => {
       await expect(storage.put(tenantA, rel, bytesOf('x'), 'text/plain')).rejects.toMatchObject(notFound);
@@ -133,8 +179,44 @@ describe('InMemoryObjectStorage', () => {
   });
 });
 
-describe('S3 contract gating', () => {
-  it('is skipped (not failed) when S3_ENDPOINT is unset', () => {
-    expect(implementations.find((i) => i.name === 'S3ObjectStorage')?.skip).toBe(!s3Configured);
+describe('S3ObjectStorage error mapping', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  const tenant = randomUUID();
+  const key = `${tenant}/uploads/x.pdf`;
+  const storage = () =>
+    new S3ObjectStorage({ bucket: 'b', accessKey: 'k', secretKey: 's', region: 'us-east-1' });
+  const s3Error = (name: string, status: number) =>
+    Object.assign(new Error(name), { name, $metadata: { httpStatusCode: status } });
+
+  it.each([
+    ['NoSuchKey', 404],
+    ['NotFound', 404],
+  ])('maps %s to document_not_found', async (name, status) => {
+    vi.spyOn(S3Client.prototype, 'send').mockRejectedValue(s3Error(name, status) as never);
+    await expect(storage().get(tenant, key)).rejects.toMatchObject(notFound);
+  });
+
+  it.each([
+    ['NoSuchBucket', 404],
+    ['SomeOther404', 404],
+    ['AccessDenied', 403],
+  ])('surfaces %s as a normal error, not document_not_found', async (name, status) => {
+    vi.spyOn(S3Client.prototype, 'send').mockRejectedValue(s3Error(name, status) as never);
+    const err = await storage().get(tenant, key).catch((e: unknown) => e);
+    expect(err).toMatchObject({ name });
+    expect(err).not.toMatchObject(notFound);
+  });
+});
+
+describe.skipIf(!s3Configured)('S3ObjectStorage against a real endpoint', () => {
+  it('a missing bucket is an error, not document_not_found', async () => {
+    const storage = new S3ObjectStorage(s3Options(`missing-${randomUUID()}`));
+    const tenant = randomUUID();
+    const err = await storage.get(tenant, `${tenant}/uploads/x`).catch((e: unknown) => e);
+    expect(err).toMatchObject({ name: 'NoSuchBucket' });
+    expect(err).not.toMatchObject(notFound);
   });
 });

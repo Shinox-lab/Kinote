@@ -29,8 +29,16 @@ function assertTenantId(tenantId: string): void {
   }
 }
 
+// A `.` path segment: `/./`, a leading `./`, a trailing `/.`, or a bare `.`.
+const DOT_SEGMENT = /(^|\/)\.(\/|$)/;
+
 function assertSafePath(path: string): void {
-  if (path.includes('..') || path.includes('//') || path.includes('\\')) {
+  if (
+    path.includes('..') ||
+    path.includes('//') ||
+    path.includes('\\') ||
+    DOT_SEGMENT.test(path)
+  ) {
     reject('Object key is not a valid tenant-relative path.');
   }
 }
@@ -38,7 +46,7 @@ function assertSafePath(path: string): void {
 /**
  * Shared guard for every ObjectStorage implementation: the tenant id must be a
  * canonical lower-case UUID and the key must sit under `{tenantId}/` with no
- * traversal (`..`), doubled slash or backslash.
+ * traversal (`..`), `.` segment, doubled slash or backslash.
  */
 export function assertTenantKey(tenantId: string, objectKey: string): void {
   assertTenantId(tenantId);
@@ -128,10 +136,10 @@ export class S3ObjectStorage implements ObjectStorage {
       return { bytes, mimeType: res.ContentType ?? 'application/octet-stream' };
     } catch (err) {
       if (err instanceof AppError) throw err;
-      const e = err as { name?: string; $metadata?: { httpStatusCode?: number } };
-      if (e.name === 'NoSuchKey' || e.name === 'NotFound' || e.$metadata?.httpStatusCode === 404) {
-        reject('Object not found.');
-      }
+      // Only a missing object is "not found". Any other 404 (NoSuchBucket: a
+      // misconfigured deployment) or error surfaces as itself.
+      const name = (err as { name?: unknown }).name;
+      if (name === 'NoSuchKey' || name === 'NotFound') reject('Object not found.');
       throw err;
     }
   }

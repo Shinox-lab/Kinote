@@ -7,14 +7,16 @@
   "scripts": {
     "web": "pnpm --filter @living-wiki/web run dev",
     "web:build": "pnpm --filter @living-wiki/web run build",
-    "build": "echo \"build is not available until Task 2.6\" && exit 1",
-    "dev": "echo \"dev is not available until Task 2.6\" && exit 1",
-    "start": "echo \"start is not available until Task 2.6\" && exit 1",
     "test": "vitest run",
-    "live-check": "node scripts/run-live-check.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "tsx packages/db/src/migrate.ts"
+    "db:migrate": "tsx packages/db/src/migrate.ts",
+    "test:pg": "vitest run -c vitest.pg.config.ts",
+    "stack:up": "bash infra/stack-up.sh",
+    "stack:down": "bash infra/stack-down.sh",
+    "start:api": "tsx apps/api/src/main.ts",
+    "start:collab": "tsx apps/collab/src/main.ts",
+    "start:worker": "tsx apps/worker/src/main.ts"
   },
   "engines": {
     "node": ">=22"

@@ -17,6 +17,7 @@
     "zod": "^3.25.76"
   },
   "devDependencies": {
-    "@types/pg": "^8.23.1"
+    "@types/pg": "^8.23.1",
+    "@living-wiki/shared": "workspace:*"
   }
 }
