@@ -14,6 +14,7 @@ export default defineConfig({
       '@living-wiki/contracts': r('./packages/contracts/src/index.ts'),
       '@living-wiki/core': r('./packages/core/src/index.ts'),
       '@living-wiki/db': r('./packages/db/src/index.ts'),
+      '@living-wiki/shared': r('./packages/shared/src/index.ts'),
       '@living-wiki/api': r('./apps/api/src/server.ts'),
       '@living-wiki/collab': r('./apps/collab/src/server.ts'),
       '@living-wiki/worker': r('./apps/worker/src/runner.ts'),

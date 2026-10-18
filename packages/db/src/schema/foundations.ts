@@ -24,7 +24,21 @@ export const users = pgTable('users', {
   email: text('email').notNull().unique(),
   name: text('name').notNull(),
   phoneE164: text('phone_e164'),
+  passwordHash: text('password_hash').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+// Global (not tenant-scoped, no RLS), like users. Only the SHA-256 of the
+// bearer token is stored; the token itself is shown to the client once.
+export const sessions = pgTable('sessions', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  tokenHash: text('token_hash').notNull().unique(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  revokedAt: timestamp('revoked_at', { withTimezone: true }),
 });
 
 export const memberships = pgTable(

@@ -2,35 +2,21 @@ import { test, describe, beforeEach } from 'vitest';
 import assert from 'node:assert/strict';
 import { db, mapDbError } from '@living-wiki/db';
 import { AppError } from '@living-wiki/contracts';
-import { buildApiServer } from '../src/server.js';
+import { buildTestApp, bootstrapTenant, asUser, signUp } from './support/testkit.js';
 
 describe('unique violations map to contract codes', () => {
-  const app = buildApiServer();
+  const app = buildTestApp();
 
   beforeEach(async () => {
     await (db as any).__resetForTests();
   });
 
   async function bootstrap(slug = 'acme') {
-    const res = await app.inject({
-      method: 'POST',
-      url: '/api/v1/tenants',
-      payload: {
-        name: 'Acme Robotics',
-        slug,
-        owner_email: `owner-${slug}@acme.io`,
-        owner_name: 'Alice Owner',
-      },
+    return bootstrapTenant(app, {
+      name: 'Acme Robotics',
+      slug,
+      email: `owner-${slug}@acme.io`,
     });
-    assert.equal(res.statusCode, 201);
-    const { tenant, owner } = res.json();
-    const headers = {
-      'x-tenant-id': tenant.id,
-      'x-principal-type': 'user',
-      'x-principal-id': owner.id,
-      'x-tenant-role': 'owner',
-    };
-    return { tenant, owner, headers };
   }
 
   async function makeSpace(headers: Record<string, string>, name: string, slug: string) {
@@ -46,15 +32,12 @@ describe('unique violations map to contract codes', () => {
 
   test('creating a tenant twice with the same slug answers 409 slug_taken', async () => {
     await bootstrap('acme');
+    const someone = await signUp(app, 'someone@else.io');
     const res = await app.inject({
       method: 'POST',
       url: '/api/v1/tenants',
-      payload: {
-        name: 'Other',
-        slug: 'acme',
-        owner_email: 'someone@else.io',
-        owner_name: 'Someone',
-      },
+      headers: asUser(someone),
+      payload: { name: 'Other', slug: 'acme' },
     });
     assert.equal(res.statusCode, 409);
     assert.equal(res.json().error, 'slug_taken');

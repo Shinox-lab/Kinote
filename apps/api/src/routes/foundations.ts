@@ -21,8 +21,15 @@ import {
   AppError,
 } from '@living-wiki/contracts';
 import { requireSpaceRole, getReadableSpaceIds, type Actor } from '@living-wiki/core';
+import { UNUSABLE_PASSWORD_HASH } from '../auth/password.js';
 
-export async function createTenantWithInbox(input: unknown) {
+/**
+ * Creates a tenant owned by `userId` (the signed-in session user) together
+ * with its Inbox space. Never reads or writes `users`: the session already
+ * proves the user exists. A taken slug violates tenants_slug_unique and
+ * answers 409 slug_taken.
+ */
+export async function createTenantWithInbox(userId: string, input: unknown) {
   const parsed = CreateTenantRequestSchema.parse(input);
 
   return db.transaction(async (tx) => {
@@ -32,81 +39,61 @@ export async function createTenantWithInbox(input: unknown) {
     // context is configured with the same pre-generated id before inserting.
     await tx.execute(sql`SELECT set_config('app.tenant_id', ${tenantId}, true)`);
 
-    let [user] = await tx
-      .select()
-      .from(users)
-      .where(eq(users.email, parsed.owner_email));
-    if (!user) {
-      [user] = await tx
-        .insert(users)
-        .values({ email: parsed.owner_email, name: parsed.owner_name })
-        .returning();
-    }
-
     const [tenant] = await tx
       .insert(tenants)
       .values({ id: tenantId, name: parsed.name, slug: parsed.slug, plan: 'standard' })
       .returning();
 
-    // Activate RLS context for this new tenant inside the transaction
-    await withTenantTx(
+    const inboxSpace = await withTenantTx(
       tenant.id,
       async (tenantTx) => {
         await tenantTx.insert(memberships).values({
-        tenantId: tenant.id,
-        userId: user.id,
-        role: 'owner',
-      });
-
-      const [inbox] = await tenantTx
-        .insert(spaces)
-        .values({
           tenantId: tenant.id,
-          name: 'Inbox',
-          slug: 'inbox',
-          kind: 'inbox',
-          reviewRequired: false,
-          quietSeconds: 120,
-          humanProtectionSeconds: 300,
-          allowSelfApproval: false,
-          createdBy: user.id,
-        })
-        .returning();
+          userId,
+          role: 'owner',
+        });
 
-      await writeAuditEvent(tenantTx, {
-        tenantId: tenant.id,
-        type: 'tenant.created',
-        actorType: 'user',
-        actorId: user.id,
-        subjectType: 'tenant',
-        subjectId: tenant.id,
-        payload: { slug: tenant.slug },
-      });
+        const [inbox] = await tenantTx
+          .insert(spaces)
+          .values({
+            tenantId: tenant.id,
+            name: 'Inbox',
+            slug: 'inbox',
+            kind: 'inbox',
+            reviewRequired: false,
+            quietSeconds: 120,
+            humanProtectionSeconds: 300,
+            allowSelfApproval: false,
+            createdBy: userId,
+          })
+          .returning();
 
-      await writeAuditEvent(tenantTx, {
-        tenantId: tenant.id,
-        type: 'space.created',
-        actorType: 'system',
-        actorId: user.id,
-        subjectType: 'space',
-        subjectId: inbox.id,
-        payload: { kind: 'inbox', slug: 'inbox' },
-      });
+        await writeAuditEvent(tenantTx, {
+          tenantId: tenant.id,
+          type: 'tenant.created',
+          actorType: 'user',
+          actorId: userId,
+          subjectType: 'tenant',
+          subjectId: tenant.id,
+          payload: { slug: tenant.slug },
+        });
+
+        await writeAuditEvent(tenantTx, {
+          tenantId: tenant.id,
+          type: 'space.created',
+          actorType: 'system',
+          actorId: userId,
+          subjectType: 'space',
+          subjectId: inbox.id,
+          payload: { kind: 'inbox', slug: 'inbox' },
+        });
+
+        return inbox;
       },
-      tx,
-    );
-
-    const [inboxSpace] = await withTenantTx(
-      tenant.id,
-      (tenantTx) =>
-        tenantTx
-          .select()
-          .from(spaces)
-          .where(and(eq(spaces.tenantId, tenant.id), eq(spaces.kind, 'inbox'))),
       tx
     );
 
-    return { tenant, owner: user, inboxSpace };
+    return { tenant, inboxSpace };
   });
 }
 
@@ -264,9 +251,11 @@ export async function inviteMember(
 
     let [user] = await tx.select().from(users).where(eq(users.email, params.email));
     if (!user) {
+      // Legacy path until invitations (Task 1.4): the account gets an
+      // unusable password placeholder that never verifies at sign-in.
       [user] = await tx
         .insert(users)
-        .values({ email: params.email, name: params.name })
+        .values({ email: params.email, name: params.name, passwordHash: UNUSABLE_PASSWORD_HASH })
         .returning();
     }
 
@@ -301,7 +290,9 @@ export async function inviteMember(
       payload: { email: params.email, role: params.role },
     });
 
-    return user;
+    // Never send the password hash (or its placeholder) to a client.
+    const { passwordHash: _passwordHash, ...publicUser } = user;
+    return publicUser;
   });
 }
 

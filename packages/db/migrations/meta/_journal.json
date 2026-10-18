@@ -22,6 +22,20 @@
       "when": 1792305394000,
       "tag": "0002_pgvector_and_fts",
       "breakpoints": false
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1792342833389,
+      "tag": "0003_sudden_trish_tilby",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1792342839364,
+      "tag": "0004_my_tenants",
+      "breakpoints": true
     }
   ]
 }

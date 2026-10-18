@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { db } from '@living-wiki/db';
 import { AppError, ErrorCodeSchema, ERROR_SENTENCES, ERROR_STATUS } from '@living-wiki/contracts';
-import { buildApiServer } from '../src/server.js';
+import { buildTestApp, bootstrapTenant, asUser, signUp } from './support/testkit.js';
 
 const repoRoot = fileURLToPath(new URL('../../../', import.meta.url));
 
@@ -21,11 +21,11 @@ function tsFilesUnder(dir: string): string[] {
 }
 
 describe('error model', () => {
-  const app = buildApiServer();
-  app.get('/__boom', async () => {
+  const app = buildTestApp();
+  app.get('/__boom', { config: { auth: 'public' } }, async () => {
     throw new Error('Failed query: select secret');
   });
-  app.get('/__missing', async () => {
+  app.get('/__missing', { config: { auth: 'public' } }, async () => {
     throw new AppError('space_not_found');
   });
 
@@ -34,28 +34,16 @@ describe('error model', () => {
   });
 
   test('Zod validation failure answers 400 validation_failed with dotted issue paths', async () => {
-    const created = await app.inject({
-      method: 'POST',
-      url: '/api/v1/tenants',
-      payload: {
-        name: 'Acme Robotics',
-        slug: 'acme-robotics',
-        owner_email: 'alice@acme.io',
-        owner_name: 'Alice Owner',
-      },
+    const { headers } = await bootstrapTenant(app, {
+      name: 'Acme Robotics',
+      slug: 'acme-robotics',
+      email: 'alice@acme.io',
     });
-    assert.equal(created.statusCode, 201);
-    const { tenant, owner } = created.json();
 
     const res = await app.inject({
       method: 'POST',
       url: '/api/v1/spaces',
-      headers: {
-        'x-tenant-id': tenant.id,
-        'x-principal-type': 'user',
-        'x-principal-id': owner.id,
-        'x-tenant-role': 'owner',
-      },
+      headers,
       payload: { name: '' },
     });
     assert.equal(res.statusCode, 400);
@@ -91,10 +79,11 @@ describe('error model', () => {
   });
 
   test('malformed JSON body answers 400 validation_failed, not 500', async () => {
+    const session = await signUp(app);
     const res = await app.inject({
       method: 'POST',
       url: '/api/v1/spaces',
-      headers: { 'content-type': 'application/json' },
+      headers: { ...asUser(session), 'content-type': 'application/json' },
       payload: '{not json',
     });
     assert.equal(res.statusCode, 400);
@@ -105,10 +94,11 @@ describe('error model', () => {
   });
 
   test('unsupported media type answers 415 validation_failed', async () => {
+    const session = await signUp(app);
     const res = await app.inject({
       method: 'POST',
       url: '/api/v1/spaces',
-      headers: { 'content-type': 'application/x-weird' },
+      headers: { ...asUser(session), 'content-type': 'application/x-weird' },
       payload: 'abc',
     });
     assert.equal(res.statusCode, 415);

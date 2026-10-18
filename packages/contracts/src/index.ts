@@ -73,11 +73,60 @@ export const AuditEventTypeSchema = z.enum([
 ]);
 export type AuditEventType = z.infer<typeof AuditEventTypeSchema>;
 
+// --- Auth -------------------------------------------------------------------
+// Request bodies are snake_case (none of these need it); reply bodies are camelCase.
+
+const EmailSchema = z
+  .string()
+  .trim()
+  .max(254)
+  .email()
+  .transform((email) => email.toLowerCase());
+
+export const SignUpRequestSchema = z.object({
+  email: EmailSchema,
+  name: z.string().trim().min(1).max(120),
+  password: z.string().min(10).max(1024),
+});
+
+export const SignInRequestSchema = z.object({
+  email: EmailSchema,
+  password: z.string().min(1).max(1024),
+});
+
+export const AuthUserSchema = z.object({
+  id: z.string().uuid(),
+  email: z.string(),
+  name: z.string(),
+});
+export type AuthUser = z.infer<typeof AuthUserSchema>;
+
+export const SessionTokenSchema = z.object({
+  token: z.string(),
+  expiresAt: z.string().datetime(),
+});
+
+export const AuthResponseSchema = z.object({
+  user: AuthUserSchema,
+  session: SessionTokenSchema,
+});
+export type AuthResponse = z.infer<typeof AuthResponseSchema>;
+
+export const MeResponseSchema = z.object({
+  user: AuthUserSchema,
+  memberships: z.array(
+    z.object({
+      tenant: z.object({ id: z.string().uuid(), name: z.string(), slug: z.string() }),
+      role: TenantRoleSchema,
+    })
+  ),
+});
+export type MeResponse = z.infer<typeof MeResponseSchema>;
+
+// The owner is the signed-in user; it is never taken from the request body.
 export const CreateTenantRequestSchema = z.object({
   name: z.string().trim().min(1).max(120),
   slug: z.string().regex(/^[a-z0-9-]+$/).min(1).max(80),
-  owner_email: z.string().email(),
-  owner_name: z.string().trim().min(1).max(120),
 });
 
 export const CreateSpaceRequestSchema = z.object({

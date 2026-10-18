@@ -1,9 +1,9 @@
-import Fastify from 'fastify';
+import Fastify, { type FastifyRequest } from 'fastify';
+import rateLimit from '@fastify/rate-limit';
 import { withTenantTx } from '@living-wiki/db';
-import { SearchRequestSchema, AskRequestSchema } from '@living-wiki/contracts';
+import { SearchRequestSchema, AskRequestSchema, AppError } from '@living-wiki/contracts';
 import {
   getReadableSpaceIds,
-  takePageSnapshot,
   defaultEmbeddingProvider,
   type Actor,
 } from '@living-wiki/core';
@@ -19,130 +19,151 @@ import {
 import {
   createPage,
   getPageDetails,
+  submitPageSnapshot,
   approveVersion,
   rejectVersion,
   movePage,
   archivePage,
   withdrawPage,
 } from './routes/pages.js';
+import { authRoutes, type AuthRateLimit } from './routes/auth.js';
+import { requireSession, resolveActor, type AuthSession } from './auth/actor.js';
 import { registerErrorHandler } from './errors.js';
 import { searchWiki } from './search/hybridSearch.js';
 import { askWiki } from './search/ask.js';
 
-export function buildApiServer() {
+export interface ApiServerOptions {
+  /** Per-IP limit for sign-up and sign-in (each route counted separately). */
+  authRateLimit?: AuthRateLimit;
+}
+
+const DEFAULT_AUTH_RATE_LIMIT: AuthRateLimit = { max: 10, timeWindow: '1 minute' };
+
+/** The tenant actor attached by the auth hook (routes default to `auth: 'tenant'`). */
+function actorOf(req: FastifyRequest): Actor {
+  if (!req.actor) throw new AppError('unauthenticated');
+  return req.actor;
+}
+
+function sessionOf(req: FastifyRequest): AuthSession {
+  if (!req.authSession) throw new AppError('unauthenticated');
+  return req.authSession;
+}
+
+export function buildApiServer(opts: ApiServerOptions = {}) {
   const app = Fastify({ logger: false });
   registerErrorHandler(app);
 
-  function extractActor(headers: Record<string, string | undefined>): Actor {
-    return {
-      tenantId: headers['x-tenant-id'] ?? '',
-      principalType: (headers['x-principal-type'] as 'user' | 'agent') ?? 'user',
-      principalId: headers['x-principal-id'] ?? '',
-      tenantRole: (headers['x-tenant-role'] as Actor['tenantRole']) ?? 'member',
-    };
-  }
+  // Identity comes only from the session token and, for tenant routes, the
+  // membership row of the session user in x-tenant-id. Routes declare
+  // config.auth ('public' | 'session' | 'tenant'); undeclared means 'tenant'.
+  app.decorateRequest('authSession', null);
+  app.decorateRequest('actor', null);
+  app.addHook('preHandler', async (req) => {
+    const mode = req.routeOptions.config?.auth ?? 'tenant';
+    if (mode === 'public') return;
+    req.authSession = await requireSession(req);
+    if (mode === 'tenant') req.actor = await resolveActor(req);
+  });
 
-  app.post('/api/v1/tenants', async (req, reply) => {
-    const res = await createTenantWithInbox(req.body);
+  // Rate limiting is opt-in per route (sign-up, sign-in). The plugin's onRoute
+  // hook must be installed before those routes are declared, so the auth
+  // routes are registered as a plugin after it.
+  app.register(rateLimit, {
+    global: false,
+    errorResponseBuilder: () => new AppError('rate_limited'),
+  });
+  app.register(authRoutes, { authRateLimit: opts.authRateLimit ?? DEFAULT_AUTH_RATE_LIMIT });
+
+  app.post('/api/v1/tenants', { config: { auth: 'session' } }, async (req, reply) => {
+    const res = await createTenantWithInbox(sessionOf(req).userId, req.body);
     return reply.status(201).send(res);
   });
 
   app.post('/api/v1/invitations', async (req, reply) => {
-    const actor = extractActor(req.headers as any);
-    const res = await inviteMember(actor, req.body as any);
+    const res = await inviteMember(actorOf(req), req.body as any);
     return reply.status(201).send(res);
   });
 
   app.get('/api/v1/spaces', async (req, reply) => {
-    const actor = extractActor(req.headers as any);
+    const actor = actorOf(req);
     const res = await listSpacesForActor(actor);
     return reply.send(res);
   });
 
   app.post('/api/v1/spaces', async (req, reply) => {
-    const actor = extractActor(req.headers as any);
+    const actor = actorOf(req);
     const res = await createSpace(actor, req.body);
     return reply.status(201).send(res);
   });
 
   app.get('/api/v1/spaces/:id', async (req, reply) => {
-    const actor = extractActor(req.headers as any);
+    const actor = actorOf(req);
     const res = await getSpaceForActor(actor, (req.params as any).id);
     return reply.send(res);
   });
 
   app.patch('/api/v1/spaces/:id', async (req, reply) => {
-    const actor = extractActor(req.headers as any);
+    const actor = actorOf(req);
     const res = await updateSpaceSettings(actor, (req.params as any).id, req.body);
     return reply.send(res);
   });
 
   app.post('/api/v1/spaces/:id/grants', async (req, reply) => {
-    const actor = extractActor(req.headers as any);
+    const actor = actorOf(req);
     const res = await upsertSpaceGrant(actor, (req.params as any).id, req.body);
     return reply.status(201).send(res);
   });
 
   app.post('/api/v1/pages', async (req, reply) => {
-    const actor = extractActor(req.headers as any);
+    const actor = actorOf(req);
     const res = await createPage(actor, req.body);
     return reply.status(201).send(res);
   });
 
   app.get('/api/v1/pages/:id', async (req, reply) => {
-    const actor = extractActor(req.headers as any);
+    const actor = actorOf(req);
     const res = await getPageDetails(actor, (req.params as any).id);
     return reply.send(res);
   });
 
   app.post('/api/v1/pages/:id/snapshot', async (req, reply) => {
-    const actor = extractActor(req.headers as any);
-    const pageId = (req.params as any).id;
-    // Check viewer/editor permission before taking snapshot
-    await getPageDetails(actor, pageId);
-    const version = await takePageSnapshot({
-      tenantId: actor.tenantId,
-      pageId,
-      reason: actor.principalType === 'agent' ? 'agent' : 'submit',
-      actorType: actor.principalType,
-      actorId: actor.principalId,
-      manual: true,
-    });
-    return reply.status(201).send(version);
+    const res = await submitPageSnapshot(actorOf(req), (req.params as any).id);
+    return reply.status(201).send(res);
   });
 
   app.post('/api/v1/pages/:id/move', async (req, reply) => {
-    const actor = extractActor(req.headers as any);
+    const actor = actorOf(req);
     const res = await movePage(actor, (req.params as any).id, req.body);
     return reply.send(res);
   });
 
   app.post('/api/v1/pages/:id/archive', async (req, reply) => {
-    const actor = extractActor(req.headers as any);
+    const actor = actorOf(req);
     const res = await archivePage(actor, (req.params as any).id);
     return reply.send(res);
   });
 
   app.post('/api/v1/pages/:id/withdraw', async (req, reply) => {
-    const actor = extractActor(req.headers as any);
+    const actor = actorOf(req);
     const res = await withdrawPage(actor, (req.params as any).id);
     return reply.send(res);
   });
 
   app.post('/api/v1/versions/:id/approve', async (req, reply) => {
-    const actor = extractActor(req.headers as any);
+    const actor = actorOf(req);
     const res = await approveVersion(actor, (req.params as any).id, req.body ?? {});
     return reply.send(res);
   });
 
   app.post('/api/v1/versions/:id/reject', async (req, reply) => {
-    const actor = extractActor(req.headers as any);
+    const actor = actorOf(req);
     const res = await rejectVersion(actor, (req.params as any).id, req.body);
     return reply.send(res);
   });
 
   app.post('/api/v1/search', async (req, reply) => {
-    const actor = extractActor(req.headers as any);
+    const actor = actorOf(req);
     const parsed = SearchRequestSchema.parse(req.body);
     const [queryEmbedding] = await defaultEmbeddingProvider.embed([parsed.query]);
 
@@ -165,7 +186,7 @@ export function buildApiServer() {
   });
 
   app.post('/api/v1/ask', async (req, reply) => {
-    const actor = extractActor(req.headers as any);
+    const actor = actorOf(req);
     const parsed = AskRequestSchema.parse(req.body);
     const [queryEmbedding] = await defaultEmbeddingProvider.embed([parsed.question]);
 

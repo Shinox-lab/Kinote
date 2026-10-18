@@ -20,7 +20,7 @@ import {
   RejectVersionRequestSchema,
   AppError,
 } from '@living-wiki/contracts';
-import { requireSpaceRole, assertValidUuid, type Actor } from '@living-wiki/core';
+import { requireSpaceRole, assertValidUuid, takePageSnapshot, type Actor } from '@living-wiki/core';
 import { computePageBadge } from '../pages/badge.js';
 
 const blockNote = ServerBlockNoteEditor.create();
@@ -171,6 +171,22 @@ export async function getPageDetails(actor: Actor, pageId: string) {
       versions: pageVersions,
       blockActivity: activity,
     };
+  });
+}
+
+/**
+ * Manual snapshot of a page's live state (the "submit" button, or an agent's
+ * explicit snapshot). The actor must be able to read the page.
+ */
+export async function submitPageSnapshot(actor: Actor, pageId: string) {
+  await getPageDetails(actor, pageId);
+  return takePageSnapshot({
+    tenantId: actor.tenantId,
+    pageId,
+    reason: actor.principalType === 'agent' ? 'agent' : 'submit',
+    actorType: actor.principalType,
+    actorId: actor.principalId,
+    manual: true,
   });
 }
 
