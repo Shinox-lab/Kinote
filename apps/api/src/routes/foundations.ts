@@ -1,7 +1,7 @@
 import { and, eq, gt, isNull, sql } from 'drizzle-orm';
 import { randomBytes, randomUUID } from 'node:crypto';
 import {
-  db,
+  getDb,
   withTenantTx,
   tenants,
   users,
@@ -36,7 +36,7 @@ import { requireSpaceRole, getReadableSpaceIds, type Actor } from '@living-wiki/
 export async function createTenantWithInbox(userId: string, input: unknown) {
   const parsed = CreateTenantRequestSchema.parse(input);
 
-  return db.transaction(async (tx) => {
+  return getDb().transaction(async (tx) => {
     const tenantId = randomUUID();
     // Bootstrap path: the tenant row does not exist yet, so the tenant-scoped
     // RLS policy (WITH CHECK id = current_tenant_id()) only passes if the RLS

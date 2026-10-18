@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { and, eq, gt, isNull } from 'drizzle-orm';
-import { db, sessions } from '@living-wiki/db';
+import { getDb, sessions } from '@living-wiki/db';
 import { sha256Hex } from '@living-wiki/shared';
 
 export const SESSION_TOKEN_PREFIX = 'lws_';
@@ -13,7 +13,7 @@ export const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 export async function createSession(userId: string): Promise<{ token: string; expiresAt: Date }> {
   const token = SESSION_TOKEN_PREFIX + randomBytes(32).toString('base64url');
   const expiresAt = new Date(Date.now() + SESSION_TTL_MS);
-  await db.insert(sessions).values({ userId, tokenHash: sha256Hex(token), expiresAt });
+  await getDb().insert(sessions).values({ userId, tokenHash: sha256Hex(token), expiresAt });
   return { token, expiresAt };
 }
 
@@ -23,7 +23,7 @@ export async function resolveSession(
   now: Date = new Date()
 ): Promise<{ userId: string } | null> {
   if (!token.startsWith(SESSION_TOKEN_PREFIX)) return null;
-  const [row] = await db
+  const [row] = await getDb()
     .select({ userId: sessions.userId })
     .from(sessions)
     .where(
@@ -38,7 +38,7 @@ export async function resolveSession(
 
 /** Revokes a session; idempotent. */
 export async function revokeSession(token: string): Promise<void> {
-  await db
+  await getDb()
     .update(sessions)
     .set({ revokedAt: new Date() })
     .where(and(eq(sessions.tokenHash, sha256Hex(token)), isNull(sessions.revokedAt)));

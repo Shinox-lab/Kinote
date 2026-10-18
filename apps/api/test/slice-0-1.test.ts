@@ -2,7 +2,7 @@ import { test, describe, beforeEach, afterAll } from 'vitest';
 import assert from 'node:assert/strict';
 import { sql } from 'drizzle-orm';
 import {
-  db,
+  rowsOf,
   withTenantTx,
   withUntenantedTx,
   spaces,
@@ -24,6 +24,7 @@ import {
   signUpMember,
   setMemberRole,
   asUser,
+  useTestDb,
 } from './support/testkit.js';
 
 /** A real signed collab token (what the API route would issue), write access. */
@@ -42,8 +43,9 @@ function collabToken(
 describe('Living Wiki — Slice 0 (Foundations) & Slice 1 (Live Pages)', () => {
   const app = buildTestApp();
 
+  useTestDb();
+
   beforeEach(async () => {
-    await (db as any).__resetForTests();
     collabServer.activeDocs.clear();
     defaultEmbeddingProvider.callCount = 0;
   });
@@ -97,7 +99,7 @@ describe('Living Wiki — Slice 0 (Foundations) & Slice 1 (Live Pages)', () => {
     // 2. Connect as living_wiki_app without app.tenant_id -> SELECT count(*) FROM spaces returns 0
     const untenantedCount = await withUntenantedTx(async (tx) => {
       const r = await tx.execute(sql`SELECT count(*) FROM spaces`);
-      return Number(r.rows[0].count);
+      return Number(rowsOf<{ count: string }>(r)[0].count);
     });
     assert.equal(untenantedCount, 0, 'RLS must return 0 rows when app.tenant_id is unset');
 

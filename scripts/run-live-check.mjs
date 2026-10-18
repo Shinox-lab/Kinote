@@ -2,7 +2,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { sql } from 'drizzle-orm';
 import {
-  db,
   withTenantTx,
   withUntenantedTx,
   spaces,
@@ -10,6 +9,7 @@ import {
   chunks,
   embeddingCache,
 } from '../dist/packages/db/src/index.js';
+import { createTestDb } from '../dist/packages/db/src/testing.js';
 import { buildApiServer } from '../dist/apps/api/src/server.js';
 import { collabServer } from '../dist/apps/collab/src/server.js';
 import { runPendingJobsForTenant } from '../dist/apps/worker/src/runner.js';
@@ -18,7 +18,7 @@ import { defaultEmbeddingProvider } from '../dist/apps/worker/src/embedding.js';
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
 
 async function executeLiveCheck() {
-  await db.__resetForTests();
+  await createTestDb();
   collabServer.activeDocs.clear();
   defaultEmbeddingProvider.callCount = 0;
 

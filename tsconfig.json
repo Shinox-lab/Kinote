@@ -8,6 +8,7 @@
     "paths": {
       "@living-wiki/contracts": ["packages/contracts/src/index.ts"],
       "@living-wiki/core": ["packages/core/src/index.ts"],
+      "@living-wiki/db/testing": ["packages/db/src/testing.ts"],
       "@living-wiki/db": ["packages/db/src/index.ts"],
       "@living-wiki/shared": ["packages/shared/src/index.ts"],
       "@living-wiki/api": ["apps/api/src/server.ts"],

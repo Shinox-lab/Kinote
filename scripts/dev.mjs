@@ -29,14 +29,14 @@ const WORKER_INTERVAL_MS = Number(process.env.WORKER_INTERVAL_MS || 2000);
 
 const { buildApiServer } = await import(distUrl('apps/api/src/server.js'));
 const { collabServer } = await import(distUrl('apps/collab/src/server.js'));
-const { pglite, db } = await import(distUrl('packages/db/src/client.js'));
+const { createTestDb } = await import(distUrl('packages/db/src/testing.js'));
 const { runPendingJobsForTenant } = await import(distUrl('apps/worker/src/runner.js'));
 
 // ---- Database ---------------------------------------------------------------
-// The in-memory DB is empty on boot; __resetForTests() is our canonical "drop
-// everything and replay migrations" path (here it just applies migrations and
-// assumes the app role).
-await db.__resetForTests();
+// The in-memory DB is empty on boot; createTestDb() creates it, applies the
+// migration chain and assumes the app role. (Replaced by the real service
+// entry points in Task 2.6.)
+const { pglite } = await createTestDb();
 
 // ---- Worker loop ------------------------------------------------------------
 // Jobs are RLS-protected, so discovering queued work across tenants needs the

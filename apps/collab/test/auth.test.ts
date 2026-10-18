@@ -2,7 +2,7 @@ import { describe, test, beforeAll, beforeEach, afterAll, expect } from 'vitest'
 import assert from 'node:assert/strict';
 import type * as Y from 'yjs';
 import { and, eq } from 'drizzle-orm';
-import { db, withTenantTx, memberships } from '@living-wiki/db';
+import { withTenantTx, memberships } from '@living-wiki/db';
 import {
   signCollabToken,
   getCollabTokenSecret,
@@ -17,6 +17,7 @@ import {
   bootstrapTenant,
   buildTestApp,
   signUpMember,
+  useTestDb,
 } from '../../api/test/support/testkit.js';
 
 type Access = CollabClaims['access'];
@@ -31,8 +32,9 @@ describe('collab connection authentication', () => {
     port = (collabServer as any).address.port;
   });
 
+  useTestDb();
+
   beforeEach(async () => {
-    await (db as any).__resetForTests();
     collabServer.activeDocs.clear();
   });
 

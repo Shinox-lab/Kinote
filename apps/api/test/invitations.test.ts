@@ -2,7 +2,7 @@ import { test, describe, beforeEach } from 'vitest';
 import assert from 'node:assert/strict';
 import type { FastifyRequest } from 'fastify';
 import { and, eq } from 'drizzle-orm';
-import { db, withTenantTx, invitations, auditEvents, users, memberships } from '@living-wiki/db';
+import { getDb, withTenantTx, invitations, auditEvents, users, memberships } from '@living-wiki/db';
 import { sha256Hex } from '@living-wiki/shared';
 import { resolveActor } from '../src/auth/actor.js';
 import {
@@ -12,14 +12,13 @@ import {
   signUp,
   signUpMember,
   type TestSession,
+  useTestDb
 } from './support/testkit.js';
 
 describe('authenticated tenants and accept-by-token invitations', () => {
   const app = buildTestApp();
 
-  beforeEach(async () => {
-    await (db as any).__resetForTests();
-  });
+  useTestDb();
 
   async function invite(headers: Record<string, string>, email: string, role = 'member') {
     return app.inject({
@@ -322,7 +321,7 @@ describe('authenticated tenants and accept-by-token invitations', () => {
 
   test('R8: invitations never create users or return user data; sign-up with the invited email still works', async () => {
     const { tenant, headers } = await bootstrapTenant(app, { name: 'Acme', slug: 'acme' });
-    const before = await db.select().from(users);
+    const before = await getDb().select().from(users);
 
     const res = await invite(headers, 'newcomer@example.test', 'member');
     assert.equal(res.statusCode, 201, res.body);
@@ -333,7 +332,7 @@ describe('authenticated tenants and accept-by-token invitations', () => {
       assert.equal(key in body, false);
       assert.equal(key in body.invitation, false);
     }
-    assert.equal((await db.select().from(users)).length, before.length);
+    assert.equal((await getDb().select().from(users)).length, before.length);
     const members = await withTenantTx(tenant.id, (tx) =>
       tx.select().from(memberships).where(and(eq(memberships.tenantId, tenant.id)))
     );

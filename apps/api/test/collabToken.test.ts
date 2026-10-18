@@ -1,16 +1,13 @@
 import { test, describe, beforeEach, expect } from 'vitest';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { db } from '@living-wiki/db';
 import { getCollabTokenSecret, verifyCollabToken } from '@living-wiki/shared';
-import { asUser, bootstrapTenant, buildTestApp, signUp, signUpMember } from './support/testkit.js';
+import { asUser, bootstrapTenant, buildTestApp, signUp, signUpMember, useTestDb } from './support/testkit.js';
 
 describe('POST /api/v1/pages/:id/collab-token', () => {
   const app = buildTestApp();
 
-  beforeEach(async () => {
-    await (db as any).__resetForTests();
-  });
+  useTestDb();
 
   async function post(headers: Record<string, string>, url: string, payload: unknown) {
     const res = await app.inject({ method: 'POST', url, headers, payload: payload as any });

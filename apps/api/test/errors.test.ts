@@ -3,9 +3,8 @@ import assert from 'node:assert/strict';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { db } from '@living-wiki/db';
 import { AppError, ErrorCodeSchema, ERROR_SENTENCES, ERROR_STATUS } from '@living-wiki/contracts';
-import { buildTestApp, bootstrapTenant, asUser, signUp } from './support/testkit.js';
+import { buildTestApp, bootstrapTenant, asUser, signUp, useTestDb } from './support/testkit.js';
 
 const repoRoot = fileURLToPath(new URL('../../../', import.meta.url));
 
@@ -29,9 +28,7 @@ describe('error model', () => {
     throw new AppError('space_not_found');
   });
 
-  beforeEach(async () => {
-    await (db as any).__resetForTests();
-  });
+  useTestDb();
 
   test('Zod validation failure answers 400 validation_failed with dotted issue paths', async () => {
     const { headers } = await bootstrapTenant(app, {

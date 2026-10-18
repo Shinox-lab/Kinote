@@ -195,7 +195,11 @@ importers:
         specifier: ^8.23.1
         version: 8.23.1
 
-  packages/shared: {}
+  packages/shared:
+    dependencies:
+      zod:
+        specifier: ^3.25.76
+        version: 3.25.76
 
 packages:
 

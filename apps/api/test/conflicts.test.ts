@@ -1,15 +1,13 @@
 import { test, describe, beforeEach } from 'vitest';
 import assert from 'node:assert/strict';
-import { db, mapDbError } from '@living-wiki/db';
+import { mapDbError } from '@living-wiki/db';
 import { AppError } from '@living-wiki/contracts';
-import { buildTestApp, bootstrapTenant, asUser, signUp } from './support/testkit.js';
+import { buildTestApp, bootstrapTenant, asUser, signUp, useTestDb } from './support/testkit.js';
 
 describe('unique violations map to contract codes', () => {
   const app = buildTestApp();
 
-  beforeEach(async () => {
-    await (db as any).__resetForTests();
-  });
+  useTestDb();
 
   async function bootstrap(slug = 'acme') {
     return bootstrapTenant(app, {

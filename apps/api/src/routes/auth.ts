@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { eq, sql } from 'drizzle-orm';
-import { db, users } from '@living-wiki/db';
+import { getDb, rowsOf, users } from '@living-wiki/db';
 import {
   AppError,
   SignInRequestSchema,
@@ -53,7 +53,7 @@ export async function authRoutes(
       const parsed = SignUpRequestSchema.parse(req.body);
       const passwordHash = await hashPassword(parsed.password);
       // A duplicate email violates users_email_unique -> 409 email_taken (mapDbError).
-      const [user] = await db
+      const [user] = await getDb()
         .insert(users)
         .values({ email: parsed.email, name: parsed.name, passwordHash })
         .returning();
@@ -66,7 +66,7 @@ export async function authRoutes(
     { config: { auth: 'public', rateLimit } },
     async (req, reply) => {
       const parsed = SignInRequestSchema.parse(req.body);
-      const [user] = await db.select().from(users).where(eq(users.email, parsed.email));
+      const [user] = await getDb().select().from(users).where(eq(users.email, parsed.email));
       // Always run one argon2 verification so unknown emails, placeholder
       // accounts and wrong passwords cost the same and answer identically.
       const usable = user !== undefined && isUsableHash(user.passwordHash);
@@ -86,14 +86,14 @@ export async function authRoutes(
 
   app.get('/api/v1/me', { config: { auth: 'session' } }, async (req, reply) => {
     const { userId } = sessionOf(req);
-    const [user] = await db.select().from(users).where(eq(users.id, userId));
+    const [user] = await getDb().select().from(users).where(eq(users.id, userId));
     if (!user) throw new AppError('unauthenticated');
-    const rows = await db.execute<{ tenant_id: string; name: string; slug: string; role: string }>(
-      sql`SELECT tenant_id, name, slug, role FROM my_tenants(${userId}::uuid)`
+    const rows = rowsOf<{ tenant_id: string; name: string; slug: string; role: string }>(
+      await getDb().execute(sql`SELECT tenant_id, name, slug, role FROM my_tenants(${userId}::uuid)`)
     );
     const body: MeResponse = {
       user: toAuthUser(user),
-      memberships: rows.rows.map((r) => ({
+      memberships: rows.map((r) => ({
         tenant: { id: r.tenant_id, name: r.name, slug: r.slug },
         role: TenantRoleSchema.parse(r.role),
       })),

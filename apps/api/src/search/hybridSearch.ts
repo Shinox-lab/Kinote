@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import type { DbTransaction } from '@living-wiki/db';
+import { rowsOf, type DbTransaction } from '@living-wiki/db';
 import type { Actor } from '@living-wiki/core';
 
 export interface SearchPassage {
@@ -96,7 +96,7 @@ export async function searchWiki(
     LIMIT ${limit};
   `);
 
-  return rows.rows.map((r: any) => ({
+  return rowsOf<any>(rows).map((r) => ({
     chunkId: r.chunk_id,
     documentId: r.document_id,
     versionId: r.version_id,
