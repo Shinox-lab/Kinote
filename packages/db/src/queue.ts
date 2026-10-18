@@ -173,8 +173,8 @@ async function lockJob(
   return job;
 }
 
-/** Postgres text cannot hold NUL; error messages can. */
-function storableMessage(message: string): string {
+/** Postgres text cannot hold NUL; error messages can. Strips it for storage. */
+export function storableMessage(message: string): string {
   return message.replace(/\u0000/g, '');
 }
 

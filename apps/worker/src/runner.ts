@@ -33,8 +33,13 @@ export interface RunnerOptions {
 
 type Processed = { id: string; queue: string; status: string };
 
+/** The error's message, followed by its `cause`'s message when it has one. */
 function errorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
+  if (!(err instanceof Error)) return String(err);
+  const cause = err.cause;
+  if (cause === undefined || cause === null) return err.message;
+  const causeText = cause instanceof Error ? cause.message : String(cause);
+  return `${err.message} (cause: ${causeText})`;
 }
 
 /** NonRetryableError and client-side AppErrors (status < 500) can never succeed on retry. */
@@ -186,7 +191,15 @@ async function runOne(
       `[worker] job ${job.id} (${job.queue}): lease lost to another worker; outcome not recorded`
     );
   } else if (status === 'dead_letter') {
-    await notifyDeadLetter(job, handler, message);
+    // The hook sees the row as failJob left it: the failing run counted.
+    const deadJob: Job = {
+      ...job,
+      status: 'dead_letter',
+      attempts: job.attempts + 1,
+      lockedAt: null,
+      lastError: message,
+    };
+    await notifyDeadLetter(deadJob, handler, message);
   }
   return status;
 }

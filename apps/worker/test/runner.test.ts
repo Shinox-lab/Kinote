@@ -138,6 +138,35 @@ describe('worker runner', () => {
     expect((await load(tenantId, unavailable.id)).status).toBe('queued');
   });
 
+  it('records the cause of a failure in last_error and passes it and the final attempt count to onDeadLetter', async () => {
+    const tenantId = await seedTenant();
+    const job = await enqueue(tenantId, 'test.caused', 'k', {}, 1);
+    const seen: Array<{ attempts: number; error: string }> = [];
+
+    await runPendingJobsForTenant(tenantId, {
+      handlers: {
+        'test.caused': {
+          async run() {
+            const err = new AppError('embedding_unavailable');
+            err.cause = new Error('socket hang up');
+            throw err;
+          },
+          async onDeadLetter(j, error) {
+            seen.push({ attempts: j.attempts, error });
+          },
+        },
+      },
+    });
+
+    const row = await load(tenantId, job.id);
+    expect(row.status).toBe('dead_letter');
+    expect(row.attempts).toBe(1);
+    expect(row.lastError).toContain('socket hang up');
+    expect(seen).toHaveLength(1);
+    expect(seen[0]!.attempts).toBe(1);
+    expect(seen[0]!.error).toContain('socket hang up');
+  });
+
   it('an unknown queue dead-letters', async () => {
     const tenantId = await seedTenant();
     const job = await enqueue(tenantId, 'no.such.queue');

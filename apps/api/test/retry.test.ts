@@ -13,14 +13,17 @@ import {
   useTestDb,
 } from './support/testkit.js';
 
-/** An embedding provider whose service is always down. */
-const brokenProvider: EmbeddingProvider = {
-  model: 'living-wiki-deterministic-1536-v1',
-  dimensions: 1536,
-  async embed() {
-    throw new Error('embedding service down');
-  },
-};
+/** An embedding provider whose service is always down, failing with `message`. */
+function failingProvider(message: string): EmbeddingProvider {
+  return {
+    model: 'living-wiki-deterministic-1536-v1',
+    dimensions: 1536,
+    async embed() {
+      throw new Error(message);
+    },
+  };
+}
+const brokenProvider = failingProvider('embedding service down');
 
 async function loadVersion(tenantId: string, versionId: string) {
   const [row] = await withTenantTx(tenantId, (tx) =>
@@ -52,12 +55,16 @@ async function loadIndexJob(tenantId: string, versionId: string): Promise<Job> {
  * Runs the worker with the broken provider, advancing the clock by
  * 2**attempts + 1 seconds after each failure, until the index job dead-letters.
  */
-async function runUntilDeadLetter(tenantId: string, versionId: string): Promise<Job> {
+async function runUntilDeadLetter(
+  tenantId: string,
+  versionId: string,
+  provider: EmbeddingProvider = brokenProvider
+): Promise<Job> {
   let t = Date.now();
   for (let i = 0; i < 20; i++) {
     await runPendingJobsForTenant(tenantId, {
       clock: () => new Date(t),
-      embeddingProvider: brokenProvider,
+      embeddingProvider: provider,
     });
     const job = await loadIndexJob(tenantId, versionId);
     if (job.status === 'dead_letter') return job;
@@ -154,7 +161,13 @@ describe('failed versions and retry', () => {
 
     const failed = await loadVersion(tenant.id, v1.id);
     assert.equal(failed.status, 'failed');
-    assert.ok(failed.error && failed.error.length > 0, 'failed version carries the error text');
+    assert.ok(failed.error, 'failed version carries the error text');
+    assert.ok(
+      failed.error.startsWith('Indexing failed after 5 attempts:'),
+      `neutral failure sentence, got ${JSON.stringify(failed.error)}`
+    );
+    assert.ok(failed.error.includes('embedding service down'), 'keeps the provider cause');
+    assert.equal(failed.error.includes('retry automatically'), false, 'no retry promise');
     assert.equal(await badge(editor.headers, pageId), 'Index failed');
 
     // A space viewer may not retry.
@@ -227,6 +240,29 @@ describe('failed versions and retry', () => {
     assert.equal(unreadable.json().error, 'space_not_found');
 
     assert.equal((await loadVersion(tenant.id, v1.id)).status, 'failed');
+  });
+
+  test('a provider error containing NUL still ends with the version failed', async () => {
+    const { tenant, v1 } = ctx;
+    await runUntilDeadLetter(tenant.id, v1.id, failingProvider('bad\u0000byte from provider'));
+
+    const row = await loadVersion(tenant.id, v1.id);
+    assert.equal(row.status, 'failed');
+    assert.ok(row.error!.startsWith('Indexing failed after 5 attempts:'));
+    assert.ok(row.error!.includes('badbyte from provider'), JSON.stringify(row.error));
+    assert.equal(row.error!.includes('\u0000'), false);
+  });
+
+  test('onDeadLetter truncates the stored error to 500 characters', async () => {
+    const { tenant, v1 } = ctx;
+    const job = await loadIndexJob(tenant.id, v1.id);
+
+    await handlers['version.index']!.onDeadLetter!({ ...job, attempts: 5 }, 'x'.repeat(2000));
+
+    const row = await loadVersion(tenant.id, v1.id);
+    assert.equal(row.status, 'failed');
+    assert.equal(row.error!.length, 500);
+    assert.ok(row.error!.startsWith('Indexing failed after 5 attempts: xxx'));
   });
 
   test('onDeadLetter leaves a version that is no longer indexing alone', async () => {

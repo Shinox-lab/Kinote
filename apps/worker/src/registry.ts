@@ -1,6 +1,38 @@
 import { and, eq } from 'drizzle-orm';
-import { withTenantTx, versions, type Job } from '@living-wiki/db';
+import { withTenantTx, versions, storableMessage, type Job } from '@living-wiki/db';
+import { ERROR_SENTENCES } from '@living-wiki/contracts';
 import { takePageSnapshot, indexVersion, type EmbeddingProvider } from '@living-wiki/core';
+
+/** Longest `versions.error` stored for a failed version. */
+const MAX_VERSION_ERROR_LENGTH = 500;
+
+/** Contract sentences that promise an automatic retry (wrong once a job is dead-lettered). */
+const RETRY_SENTENCES = Object.values(ERROR_SENTENCES).filter((s) =>
+  s.includes('retry automatically')
+);
+
+/**
+ * The failure detail for a dead-lettered job's error text: a leading
+ * "will retry automatically" contract sentence is dropped in favour of the
+ * cause the runner appended (` (cause: ...)`), or kept without the retry
+ * promise when there is no cause.
+ */
+function failureDetail(error: string): string {
+  for (const sentence of RETRY_SENTENCES) {
+    if (!error.startsWith(sentence)) continue;
+    const rest = error.slice(sentence.length);
+    const cause = /^ \(cause: ([\s\S]*)\)$/.exec(rest);
+    if (cause) return cause[1]!;
+    return sentence.split(';')[0]!.trim() + rest;
+  }
+  return error;
+}
+
+/** `versions.error` for a version whose index job dead-lettered after `attempts` attempts. */
+export function failedVersionError(attempts: number, error: string): string {
+  const text = `Indexing failed after ${attempts} attempt${attempts === 1 ? '' : 's'}: ${failureDetail(error)}`;
+  return storableMessage(text).slice(0, MAX_VERSION_ERROR_LENGTH);
+}
 
 export interface JobContext {
   now: Date;
@@ -51,7 +83,8 @@ export const handlers: Record<string, JobHandler> = {
       }
     },
     /**
-     * Marks the version `failed` with the error text, but only while it is
+     * Marks the version `failed` with a neutral error text ("Indexing failed
+     * after N attempts: <cause>", NUL-free, at most 500 characters), only while it is
      * still `indexing`: a version withdrawn, superseded or indexed meanwhile
      * keeps its status. A retry (POST /versions/:id/retry) revives it.
      */
@@ -62,7 +95,7 @@ export const handlers: Record<string, JobHandler> = {
       await withTenantTx(job.tenantId, (tx) =>
         tx
           .update(versions)
-          .set({ status: 'failed', error })
+          .set({ status: 'failed', error: failedVersionError(job.attempts, error) })
           .where(
             and(
               eq(versions.tenantId, job.tenantId),
