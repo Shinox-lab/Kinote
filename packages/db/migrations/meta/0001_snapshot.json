@@ -1,6 +1,6 @@
 {
-  "id": "3352968b-f97e-46ba-b57c-2430bb2be74d",
-  "prevId": "97a20da8-196b-4843-811d-de46c7d1b422",
+  "id": "53a29e99-8ac2-43ea-af02-6f123f60bce0",
+  "prevId": "ea6e6998-cdc9-4467-9786-64eee864179c",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1415,6 +1415,16 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
+        },
+        "tsv": {
+          "name": "tsv",
+          "type": "tsvector",
+          "primaryKey": false,
+          "notNull": false,
+          "generated": {
+            "as": "to_tsvector('simple', text)",
+            "type": "stored"
+          }
         }
       },
       "indexes": {
@@ -1437,6 +1447,37 @@
           "isUnique": false,
           "concurrently": false,
           "method": "btree",
+          "with": {}
+        },
+        "chunks_tsv_gin_idx": {
+          "name": "chunks_tsv_gin_idx",
+          "columns": [
+            {
+              "expression": "tsv",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "gin",
+          "with": {}
+        },
+        "chunks_embedding_hnsw_idx": {
+          "name": "chunks_embedding_hnsw_idx",
+          "columns": [
+            {
+              "expression": "embedding",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "halfvec_cosine_ops"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "hnsw",
           "with": {}
         }
       },

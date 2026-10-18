@@ -1,6 +1,6 @@
 {
-  "id": "97a20da8-196b-4843-811d-de46c7d1b422",
-  "prevId": "29415d43-fa4e-4c04-86f0-c4f80807bd09",
+  "id": "0ac0258e-02b5-497c-bef1-bf9840f11ef3",
+  "prevId": "6d75d0a2-6f71-4fcd-b732-29513e58c989",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -458,6 +458,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "token_hash": {
+          "name": "token_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
         "accepted_at": {
           "name": "accepted_at",
           "type": "timestamp with time zone",
@@ -498,6 +504,7 @@
           "isUnique": true,
           "with": {},
           "method": "btree",
+          "where": "\"invitations\".\"accepted_at\" is null",
           "concurrently": false
         }
       },
@@ -1408,6 +1415,16 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
+        },
+        "tsv": {
+          "name": "tsv",
+          "type": "tsvector",
+          "primaryKey": false,
+          "notNull": false,
+          "generated": {
+            "type": "stored",
+            "as": "to_tsvector('simple', text)"
+          }
         }
       },
       "indexes": {
@@ -1430,6 +1447,37 @@
           "isUnique": false,
           "with": {},
           "method": "btree",
+          "concurrently": false
+        },
+        "chunks_tsv_gin_idx": {
+          "name": "chunks_tsv_gin_idx",
+          "columns": [
+            {
+              "expression": "tsv",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "gin",
+          "concurrently": false
+        },
+        "chunks_embedding_hnsw_idx": {
+          "name": "chunks_embedding_hnsw_idx",
+          "columns": [
+            {
+              "expression": "embedding",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "halfvec_cosine_ops"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "hnsw",
           "concurrently": false
         }
       },

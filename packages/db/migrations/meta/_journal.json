@@ -5,43 +5,36 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1792311950469,
-      "tag": "0000_polite_screwball",
+      "when": 1792344626992,
+      "tag": "0000_extensions",
       "breakpoints": true
     },
     {
       "idx": 1,
       "version": "7",
-      "when": 1792305394000,
-      "tag": "0001_rls_policies",
-      "breakpoints": false
+      "when": 1792344628349,
+      "tag": "0001_schema",
+      "breakpoints": true
     },
     {
       "idx": 2,
       "version": "7",
-      "when": 1792305394000,
-      "tag": "0002_pgvector_and_fts",
-      "breakpoints": false
+      "when": 1792344637662,
+      "tag": "0002_rls",
+      "breakpoints": true
     },
     {
       "idx": 3,
       "version": "7",
-      "when": 1792342833389,
-      "tag": "0003_sudden_trish_tilby",
+      "when": 1792344639026,
+      "tag": "0003_functions",
       "breakpoints": true
     },
     {
       "idx": 4,
       "version": "7",
-      "when": 1792342839364,
-      "tag": "0004_my_tenants",
-      "breakpoints": true
-    },
-    {
-      "idx": 5,
-      "version": "7",
-      "when": 1792343517842,
-      "tag": "0005_nebulous_black_queen",
+      "when": 1792344640388,
+      "tag": "0004_grants",
       "breakpoints": true
     }
   ]

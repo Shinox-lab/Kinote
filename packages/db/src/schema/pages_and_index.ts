@@ -10,6 +10,7 @@ import {
   uniqueIndex,
   index,
 } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
 import { tenants, spaces } from './foundations.js';
 
 const bytea = customType<{ data: Buffer; notNull: false; default: false }>({
@@ -27,6 +28,13 @@ const halfvec = (dimensions: number) =>
       return `[${value.join(',')}]`;
     },
   });
+
+// Full-text search vector. Only ever populated by the generated column below.
+const tsvector = customType<{ data: string }>({
+  dataType() {
+    return 'tsvector';
+  },
+});
 
 export const documents = pgTable('documents', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -182,8 +190,13 @@ export const chunks = pgTable(
     contentHash: text('content_hash').notNull(),
     embedding: halfvec(1536)('embedding').notNull(),
     embeddingModel: text('embedding_model').notNull(),
+    tsv: tsvector('tsv').generatedAlwaysAs(sql`to_tsvector('simple', text)`),
   },
-  (t) => [index('chunks_tenant_space_idx').on(t.tenantId, t.spaceId)]
+  (t) => [
+    index('chunks_tenant_space_idx').on(t.tenantId, t.spaceId),
+    index('chunks_tsv_gin_idx').using('gin', t.tsv),
+    index('chunks_embedding_hnsw_idx').using('hnsw', t.embedding.op('halfvec_cosine_ops')),
+  ]
 );
 
 export const embeddingCache = pgTable(

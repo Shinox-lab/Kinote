@@ -9,6 +9,10 @@
     "@electric-sql/pglite": "^0.2.17",
     "@living-wiki/contracts": "workspace:*",
     "drizzle-orm": "^0.44.5",
+    "pg": "^8.23.1",
     "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.23.1"
   }
 }

@@ -4,13 +4,14 @@ import { fileURLToPath } from 'node:url';
 import { PGlite } from '@electric-sql/pglite';
 import { vector } from '@electric-sql/pglite/vector';
 import { drizzle } from 'drizzle-orm/pglite';
+import { migrate } from 'drizzle-orm/pglite/migrator';
 import * as foundations from './schema/foundations.js';
 import * as pagesAndIndex from './schema/pages_and_index.js';
 
 export const schema = { ...foundations, ...pagesAndIndex };
 
 // Shared in-memory Postgres client (single process, zero infrastructure).
-// Boots with the pgvector extension loaded so migration 0002's halfvec columns work.
+// Boots with the pgvector extension available; migration 0000 creates it.
 // To run against a real PostgreSQL server, replace this with:
 //   const client = new PGlite(process.env.DATABASE_URL)   // or new Pool(...)
 //   export const db = drizzle({ client, schema });
@@ -30,7 +31,7 @@ function findMigrationsDir(): string {
     path.resolve(here, '../migrations'),
   ];
   for (const candidate of candidates) {
-    if (fs.existsSync(path.join(candidate, '0001_rls_policies.sql'))) return candidate;
+    if (fs.existsSync(path.join(candidate, 'meta', '_journal.json'))) return candidate;
   }
   throw new Error(
     `Unable to locate packages/db/migrations (looked in: ${candidates.join(', ')})`
@@ -40,27 +41,35 @@ function findMigrationsDir(): string {
 const MIGRATIONS_DIR = findMigrationsDir();
 
 /**
- * Test-support reset: wipes the in-memory database and re-applies every
- * migration in packages/db/migrations in filename order (0000 tables -> 0001
- * RLS -> 0002 pgvector/FTS).
+ * Test-support reset: wipes the in-memory database and re-applies the
+ * migration chain in packages/db/migrations with Drizzle's migrator, exactly
+ * as a fresh deployment would (0000 extensions -> 0001 schema -> 0002 RLS ->
+ * 0003 functions -> 0004 grants).
  */
 export async function resetForTests(): Promise<void> {
-  // Drop everything (RESET ROLE first: the previous session may still run as
-  // living_wiki_app), then recreate the schema as the owner and re-apply the
-  // migration sequence before handing the session back to the app role.
+  // RESET ROLE first: the previous test may still run as living_wiki_app.
   await pglite.exec('RESET ROLE;');
-  await pglite.exec('DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;');
-  // The table DDL (0000) references pgvector's halfvec type, so the extension
-  // must exist before any migration file runs.
-  await pglite.exec('CREATE EXTENSION IF NOT EXISTS vector;');
-  const files = fs
-    .readdirSync(MIGRATIONS_DIR)
-    .filter((name) => name.endsWith('.sql'))
-    .sort();
-  for (const file of files) {
-    const sql = fs.readFileSync(path.join(MIGRATIONS_DIR, file), 'utf8');
-    await pglite.exec(sql);
-  }
+  // Drop everything, including the extension (so 0000 really creates it) and
+  // the drizzle schema holding the migrator's bookkeeping table.
+  await pglite.exec(`
+    DROP SCHEMA IF EXISTS drizzle CASCADE;
+    DROP SCHEMA IF EXISTS public CASCADE;
+    DROP EXTENSION IF EXISTS vector CASCADE;
+    CREATE SCHEMA public;
+  `);
+  // Roles are cluster-wide and survive the schema drop. In a deployment the
+  // login role comes from infra/postgres/01-roles.sh; 0004 only creates a
+  // NOLOGIN role when it is absent.
+  await pglite.exec(`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'living_wiki_app') THEN
+        CREATE ROLE living_wiki_app LOGIN NOSUPERUSER NOBYPASSRLS;
+      END IF;
+    END
+    $$;
+  `);
+  await migrate(db, { migrationsFolder: MIGRATIONS_DIR });
   // PGlite runs as a superuser, which would silently bypass all RLS policies.
   // Run the workload as the non-superuser app role so policies enforce.
   await pglite.exec('SET ROLE living_wiki_app;');

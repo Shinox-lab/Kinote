@@ -51,6 +51,7 @@ CREATE TABLE "invitations" (
 	"email" text NOT NULL,
 	"role" text DEFAULT 'member' NOT NULL,
 	"invited_by" uuid NOT NULL,
+	"token_hash" text NOT NULL,
 	"accepted_at" timestamp with time zone,
 	"expires_at" timestamp with time zone NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
@@ -75,6 +76,16 @@ CREATE TABLE "memberships" (
 	"user_id" uuid NOT NULL,
 	"role" text NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "sessions" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"user_id" uuid NOT NULL,
+	"token_hash" text NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"expires_at" timestamp with time zone NOT NULL,
+	"revoked_at" timestamp with time zone,
+	CONSTRAINT "sessions_token_hash_unique" UNIQUE("token_hash")
 );
 --> statement-breakpoint
 CREATE TABLE "space_grants" (
@@ -116,6 +127,7 @@ CREATE TABLE "users" (
 	"email" text NOT NULL,
 	"name" text NOT NULL,
 	"phone_e164" text,
+	"password_hash" text NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "users_email_unique" UNIQUE("email")
 );
@@ -144,7 +156,8 @@ CREATE TABLE "chunks" (
 	"token_count" integer NOT NULL,
 	"content_hash" text NOT NULL,
 	"embedding" halfvec(1536) NOT NULL,
-	"embedding_model" text NOT NULL
+	"embedding_model" text NOT NULL,
+	"tsv" "tsvector" GENERATED ALWAYS AS (to_tsvector('simple', text)) STORED
 );
 --> statement-breakpoint
 CREATE TABLE "documents" (
@@ -233,6 +246,7 @@ ALTER TABLE "invitations" ADD CONSTRAINT "invitations_tenant_id_tenants_id_fk" F
 ALTER TABLE "jobs" ADD CONSTRAINT "jobs_tenant_id_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "public"."tenants"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "memberships" ADD CONSTRAINT "memberships_tenant_id_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "public"."tenants"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "memberships" ADD CONSTRAINT "memberships_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "sessions" ADD CONSTRAINT "sessions_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "space_grants" ADD CONSTRAINT "space_grants_tenant_id_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "public"."tenants"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "space_grants" ADD CONSTRAINT "space_grants_space_id_spaces_id_fk" FOREIGN KEY ("space_id") REFERENCES "public"."spaces"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "spaces" ADD CONSTRAINT "spaces_tenant_id_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "public"."tenants"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
@@ -257,7 +271,7 @@ ALTER TABLE "versions" ADD CONSTRAINT "versions_tenant_id_tenants_id_fk" FOREIGN
 ALTER TABLE "versions" ADD CONSTRAINT "versions_document_id_documents_id_fk" FOREIGN KEY ("document_id") REFERENCES "public"."documents"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 CREATE UNIQUE INDEX "group_members_unique_idx" ON "group_members" USING btree ("tenant_id","group_id","principal_type","principal_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "groups_tenant_name_idx" ON "groups" USING btree ("tenant_id","name");--> statement-breakpoint
-CREATE UNIQUE INDEX "invitations_tenant_email_idx" ON "invitations" USING btree ("tenant_id","email");--> statement-breakpoint
+CREATE UNIQUE INDEX "invitations_tenant_email_idx" ON "invitations" USING btree ("tenant_id","email") WHERE "invitations"."accepted_at" is null;--> statement-breakpoint
 CREATE UNIQUE INDEX "jobs_tenant_key_active_idx" ON "jobs" USING btree ("tenant_id","queue","idempotency_key");--> statement-breakpoint
 CREATE INDEX "jobs_poll_idx" ON "jobs" USING btree ("status","run_at");--> statement-breakpoint
 CREATE UNIQUE INDEX "memberships_tenant_user_idx" ON "memberships" USING btree ("tenant_id","user_id");--> statement-breakpoint
@@ -266,6 +280,8 @@ CREATE UNIQUE INDEX "spaces_tenant_name_idx" ON "spaces" USING btree ("tenant_id
 CREATE UNIQUE INDEX "spaces_tenant_slug_idx" ON "spaces" USING btree ("tenant_id","slug");--> statement-breakpoint
 CREATE UNIQUE INDEX "block_activity_page_block_idx" ON "block_activity" USING btree ("tenant_id","page_id","block_id");--> statement-breakpoint
 CREATE INDEX "chunks_tenant_space_idx" ON "chunks" USING btree ("tenant_id","space_id");--> statement-breakpoint
+CREATE INDEX "chunks_tsv_gin_idx" ON "chunks" USING gin ("tsv");--> statement-breakpoint
+CREATE INDEX "chunks_embedding_hnsw_idx" ON "chunks" USING hnsw ("embedding" halfvec_cosine_ops);--> statement-breakpoint
 CREATE UNIQUE INDEX "embedding_cache_lookup_idx" ON "embedding_cache" USING btree ("tenant_id","model","content_hash");--> statement-breakpoint
 CREATE UNIQUE INDEX "pages_space_slug_idx" ON "pages" USING btree ("tenant_id","space_id","slug");--> statement-breakpoint
 CREATE UNIQUE INDEX "version_contributors_unique_idx" ON "version_contributors" USING btree ("tenant_id","version_id","principal_type","principal_id");--> statement-breakpoint
