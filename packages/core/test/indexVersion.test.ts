@@ -255,12 +255,42 @@ describe('indexVersion (two-phase, locked)', () => {
 
       const result = await indexVersion({ tenantId: s.tenantId, versionId: v2.id }, provider);
 
-      expect(result).toEqual({ outcome: 'skipped', reason: 'archived' });
+      // archivePage withdraws every indexed/indexing/pending version itself, so
+      // the commit phase finds v2 no longer indexing.
+      expect(result).toEqual({ outcome: 'skipped', reason: 'not_indexing' });
       expect(await chunkRows(s)).toHaveLength(0);
+      expect((await versionRow(s, v1.id)).status).toBe('withdrawn');
       expect((await versionRow(s, v2.id)).status).toBe('withdrawn');
       const doc = await documentRow(s);
       expect(doc.archivedAt).not.toBeNull();
       expect(doc.indexedVersionId).toBeNull();
+    },
+    5000
+  );
+
+  it(
+    'withdrawing the page while embedding is in flight skips the version and leaves nothing searchable',
+    async () => {
+      const s = await seedDocument();
+      const v1 = await addVersion(s, 1, MD_V1);
+      const provider = new RecordingProvider();
+      await indexVersion({ tenantId: s.tenantId, versionId: v1.id }, provider);
+      expect(await searchHitsForDocument(s, 'remote work')).not.toHaveLength(0);
+
+      const v2 = await addVersion(s, 2, MD_V2_EDIT);
+      provider.hook = async () => {
+        provider.hook = undefined;
+        await within(withdrawPage(s.actor, s.documentId), 3000, 'withdrawPage inside embed');
+      };
+
+      const result = await indexVersion({ tenantId: s.tenantId, versionId: v2.id }, provider);
+
+      expect(result).toEqual({ outcome: 'skipped', reason: 'not_indexing' });
+      expect(await chunkRows(s)).toHaveLength(0);
+      expect(await searchHitsForDocument(s, 'remote work')).toHaveLength(0);
+      expect((await versionRow(s, v1.id)).status).toBe('withdrawn');
+      expect((await versionRow(s, v2.id)).status).toBe('withdrawn');
+      expect((await documentRow(s)).indexedVersionId).toBeNull();
     },
     5000
   );
