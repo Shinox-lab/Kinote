@@ -1,6 +1,24 @@
 import { closeDb, initDb } from '@living-wiki/db';
 import { loadConfig } from '@living-wiki/shared';
-import { createCollabServer } from './server.js';
+import { collabSettle, createCollabServer } from './server.js';
+
+/** Longest shutdown waits for in-flight change bookkeeping before the pool closes. */
+const SETTLE_TIMEOUT_MS = 5_000;
+/** Longest shutdown waits for connections to close and documents to store. */
+const DESTROY_TIMEOUT_MS = 10_000;
+
+/** Resolves true when `work` finishes within `ms`, false when it does not. */
+async function within(work: Promise<unknown>, ms: number): Promise<boolean> {
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<false>((resolve) => {
+    timer = setTimeout(() => resolve(false), ms);
+  });
+  try {
+    return await Promise.race([work.then(() => true as const), timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 async function main(): Promise<void> {
   const config = loadConfig();
@@ -19,7 +37,15 @@ async function main(): Promise<void> {
     stopping = true;
     try {
       // Closes connections and flushes pending stores before the pool closes.
-      await collab.server.destroy();
+      // Bounded: a document whose store keeps failing stays loaded, and
+      // destroy() would otherwise wait for it forever.
+      if (!(await within(collab.server.destroy(), DESTROY_TIMEOUT_MS))) {
+        console.error(`collab shutdown: destroy did not finish within ${DESTROY_TIMEOUT_MS} ms`);
+      }
+      // Let in-flight change bookkeeping land before its database goes away.
+      if (!(await within(collabSettle(collab), SETTLE_TIMEOUT_MS))) {
+        console.error(`collab shutdown: change bookkeeping did not settle within ${SETTLE_TIMEOUT_MS} ms`);
+      }
       await closeDb();
       process.exit(0);
     } catch (err) {

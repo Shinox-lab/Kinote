@@ -1,4 +1,4 @@
-import { describe, test, beforeAll, beforeEach, afterAll, expect } from 'vitest';
+import { describe, test, beforeAll, beforeEach, afterEach, afterAll, expect } from 'vitest';
 import { isTransactionOrigin } from '@hocuspocus/server';
 import { getCollabTokenSecret } from '@living-wiki/shared';
 import { createCollabServer, resolveOriginActor, type CollabServer } from '../src/server.js';
@@ -40,8 +40,12 @@ describe('collab transaction origins', () => {
     changes.length = 0;
   });
 
+  afterEach(() => {
+    // Closing a test's clients unloads its documents before the next test.
+    for (const c of clients.splice(0)) c.destroy();
+  });
+
   afterAll(async () => {
-    for (const c of clients) c.destroy();
     await server.server.destroy();
   });
 
@@ -156,11 +160,15 @@ describe('collab transaction origins', () => {
       token: w.token(w.pageB.id, 'user', w.editor.userId),
     });
     expect(client.doc.getXmlFragment('document-store').length).toBeGreaterThan(0);
-    await new Promise((r) => setTimeout(r, 300));
 
-    expect(changesFor(name).filter((c) => resolveOriginActor(c.transactionOrigin) !== null)).toEqual(
-      []
-    );
+    // Loading applies the stored state before change tracking starts, so the
+    // load records no change at all (not even an actor-less one). Polled over
+    // a bounded window rather than checked once after a fixed sleep.
+    const end = Date.now() + 300;
+    while (Date.now() < end) {
+      expect(changesFor(name)).toEqual([]);
+      await new Promise((r) => setTimeout(r, 20));
+    }
   });
 
   test('origins without an actor resolve to null', () => {
