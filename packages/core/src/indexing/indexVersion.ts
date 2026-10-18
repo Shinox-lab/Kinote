@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import {
   withTenantTx,
   documents,
@@ -6,6 +6,7 @@ import {
   chunks,
   embeddingCache,
   writeAuditEvent,
+  lockDocument,
   NonRetryableError,
 } from '@living-wiki/db';
 import { defaultEmbeddingProvider, type EmbeddingProvider } from '../embedding.js';
@@ -13,13 +14,45 @@ import { AppError } from '@living-wiki/contracts';
 import type { BlockLike } from '@living-wiki/shared';
 import { chunkPageBlocks } from './chunkPage.js';
 
+export type IndexVersionResult =
+  | { outcome: 'indexed' }
+  | { outcome: 'skipped'; reason: 'not_indexing' | 'archived' | 'older_than_indexed' };
+
+/**
+ * Rows per multi-row INSERT. Each row binds about a dozen parameters (the
+ * halfvec travels as one text literal of ~1536 numbers), so 100 rows stay far
+ * below Postgres's 65535-parameter limit and keep a statement to ~1.5 MB.
+ */
+const INSERT_BATCH_ROWS = 100;
+
+function batches<T>(rows: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < rows.length; i += size) out.push(rows.slice(i, i + size));
+  return out;
+}
+
+/**
+ * Publishes an approved version's chunks, in three phases so no transaction is
+ * held across the embedding call:
+ *
+ * A. (transaction) load the version (skip unless `indexing`), chunk it, read
+ *    the cached embeddings of exactly those chunks;
+ * B. (no transaction) embed the chunks the cache does not have;
+ * C. (transaction, document row locked) re-check the version is still
+ *    `indexing`, the document is not archived and no newer version is indexed,
+ *    then swap the document's chunks for this version's in one go.
+ *
+ * Skips (returned, not thrown) are final: the job completes and nothing is
+ * published. A provider failure is `embedding_unavailable` (retryable).
+ */
 export async function indexVersion(
   params: { tenantId: string; versionId: string },
   provider: EmbeddingProvider = defaultEmbeddingProvider
-) {
+): Promise<IndexVersionResult> {
   const { tenantId, versionId } = params;
 
-  return withTenantTx(tenantId, async (tx) => {
+  // Phase A: read-only snapshot of what to index.
+  const prepared = await withTenantTx(tenantId, async (tx) => {
     const [ver] = await tx
       .select()
       .from(versions)
@@ -28,15 +61,7 @@ export async function indexVersion(
     if (!ver) {
       throw new AppError('version_not_found', 'Version not found.');
     }
-
-    const [doc] = await tx
-      .select()
-      .from(documents)
-      .where(and(eq(documents.tenantId, tenantId), eq(documents.id, ver.documentId)));
-
-    if (!doc) {
-      throw new AppError('document_not_found', 'Document not found.');
-    }
+    if (ver.status !== 'indexing') return null;
 
     if (!Array.isArray(ver.blocks)) {
       throw new NonRetryableError('version has no blocks');
@@ -46,70 +71,130 @@ export async function indexVersion(
       throw new NonRetryableError('version has no indexable content');
     }
 
-    // Resolve embeddings using embedding_cache first
-    const existingCacheRows = await tx
-      .select()
+    const hashes = Array.from(new Set(rawChunks.map((c) => c.contentHash)));
+    const cached = await tx
+      .select({ contentHash: embeddingCache.contentHash, embedding: embeddingCache.embedding })
       .from(embeddingCache)
       .where(
-        and(eq(embeddingCache.tenantId, tenantId), eq(embeddingCache.model, provider.model))
+        and(
+          eq(embeddingCache.tenantId, tenantId),
+          eq(embeddingCache.model, provider.model),
+          inArray(embeddingCache.contentHash, hashes)
+        )
       );
 
-    const cacheByHash = new Map<string, number[]>(
-      existingCacheRows.map((r) => [r.contentHash, r.embedding])
-    );
+    return { ver, rawChunks, cached };
+  });
 
-    const missingChunks = rawChunks.filter((c) => !cacheByHash.has(c.contentHash));
-    if (missingChunks.length > 0) {
-      const uniqueMissingHashes = Array.from(new Set(missingChunks.map((c) => c.contentHash)));
-      const textsToEmbed = uniqueMissingHashes.map(
-        (h) => missingChunks.find((c) => c.contentHash === h)!.text
+  if (!prepared) return { outcome: 'skipped', reason: 'not_indexing' };
+  const { ver, rawChunks, cached } = prepared;
+
+  const embeddingByHash = new Map<string, number[]>(
+    cached.map((r) => [r.contentHash, r.embedding])
+  );
+
+  // Phase B: embed the missing chunks with no transaction open.
+  const missingTextByHash = new Map<string, string>();
+  for (const c of rawChunks) {
+    if (!embeddingByHash.has(c.contentHash) && !missingTextByHash.has(c.contentHash)) {
+      missingTextByHash.set(c.contentHash, c.text);
+    }
+  }
+  const newCacheRows: Array<{ contentHash: string; embedding: number[] }> = [];
+  if (missingTextByHash.size > 0) {
+    const missingHashes = Array.from(missingTextByHash.keys());
+    const texts = Array.from(missingTextByHash.values());
+    let vectors: number[][];
+    try {
+      vectors = await provider.embed(texts);
+    } catch (err) {
+      const unavailable = new AppError('embedding_unavailable');
+      unavailable.cause = err;
+      throw unavailable;
+    }
+    if (!Array.isArray(vectors) || vectors.length !== texts.length) {
+      throw new NonRetryableError(
+        `embedding provider returned ${Array.isArray(vectors) ? vectors.length : 'no'} vectors for ${texts.length} texts`
       );
-      const newEmbeddings = await provider.embed(textsToEmbed);
+    }
+    vectors.forEach((vec, i) => {
+      if (!Array.isArray(vec) || vec.length !== provider.dimensions) {
+        throw new NonRetryableError(
+          `embedding provider returned a vector of ${Array.isArray(vec) ? vec.length : 'no'} dimensions (expected ${provider.dimensions})`
+        );
+      }
+      embeddingByHash.set(missingHashes[i], vec);
+      newCacheRows.push({ contentHash: missingHashes[i], embedding: vec });
+    });
+  }
 
-      for (let i = 0; i < uniqueMissingHashes.length; i++) {
-        const hash = uniqueMissingHashes[i];
-        const emb = newEmbeddings[i];
-        cacheByHash.set(hash, emb);
+  // Phase C: publish under the document lock, re-checking everything Phase A saw.
+  return withTenantTx(tenantId, async (tx): Promise<IndexVersionResult> => {
+    const doc = await lockDocument(tx, tenantId, ver.documentId);
+
+    const [current] = await tx
+      .select({ status: versions.status })
+      .from(versions)
+      .where(and(eq(versions.tenantId, tenantId), eq(versions.id, ver.id)))
+      .for('update');
+    if (!current) {
+      throw new AppError('version_not_found', 'Version not found.');
+    }
+    if (current.status !== 'indexing') return { outcome: 'skipped', reason: 'not_indexing' };
+
+    if (doc.archivedAt) {
+      await tx
+        .update(versions)
+        .set({ status: 'withdrawn' })
+        .where(and(eq(versions.tenantId, tenantId), eq(versions.id, ver.id)));
+      return { outcome: 'skipped', reason: 'archived' };
+    }
+
+    if (doc.indexedVersionId && doc.indexedVersionId !== ver.id) {
+      const [indexed] = await tx
+        .select({ number: versions.number })
+        .from(versions)
+        .where(and(eq(versions.tenantId, tenantId), eq(versions.id, doc.indexedVersionId)));
+      if (indexed && indexed.number > ver.number) {
         await tx
-          .insert(embeddingCache)
-          .values({
-            tenantId,
-            model: provider.model,
-            contentHash: hash,
-            embedding: emb,
-          })
-          .onConflictDoUpdate({
-            target: [
-              embeddingCache.tenantId,
-              embeddingCache.model,
-              embeddingCache.contentHash,
-            ],
-            set: { embedding: emb },
-          });
+          .update(versions)
+          .set({ status: 'superseded' })
+          .where(and(eq(versions.tenantId, tenantId), eq(versions.id, ver.id)));
+        return { outcome: 'skipped', reason: 'older_than_indexed' };
       }
     }
 
-    // Rule S6: Only chunks of indexed versions exist. Delete old chunks and insert new chunks in one transaction.
+    // Cache rows are content-addressed: an existing row is identical, so keep it.
+    for (const batch of batches(newCacheRows, INSERT_BATCH_ROWS)) {
+      await tx
+        .insert(embeddingCache)
+        .values(batch.map((r) => ({ tenantId, model: provider.model, ...r })))
+        .onConflictDoNothing({
+          target: [embeddingCache.tenantId, embeddingCache.model, embeddingCache.contentHash],
+        });
+    }
+
+    // Rule S6: only chunks of indexed versions exist. Old chunks out, new chunks in, one transaction.
     await tx
       .delete(chunks)
       .where(and(eq(chunks.tenantId, tenantId), eq(chunks.documentId, doc.id)));
 
-    for (const rc of rawChunks) {
-      const emb = cacheByHash.get(rc.contentHash)!;
-      await tx.insert(chunks).values({
-        tenantId,
-        spaceId: doc.spaceId,
-        documentId: doc.id,
-        versionId: ver.id,
-        ordinal: rc.ordinal,
-        headingPath: rc.headingPath,
-        blockIds: rc.blockIds,
-        text: rc.text,
-        tokenCount: rc.tokenCount,
-        contentHash: rc.contentHash,
-        embedding: emb,
-        embeddingModel: provider.model,
-      });
+    const chunkRows = rawChunks.map((rc) => ({
+      tenantId,
+      spaceId: doc.spaceId,
+      documentId: doc.id,
+      versionId: ver.id,
+      ordinal: rc.ordinal,
+      headingPath: rc.headingPath,
+      blockIds: rc.blockIds,
+      text: rc.text,
+      tokenCount: rc.tokenCount,
+      contentHash: rc.contentHash,
+      embedding: embeddingByHash.get(rc.contentHash)!,
+      embeddingModel: provider.model,
+    }));
+    for (const batch of batches(chunkRows, INSERT_BATCH_ROWS)) {
+      await tx.insert(chunks).values(batch);
     }
 
     if (doc.indexedVersionId && doc.indexedVersionId !== ver.id) {
@@ -119,11 +204,10 @@ export async function indexVersion(
         .where(and(eq(versions.tenantId, tenantId), eq(versions.id, doc.indexedVersionId)));
     }
 
-    const [indexedVer] = await tx
+    await tx
       .update(versions)
       .set({ status: 'indexed', indexedAt: new Date(), error: null })
-      .where(and(eq(versions.tenantId, tenantId), eq(versions.id, ver.id)))
-      .returning();
+      .where(and(eq(versions.tenantId, tenantId), eq(versions.id, ver.id)));
 
     await tx
       .update(documents)
@@ -140,6 +224,6 @@ export async function indexVersion(
       payload: { documentId: doc.id, number: ver.number, chunkCount: rawChunks.length },
     });
 
-    return indexedVer;
+    return { outcome: 'indexed' };
   });
 }

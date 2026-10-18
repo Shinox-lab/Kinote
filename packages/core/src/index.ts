@@ -6,7 +6,7 @@ export {
   type SpaceRole,
 } from './permissions.js';
 export { takePageSnapshot } from './snapshot.js';
-export { indexVersion } from './indexing/indexVersion.js';
+export { indexVersion, type IndexVersionResult } from './indexing/indexVersion.js';
 export {
   chunkPageBlocks,
   DEFAULT_CHUNK_OPTIONS,

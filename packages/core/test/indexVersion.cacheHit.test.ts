@@ -61,7 +61,7 @@ describe('indexVersion embedding cache hit', () => {
     await indexVersion({ tenantId, versionId: v1 }, provider);
     expect(provider.callCount).toBe(1);
 
-    await expect(indexVersion({ tenantId, versionId: v2 }, provider)).resolves.toBeDefined();
+    await expect(indexVersion({ tenantId, versionId: v2 }, provider)).resolves.toEqual({ outcome: 'indexed' });
     expect(provider.callCount).toBe(1); // cache HIT: no new embed call
 
     const rows = await withTenantTx(tenantId, (tx) =>

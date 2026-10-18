@@ -6,3 +6,4 @@ export * from './audit.js';
 export * from './queue.js';
 export * from './errors.js';
 export * from './dimensions.js';
+export * from './locks.js';
