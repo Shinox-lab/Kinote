@@ -9,6 +9,7 @@ import {
   spaces,
   versions,
   versionContributors,
+  pagePendingContributors,
   blockActivity,
   chunks,
   enqueueJob,
@@ -147,6 +148,16 @@ export async function createPage(actor: Actor, input: unknown) {
         agentChangedAt: actor.principalType === 'agent' ? new Date() : null,
       })
       .returning();
+
+    // The creator wrote the initial content (stored directly, not through
+    // collab), so they contribute to the page's first snapshot like any
+    // other editor: they cannot approve it where self-approval is off.
+    await tx.insert(pagePendingContributors).values({
+      tenantId: actor.tenantId,
+      pageId: doc.id,
+      principalType: actor.principalType,
+      principalId: actor.principalId,
+    });
 
     await writeAuditEvent(tx, {
       tenantId: actor.tenantId,

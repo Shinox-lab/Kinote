@@ -8,7 +8,14 @@ import { documentName } from '@living-wiki/shared';
 export interface CollabClient {
   /** Stores the live document now (no-op when it is not loaded). */
   flush(documentName: string): Promise<void>;
-  /** Replaces the live page's blocks and title, attributed to `actor` with `source`. */
+  /**
+   * Replaces the live page's blocks and title, attributed to `actor` with `source`.
+   *
+   * Never call it while holding `lockDocument` on that page: the edit's
+   * authorship bookkeeping in collab takes FOR KEY SHARE on the same document
+   * row and the call waits for it, so the two processes would wait on each
+   * other until the call times out (COLLAB_CALL_TIMEOUT_MS).
+   */
   replaceBlocks(a: {
     tenantId: string;
     pageId: string;

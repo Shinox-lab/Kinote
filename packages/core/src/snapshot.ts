@@ -183,11 +183,16 @@ export async function takePageSnapshot(
       })
       .returning();
 
-    // Contributors: everyone collab recorded as changing the page since the
-    // previous snapshot, plus whoever takes this one. The pending rows are
-    // consumed here, under the document lock, so each change counts towards
-    // exactly one version (a change recorded while this runs waits on the
-    // lock and counts towards the next).
+    // Contributors, part 1: everyone recorded as changing the page since the
+    // previous snapshot (collab's bookkeeping, and the page's creator), plus
+    // whoever takes this one. The pending rows are consumed here, under the
+    // document lock: collab's bookkeeping takes FOR KEY SHARE on the same
+    // row first, so a recording commits wholly before this reads them or
+    // waits until this commits (and then counts towards the next snapshot).
+    // That the consumed authors' edits are in this version's content holds
+    // when the live document was stored and its bookkeeping awaited first
+    // (manual snapshots flush); see `writeAttribution` in apps/collab for the
+    // bounded quiet-snapshot gap.
     const pending = await tx
       .delete(pagePendingContributors)
       .where(
@@ -224,6 +229,31 @@ export async function takePageSnapshot(
           versionContributors.principalId,
         ],
       });
+
+    // Contributors, part 2: everyone who contributed to a version whose
+    // content has not been approved and indexed yet (superseded, rejected,
+    // still pending, approved but not yet indexed, failed) is still riding in
+    // the live content, so stays a contributor until a version past them is
+    // indexed. Versions after the latest indexed one only (all of them when
+    // none is indexed); withdrawn versions do not carry.
+    await tx.execute(sql`
+      INSERT INTO version_contributors (tenant_id, version_id, principal_type, principal_id)
+      SELECT DISTINCT vc.tenant_id, ${newVersion.id}::uuid, vc.principal_type, vc.principal_id
+        FROM version_contributors vc
+        JOIN versions v ON v.tenant_id = vc.tenant_id AND v.id = vc.version_id
+       WHERE vc.tenant_id = ${tenantId}::uuid
+         AND v.tenant_id = ${tenantId}::uuid
+         AND v.document_id = ${pageId}::uuid
+         AND v.id <> ${newVersion.id}::uuid
+         AND v.status IN ('pending_review', 'superseded', 'rejected', 'failed', 'indexing')
+         AND v.number > COALESCE(
+               (SELECT max(i.number) FROM versions i
+                 WHERE i.tenant_id = ${tenantId}::uuid
+                   AND i.document_id = ${pageId}::uuid
+                   AND i.status = 'indexed'),
+               0)
+      ON CONFLICT (tenant_id, version_id, principal_type, principal_id) DO NOTHING
+    `);
 
     // Rebuild internal wiki links ([[target-doc-id]]) from blocks
     await tx

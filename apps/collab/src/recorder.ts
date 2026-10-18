@@ -3,6 +3,7 @@ import { isTransactionOrigin, type Document } from '@hocuspocus/server';
 import { and, eq, sql } from 'drizzle-orm';
 import {
   withTenantTx,
+  documents,
   pages,
   blockActivity,
   pagePendingContributors,
@@ -17,7 +18,7 @@ import { trackWork, type ServerState } from './serverState.js';
 /** Quiet period when an origin's context carries none (spaces default to 120 s). */
 const DEFAULT_QUIET_SECONDS = 120;
 
-interface Attribution {
+export interface Attribution {
   tenantId: string;
   pageId: string;
   quietSeconds: number;
@@ -38,16 +39,39 @@ function contextOf(origin: unknown): Partial<CollabContext> | undefined {
 }
 
 /**
- * One transaction's bookkeeping, in one tenant transaction. The first write
- * (the pending contributor) references the document row, so it waits behind
- * a snapshot holding that row's lock: an edit lands wholly before a snapshot
- * (and is in its contributors) or wholly after it (and is in the next one's).
+ * One transaction's bookkeeping, in one tenant transaction.
+ *
+ * Lock protocol with `takePageSnapshot`: the first statement takes FOR KEY
+ * SHARE on the page's document row, which conflicts with the snapshot's
+ * `lockDocument` (FOR UPDATE). So this write waits while a snapshot holds the
+ * lock, and a snapshot's `lockDocument` waits for a write already under way.
+ * A write therefore commits wholly before a snapshot reads (and consumes) the
+ * pending contributors, or wholly after it commits; never in between. It is
+ * explicit because the inserts below cannot be relied on for it: an insert
+ * that hits ON CONFLICT DO NOTHING fires no foreign-key check and so takes no
+ * lock on the document row.
+ *
+ * What this does not guarantee is that a consumed contributor's edit is in
+ * the snapshot's content: that holds when the snapshot stored the live
+ * document first and waited for its bookkeeping (a manual snapshot: the
+ * flush, see `storeDocumentNow`). The quiet snapshot does not flush, so an
+ * edit made after its job was claimed but not yet stored can have its
+ * pending row consumed by that snapshot while its text lands in the next
+ * version. The gap is bounded: the quiet delay (>= 10 s) is longer than the
+ * store's max debounce (5 s), so the stored state is normally current when
+ * the quiet snapshot runs.
  */
-async function writeAttribution(a: Attribution): Promise<void> {
+export async function writeAttribution(a: Attribution): Promise<void> {
   const { tenantId, pageId, quietSeconds, actor, blockIds } = a;
   const { actorType, actorId, source } = actor;
 
   await withTenantTx(tenantId, async (tx) => {
+    await tx
+      .select({ one: sql`1` })
+      .from(documents)
+      .where(and(eq(documents.tenantId, tenantId), eq(documents.id, pageId)))
+      .for('key share');
+
     await tx
       .insert(pagePendingContributors)
       .values({ tenantId, pageId, principalType: actorType, principalId: actorId })
@@ -117,7 +141,11 @@ async function writeAttribution(a: Attribution): Promise<void> {
  * The changed block ids are read synchronously (the transaction is only
  * valid during the event); the writes are chained per document so they land
  * in transaction order, and tracked under the transaction's context so a
- * direct session's `transact` can wait for its own.
+ * direct session's `transact` can wait for its own. Because the link is
+ * queued inside the transaction, every transaction already applied has its
+ * link on the chain: `storeDocumentNow` waits for the chain's tail after
+ * storing, so a flushed state's authors are recorded before a snapshot reads
+ * the pending contributors.
  */
 export function recordPageTransactions(
   state: ServerState,
@@ -137,8 +165,12 @@ export function recordPageTransactions(
       typeof context?.quietSeconds === 'number' ? context.quietSeconds : DEFAULT_QUIET_SECONDS;
 
     const previous = state.chains.get(documentName) ?? Promise.resolve();
+    const beforeWrite = state.deps.testHooks?.beforeBookkeeping;
     const work = previous
-      .then(() => writeAttribution({ tenantId, pageId, quietSeconds, actor, blockIds }))
+      .then(async () => {
+        if (beforeWrite) await beforeWrite(documentName);
+        await writeAttribution({ tenantId, pageId, quietSeconds, actor, blockIds });
+      })
       .catch((err: unknown) => {
         // Never reject: the chain must go on, and the edit itself is applied
         // and will be stored regardless of its bookkeeping.

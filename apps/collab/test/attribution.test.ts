@@ -9,6 +9,7 @@ import {
   pagePendingContributors,
   jobs,
   claimJobs,
+  lockDocument,
 } from '@living-wiki/db';
 import { takePageSnapshot } from '@living-wiki/core';
 import { changedBlockIds } from '../src/attribution.js';
@@ -229,8 +230,9 @@ describe('server-side block authorship', () => {
     expect(rows.map((r) => [r.blockId, r.actorType, r.actorId])).toEqual([
       [first, 'user', w.b.userId],
     ]);
+    // The owner created the page, so is pending from the start.
     expect(await pending(w.tenant.id, w.page.id)).toEqual(
-      [`user:${w.a.userId}`, `user:${w.b.userId}`].sort()
+      [`user:${w.owner.userId}`, `user:${w.a.userId}`, `user:${w.b.userId}`].sort()
     );
     const page = await pageRow(w.tenant.id, w.page.id);
     expect(page.liveChangedSinceSnapshot).toBe(true);
@@ -258,7 +260,9 @@ describe('server-side block authorship', () => {
     await waitFor(() => server.documents.get(w.name)?.getMap('meta').get('title') === 'Renamed handbook');
     await collabSettle(server);
     expect(await activity(w.tenant.id, w.page.id)).toEqual([]);
-    expect(await pending(w.tenant.id, w.page.id)).toEqual([`user:${w.a.userId}`]);
+    expect(await pending(w.tenant.id, w.page.id)).toEqual(
+      [`user:${w.owner.userId}`, `user:${w.a.userId}`].sort()
+    );
     const after = await pageRow(w.tenant.id, w.page.id);
     expect(after.liveUpdatedAt.getTime()).toBeGreaterThan(before.liveUpdatedAt.getTime());
     expect(await quietJob(w.tenant.id, w.page.id)).not.toBeNull();
@@ -273,7 +277,8 @@ describe('server-side block authorship', () => {
     await sleep(200);
     await collabSettle(server);
     expect(await activity(w.tenant.id, w.page.id)).toEqual([]);
-    expect(await pending(w.tenant.id, w.page.id)).toEqual([]);
+    // Only the creator, recorded when the page was created.
+    expect(await pending(w.tenant.id, w.page.id)).toEqual([`user:${w.owner.userId}`]);
     expect(await quietJob(w.tenant.id, w.page.id)).toBeNull();
     expect((await pageRow(w.tenant.id, w.page.id)).liveUpdatedAtText).toBe(before.liveUpdatedAtText);
   });
@@ -287,7 +292,7 @@ describe('server-side block authorship', () => {
     await collabSettle(server);
     expect(fragmentText(server.documents.get(w.name)!)).not.toContain('viewer typing');
     expect(await activity(w.tenant.id, w.page.id)).toEqual([]);
-    expect(await pending(w.tenant.id, w.page.id)).toEqual([]);
+    expect(await pending(w.tenant.id, w.page.id)).toEqual([`user:${w.owner.userId}`]);
     expect(await quietJob(w.tenant.id, w.page.id)).toBeNull();
     const after = await pageRow(w.tenant.id, w.page.id);
     expect(after.liveUpdatedAtText).toBe(before.liveUpdatedAtText);
@@ -314,7 +319,9 @@ describe('server-side block authorship', () => {
     expect(rows.map((r) => [r.blockId, r.actorType, r.actorId])).toEqual([
       [ids[1], 'agent', w.agentId],
     ]);
-    expect(await pending(w.tenant.id, w.page.id)).toEqual([`agent:${w.agentId}`]);
+    expect(await pending(w.tenant.id, w.page.id)).toEqual(
+      [`agent:${w.agentId}`, `user:${w.owner.userId}`].sort()
+    );
   });
 
   test('a restore leaves agent_changed_at null and records the restoring user', async () => {
@@ -338,7 +345,9 @@ describe('server-side block authorship', () => {
     expect(rows.map((r) => [r.blockId, r.actorType, r.actorId])).toEqual([
       [ids[2], 'user', w.a.userId],
     ]);
-    expect(await pending(w.tenant.id, w.page.id)).toEqual([`user:${w.a.userId}`]);
+    expect(await pending(w.tenant.id, w.page.id)).toEqual(
+      [`user:${w.owner.userId}`, `user:${w.a.userId}`].sort()
+    );
   });
 
   test('replace-blocks attributes every block it writes to the named actor', async () => {
@@ -399,6 +408,45 @@ describe('server-side block authorship', () => {
     await landed(w.name, ' third');
     const job3 = (await quietJob(w.tenant.id, w.page.id))!;
     expect(job3).toMatchObject({ status: 'running', rerunRequested: true });
+  });
+
+  test('bookkeeping for a repeat contributor waits while a snapshot holds the document lock', async () => {
+    const w = await buildReviewWorld(app);
+    const { client, ids } = await blockIds(w.name, w.token('user', w.a.userId));
+    editBlockText(client.doc, ids[0]!, ' first edit');
+    await landed(w.name, 'first edit');
+    // A is pending now, so A's next pending insert hits ON CONFLICT DO NOTHING
+    // (no foreign-key check). On real Postgres only the bookkeeping's explicit
+    // FOR KEY SHARE makes it wait (bookkeepingLock.pg.test.ts proves that row
+    // lock); PGlite runs one transaction at a time, so here this pins the
+    // observable order: nothing lands until the snapshot's lock is released.
+    expect(await pending(w.tenant.id, w.page.id)).toContain(`user:${w.a.userId}`);
+    const before = await pageRow(w.tenant.id, w.page.id);
+
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    let locked!: () => void;
+    const lockTaken = new Promise<void>((r) => (locked = r));
+    const holder = withTenantTx(w.tenant.id, async (tx) => {
+      await lockDocument(tx, w.tenant.id, w.page.id);
+      locked();
+      await gate;
+    });
+    await lockTaken;
+
+    editBlockText(client.doc, ids[0]!, ' second edit');
+    await waitFor(() => fragmentText(server.documents.get(w.name)!).includes('second edit'));
+    const outcome = await Promise.race([
+      collabSettle(server).then(() => 'landed'),
+      sleep(300).then(() => 'waiting'),
+    ]);
+    expect(outcome).toBe('waiting');
+
+    release();
+    await holder;
+    await collabSettle(server);
+    const after = await pageRow(w.tenant.id, w.page.id);
+    expect(after.liveUpdatedAtText > before.liveUpdatedAtText).toBe(true);
   });
 
   test('R20: the store marks the page changed, so a snapshot racing the store cannot clear it', async () => {

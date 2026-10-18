@@ -10,6 +10,11 @@ export interface CollabServerDeps {
   debounceMs?: number;
   /** Longest a busy document waits for a store; defaults to 5000 ms. */
   maxDebounceMs?: number;
+  /** Test seams; never set in production. */
+  testHooks?: {
+    /** Runs before each authorship bookkeeping write (e.g. to delay it). */
+    beforeBookkeeping?: (documentName: string) => Promise<void>;
+  };
 }
 
 export interface ServerState {
@@ -111,7 +116,8 @@ export function markStored(state: ServerState, payload: object): void {
  * debounced store (any pending debounced store is replaced by this one).
  * Hocuspocus 4 catches and only logs a failing store; this rejects with
  * `internal_error` instead, so a caller never takes a failed save for a
- * successful one.
+ * successful one. On success it also waits for the document's authorship
+ * bookkeeping of everything stored.
  */
 export async function storeDocumentNow(
   server: Hocuspocus,
@@ -131,4 +137,11 @@ export async function storeDocumentNow(
   if (!state.storedPayloads.has(payload)) {
     throw new AppError('internal_error', 'The collab document could not be stored.');
   }
+  // Who wrote what was just stored: every transaction in the stored state
+  // queued its bookkeeping link synchronously when it was applied, before the
+  // state was encoded, so the chain's tail (read now, after the store) covers
+  // them all. A snapshot that follows the store then finds their pending
+  // contributors. The chain never rejects (failures are logged in it).
+  const bookkeeping = state.chains.get(document.name);
+  if (bookkeeping) await bookkeeping;
 }
