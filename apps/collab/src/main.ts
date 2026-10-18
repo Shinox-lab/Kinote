@@ -1,12 +1,16 @@
 import { closeDb, initDb } from '@living-wiki/db';
 import { loadConfig } from '@living-wiki/shared';
-import { collabServer } from './server.js';
+import { createCollabServer } from './server.js';
 
 async function main(): Promise<void> {
   const config = loadConfig();
   initDb({ url: config.DATABASE_URL });
 
-  await collabServer.listen(config.COLLAB_PORT);
+  const collab = createCollabServer({
+    collabTokenSecret: config.COLLAB_TOKEN_SECRET,
+    internalSecret: config.INTERNAL_SECRET,
+  });
+  await collab.server.listen(config.COLLAB_PORT);
   console.log(`collab listening on port ${config.COLLAB_PORT}`);
 
   let stopping = false;
@@ -14,7 +18,8 @@ async function main(): Promise<void> {
     if (stopping) return;
     stopping = true;
     try {
-      await collabServer.destroy();
+      // Closes connections and flushes pending stores before the pool closes.
+      await collab.server.destroy();
       await closeDb();
       process.exit(0);
     } catch (err) {

@@ -27,15 +27,19 @@ export interface CollabContext {
  * Agents have no membership row and no agent authentication yet: for
  * `principalType: 'agent'` the membership lookup is skipped and permissions
  * come from the agent's space grants, capped by `requireSpaceRole`.
+ *
+ * `secret` is the collab token signing secret; the collab server passes the
+ * one it was built with, other callers default to `COLLAB_TOKEN_SECRET`.
  */
 export async function authenticateCollabConnection(
   token: string,
-  documentNameRaw: string
+  documentNameRaw: string,
+  secret: string = getCollabTokenSecret()
 ): Promise<CollabContext> {
   const doc = parseDocumentName(documentNameRaw);
   if (!doc) throw new AppError('page_not_found', 'Page not found.');
 
-  const claims = verifyCollabToken(token, getCollabTokenSecret());
+  const claims = verifyCollabToken(token, secret);
   if (
     !claims ||
     claims.tenantId !== doc.tenantId ||

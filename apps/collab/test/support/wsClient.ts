@@ -1,6 +1,26 @@
 import * as Y from 'yjs';
 import { HocuspocusProvider, HocuspocusProviderWebsocket } from '@hocuspocus/provider';
 import WebSocket from 'ws';
+import { getCollabTokenSecret } from '@living-wiki/shared';
+import { createCollabServer, type CollabServer } from '../../src/server.js';
+
+/** Internal secret the test servers are built with (Task 4.2 endpoints). */
+export const TEST_INTERNAL_SECRET = 'test-internal-secret-0123456789abcdef!!';
+
+/**
+ * Builds a collab server through the factory with the test secrets and
+ * listens on a free port. Callers tear it down with `server.server.destroy()`.
+ */
+export async function startCollabServer(
+  extraHooks?: Parameters<typeof createCollabServer>[1]
+): Promise<{ server: CollabServer; port: number }> {
+  const server = createCollabServer(
+    { collabTokenSecret: getCollabTokenSecret(), internalSecret: TEST_INTERNAL_SECRET },
+    extraHooks
+  );
+  await server.server.listen(0);
+  return { server, port: server.server.address.port };
+}
 
 export interface ConnectedClient {
   doc: Y.Doc;
@@ -46,6 +66,8 @@ export function connectClient(args: {
           reject(new Error(`authentication failed: ${reason}`));
         }),
     });
+    // Hocuspocus 4: a provider given its own websocket must be attached to it.
+    provider.attach();
     function destroy() {
       provider.destroy();
       socket.destroy();

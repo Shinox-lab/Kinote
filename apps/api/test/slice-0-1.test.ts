@@ -1,4 +1,4 @@
-import { test, describe, beforeEach, afterAll } from 'vitest';
+import { test, describe, beforeAll, beforeEach, afterEach, afterAll } from 'vitest';
 import assert from 'node:assert/strict';
 import { sql, asc, eq } from 'drizzle-orm';
 import {
@@ -12,7 +12,18 @@ import {
   markJobOutcome,
 } from '@living-wiki/db';
 import { submitPageSnapshot } from '../src/routes/pages.js';
-import { collabServer } from '../../collab/src/server.js';
+import {
+  collabSettle,
+  openDirectSession,
+  type CollabServer,
+} from '../../collab/src/server.js';
+import {
+  connectClient,
+  startCollabServer,
+  type ConnectedClient,
+} from '../../collab/test/support/wsClient.js';
+import { readBlocks, writeBlocks, fragmentText } from '../../collab/test/support/blocks.js';
+import { storedDoc, waitFor } from '../../collab/test/support/collabWorld.js';
 import { runPendingJobsForTenant } from '../../worker/src/runner.js';
 import { defaultEmbeddingProvider } from '@living-wiki/core';
 import {
@@ -46,17 +57,27 @@ function collabToken(
 
 describe('Living Wiki — Slice 0 (Foundations) & Slice 1 (Live Pages)', () => {
   const app = buildTestApp();
+  let collab: CollabServer;
+  let collabPort: number;
+  const collabClients: ConnectedClient[] = [];
+
+  beforeAll(async () => {
+    ({ server: collab, port: collabPort } = await startCollabServer());
+  });
 
   useTestDb();
 
   beforeEach(async () => {
-    collabServer.activeDocs.clear();
     defaultEmbeddingProvider.callCount = 0;
   });
 
+  afterEach(() => {
+    for (const c of collabClients.splice(0)) c.destroy();
+  });
+
   afterAll(async () => {
-    // Tear down any leftover collab documents/sessions so the test process can exit.
-    collabServer.activeDocs.clear();
+    // Tear down the collab server (connections, pending stores) so the test process can exit.
+    await collab.server.destroy();
   });
 
   test('Slice 0 Live Check: RLS zero-row guarantee when app.tenant_id is unset & strict cross-tenant 404 isolation', async () => {
@@ -368,46 +389,50 @@ describe('Living Wiki — Slice 0 (Foundations) & Slice 1 (Live Pages)', () => {
 
     // 3. Editor 1 and Editor 2 connect simultaneously to Hocuspocus collab server and co-edit live
     const docName = `${tenant.id}:${pageId}`;
-    const session1 = await collabServer.openSession({
+    const client1 = await connectClient({
+      port: collabPort,
       documentName: docName,
       token: collabToken(tenant.id, pageId, 'user', editor1.userId),
     });
-    const session2 = await collabServer.openSession({
+    collabClients.push(client1);
+    const client2 = await connectClient({
+      port: collabPort,
       documentName: docName,
       token: collabToken(tenant.id, pageId, 'user', editor2.userId),
     });
+    collabClients.push(client2);
 
-    // Editor 1 updates block-2
-    await session1.transact(
-      { source: 'human', actorId: editor1.userId, changedBlockIds: ['block-2'] },
-      (ydoc: any) => {
-        ydoc.blocks = [
-          { id: 'block-1', type: 'heading', level: 2, text: 'Eligibility', markdown: '## Eligibility' },
-          {
-            id: 'block-2',
-            type: 'paragraph',
-            text: 'Updated remote work policy: 4 days remote work from anywhere.',
-            markdown: 'Updated remote work policy: 4 days remote work from anywhere.',
-          },
-        ];
-      }
-    );
+    // Editor 1 updates block-2 over the websocket
+    writeBlocks(client1.doc, [
+      { id: 'block-1', type: 'heading', level: 2, text: 'Eligibility' },
+      {
+        id: 'block-2',
+        type: 'paragraph',
+        text: 'Updated remote work policy: 4 days remote work from anywhere.',
+      },
+    ]);
 
-    // Editor 2 adds a new section block-3 and block-4 in the same live Yjs document
-    await session2.transact(
-      { source: 'human', actorId: editor2.userId, changedBlockIds: ['block-3', 'block-4'] },
-      (ydoc: any) => {
-        ydoc.blocks.push(
-          { id: 'block-3', type: 'heading', level: 2, text: 'Equipment Stipend', markdown: '## Equipment Stipend' },
-          {
-            id: 'block-4',
-            type: 'paragraph',
-            text: 'Every remote employee receives a 1500 USD home office stipend.',
-            markdown: 'Every remote employee receives a 1500 USD home office stipend.',
-          }
-        );
-      }
+    // Editor 2 sees it live, then adds a new section block-3 and block-4 in the same live Yjs document
+    await waitFor(() => fragmentText(client2.doc).includes('4 days remote work'));
+    writeBlocks(client2.doc, [
+      ...readBlocks(client2.doc),
+      { id: 'block-3', type: 'heading', level: 2, text: 'Equipment Stipend' },
+      {
+        id: 'block-4',
+        type: 'paragraph',
+        text: 'Every remote employee receives a 1500 USD home office stipend.',
+      },
+    ]);
+
+    // Both edits reach pages.ydoc_state through the debounced store (1 s, at most 5 s)
+    await waitFor(
+      async () =>
+        readBlocks(await storedDoc(tenant.id, pageId))
+          .map((b) => b.id)
+          .join(',') === 'block-1,block-2,block-3,block-4',
+      8000
     );
+    await collabSettle(collab);
 
     // Submit v2 for review
     const snap2Res = await app.inject({
@@ -563,23 +588,19 @@ describe('Living Wiki — Slice 0 (Foundations) & Slice 1 (Live Pages)', () => {
     });
 
     // Rule S3: Agent edits the page -> even in a no-review space, agent changes ALWAYS wait for human approval!
-    const agentSession = await collabServer.openSession({
+    const agentSession = await openDirectSession(collab, {
       documentName: `${tenant.id}:${parentPage.id}`,
       token: collabToken(tenant.id, parentPage.id, 'agent', agentId),
     });
     await agentSession.transact(
       { source: 'agent', actorId: agentId, changedBlockIds: ['block-1'] },
-      (ydoc: any) => {
-        ydoc.blocks = [
-          {
-            id: 'block-1',
-            type: 'paragraph',
-            text: 'Agent updated architecture v2.',
-            markdown: 'Agent updated architecture v2.',
-          },
-        ];
+      (ydoc) => {
+        writeBlocks(ydoc, [
+          { id: 'block-1', type: 'paragraph', text: 'Agent updated architecture v2.' },
+        ]);
       }
     );
+    await agentSession.close();
 
     // Agents have no HTTP authentication yet (agent tokens arrive in a later
     // slice), so the agent's explicit snapshot calls the route's service directly.

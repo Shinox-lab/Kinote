@@ -1,4 +1,4 @@
-import { describe, test, beforeAll, beforeEach, afterAll, expect } from 'vitest';
+import { describe, test, beforeAll, afterEach, afterAll, expect } from 'vitest';
 import assert from 'node:assert/strict';
 import type * as Y from 'yjs';
 import { and, eq } from 'drizzle-orm';
@@ -9,9 +9,9 @@ import {
   documentName,
   type CollabClaims,
 } from '@living-wiki/shared';
-import { collabServer } from '../src/server.js';
+import { openDirectSession, type CollabServer } from '../src/server.js';
 import { authenticateCollabConnection } from '../src/auth.js';
-import { connectClient } from './support/wsClient.js';
+import { connectClient, startCollabServer } from './support/wsClient.js';
 import {
   asUser,
   bootstrapTenant,
@@ -24,24 +24,23 @@ type Access = CollabClaims['access'];
 
 describe('collab connection authentication', () => {
   const app = buildTestApp();
+  let server: CollabServer;
   let port: number;
   const clients: Array<{ destroy(): void }> = [];
 
   beforeAll(async () => {
-    await (collabServer as any).listen(0);
-    port = (collabServer as any).address.port;
+    ({ server, port } = await startCollabServer());
   });
 
   useTestDb();
 
-  beforeEach(async () => {
-    collabServer.activeDocs.clear();
+  afterEach(() => {
+    // Closing a test's clients unloads its documents before the next test.
+    for (const c of clients.splice(0)) c.destroy();
   });
 
   afterAll(async () => {
-    for (const c of clients) c.destroy();
-    collabServer.activeDocs.clear();
-    await (collabServer as any).destroy();
+    await server.server.destroy();
   });
 
   async function connect(args: { documentName: string; token: string }) {
@@ -114,7 +113,7 @@ describe('collab connection authentication', () => {
   }
 
   function serverDoc(name: string): Y.Doc {
-    const d = (collabServer as any).documents.get(name);
+    const d = server.documents.get(name);
     assert.ok(d, 'server document is loaded');
     return d;
   }
@@ -260,7 +259,7 @@ describe('collab connection authentication', () => {
     await expect(connect({ documentName: upper, token })).rejects.toThrow(/authentication failed/);
     await expect(authenticateCollabConnection(token, upper)).rejects.toBeTruthy();
     // No second in-memory document was created for the page.
-    expect((collabServer as any).documents.has(upper)).toBe(false);
+    expect(server.documents.has(upper)).toBe(false);
   });
 
   test('rejects a token whose tenant does not match the document tenant', async () => {
@@ -295,30 +294,27 @@ describe('collab connection authentication', () => {
     await expect(authenticateCollabConnection(token, name)).rejects.toBeTruthy();
   });
 
-  test('openSession refuses read-only contexts: a read token cannot transact', async () => {
+  test('openDirectSession refuses read-only contexts: a read token cannot transact', async () => {
     const w = await world();
     const name = documentName(w.tenant.id, w.pageA.id);
 
     // A viewer (database role) holding a write token.
     await expect(
-      collabServer.openSession({ documentName: name, token: tokenFor(w, w.pageA.id, w.viewer.userId, 'write') })
+      openDirectSession(server, { documentName: name, token: tokenFor(w, w.pageA.id, w.viewer.userId, 'write') })
     ).rejects.toMatchObject({ code: 'forbidden' });
     // An editor holding a read token.
     await expect(
-      collabServer.openSession({ documentName: name, token: tokenFor(w, w.pageA.id, w.editor.userId, 'read') })
+      openDirectSession(server, { documentName: name, token: tokenFor(w, w.pageA.id, w.editor.userId, 'read') })
     ).rejects.toMatchObject({ code: 'forbidden' });
 
     // An editor with write access still works, and the page is unchanged by the refusals.
-    const session = await collabServer.openSession({
+    const session = await openDirectSession(server, {
       documentName: name,
       token: tokenFor(w, w.pageA.id, w.editor.userId, 'write'),
     });
-    await session.transact(
-      { source: 'human', actorId: w.editor.userId },
-      (ydoc: any) => {
-        ydoc.getMap('probe').set('direct', 'ok');
-      }
-    );
+    await session.transact({ source: 'restore', actorId: w.editor.userId }, (ydoc) => {
+      ydoc.getMap('probe').set('direct', 'ok');
+    });
     expect(serverDoc(name).getMap('probe').get('direct')).toBe('ok');
     await session.close();
   });
