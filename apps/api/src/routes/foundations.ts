@@ -1,5 +1,5 @@
-import { and, eq, sql } from 'drizzle-orm';
-import { randomUUID } from 'node:crypto';
+import { and, eq, gt, isNull, sql } from 'drizzle-orm';
+import { randomBytes, randomUUID } from 'node:crypto';
 import {
   db,
   withTenantTx,
@@ -18,10 +18,14 @@ import {
   CreateSpaceRequestSchema,
   UpdateSpaceSettingsSchema,
   UpsertSpaceGrantSchema,
+  InviteMemberRequestSchema,
+  AcceptInvitationRequestSchema,
   AppError,
+  type InviteMemberResponse,
+  type AcceptInvitationResponse,
 } from '@living-wiki/contracts';
+import { sha256Hex } from '@living-wiki/shared';
 import { requireSpaceRole, getReadableSpaceIds, type Actor } from '@living-wiki/core';
-import { UNUSABLE_PASSWORD_HASH } from '../auth/password.js';
 
 /**
  * Creates a tenant owned by `userId` (the signed-in session user) together
@@ -93,7 +97,7 @@ export async function createTenantWithInbox(userId: string, input: unknown) {
       tx
     );
 
-    return { tenant, inboxSpace };
+    return { tenant, membership: { role: 'owner' as const }, inboxSpace };
   });
 }
 
@@ -237,10 +241,19 @@ export async function upsertSpaceGrant(actor: Actor, spaceId: string, input: unk
   });
 }
 
-export async function inviteMember(
-  actor: Actor,
-  params: { email: string; name: string; role: 'admin' | 'member' | 'viewer' }
-) {
+const INVITATION_TTL_MS = 7 * 86400 * 1000;
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+/**
+ * Invites an email to the tenant. Never touches `users` and creates no
+ * membership: the invitee must accept with the returned token while signed in
+ * as the account with that email. Only the sha256 of the token secret is
+ * stored. A pending invitation for the same email is replaced (its old token
+ * stops working).
+ */
+export async function inviteMember(actor: Actor, input: unknown): Promise<InviteMemberResponse> {
+  const parsed = InviteMemberRequestSchema.parse(input);
+
   return withTenantTx(actor.tenantId, async (tx) => {
     if (
       actor.principalType !== 'user' ||
@@ -249,50 +262,127 @@ export async function inviteMember(
       throw new AppError('forbidden', 'Only tenant admins can invite members.');
     }
 
-    let [user] = await tx.select().from(users).where(eq(users.email, params.email));
-    if (!user) {
-      // Legacy path until invitations (Task 1.4): the account gets an
-      // unusable password placeholder that never verifies at sign-in.
-      [user] = await tx
-        .insert(users)
-        .values({ email: params.email, name: params.name, passwordHash: UNUSABLE_PASSWORD_HASH })
-        .returning();
-    }
-
-    await tx.insert(invitations).values({
-      tenantId: actor.tenantId,
-      email: params.email,
-      role: params.role,
-      invitedBy: actor.principalId,
-      acceptedAt: new Date(),
-      expiresAt: new Date(Date.now() + 7 * 86400 * 1000),
-    });
+    const secret = randomBytes(32).toString('base64url');
+    const expiresAt = new Date(Date.now() + INVITATION_TTL_MS);
 
     await tx
-      .insert(memberships)
+      .delete(invitations)
+      .where(
+        and(
+          eq(invitations.tenantId, actor.tenantId),
+          eq(invitations.email, parsed.email),
+          isNull(invitations.acceptedAt)
+        )
+      );
+
+    const [invitation] = await tx
+      .insert(invitations)
       .values({
         tenantId: actor.tenantId,
-        userId: user.id,
-        role: params.role,
+        email: parsed.email,
+        role: parsed.role,
+        invitedBy: actor.principalId,
+        tokenHash: sha256Hex(secret),
+        expiresAt,
       })
-      .onConflictDoUpdate({
-        target: [memberships.tenantId, memberships.userId],
-        set: { role: params.role },
-      });
+      .returning();
 
     await writeAuditEvent(tx, {
       tenantId: actor.tenantId,
       type: 'member.invited',
       actorType: 'user',
       actorId: actor.principalId,
-      subjectType: 'user',
-      subjectId: user.id,
-      payload: { email: params.email, role: params.role },
+      subjectType: 'invitation',
+      subjectId: invitation.id,
+      payload: { email: invitation.email, role: invitation.role },
     });
 
-    // Never send the password hash (or its placeholder) to a client.
-    const { passwordHash: _passwordHash, ...publicUser } = user;
-    return publicUser;
+    return {
+      invitation: {
+        id: invitation.id,
+        email: invitation.email,
+        role: invitation.role,
+        expiresAt: invitation.expiresAt.toISOString(),
+      },
+      acceptToken: `${actor.tenantId}.${secret}`,
+    };
+  });
+}
+
+/** Splits "{tenantId}.{secret}"; null for anything malformed. */
+function parseAcceptToken(token: string): { tenantId: string; secret: string } | null {
+  const parts = token.split('.');
+  if (parts.length !== 2) return null;
+  const tenantId = parts[0].toLowerCase();
+  const secret = parts[1];
+  if (!UUID_REGEX.test(tenantId) || secret.length === 0) return null;
+  return { tenantId, secret };
+}
+
+/**
+ * The signed-in user accepts an invitation. The token must belong to a pending,
+ * unexpired invitation whose email equals the user's email (case-insensitive);
+ * anything else answers 404 invitation_invalid and changes nothing. An existing
+ * membership keeps its role.
+ */
+export async function acceptInvitation(
+  userId: string,
+  input: unknown
+): Promise<AcceptInvitationResponse> {
+  const { token } = AcceptInvitationRequestSchema.parse(input);
+  const invalid = () => new AppError('invitation_invalid');
+  const parsedToken = parseAcceptToken(token);
+  if (!parsedToken) throw invalid();
+  const { tenantId, secret } = parsedToken;
+
+  return withTenantTx(tenantId, async (tx) => {
+    const [invitation] = await tx
+      .select()
+      .from(invitations)
+      .where(
+        and(
+          eq(invitations.tenantId, tenantId),
+          eq(invitations.tokenHash, sha256Hex(secret)),
+          isNull(invitations.acceptedAt),
+          gt(invitations.expiresAt, new Date())
+        )
+      );
+    if (!invitation) throw invalid();
+
+    const [user] = await tx.select({ email: users.email }).from(users).where(eq(users.id, userId));
+    if (!user || user.email.toLowerCase() !== invitation.email.toLowerCase()) throw invalid();
+
+    const [tenant] = await tx
+      .select({ id: tenants.id, name: tenants.name, slug: tenants.slug })
+      .from(tenants)
+      .where(and(eq(tenants.id, tenantId), isNull(tenants.deletedAt)));
+    if (!tenant) throw invalid();
+
+    await tx
+      .insert(memberships)
+      .values({ tenantId, userId, role: invitation.role })
+      .onConflictDoNothing({ target: [memberships.tenantId, memberships.userId] });
+    const [membership] = await tx
+      .select({ role: memberships.role })
+      .from(memberships)
+      .where(and(eq(memberships.tenantId, tenantId), eq(memberships.userId, userId)));
+
+    await tx
+      .update(invitations)
+      .set({ acceptedAt: new Date() })
+      .where(and(eq(invitations.tenantId, tenantId), eq(invitations.id, invitation.id)));
+
+    await writeAuditEvent(tx, {
+      tenantId,
+      type: 'member.joined',
+      actorType: 'user',
+      actorId: userId,
+      subjectType: 'invitation',
+      subjectId: invitation.id,
+      payload: { role: membership.role },
+    });
+
+    return { tenant, role: membership.role };
   });
 }
 

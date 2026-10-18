@@ -141,17 +141,24 @@ describe('Living Wiki — Slice 0 (Foundations) & Slice 1 (Live Pages)', () => {
       })
     ).json();
 
-    // Vera signs up, then the owner adds her through the (legacy) invitation route.
+    // Vera signs up, the owner invites her, and she accepts with the token.
     const memberUser = await signUp(app, 'viewer@nova.io', 'Vera Viewer');
     const invited = await app.inject({
       method: 'POST',
       url: '/api/v1/invitations',
       headers: asUser(owner, tenant.id),
-      payload: { email: 'viewer@nova.io', name: 'Vera Viewer', role: 'member' },
+      payload: { email: 'viewer@nova.io', role: 'member' },
     });
     assert.equal(invited.statusCode, 201);
-    assert.equal(invited.json().id, memberUser.userId);
     assert.equal('passwordHash' in invited.json(), false);
+    const joined = await app.inject({
+      method: 'POST',
+      url: '/api/v1/invitations/accept',
+      headers: asUser(memberUser),
+      payload: { token: invited.json().acceptToken },
+    });
+    assert.equal(joined.statusCode, 200);
+    assert.equal(joined.json().role, 'member');
 
     // Unreadable space for member without grant -> 404 space_not_found (never 403)
     const beforeGrant = await app.inject({

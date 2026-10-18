@@ -50,10 +50,12 @@ export async function requireSession(req: FastifyRequest): Promise<AuthSession> 
  */
 export async function resolveActor(req: FastifyRequest): Promise<Actor> {
   const session = req.authSession ?? (await requireSession(req));
-  const tenantId = req.headers['x-tenant-id'];
-  if (typeof tenantId !== 'string' || !UUID_REGEX.test(tenantId)) {
+  const rawTenantId = req.headers['x-tenant-id'];
+  if (typeof rawTenantId !== 'string' || !UUID_REGEX.test(rawTenantId)) {
     throw new AppError('tenant_not_found');
   }
+  // Canonical form everywhere downstream (queries, audit rows, comparisons).
+  const tenantId = rawTenantId.toLowerCase();
   const membership = await withTenantTx(tenantId, async (tx) => {
     const [row] = await tx
       .select({ role: memberships.role })

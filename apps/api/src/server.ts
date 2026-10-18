@@ -15,6 +15,7 @@ import {
   updateSpaceSettings,
   upsertSpaceGrant,
   inviteMember,
+  acceptInvitation,
 } from './routes/foundations.js';
 import {
   createPage,
@@ -81,8 +82,13 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
   });
 
   app.post('/api/v1/invitations', async (req, reply) => {
-    const res = await inviteMember(actorOf(req), req.body as any);
+    const res = await inviteMember(actorOf(req), req.body);
     return reply.status(201).send(res);
+  });
+
+  app.post('/api/v1/invitations/accept', { config: { auth: 'session' } }, async (req, reply) => {
+    const res = await acceptInvitation(sessionOf(req).userId, req.body);
+    return reply.status(200).send(res);
   });
 
   app.get('/api/v1/spaces', async (req, reply) => {

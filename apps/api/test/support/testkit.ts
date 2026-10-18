@@ -76,7 +76,7 @@ export async function bootstrapTenant(
 
 /**
  * Adds an existing user to a tenant with the given role by writing the
- * membership row directly. Stand-in until invitations (Task 1.4) exist.
+ * membership row directly (a shortcut for tests that are not about invitations).
  */
 export async function addMember(
   tenantId: string,

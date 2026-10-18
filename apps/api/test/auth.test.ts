@@ -241,13 +241,13 @@ describe('sessions and the database-derived actor', () => {
     });
   });
 
-  test('a user created by the legacy invitation path (placeholder hash) cannot sign in', async () => {
+  test('inviting an unregistered email creates no account that could sign in', async () => {
     const { headers } = await bootstrapTenant(app, { name: 'Acme', slug: 'acme' });
     const invited = await app.inject({
       method: 'POST',
       url: '/api/v1/invitations',
       headers,
-      payload: { email: 'invitee@example.test', name: 'Invitee', role: 'member' },
+      payload: { email: 'invitee@example.test', role: 'member' },
     });
     assert.equal(invited.statusCode, 201, invited.body);
     const res = await app.inject({
@@ -257,6 +257,8 @@ describe('sessions and the database-derived actor', () => {
     });
     assert.equal(res.statusCode, 401);
     assert.equal(res.json().error, 'invalid_credentials');
+    const rows = await db.select().from(users).where(eq(users.email, 'invitee@example.test'));
+    assert.equal(rows.length, 0);
   });
 
   test('the 11th sign-in within a minute from one IP answers 429 rate_limited', async () => {

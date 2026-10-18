@@ -9,6 +9,7 @@ import {
   uniqueIndex,
   index,
 } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
 
 export const tenants = pgTable('tenants', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -66,11 +67,18 @@ export const invitations = pgTable(
     email: text('email').notNull(),
     role: text('role', { enum: ['admin', 'member', 'viewer'] }).notNull().default('member'),
     invitedBy: uuid('invited_by').notNull(),
+    /** sha256Hex of the secret half of the accept token; the secret itself is never stored. */
+    tokenHash: text('token_hash').notNull(),
     acceptedAt: timestamp('accepted_at', { withTimezone: true }),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [uniqueIndex('invitations_tenant_email_idx').on(t.tenantId, t.email)]
+  (t) => [
+    // At most one pending invitation per email; accepted ones stay as history.
+    uniqueIndex('invitations_tenant_email_idx')
+      .on(t.tenantId, t.email)
+      .where(sql`${t.acceptedAt} is null`),
+  ]
 );
 
 export const agents = pgTable('agents', {

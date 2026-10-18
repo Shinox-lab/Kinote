@@ -129,6 +129,34 @@ export const CreateTenantRequestSchema = z.object({
   slug: z.string().regex(/^[a-z0-9-]+$/).min(1).max(80),
 });
 
+// --- Invitations --------------------------------------------------------------
+// The invitee accepts with a token; the owner role is never invitable.
+export const InviteMemberRequestSchema = z.object({
+  email: EmailSchema,
+  role: z.enum(['admin', 'member', 'viewer']),
+});
+
+export const AcceptInvitationRequestSchema = z.object({
+  token: z.string().max(512),
+});
+
+export const InviteMemberResponseSchema = z.object({
+  invitation: z.object({
+    id: z.string().uuid(),
+    email: z.string(),
+    role: z.enum(['admin', 'member', 'viewer']),
+    expiresAt: z.string().datetime(),
+  }),
+  acceptToken: z.string(),
+});
+export type InviteMemberResponse = z.infer<typeof InviteMemberResponseSchema>;
+
+export const AcceptInvitationResponseSchema = z.object({
+  tenant: z.object({ id: z.string().uuid(), name: z.string(), slug: z.string() }),
+  role: TenantRoleSchema,
+});
+export type AcceptInvitationResponse = z.infer<typeof AcceptInvitationResponseSchema>;
+
 export const CreateSpaceRequestSchema = z.object({
   name: z.string().trim().min(1).max(120),
   slug: z.string().regex(/^[a-z0-9-]+$/).min(1).max(80),
