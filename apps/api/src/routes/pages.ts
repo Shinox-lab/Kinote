@@ -12,6 +12,7 @@ import {
   chunks,
   enqueueJob,
   writeAuditEvent,
+  lockDocument,
 } from '@living-wiki/db';
 import {
   CreatePageRequestSchema,
@@ -19,7 +20,9 @@ import {
   ApproveVersionRequestSchema,
   RejectVersionRequestSchema,
   CollabTokenResponseSchema,
+  RetryVersionResponseSchema,
   AppError,
+  type RetryVersionResponse,
 } from '@living-wiki/contracts';
 import { requireSpaceRole, assertValidUuid, takePageSnapshot, type Actor } from '@living-wiki/core';
 import { signCollabToken, getCollabTokenSecret, COLLAB_TOKEN_TTL_SECONDS } from '@living-wiki/shared';
@@ -341,6 +344,80 @@ export async function rejectVersion(actor: Actor, versionId: string, input: unkn
     });
 
     return updated;
+  });
+}
+
+/**
+ * Retries indexing of a `failed` version: back to `indexing` (error cleared),
+ * the keyed `version.index` job re-enqueued (the upsert revives a
+ * dead-lettered job with attempts reset) and `version.retried` audited.
+ * Editor or higher on the document's space. Any other status is 409
+ * `version_not_failed`. The document row is locked first so the retry is
+ * serialised with indexing, archive, withdraw and move.
+ */
+export async function retryVersion(actor: Actor, versionId: string): Promise<RetryVersionResponse> {
+  assertValidUuid(versionId, 'version_not_found');
+
+  return withTenantTx(actor.tenantId, async (tx) => {
+    const [found] = await tx
+      .select({ documentId: versions.documentId })
+      .from(versions)
+      .where(and(eq(versions.tenantId, actor.tenantId), eq(versions.id, versionId)));
+    if (!found) {
+      throw new AppError('version_not_found', 'Version not found.');
+    }
+
+    const doc = await lockDocument(tx, actor.tenantId, found.documentId);
+    await requireSpaceRole(tx, actor, doc.spaceId, 'editor');
+
+    const [ver] = await tx
+      .select({ id: versions.id, number: versions.number, status: versions.status })
+      .from(versions)
+      .where(and(eq(versions.tenantId, actor.tenantId), eq(versions.id, versionId)))
+      .for('update');
+    if (!ver) {
+      throw new AppError('version_not_found', 'Version not found.');
+    }
+    if (ver.status !== 'failed') {
+      throw new AppError('version_not_failed');
+    }
+
+    const [updated] = await tx
+      .update(versions)
+      .set({ status: 'indexing', error: null })
+      .where(
+        and(
+          eq(versions.tenantId, actor.tenantId),
+          eq(versions.id, ver.id),
+          eq(versions.status, 'failed')
+        )
+      )
+      .returning({
+        id: versions.id,
+        documentId: versions.documentId,
+        number: versions.number,
+        status: versions.status,
+        error: versions.error,
+      });
+
+    await enqueueJob(tx, {
+      tenantId: actor.tenantId,
+      queue: 'version.index',
+      idempotencyKey: `index:${ver.id}`,
+      payload: { versionId: ver.id },
+    });
+
+    await writeAuditEvent(tx, {
+      tenantId: actor.tenantId,
+      type: 'version.retried',
+      actorType: actor.principalType,
+      actorId: actor.principalId,
+      subjectType: 'version',
+      subjectId: ver.id,
+      payload: { documentId: doc.id, number: ver.number },
+    });
+
+    return RetryVersionResponseSchema.parse(updated);
   });
 }
 

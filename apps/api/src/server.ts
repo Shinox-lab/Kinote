@@ -24,6 +24,7 @@ import {
   submitPageSnapshot,
   approveVersion,
   rejectVersion,
+  retryVersion,
   movePage,
   archivePage,
   withdrawPage,
@@ -177,6 +178,11 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
   app.post('/api/v1/versions/:id/reject', async (req, reply) => {
     const actor = actorOf(req);
     const res = await rejectVersion(actor, (req.params as any).id, req.body);
+    return reply.send(res);
+  });
+
+  app.post('/api/v1/versions/:id/retry', async (req, reply) => {
+    const res = await retryVersion(actorOf(req), (req.params as any).id);
     return reply.send(res);
   });
 

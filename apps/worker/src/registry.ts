@@ -1,4 +1,5 @@
-import type { Job } from '@living-wiki/db';
+import { and, eq } from 'drizzle-orm';
+import { withTenantTx, versions, type Job } from '@living-wiki/db';
 import { takePageSnapshot, indexVersion, type EmbeddingProvider } from '@living-wiki/core';
 
 export interface JobContext {
@@ -39,9 +40,37 @@ export const handlers: Record<string, JobHandler> = {
   'version.index': {
     async run(job, ctx) {
       const payload = job.payload as { versionId: string };
-      await indexVersion({ tenantId: job.tenantId, versionId: payload.versionId }, ctx.embeddingProvider);
+      const result = await indexVersion(
+        { tenantId: job.tenantId, versionId: payload.versionId },
+        ctx.embeddingProvider
+      );
+      if (result.outcome === 'skipped') {
+        console.warn(
+          `[worker] version.index: version ${payload.versionId} not indexed (skipped: ${result.reason})`
+        );
+      }
     },
-    // Marking the version failed on dead letter is added in Task 3.4.
-    async onDeadLetter() {},
+    /**
+     * Marks the version `failed` with the error text, but only while it is
+     * still `indexing`: a version withdrawn, superseded or indexed meanwhile
+     * keeps its status. A retry (POST /versions/:id/retry) revives it.
+     */
+    async onDeadLetter(job, error) {
+      const payload = job.payload as { versionId?: unknown };
+      if (typeof payload?.versionId !== 'string') return;
+      const versionId = payload.versionId;
+      await withTenantTx(job.tenantId, (tx) =>
+        tx
+          .update(versions)
+          .set({ status: 'failed', error })
+          .where(
+            and(
+              eq(versions.tenantId, job.tenantId),
+              eq(versions.id, versionId),
+              eq(versions.status, 'indexing')
+            )
+          )
+      );
+    },
   },
 };

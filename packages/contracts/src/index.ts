@@ -217,6 +217,20 @@ export const ApproveVersionRequestSchema = z.object({
   review_note: z.string().trim().max(300).optional(),
 });
 
+/** A version without its heavy columns (markdown, blocks, Yjs snapshot). */
+export const VersionSummarySchema = z.object({
+  id: z.string().uuid(),
+  documentId: z.string().uuid(),
+  number: z.number().int(),
+  status: VersionStatusSchema,
+  error: z.string().nullable(),
+});
+export type VersionSummary = z.infer<typeof VersionSummarySchema>;
+
+/** Reply of POST /api/v1/versions/:id/retry (no request body). */
+export const RetryVersionResponseSchema = VersionSummarySchema;
+export type RetryVersionResponse = z.infer<typeof RetryVersionResponseSchema>;
+
 export const CollabTokenResponseSchema = z.object({
   token: z.string(),
   expiresAt: z.string(),
