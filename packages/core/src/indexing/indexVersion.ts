@@ -4,6 +4,7 @@ import {
   documents,
   versions,
   chunks,
+  spaces,
   embeddingCache,
   writeAuditEvent,
   lockDocument,
@@ -13,6 +14,7 @@ import { defaultEmbeddingProvider, type EmbeddingProvider } from '../embedding.j
 import { AppError } from '@living-wiki/contracts';
 import type { BlockLike } from '@living-wiki/shared';
 import { chunkPageBlocks } from './chunkPage.js';
+import { chunkInboxOwner } from './inboxOwner.js';
 
 export type IndexVersionResult =
   | { outcome: 'indexed' }
@@ -179,9 +181,21 @@ export async function indexVersion(
       .delete(chunks)
       .where(and(eq(chunks.tenantId, tenantId), eq(chunks.documentId, doc.id)));
 
+    // The space is read from the locked document row, so a concurrent move
+    // (which takes the same lock) cannot leave the chunks with a stale owner.
+    const [space] = await tx
+      .select({ kind: spaces.kind })
+      .from(spaces)
+      .where(and(eq(spaces.tenantId, tenantId), eq(spaces.id, doc.spaceId)));
+    if (!space) {
+      throw new AppError('space_not_found', 'Space not found.');
+    }
+    const inboxOwner = chunkInboxOwner(space.kind, doc);
+
     const chunkRows = rawChunks.map((rc) => ({
       tenantId,
       spaceId: doc.spaceId,
+      inboxOwner,
       documentId: doc.id,
       versionId: ver.id,
       ordinal: rc.ordinal,

@@ -7,6 +7,7 @@ export {
 } from './permissions.js';
 export { takePageSnapshot, type TakePageSnapshotHooks } from './snapshot.js';
 export { indexVersion, type IndexVersionResult } from './indexing/indexVersion.js';
+export { principalKey, chunkInboxOwner } from './indexing/inboxOwner.js';
 export {
   chunkPageBlocks,
   DEFAULT_CHUNK_OPTIONS,

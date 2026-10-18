@@ -206,7 +206,14 @@ export const chunks = pgTable(
     contentHash: text('content_hash').notNull(),
     embedding: halfvec(1536)('embedding').notNull(),
     embeddingModel: text('embedding_model').notNull(),
-    tsv: tsvector('tsv').generatedAlwaysAs(sql`to_tsvector('simple', text)`),
+    /**
+     * `"{createdByType}:{createdBy}"` of the document while its space is the
+     * Inbox, else null: the Inbox's per-item visibility, kept on the chunk row so
+     * search filters `chunks` alone (and the HNSW index stays usable). Set by
+     * indexVersion, recomputed by movePage.
+     */
+    inboxOwner: text('inbox_owner'),
+    tsv:tsvector('tsv').generatedAlwaysAs(sql`to_tsvector('simple', text)`),
   },
   (t) => [
     index('chunks_tenant_space_idx').on(t.tenantId, t.spaceId),

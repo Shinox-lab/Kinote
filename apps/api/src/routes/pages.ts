@@ -29,7 +29,13 @@ import {
   type RetryVersionResponse,
   type VersionSummary,
 } from '@living-wiki/contracts';
-import { requireSpaceRole, assertValidUuid, takePageSnapshot, type Actor } from '@living-wiki/core';
+import {
+  requireSpaceRole,
+  assertValidUuid,
+  takePageSnapshot,
+  chunkInboxOwner,
+  type Actor,
+} from '@living-wiki/core';
 import { signCollabToken, getCollabTokenSecret, COLLAB_TOKEN_TTL_SECONDS } from '@living-wiki/shared';
 import { computePageBadge } from '../pages/badge.js';
 
@@ -679,7 +685,7 @@ async function returnToReview(tx: DbTransaction, tenantId: string, doc: Document
  * moves change only parent and position. A cross-space move into a review
  * space by someone who is not a reviewer or admin there sends the page back to
  * review (see `returnToReview`); any other cross-space move updates
- * `chunks.space_id` in place. Refuses a target parent that is not a live page
+ * `chunks.space_id` and `chunks.inbox_owner` in place. Refuses a target parent that is not a live page
  * in the target space (404 `parent_not_found`), a cycle (409 `parent_cycle`)
  * and archived pages (409 `page_archived`).
  */
@@ -738,9 +744,14 @@ export async function movePage(actor: Actor, pageId: string, input: unknown) {
         await returnToReview(tx, actor.tenantId, doc);
         nextIndexedVersionId = null;
       } else {
+        // Inbox visibility moves with the chunks: set to the document's creator
+        // when entering the Inbox, cleared when leaving it.
         await tx
           .update(chunks)
-          .set({ spaceId: parsed.target_space_id })
+          .set({
+            spaceId: parsed.target_space_id,
+            inboxOwner: chunkInboxOwner(targetSpace.kind, doc),
+          })
           .where(and(eq(chunks.tenantId, actor.tenantId), eq(chunks.documentId, pageId)));
       }
     }
