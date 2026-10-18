@@ -1,0 +1,214 @@
+import {
+  pgTable,
+  uuid,
+  text,
+  boolean,
+  integer,
+  timestamp,
+  jsonb,
+  customType,
+  uniqueIndex,
+  index,
+} from 'drizzle-orm/pg-core';
+import { tenants, spaces } from './foundations.js';
+
+const bytea = customType<{ data: Buffer; notNull: false; default: false }>({
+  dataType() {
+    return 'bytea';
+  },
+});
+
+const halfvec = (dimensions: number) =>
+  customType<{ data: number[] }>({
+    dataType() {
+      return `halfvec(${dimensions})`;
+    },
+    toDriver(value: number[]) {
+      return `[${value.join(',')}]`;
+    },
+  });
+
+export const documents = pgTable('documents', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id')
+    .notNull()
+    .references(() => tenants.id),
+  spaceId: uuid('space_id')
+    .notNull()
+    .references(() => spaces.id),
+  parentId: uuid('parent_id'),
+  position: text('position').notNull().default('a0'),
+  kind: text('kind', { enum: ['page', 'file'] }).notNull(),
+  title: text('title').notNull(),
+  sourceId: uuid('source_id'),
+  externalId: text('external_id'),
+  placement: text('placement', { enum: ['pinned', 'synced'] }).notNull().default('pinned'),
+  latestVersionId: uuid('latest_version_id'),
+  indexedVersionId: uuid('indexed_version_id'),
+  sourceDeletedAt: timestamp('source_deleted_at', { withTimezone: true }),
+  archivedAt: timestamp('archived_at', { withTimezone: true }),
+  createdByType: text('created_by_type', { enum: ['user', 'agent', 'connector'] }).notNull(),
+  createdBy: uuid('created_by').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const pages = pgTable(
+  'pages',
+  {
+    documentId: uuid('document_id')
+      .primaryKey()
+      .references(() => documents.id, { onDelete: 'cascade' }),
+    tenantId: uuid('tenant_id')
+      .notNull()
+      .references(() => tenants.id),
+    spaceId: uuid('space_id')
+      .notNull()
+      .references(() => spaces.id),
+    slug: text('slug').notNull(),
+    ydocState: bytea('ydoc_state').notNull(),
+    liveUpdatedAt: timestamp('live_updated_at', { withTimezone: true }).notNull().defaultNow(),
+    liveChangedSinceSnapshot: boolean('live_changed_since_snapshot').notNull().default(false),
+    agentChangedAt: timestamp('agent_changed_at', { withTimezone: true }),
+  },
+  (t) => [uniqueIndex('pages_space_slug_idx').on(t.tenantId, t.spaceId, t.slug)]
+);
+
+export const versions = pgTable(
+  'versions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    tenantId: uuid('tenant_id')
+      .notNull()
+      .references(() => tenants.id),
+    documentId: uuid('document_id')
+      .notNull()
+      .references(() => documents.id, { onDelete: 'cascade' }),
+    number: integer('number').notNull(),
+    title: text('title').notNull(),
+    status: text('status', {
+      enum: [
+        'extracting',
+        'pending_review',
+        'indexing',
+        'indexed',
+        'superseded',
+        'rejected',
+        'withdrawn',
+        'failed',
+        'stored',
+      ],
+    }).notNull(),
+    contentHash: text('content_hash').notNull(),
+    reason: text('reason', {
+      enum: ['quiet', 'submit', 'agent', 'restore', 'upload', 'source', 'transcript'],
+    }).notNull(),
+    createdByType: text('created_by_type', { enum: ['user', 'agent', 'connector'] }).notNull(),
+    createdBy: uuid('created_by').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    reviewedBy: uuid('reviewed_by'),
+    reviewedAt: timestamp('reviewed_at', { withTimezone: true }),
+    reviewNote: text('review_note'),
+    indexedAt: timestamp('indexed_at', { withTimezone: true }),
+    error: text('error'),
+    markdown: text('markdown'),
+    blocks: jsonb('blocks'),
+    ydocSnapshot: bytea('ydoc_snapshot'),
+  },
+  (t) => [uniqueIndex('versions_doc_number_idx').on(t.tenantId, t.documentId, t.number)]
+);
+
+export const versionContributors = pgTable(
+  'version_contributors',
+  {
+    tenantId: uuid('tenant_id')
+      .notNull()
+      .references(() => tenants.id),
+    versionId: uuid('version_id')
+      .notNull()
+      .references(() => versions.id, { onDelete: 'cascade' }),
+    principalType: text('principal_type', { enum: ['user', 'agent'] }).notNull(),
+    principalId: uuid('principal_id').notNull(),
+  },
+  (t) => [
+    uniqueIndex('version_contributors_unique_idx').on(
+      t.tenantId,
+      t.versionId,
+      t.principalType,
+      t.principalId
+    ),
+  ]
+);
+
+export const blockActivity = pgTable(
+  'block_activity',
+  {
+    tenantId: uuid('tenant_id')
+      .notNull()
+      .references(() => tenants.id),
+    pageId: uuid('page_id')
+      .notNull()
+      .references(() => documents.id, { onDelete: 'cascade' }),
+    blockId: text('block_id').notNull(),
+    actorType: text('actor_type', { enum: ['user', 'agent'] }).notNull(),
+    actorId: uuid('actor_id').notNull(),
+    changedAt: timestamp('changed_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex('block_activity_page_block_idx').on(t.tenantId, t.pageId, t.blockId)]
+);
+
+export const chunks = pgTable(
+  'chunks',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    tenantId: uuid('tenant_id')
+      .notNull()
+      .references(() => tenants.id),
+    spaceId: uuid('space_id')
+      .notNull()
+      .references(() => spaces.id),
+    documentId: uuid('document_id')
+      .notNull()
+      .references(() => documents.id, { onDelete: 'cascade' }),
+    versionId: uuid('version_id')
+      .notNull()
+      .references(() => versions.id, { onDelete: 'cascade' }),
+    ordinal: integer('ordinal').notNull(),
+    headingPath: text('heading_path').array().notNull(),
+    blockIds: text('block_ids').array().notNull(),
+    pageFrom: integer('page_from'),
+    pageTo: integer('page_to'),
+    text: text('text').notNull(),
+    tokenCount: integer('token_count').notNull(),
+    contentHash: text('content_hash').notNull(),
+    embedding: halfvec(1536)('embedding').notNull(),
+    embeddingModel: text('embedding_model').notNull(),
+  },
+  (t) => [index('chunks_tenant_space_idx').on(t.tenantId, t.spaceId)]
+);
+
+export const embeddingCache = pgTable(
+  'embedding_cache',
+  {
+    tenantId: uuid('tenant_id')
+      .notNull()
+      .references(() => tenants.id),
+    model: text('model').notNull(),
+    contentHash: text('content_hash').notNull(),
+    embedding: halfvec(1536)('embedding').notNull(),
+  },
+  (t) => [uniqueIndex('embedding_cache_lookup_idx').on(t.tenantId, t.model, t.contentHash)]
+);
+
+export const links = pgTable('links', {
+  tenantId: uuid('tenant_id')
+    .notNull()
+    .references(() => tenants.id),
+  fromPageId: uuid('from_page_id')
+    .notNull()
+    .references(() => documents.id, { onDelete: 'cascade' }),
+  fromBlockId: text('from_block_id').notNull(),
+  toDocumentId: uuid('to_document_id')
+    .notNull()
+    .references(() => documents.id, { onDelete: 'cascade' }),
+  kind: text('kind', { enum: ['link', 'mention', 'embed'] }).notNull().default('link'),
+});

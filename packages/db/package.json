@@ -1,0 +1,14 @@
+{
+  "name": "@living-wiki/db",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "dependencies": {
+    "@electric-sql/pglite": "^0.2.17",
+    "@living-wiki/contracts": "workspace:*",
+    "drizzle-orm": "^0.44.5",
+    "zod": "^3.25.76"
+  }
+}

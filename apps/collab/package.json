@@ -1,0 +1,16 @@
+{
+  "name": "@living-wiki/collab",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/server.ts",
+  "types": "./src/server.ts",
+  "dependencies": {
+    "@blocknote/server-util": "^0.49.0",
+    "@hocuspocus/extension-database": "^2.15.3",
+    "@hocuspocus/server": "^2.15.3",
+    "@living-wiki/db": "workspace:*",
+    "drizzle-orm": "^0.44.5",
+    "yjs": "^13.6.33"
+  }
+}

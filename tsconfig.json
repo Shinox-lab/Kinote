@@ -1,0 +1,30 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "jsx": "preserve",
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "types": ["node"],
+    "paths": {
+      "@living-wiki/contracts": ["packages/contracts/src/index.ts"],
+      "@living-wiki/db": ["packages/db/src/index.ts"],
+      "@living-wiki/api": ["apps/api/src/server.ts"],
+      "@living-wiki/collab": ["apps/collab/src/server.ts"],
+      "@living-wiki/worker": ["apps/worker/src/runner.ts"],
+      "@living-wiki/web": ["apps/web/src/App.tsx"]
+    }
+  },
+  "include": [
+    "packages/**/*.ts",
+    "packages/**/*.tsx",
+    "apps/**/*.ts",
+    "apps/**/*.tsx"
+  ],
+  "exclude": [
+    "apps/web/app/**",
+    "apps/web/vite.config.ts",
+    "dist/**",
+    "node_modules/**"
+  ]
+}

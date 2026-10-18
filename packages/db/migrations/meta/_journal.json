@@ -1,0 +1,27 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1792311950469,
+      "tag": "0000_polite_screwball",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1792305394000,
+      "tag": "0001_rls_policies",
+      "breakpoints": false
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792305394000,
+      "tag": "0002_pgvector_and_fts",
+      "breakpoints": false
+    }
+  ]
+}
