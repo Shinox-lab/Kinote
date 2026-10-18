@@ -59,15 +59,6 @@ export async function createPage(actor: Actor, input: unknown) {
       }
     }
 
-    const existingPagesInSpace = await tx
-      .select()
-      .from(pages)
-      .where(and(eq(pages.tenantId, actor.tenantId), eq(pages.spaceId, parsed.space_id)));
-
-    if (existingPagesInSpace.some((p) => p.slug === parsed.slug)) {
-      throw new AppError('slug_taken', 'Page slug already in use in this space.');
-    }
-
     const [doc] = await tx
       .insert(documents)
       .values({

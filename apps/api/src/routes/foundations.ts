@@ -32,14 +32,6 @@ export async function createTenantWithInbox(input: unknown) {
     // context is configured with the same pre-generated id before inserting.
     await tx.execute(sql`SELECT set_config('app.tenant_id', ${tenantId}, true)`);
 
-    const [existingTenant] = await tx
-      .select()
-      .from(tenants)
-      .where(eq(tenants.slug, parsed.slug));
-    if (existingTenant) {
-      throw new AppError('slug_taken', 'Tenant slug is already in use.');
-    }
-
     let [user] = await tx
       .select()
       .from(users)
@@ -127,18 +119,6 @@ export async function createSpace(actor: Actor, input: unknown) {
       (actor.tenantRole !== 'owner' && actor.tenantRole !== 'admin')
     ) {
       throw new AppError('forbidden', 'Only tenant admins can create spaces.');
-    }
-
-    const existingSpaces = await tx
-      .select()
-      .from(spaces)
-      .where(eq(spaces.tenantId, actor.tenantId));
-
-    if (existingSpaces.some((s) => s.name === parsed.name)) {
-      throw new AppError('space_name_taken', 'Space name already in use.');
-    }
-    if (existingSpaces.some((s) => s.slug === parsed.slug)) {
-      throw new AppError('slug_taken', 'Space slug already in use.');
     }
 
     const [space] = await tx

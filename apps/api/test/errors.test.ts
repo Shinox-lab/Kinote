@@ -4,7 +4,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { db } from '@living-wiki/db';
-import { AppError, ERROR_SENTENCES, ERROR_STATUS } from '@living-wiki/contracts';
+import { AppError, ErrorCodeSchema, ERROR_SENTENCES, ERROR_STATUS } from '@living-wiki/contracts';
 import { buildApiServer } from '../src/server.js';
 
 const repoRoot = fileURLToPath(new URL('../../../', import.meta.url));
@@ -88,6 +88,86 @@ describe('error model', () => {
     assert.equal(e.statusCode, ERROR_STATUS.forbidden);
     assert.equal(e.message, ERROR_SENTENCES.forbidden);
     assert.equal(new AppError('forbidden', 'custom').message, 'custom');
+  });
+
+  test('malformed JSON body answers 400 validation_failed, not 500', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/spaces',
+      headers: { 'content-type': 'application/json' },
+      payload: '{not json',
+    });
+    assert.equal(res.statusCode, 400);
+    assert.deepEqual(res.json(), {
+      error: 'validation_failed',
+      message: ERROR_SENTENCES.validation_failed,
+    });
+  });
+
+  test('unsupported media type answers 415 validation_failed', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/spaces',
+      headers: { 'content-type': 'application/x-weird' },
+      payload: 'abc',
+    });
+    assert.equal(res.statusCode, 415);
+    assert.equal(res.json().error, 'validation_failed');
+  });
+
+  test('ERROR_STATUS is pinned for every code', () => {
+    const expected: Record<string, number> = {};
+    for (const code of ErrorCodeSchema.options) {
+      if (code.endsWith('_not_found')) expected[code] = 404;
+    }
+    Object.assign(expected, {
+      invitation_invalid: 404,
+      forbidden: 403,
+      unauthenticated: 401,
+      invalid_credentials: 401,
+      validation_failed: 400,
+      empty_file: 400,
+      file_too_large: 413,
+      unsupported_file_type: 415,
+      quota_exceeded: 429,
+      rate_limited: 429,
+      embedding_unavailable: 503,
+      extractor_unavailable: 503,
+      source_unavailable: 503,
+      internal_error: 500,
+    });
+    for (const code of [
+      'space_name_taken',
+      'slug_taken',
+      'group_name_taken',
+      'email_taken',
+      'no_changes',
+      'version_not_pending',
+      'version_not_failed',
+      'self_approval',
+      'has_children',
+      'parent_cycle',
+      'page_archived',
+      'space_archived',
+      'last_owner',
+      'block_recently_edited',
+      'managed_by_source',
+      'whatsapp_not_linked',
+    ]) {
+      expected[code] = 409;
+    }
+    for (const code of ['tenant_not_found', 'principal_not_found', 'parent_not_found']) {
+      assert.equal(expected[code], 404);
+    }
+    assert.deepEqual(
+      Object.keys(expected).sort(),
+      [...ErrorCodeSchema.options].sort(),
+      'every code must be pinned'
+    );
+    assert.deepEqual(
+      Object.fromEntries(ErrorCodeSchema.options.map((c) => [c, ERROR_STATUS[c]])),
+      Object.fromEntries(ErrorCodeSchema.options.map((c) => [c, expected[c]]))
+    );
   });
 
   test('source guard: no thrown object literals under apps/*/src or packages/*/src', () => {

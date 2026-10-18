@@ -89,6 +89,7 @@ export const ERROR_SENTENCES: Record<ErrorCode, string> = {
 const NOT_FOUND_CODES = ErrorCodeSchema.options.filter((c) => c.endsWith('_not_found'));
 
 const STATUS_OVERRIDES: Partial<Record<ErrorCode, number>> = {
+  invitation_invalid: 404,
   forbidden: 403,
   unauthenticated: 401,
   invalid_credentials: 401,
