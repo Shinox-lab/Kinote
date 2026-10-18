@@ -1,10 +1,11 @@
-import { closeDb, initDb } from '@living-wiki/db';
+import { assertEmbeddingDimensions, closeDb, initDb } from '@living-wiki/db';
 import { loadConfig } from '@living-wiki/shared';
 import { buildApiServer } from './server.js';
 
 async function main(): Promise<void> {
   const config = loadConfig();
-  initDb({ url: config.DATABASE_URL });
+  const db = initDb({ url: config.DATABASE_URL });
+  await assertEmbeddingDimensions(db, config.EMBEDDING_DIMENSIONS);
 
   const app = buildApiServer({ trustProxy: config.TRUST_PROXY });
   await app.listen({ port: config.API_PORT, host: config.HOST });

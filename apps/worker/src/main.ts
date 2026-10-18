@@ -1,4 +1,4 @@
-import { closeDb, initDb } from '@living-wiki/db';
+import { assertEmbeddingDimensions, closeDb, initDb } from '@living-wiki/db';
 import { defaultEmbeddingProvider } from '@living-wiki/core';
 import { loadConfig } from '@living-wiki/shared';
 import { runWorkerLoop } from './runner.js';
@@ -14,7 +14,8 @@ async function main(): Promise<void> {
         `but EMBEDDING_DIMENSIONS is ${config.EMBEDDING_DIMENSIONS}.`
     );
   }
-  initDb({ url: config.DATABASE_URL });
+  const db = initDb({ url: config.DATABASE_URL });
+  await assertEmbeddingDimensions(db, config.EMBEDDING_DIMENSIONS);
 
   const controller = new AbortController();
   const stop = () => controller.abort();

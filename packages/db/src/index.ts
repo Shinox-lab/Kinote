@@ -5,3 +5,4 @@ export * from './context.js';
 export * from './audit.js';
 export * from './queue.js';
 export * from './errors.js';
+export * from './dimensions.js';

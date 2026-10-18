@@ -19,14 +19,30 @@ const bytea = customType<{ data: Buffer; notNull: false; default: false }>({
   },
 });
 
-const halfvec = (dimensions: number) =>
-  customType<{ data: number[] }>({
+/**
+ * Wire format of pgvector `halfvec` values: the text literal `[a,b,...]`.
+ * Exported so the codec can be unit tested without building a table.
+ */
+export const halfvecCodec = {
+  toDriver(value: number[]): string {
+    return `[${value.join(',')}]`;
+  },
+  /** node-postgres and PGlite both return the text form; also accept a parsed array. */
+  fromDriver(value: string | number[]): number[] {
+    if (Array.isArray(value)) return value;
+    const inner = value.trim().replace(/^\[/, '').replace(/\]$/, '').trim();
+    if (inner === '') return [];
+    return inner.split(',').map((part) => Number(part.trim()));
+  },
+};
+
+export const halfvec = (dimensions: number) =>
+  customType<{ data: number[]; driverData: string | number[] }>({
     dataType() {
       return `halfvec(${dimensions})`;
     },
-    toDriver(value: number[]) {
-      return `[${value.join(',')}]`;
-    },
+    toDriver: halfvecCodec.toDriver,
+    fromDriver: halfvecCodec.fromDriver,
   });
 
 // Full-text search vector. Only ever populated by the generated column below.

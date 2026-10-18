@@ -143,7 +143,7 @@ export async function indexVersion(
       );
 
     const cacheByHash = new Map<string, number[]>(
-      existingCacheRows.map((r) => [r.contentHash, r.embedding as unknown as number[]])
+      existingCacheRows.map((r) => [r.contentHash, r.embedding])
     );
 
     const missingChunks = rawChunks.filter((c) => !cacheByHash.has(c.contentHash));
