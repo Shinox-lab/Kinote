@@ -25,11 +25,13 @@ import {
   archivePage,
   withdrawPage,
 } from './routes/pages.js';
+import { registerErrorHandler } from './errors.js';
 import { searchWiki } from './search/hybridSearch.js';
 import { askWiki } from './search/ask.js';
 
 export function buildApiServer() {
   const app = Fastify({ logger: false });
+  registerErrorHandler(app);
 
   function extractActor(headers: Record<string, string | undefined>): Actor {
     return {

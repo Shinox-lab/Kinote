@@ -18,6 +18,7 @@ import {
   CreateSpaceRequestSchema,
   UpdateSpaceSettingsSchema,
   UpsertSpaceGrantSchema,
+  AppError,
 } from '@living-wiki/contracts';
 import { requireSpaceRole, getReadableSpaceIds, type Actor } from '@living-wiki/core';
 
@@ -36,7 +37,7 @@ export async function createTenantWithInbox(input: unknown) {
       .from(tenants)
       .where(eq(tenants.slug, parsed.slug));
     if (existingTenant) {
-      throw { statusCode: 409, error: 'slug_taken', message: 'Tenant slug is already in use.' };
+      throw new AppError('slug_taken', 'Tenant slug is already in use.');
     }
 
     let [user] = await tx
@@ -125,7 +126,7 @@ export async function createSpace(actor: Actor, input: unknown) {
       actor.principalType !== 'user' ||
       (actor.tenantRole !== 'owner' && actor.tenantRole !== 'admin')
     ) {
-      throw { statusCode: 403, error: 'forbidden', message: 'Only tenant admins can create spaces.' };
+      throw new AppError('forbidden', 'Only tenant admins can create spaces.');
     }
 
     const existingSpaces = await tx
@@ -134,10 +135,10 @@ export async function createSpace(actor: Actor, input: unknown) {
       .where(eq(spaces.tenantId, actor.tenantId));
 
     if (existingSpaces.some((s) => s.name === parsed.name)) {
-      throw { statusCode: 409, error: 'space_name_taken', message: 'Space name already in use.' };
+      throw new AppError('space_name_taken', 'Space name already in use.');
     }
     if (existingSpaces.some((s) => s.slug === parsed.slug)) {
-      throw { statusCode: 409, error: 'slug_taken', message: 'Space slug already in use.' };
+      throw new AppError('slug_taken', 'Space slug already in use.');
     }
 
     const [space] = await tx
@@ -232,11 +233,7 @@ export async function upsertSpaceGrant(actor: Actor, spaceId: string, input: unk
       parsed.principal_type === 'agent' &&
       (parsed.role === 'reviewer' || parsed.role === 'admin')
     ) {
-      throw {
-        statusCode: 403,
-        error: 'forbidden',
-        message: 'Agents can hold viewer or editor roles, never reviewer or admin.',
-      };
+      throw new AppError('forbidden', 'Agents can hold viewer or editor roles, never reviewer or admin.');
     }
 
     const [grant] = await tx
@@ -282,7 +279,7 @@ export async function inviteMember(
       actor.principalType !== 'user' ||
       (actor.tenantRole !== 'owner' && actor.tenantRole !== 'admin')
     ) {
-      throw { statusCode: 403, error: 'forbidden', message: 'Only tenant admins can invite members.' };
+      throw new AppError('forbidden', 'Only tenant admins can invite members.');
     }
 
     let [user] = await tx.select().from(users).where(eq(users.email, params.email));

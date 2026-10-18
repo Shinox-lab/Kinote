@@ -147,7 +147,7 @@ describe('Living Wiki — Slice 0 (Foundations) & Slice 1 (Live Pages)', () => {
     assert.equal(stored.objectKey.startsWith(`${tenantA}/`), true);
     await assert.rejects(
       () => objectStorage.getObject(tenantB, stored.objectKey),
-      (err: any) => err.statusCode === 404 && err.error === 'document_not_found'
+      (err: any) => err.statusCode === 404 && err.code === 'document_not_found'
     );
   });
 

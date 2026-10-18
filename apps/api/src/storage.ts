@@ -1,13 +1,10 @@
+import { AppError } from '@living-wiki/contracts';
 export class TenantObjectStorage {
   private buckets = new Map<string, { bytes: Buffer; mimeType: string }>();
 
   private assertTenantKey(tenantId: string, objectKey: string) {
     if (!objectKey.startsWith(`${tenantId}/`) || objectKey.includes('..')) {
-      throw {
-        statusCode: 404,
-        error: 'document_not_found',
-        message: 'Object key does not belong to tenant prefix.',
-      };
+      throw new AppError('document_not_found', 'Object key does not belong to tenant prefix.');
     }
   }
 
@@ -23,7 +20,7 @@ export class TenantObjectStorage {
     this.assertTenantKey(tenantId, objectKey);
     const entry = this.buckets.get(objectKey);
     if (!entry) {
-      throw { statusCode: 404, error: 'document_not_found', message: 'Object not found.' };
+      throw new AppError('document_not_found', 'Object not found.');
     }
     return entry;
   }

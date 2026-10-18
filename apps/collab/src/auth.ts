@@ -1,6 +1,7 @@
 import { and, eq } from 'drizzle-orm';
 import { withTenantTx, documents, pages } from '@living-wiki/db';
 import { requireSpaceRole, type Actor } from '@living-wiki/core';
+import { AppError } from '@living-wiki/contracts';
 
 export interface CollabContext {
   tenantId: string;
@@ -32,7 +33,7 @@ export async function verifyCollabToken(
       .where(and(eq(documents.tenantId, tenantId), eq(documents.id, pageId)));
 
     if (!doc || doc.kind !== 'page' || doc.archivedAt) {
-      throw { statusCode: 404, error: 'page_not_found', message: 'Page not found.' };
+      throw new AppError('page_not_found', 'Page not found.');
     }
 
     const { space } = await requireSpaceRole(tx, actor, doc.spaceId, 'editor');
@@ -43,7 +44,7 @@ export async function verifyCollabToken(
       .where(and(eq(pages.tenantId, tenantId), eq(pages.documentId, pageId)));
 
     if (!page) {
-      throw { statusCode: 404, error: 'page_not_found', message: 'Page not found.' };
+      throw new AppError('page_not_found', 'Page not found.');
     }
 
     return {

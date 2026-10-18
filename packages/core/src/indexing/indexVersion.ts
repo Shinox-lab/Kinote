@@ -9,6 +9,7 @@ import {
   writeAuditEvent,
 } from '@living-wiki/db';
 import { defaultEmbeddingProvider, type EmbeddingProvider } from '../embedding.js';
+import { AppError } from '@living-wiki/contracts';
 
 export interface RawChunk {
   ordinal: number;
@@ -115,7 +116,7 @@ export async function indexVersion(
       .where(and(eq(versions.tenantId, tenantId), eq(versions.id, versionId)));
 
     if (!ver) {
-      throw { statusCode: 404, error: 'version_not_found', message: 'Version not found.' };
+      throw new AppError('version_not_found', 'Version not found.');
     }
 
     const [doc] = await tx
@@ -124,7 +125,7 @@ export async function indexVersion(
       .where(and(eq(documents.tenantId, tenantId), eq(documents.id, ver.documentId)));
 
     if (!doc) {
-      throw { statusCode: 404, error: 'document_not_found', message: 'Document not found.' };
+      throw new AppError('document_not_found', 'Document not found.');
     }
 
     const rawChunks = chunkPageBlocks(

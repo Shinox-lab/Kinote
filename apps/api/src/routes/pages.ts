@@ -18,6 +18,7 @@ import {
   MovePageRequestSchema,
   ApproveVersionRequestSchema,
   RejectVersionRequestSchema,
+  AppError,
 } from '@living-wiki/contracts';
 import { requireSpaceRole, assertValidUuid, type Actor } from '@living-wiki/core';
 import { computePageBadge } from '../pages/badge.js';
@@ -54,11 +55,7 @@ export async function createPage(actor: Actor, input: unknown) {
         parentDoc.kind !== 'page' ||
         parentDoc.archivedAt !== null
       ) {
-        throw {
-          statusCode: 404,
-          error: 'parent_not_found',
-          message: 'Parent is not a live page in the same space.',
-        };
+        throw new AppError('parent_not_found', 'Parent is not a live page in the same space.');
       }
     }
 
@@ -68,7 +65,7 @@ export async function createPage(actor: Actor, input: unknown) {
       .where(and(eq(pages.tenantId, actor.tenantId), eq(pages.spaceId, parsed.space_id)));
 
     if (existingPagesInSpace.some((p) => p.slug === parsed.slug)) {
-      throw { statusCode: 409, error: 'slug_taken', message: 'Page slug already in use in this space.' };
+      throw new AppError('slug_taken', 'Page slug already in use in this space.');
     }
 
     const [doc] = await tx
@@ -124,7 +121,7 @@ export async function getPageDetails(actor: Actor, pageId: string) {
       .where(and(eq(documents.tenantId, actor.tenantId), eq(documents.id, pageId)));
 
     if (!doc || doc.kind !== 'page') {
-      throw { statusCode: 404, error: 'page_not_found', message: 'Page not found.' };
+      throw new AppError('page_not_found', 'Page not found.');
     }
 
     const { space } = await requireSpaceRole(tx, actor, doc.spaceId, 'viewer');
@@ -197,7 +194,7 @@ export async function approveVersion(actor: Actor, versionId: string, input: unk
       .where(and(eq(versions.tenantId, actor.tenantId), eq(versions.id, versionId)));
 
     if (!ver) {
-      throw { statusCode: 404, error: 'version_not_found', message: 'Version not found.' };
+      throw new AppError('version_not_found', 'Version not found.');
     }
 
     const [doc] = await tx
@@ -206,26 +203,18 @@ export async function approveVersion(actor: Actor, versionId: string, input: unk
       .where(and(eq(documents.tenantId, actor.tenantId), eq(documents.id, ver.documentId)));
 
     if (!doc) {
-      throw { statusCode: 404, error: 'document_not_found', message: 'Document not found.' };
+      throw new AppError('document_not_found', 'Document not found.');
     }
 
     // Rule 3 & S4: Agents can never approve; user must hold reviewer or admin in the space
     if (actor.principalType === 'agent') {
-      throw {
-        statusCode: 409,
-        error: 'self_approval',
-        message: 'Agents cannot approve snapshots.',
-      };
+      throw new AppError('self_approval', 'Agents cannot approve snapshots.');
     }
 
     const { space } = await requireSpaceRole(tx, actor, doc.spaceId, 'reviewer');
 
     if (ver.status !== 'pending_review') {
-      throw {
-        statusCode: 409,
-        error: 'version_not_pending',
-        message: 'Version is not waiting for review.',
-      };
+      throw new AppError('version_not_pending', 'Version is not waiting for review.');
     }
 
     const contributors = await tx
@@ -245,11 +234,7 @@ export async function approveVersion(actor: Actor, versionId: string, input: unk
     );
 
     if (!space.allowSelfApproval && (isCreator || isHumanContributor)) {
-      throw {
-        statusCode: 409,
-        error: 'self_approval',
-        message: 'Authors cannot approve their own snapshots unless self-approval is enabled on the space.',
-      };
+      throw new AppError('self_approval', 'Authors cannot approve their own snapshots unless self-approval is enabled on the space.');
     }
 
     const reviewedAt = new Date();
@@ -311,7 +296,7 @@ export async function rejectVersion(actor: Actor, versionId: string, input: unkn
       .where(and(eq(versions.tenantId, actor.tenantId), eq(versions.id, versionId)));
 
     if (!ver) {
-      throw { statusCode: 404, error: 'version_not_found', message: 'Version not found.' };
+      throw new AppError('version_not_found', 'Version not found.');
     }
 
     const [doc] = await tx
@@ -322,11 +307,7 @@ export async function rejectVersion(actor: Actor, versionId: string, input: unkn
     await requireSpaceRole(tx, actor, doc.spaceId, 'reviewer');
 
     if (ver.status !== 'pending_review') {
-      throw {
-        statusCode: 409,
-        error: 'version_not_pending',
-        message: 'Version is not waiting for review.',
-      };
+      throw new AppError('version_not_pending', 'Version is not waiting for review.');
     }
 
     const [updated] = await tx
@@ -365,10 +346,10 @@ export async function movePage(actor: Actor, pageId: string, input: unknown) {
       .where(and(eq(documents.tenantId, actor.tenantId), eq(documents.id, pageId)));
 
     if (!doc || doc.kind !== 'page') {
-      throw { statusCode: 404, error: 'page_not_found', message: 'Page not found.' };
+      throw new AppError('page_not_found', 'Page not found.');
     }
     if (doc.archivedAt) {
-      throw { statusCode: 409, error: 'page_archived', message: 'Page is archived.' };
+      throw new AppError('page_archived', 'Page is archived.');
     }
 
     await requireSpaceRole(tx, actor, doc.spaceId, 'editor');
@@ -382,7 +363,7 @@ export async function movePage(actor: Actor, pageId: string, input: unknown) {
     // Check parent_cycle if target_parent_id is provided
     if (parsed.target_parent_id) {
       if (parsed.target_parent_id === pageId) {
-        throw { statusCode: 409, error: 'parent_cycle', message: 'Cannot move a page under itself.' };
+        throw new AppError('parent_cycle', 'Cannot move a page under itself.');
       }
       const allDocs = await tx
         .select()
@@ -397,17 +378,13 @@ export async function movePage(actor: Actor, pageId: string, input: unknown) {
         targetParent.kind !== 'page' ||
         targetParent.archivedAt !== null
       ) {
-        throw { statusCode: 404, error: 'parent_not_found', message: 'Target parent page not found.' };
+        throw new AppError('parent_not_found', 'Target parent page not found.');
       }
 
       let cursor: string | null = targetParent.parentId;
       while (cursor) {
         if (cursor === pageId) {
-          throw {
-            statusCode: 409,
-            error: 'parent_cycle',
-            message: 'Moving this page under one of its descendants would create a cycle.',
-          };
+          throw new AppError('parent_cycle', 'Moving this page under one of its descendants would create a cycle.');
         }
         cursor = parentById.get(cursor)?.parentId ?? null;
       }
@@ -489,7 +466,7 @@ export async function archivePage(actor: Actor, pageId: string) {
       .where(and(eq(documents.tenantId, actor.tenantId), eq(documents.id, pageId)));
 
     if (!doc || doc.kind !== 'page') {
-      throw { statusCode: 404, error: 'page_not_found', message: 'Page not found.' };
+      throw new AppError('page_not_found', 'Page not found.');
     }
 
     await requireSpaceRole(tx, actor, doc.spaceId, 'admin');
@@ -500,11 +477,7 @@ export async function archivePage(actor: Actor, pageId: string) {
       .where(and(eq(documents.tenantId, actor.tenantId), eq(documents.parentId, pageId)));
 
     if (children.some((c) => !c.archivedAt)) {
-      throw {
-        statusCode: 409,
-        error: 'has_children',
-        message: 'Cannot archive a page while active child documents exist.',
-      };
+      throw new AppError('has_children', 'Cannot archive a page while active child documents exist.');
     }
 
     if (doc.indexedVersionId) {
@@ -549,7 +522,7 @@ export async function withdrawPage(actor: Actor, pageId: string) {
       .where(and(eq(documents.tenantId, actor.tenantId), eq(documents.id, pageId)));
 
     if (!doc || doc.kind !== 'page') {
-      throw { statusCode: 404, error: 'page_not_found', message: 'Page not found.' };
+      throw new AppError('page_not_found', 'Page not found.');
     }
 
     await requireSpaceRole(tx, actor, doc.spaceId, 'reviewer');

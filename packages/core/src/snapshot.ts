@@ -14,6 +14,7 @@ import {
   enqueueJob,
   writeAuditEvent,
 } from '@living-wiki/db';
+import { AppError } from '@living-wiki/contracts';
 
 const editor = ServerBlockNoteEditor.create();
 
@@ -39,7 +40,7 @@ export async function takePageSnapshot(params: {
       .where(and(eq(documents.tenantId, tenantId), eq(documents.id, pageId)));
 
     if (!pageRow || !docRow) {
-      throw { statusCode: 404, error: 'page_not_found', message: 'Page not found.' };
+      throw new AppError('page_not_found', 'Page not found.');
     }
 
     const [spaceRow] = await tx
@@ -55,7 +56,7 @@ export async function takePageSnapshot(params: {
 
     if (!markdown) {
       if (manual) {
-        throw { statusCode: 400, error: 'empty_file', message: 'Page body cannot be empty.' };
+        throw new AppError('empty_file', 'Page body cannot be empty.');
       }
       return null;
     }
@@ -75,11 +76,7 @@ export async function takePageSnapshot(params: {
 
     if (latestVersion && latestVersion.contentHash === contentHash) {
       if (manual) {
-        throw {
-          statusCode: 409,
-          error: 'no_changes',
-          message: 'No changes since the latest snapshot.',
-        };
+        throw new AppError('no_changes', 'No changes since the latest snapshot.');
       }
       return latestVersion;
     }

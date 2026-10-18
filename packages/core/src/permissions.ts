@@ -1,6 +1,7 @@
 import { and, eq } from 'drizzle-orm';
 import { spaces, spaceGrants, groupMembers } from '@living-wiki/db';
 import type { DbTransaction } from '@living-wiki/db';
+import { AppError, type ErrorCode } from '@living-wiki/contracts';
 
 const ROLE_RANK = { viewer: 1, editor: 2, reviewer: 3, admin: 4 } as const;
 export type SpaceRole = keyof typeof ROLE_RANK;
@@ -14,9 +15,9 @@ export interface Actor {
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export function assertValidUuid(id: string, notFoundError = 'document_not_found') {
+export function assertValidUuid(id: string, notFoundError: ErrorCode = 'document_not_found') {
   if (!UUID_REGEX.test(id)) {
-    throw { statusCode: 404, error: notFoundError, message: 'Resource not found.' };
+    throw new AppError(notFoundError, 'Resource not found.');
   }
 }
 
@@ -35,7 +36,7 @@ export async function requireSpaceRole(
     .where(and(eq(spaces.tenantId, actor.tenantId), eq(spaces.id, spaceId)));
 
   if (!space) {
-    throw { statusCode: 404, error: 'space_not_found', message: 'Space not found.' };
+    throw new AppError('space_not_found', 'Space not found.');
   }
 
   let effectiveRole: SpaceRole | null = null;
@@ -92,16 +93,12 @@ export async function requireSpaceRole(
 
   // Unreadable spaces return 404, never 403
   if (!effectiveRole) {
-    throw { statusCode: 404, error: 'space_not_found', message: 'Space not found.' };
+    throw new AppError('space_not_found', 'Space not found.');
   }
 
   // Readable space but insufficient role returns 403 forbidden
   if (ROLE_RANK[effectiveRole] < ROLE_RANK[minimumRole]) {
-    throw {
-      statusCode: 403,
-      error: 'forbidden',
-      message: 'You do not have permission to perform this action.',
-    };
+    throw new AppError('forbidden', 'You do not have permission to perform this action.');
   }
 
   return { space, effectiveRole };
