@@ -295,6 +295,24 @@ describe('indexVersion (two-phase, locked)', () => {
     5000
   );
 
+  it('an indexing version of an archived document is skipped as archived and withdrawn', async () => {
+    const s = await seedDocument();
+    const v1 = await addVersion(s, 1, MD_V1);
+    await withTenantTx(s.tenantId, (tx) =>
+      tx
+        .update(documents)
+        .set({ archivedAt: new Date() })
+        .where(and(eq(documents.tenantId, s.tenantId), eq(documents.id, s.documentId)))
+    );
+
+    const result = await indexVersion({ tenantId: s.tenantId, versionId: v1.id }, new RecordingProvider());
+
+    expect(result).toEqual({ outcome: 'skipped', reason: 'archived' });
+    expect((await versionRow(s, v1.id)).status).toBe('withdrawn');
+    expect(await chunkRows(s)).toHaveLength(0);
+    expect((await documentRow(s)).indexedVersionId).toBeNull();
+  });
+
   it('a stale job for an older version is skipped and the older version superseded', async () => {
     const s = await seedDocument();
     const v1 = await addVersion(s, 1, MD_V1, 'pending_review');

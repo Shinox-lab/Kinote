@@ -521,6 +521,106 @@ describe('page lifecycle: withdraw, archive, move', () => {
     assert.equal(ok.statusCode, 200, ok.body);
   });
 
+  /** Marks a version `failed` the way the worker's dead-letter hook does. */
+  async function markFailed(versionId: string) {
+    await withTenantTx(ctx.tenant.id, (tx) =>
+      tx
+        .update(versions)
+        .set({ status: 'failed', error: 'Indexing failed after 5 attempts: embedding service down' })
+        .where(and(eq(versions.tenantId, ctx.tenant.id), eq(versions.id, versionId)))
+    );
+  }
+
+  function retry(headers: Headers, versionId: string) {
+    return app.inject({ method: 'POST', url: `/api/v1/versions/${versionId}/retry`, headers });
+  }
+
+  test('withdraw also withdraws a failed version, so Retry cannot bring the content back', async () => {
+    const { pageId, v1, v2 } = await indexedV1PendingV2(ctx.review.id, 'withdraw-failed');
+    await approve(ctx.reviewer.headers, v2.id);
+    await markFailed(v2.id);
+    assert.equal(await badge(ctx.editor.headers, pageId), 'Index failed');
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/v1/pages/${pageId}/withdraw`,
+      headers: ctx.reviewer.headers,
+    });
+    assert.equal(res.statusCode, 200, res.body);
+    assert.equal(await versionStatus(v1.id), 'withdrawn');
+    assert.equal(await versionStatus(v2.id), 'withdrawn');
+
+    const retried = await retry(ctx.editor.headers, v2.id);
+    assert.equal(retried.statusCode, 409, retried.body);
+    assert.equal(retried.json().error, 'version_not_failed');
+
+    await runPendingJobsForTenant(ctx.tenant.id);
+    assert.equal(await versionStatus(v2.id), 'withdrawn');
+    assert.equal((await chunkRows(pageId)).length, 0);
+    assert.equal((await documentRow(pageId)).indexedVersionId, null);
+    assert.equal((await searchHits(ctx.ownerHeaders, pageId)).length, 0);
+  });
+
+  test('a failed version on a page moved into a review space by an editor goes back to review', async () => {
+    const { pageId, v1 } = await indexedV1InOpenSpace('move-failed');
+    await editLive(pageId, 'Page move-failed', BODY_V2);
+    const v2 = await snapshot(ctx.editor.headers, pageId);
+    assert.equal(v2.status, 'indexing');
+    await markFailed(v2.id);
+
+    const res = await move(ctx.editor.headers, pageId, { target_space_id: ctx.review.id });
+    assert.equal(res.statusCode, 200, res.body);
+
+    assert.equal(await versionStatus(v2.id), 'pending_review');
+    assert.equal(await versionStatus(v1.id), 'superseded');
+    const [v2Row] = await withTenantTx(ctx.tenant.id, (tx) =>
+      tx
+        .select({ error: versions.error })
+        .from(versions)
+        .where(and(eq(versions.tenantId, ctx.tenant.id), eq(versions.id, v2.id)))
+    );
+    assert.equal(v2Row!.error, null);
+
+    const retried = await retry(ctx.editor.headers, v2.id);
+    assert.equal(retried.statusCode, 409, retried.body);
+    assert.equal(retried.json().error, 'version_not_failed');
+
+    await runPendingJobsForTenant(ctx.tenant.id);
+    assert.equal(await versionStatus(v2.id), 'pending_review');
+    assert.equal((await chunkRows(pageId)).length, 0);
+    assert.equal((await documentRow(pageId)).indexedVersionId, null);
+  });
+
+  test('a lone failed version on a page moved into a review space becomes pending_review', async () => {
+    const pageId = await createPage(ctx.editor.headers, ctx.open.id, 'move-lone-failed');
+    const v1 = await snapshot(ctx.editor.headers, pageId);
+    await markFailed(v1.id);
+
+    const res = await move(ctx.editor.headers, pageId, { target_space_id: ctx.review.id });
+    assert.equal(res.statusCode, 200, res.body);
+    assert.equal(await versionStatus(v1.id), 'pending_review');
+    assert.equal((await retry(ctx.editor.headers, v1.id)).statusCode, 409);
+  });
+
+  test('Retry of a failed version on an archived page is 409 page_archived', async () => {
+    const pageId = await createPage(ctx.editor.headers, ctx.open.id, 'retry-archived');
+    const v1 = await snapshot(ctx.editor.headers, pageId);
+    const archived = await app.inject({
+      method: 'POST',
+      url: `/api/v1/pages/${pageId}/archive`,
+      headers: ctx.ownerHeaders,
+    });
+    assert.equal(archived.statusCode, 200, archived.body);
+    assert.equal(await versionStatus(v1.id), 'withdrawn');
+    await markFailed(v1.id);
+
+    const retried = await retry(ctx.editor.headers, v1.id);
+    assert.equal(retried.statusCode, 409, retried.body);
+    assert.equal(retried.json().error, 'page_archived');
+    assert.equal(await versionStatus(v1.id), 'failed');
+    assert.equal((await chunkRows(pageId)).length, 0);
+  });
+
   test('an archived page cannot be moved (409 page_archived)', async () => {
     const pageId = await createPage(ctx.editor.headers, ctx.open.id, 'gone');
     const archived = await app.inject({

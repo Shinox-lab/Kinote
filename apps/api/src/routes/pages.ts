@@ -355,7 +355,7 @@ export async function rejectVersion(actor: Actor, versionId: string, input: unkn
  * the keyed `version.index` job re-enqueued (the upsert revives a
  * dead-lettered job with attempts reset) and `version.retried` audited.
  * Editor or higher on the document's space. Any other status is 409
- * `version_not_failed`. The document row is locked first so the retry is
+ * `version_not_failed`; an archived document is 409 `page_archived`. The document row is locked first so the retry is
  * serialised with indexing, archive, withdraw and move.
  */
 export async function retryVersion(actor: Actor, versionId: string): Promise<RetryVersionResponse> {
@@ -372,6 +372,9 @@ export async function retryVersion(actor: Actor, versionId: string): Promise<Ret
 
     const doc = await lockDocument(tx, actor.tenantId, found.documentId);
     await requireSpaceRole(tx, actor, doc.spaceId, 'editor');
+    if (doc.archivedAt) {
+      throw new AppError('page_archived', 'Page is archived.');
+    }
 
     const [ver] = await tx
       .select({ id: versions.id, number: versions.number, status: versions.status })
@@ -448,9 +451,10 @@ async function lockPage(tx: DbTransaction, tenantId: string, pageId: string): Pr
 
 /**
  * Takes a document out of the index (Rule 9: removing is fast): every version
- * that is indexed, indexing or waiting for review becomes `withdrawn` and the
- * document's chunks are deleted. The caller holds the document lock and clears
- * `indexed_version_id`.
+ * that is indexed, indexing, failed or waiting for review becomes `withdrawn`
+ * and the document's chunks are deleted. `failed` is included so a withdrawn
+ * page can never be revived by Retry (which only accepts `failed`). The caller
+ * holds the document lock and clears `indexed_version_id`.
  */
 async function withdrawLiveVersions(tx: DbTransaction, tenantId: string, documentId: string) {
   await tx
@@ -460,7 +464,7 @@ async function withdrawLiveVersions(tx: DbTransaction, tenantId: string, documen
       and(
         eq(versions.tenantId, tenantId),
         eq(versions.documentId, documentId),
-        inArray(versions.status, ['indexed', 'indexing', 'pending_review'])
+        inArray(versions.status, ['indexed', 'indexing', 'failed', 'pending_review'])
       )
     );
   await tx
@@ -499,12 +503,24 @@ async function wouldCreateCycle(
 
 /**
  * Sends a document moved into a review space back to review: its chunks leave
- * the index and exactly one version is left waiting for review. A newer
- * pending version (the latest, not the indexed one) stays the one to review
- * and the indexed and indexing versions become `superseded`; otherwise the
- * newest of the indexed and indexing versions returns to `pending_review` and
- * any older one is superseded. The caller holds the document lock and clears
- * `indexed_version_id`.
+ * the index and exactly one version is left waiting for review, so nothing it
+ * held can reach the index again without a reviewer (Rule 9: adding is gated).
+ *
+ * "Newer pending" below means the latest version is `pending_review` and is not
+ * the indexed one. "Newest live" is the highest-numbered version among the
+ * indexed, indexing and failed ones.
+ *
+ * | status before      | newer pending exists | otherwise                                |
+ * |--------------------|----------------------|------------------------------------------|
+ * | `pending_review`   | stays pending        | (n/a: it would be the newer pending)     |
+ * | `indexed`          | `superseded`         | `pending_review` if newest live, else `superseded` |
+ * | `indexing`         | `superseded`         | `pending_review` if newest live, else `superseded` |
+ * | `failed`           | `superseded`         | `pending_review` if newest live, else `superseded` |
+ * | anything else      | unchanged            | unchanged                                |
+ *
+ * A failed version sent back to review loses its error text (Retry, which
+ * only accepts `failed`, then refuses it). The caller holds the document lock
+ * and clears `indexed_version_id`.
  */
 async function returnToReview(tx: DbTransaction, tenantId: string, doc: DocumentRow) {
   const candidates = await tx
@@ -514,7 +530,7 @@ async function returnToReview(tx: DbTransaction, tenantId: string, doc: Document
       and(
         eq(versions.tenantId, tenantId),
         eq(versions.documentId, doc.id),
-        inArray(versions.status, ['indexed', 'indexing', 'pending_review'])
+        inArray(versions.status, ['indexed', 'indexing', 'failed', 'pending_review'])
       )
     )
     .orderBy(desc(versions.number));
@@ -522,14 +538,16 @@ async function returnToReview(tx: DbTransaction, tenantId: string, doc: Document
   const latestPending = candidates.find(
     (v) => v.id === doc.latestVersionId && v.status === 'pending_review' && v.id !== doc.indexedVersionId
   );
-  const live = candidates.filter((v) => v.status === 'indexed' || v.status === 'indexing');
+  const live = candidates.filter(
+    (v) => v.status === 'indexed' || v.status === 'indexing' || v.status === 'failed'
+  );
   const keep = latestPending ? null : live[0] ?? null;
   const supersede = live.filter((v) => v.id !== keep?.id).map((v) => v.id);
 
   if (keep) {
     await tx
       .update(versions)
-      .set({ status: 'pending_review', indexedAt: null })
+      .set({ status: 'pending_review', indexedAt: null, error: null })
       .where(and(eq(versions.tenantId, tenantId), eq(versions.id, keep.id)));
   }
   if (supersede.length > 0) {
