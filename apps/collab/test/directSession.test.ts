@@ -65,7 +65,8 @@ describe('direct collab sessions', () => {
       const outcome = await Promise.race([
         session
           .transact({ source: 'agent', actorId: w.agentId }, (doc) => {
-            doc.getMap('probe').set('k', 'agent');
+            // A page change (the title): only page content is attributed.
+            doc.getMap('meta').set('title', 'Retitled by the agent');
           })
           .then(() => 'done'),
         sleep(3000).then(() => 'still waiting'),

@@ -9,7 +9,7 @@ import {
   spaces,
   versions,
   versionContributors,
-  blockActivity,
+  pagePendingContributors,
   links,
   enqueueJob,
   writeAuditEvent,
@@ -183,43 +183,47 @@ export async function takePageSnapshot(
       })
       .returning();
 
-    // Record version_contributors from block_activity since previous snapshot
-    const activities = await tx
-      .select()
-      .from(blockActivity)
-      .where(and(eq(blockActivity.tenantId, tenantId), eq(blockActivity.pageId, pageId)));
+    // Contributors: everyone collab recorded as changing the page since the
+    // previous snapshot, plus whoever takes this one. The pending rows are
+    // consumed here, under the document lock, so each change counts towards
+    // exactly one version (a change recorded while this runs waits on the
+    // lock and counts towards the next).
+    const pending = await tx
+      .delete(pagePendingContributors)
+      .where(
+        and(
+          eq(pagePendingContributors.tenantId, tenantId),
+          eq(pagePendingContributors.pageId, pageId)
+        )
+      )
+      .returning({
+        principalType: pagePendingContributors.principalType,
+        principalId: pagePendingContributors.principalId,
+      });
 
     const contributorsMap = new Map<string, { principalType: 'user' | 'agent'; principalId: string }>();
-    contributorsMap.set(`${actorType}:${actorId}`, {
-      principalType: actorType,
-      principalId: actorId,
-    });
-    for (const act of activities) {
-      contributorsMap.set(`${act.actorType}:${act.actorId}`, {
-        principalType: act.actorType as 'user' | 'agent',
-        principalId: act.actorId,
-      });
+    for (const c of [{ principalType: actorType, principalId: actorId }, ...pending]) {
+      contributorsMap.set(`${c.principalType}:${c.principalId}`, c);
     }
 
-    for (const contributor of contributorsMap.values()) {
-      await tx
-        .insert(versionContributors)
-        .values({
+    await tx
+      .insert(versionContributors)
+      .values(
+        [...contributorsMap.values()].map((c) => ({
           tenantId,
           versionId: newVersion.id,
-          principalType: contributor.principalType,
-          principalId: contributor.principalId,
-        })
-        .onConflictDoUpdate({
-          target: [
-            versionContributors.tenantId,
-            versionContributors.versionId,
-            versionContributors.principalType,
-            versionContributors.principalId,
-          ],
-          set: { principalId: contributor.principalId },
-        });
-    }
+          principalType: c.principalType,
+          principalId: c.principalId,
+        }))
+      )
+      .onConflictDoNothing({
+        target: [
+          versionContributors.tenantId,
+          versionContributors.versionId,
+          versionContributors.principalType,
+          versionContributors.principalId,
+        ],
+      });
 
     // Rebuild internal wiki links ([[target-doc-id]]) from blocks
     await tx

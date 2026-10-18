@@ -5,11 +5,6 @@ import type { CollabContext } from './auth.js';
 export interface DirectOrigin {
   source: 'agent' | 'restore';
   actorId: string;
-  /**
-   * Block ids the caller reports as changed; feeds `block_activity` until
-   * Task 4.3 derives them from the update itself.
-   */
-  changedBlockIds?: string[];
 }
 
 /**

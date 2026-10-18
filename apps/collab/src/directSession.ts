@@ -63,14 +63,10 @@ export async function openTrustedDirectSession(
       // `{ source: 'local', context: conn.context }`, read when transact is
       // called. A fresh context object per call carries this call's actor
       // without leaking into earlier or later transactions, and keys the
-      // onChange bookkeeping this call triggers (see `collabSettle`).
+      // authorship bookkeeping this call triggers (see `collabSettle`).
       const txContext: DirectSessionContext = {
         ...context,
-        directOrigin: {
-          source: origin.source,
-          actorId: origin.actorId,
-          ...(origin.changedBlockIds ? { changedBlockIds: [...origin.changedBlockIds] } : {}),
-        },
+        directOrigin: { source: origin.source, actorId: origin.actorId },
       };
       conn.context = txContext;
       try {
@@ -81,9 +77,9 @@ export async function openTrustedDirectSession(
 
       // Server-side edits are persisted immediately rather than waiting out
       // the store debounce, so a caller that snapshots right after sees them.
-      // The transaction queued the onChange hook chain's first microtask
-      // (the core extension runs first, priority 1000) before `conn.transact`
-      // returned, so its work is registered under txContext by now.
+      // The document's afterTransaction recorder ran synchronously inside
+      // the transaction, so its work is registered under txContext by now
+      // (and chained behind the document's earlier bookkeeping).
       try {
         await storeDocumentNow(server, conn.document, txContext);
       } finally {

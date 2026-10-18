@@ -14,14 +14,20 @@ export interface CollabServerDeps {
 
 export interface ServerState {
   deps: CollabServerDeps;
-  /** Every in-flight onChange bookkeeping job, for the shutdown settle. */
+  /** Every in-flight authorship bookkeeping job, for the shutdown settle. */
   inflight: Set<Promise<void>>;
   /**
-   * The same jobs grouped by the change's context object. A direct-session
-   * transaction stamps a fresh context per call, so its key names exactly the
-   * work that call triggered.
+   * The same jobs grouped by the transaction's context object. A
+   * direct-session transaction stamps a fresh context per call, so its key
+   * names exactly the work that call triggered.
    */
   inflightByKey: WeakMap<object, Set<Promise<void>>>;
+  /**
+   * The tail of each document's bookkeeping chain, by document name: one
+   * document's writes run one after another, in transaction order (also
+   * across an unload and reload). Removed once the tail settles.
+   */
+  chains: Map<string, Promise<void>>;
   /** Store payloads whose onStoreDocument hooks all succeeded. */
   storedPayloads: WeakSet<object>;
 }
@@ -40,6 +46,7 @@ export function newServerState(deps: CollabServerDeps): ServerState {
     deps,
     inflight: new Set(),
     inflightByKey: new WeakMap(),
+    chains: new Map(),
     storedPayloads: new WeakSet(),
   };
 }
@@ -80,7 +87,7 @@ async function drain(set: Set<Promise<void>> | undefined): Promise<void> {
 }
 
 /**
- * Resolves once the onChange bookkeeping started on `server` has finished:
+ * Resolves once the authorship bookkeeping started on `server` has finished:
  * only the work recorded under `key` when one is given (a direct-session
  * call's own changes), otherwise every job on the server (shutdown).
  */

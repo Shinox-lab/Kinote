@@ -592,14 +592,11 @@ describe('Living Wiki — Slice 0 (Foundations) & Slice 1 (Live Pages)', () => {
       documentName: `${tenant.id}:${parentPage.id}`,
       token: collabToken(tenant.id, parentPage.id, 'agent', agentId),
     });
-    await agentSession.transact(
-      { source: 'agent', actorId: agentId, changedBlockIds: ['block-1'] },
-      (ydoc) => {
-        writeBlocks(ydoc, [
-          { id: 'block-1', type: 'paragraph', text: 'Agent updated architecture v2.' },
-        ]);
-      }
-    );
+    await agentSession.transact({ source: 'agent', actorId: agentId }, (ydoc) => {
+      writeBlocks(ydoc, [
+        { id: 'block-1', type: 'paragraph', text: 'Agent updated architecture v2.' },
+      ]);
+    });
     await agentSession.close();
 
     // Agents have no HTTP authentication yet (agent tokens arrive in a later

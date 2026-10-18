@@ -57,6 +57,20 @@
       "when": 1792353944434,
       "tag": "0007_chunks_inbox_owner",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1792366068117,
+      "tag": "0008_page_pending_contributors",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1792366087834,
+      "tag": "0009_page_pending_contributors_rls",
+      "breakpoints": true
     }
   ]
 }

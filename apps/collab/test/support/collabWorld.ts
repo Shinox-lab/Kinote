@@ -117,3 +117,73 @@ export async function waitFor(fn: () => boolean | Promise<boolean>, ms = 3000): 
   }
   throw new Error(`condition not met within ${ms} ms`);
 }
+
+/**
+ * A tenant with a review space (`review_required`, no self-approval), one page
+ * of three paragraphs, A (reviewer, so A could approve if A had not edited),
+ * editors B and C, a reviewer R, a viewer V and an agent granted editor,
+ * created through the real API routes.
+ */
+export async function buildReviewWorld(app: FastifyInstance) {
+  const { owner, tenant, headers } = await bootstrapTenant(app, {
+    name: 'Review Co',
+    slug: 'review-co',
+  });
+  const space = await post(app, headers, '/api/v1/spaces', {
+    name: 'Handbook',
+    slug: 'handbook',
+    review_required: true,
+    allow_self_approval: false,
+  });
+  const page = (
+    await post(app, headers, '/api/v1/pages', {
+      space_id: space.id,
+      title: 'Handbook',
+      slug: 'handbook',
+      markdown: 'First paragraph.\n\nSecond paragraph.\n\nThird paragraph.',
+    })
+  ).document;
+  const grant = (principal_type: 'user' | 'agent', principal_id: string, role: string) =>
+    post(app, headers, `/api/v1/spaces/${space.id}/grants`, { principal_type, principal_id, role });
+
+  const a = await signUpMember(app, tenant.id, 'member');
+  const b = await signUpMember(app, tenant.id, 'member');
+  const c = await signUpMember(app, tenant.id, 'member');
+  const r = await signUpMember(app, tenant.id, 'member');
+  const v = await signUpMember(app, tenant.id, 'member');
+  // A may review (and edit): approving a snapshot A typed into must be refused
+  // as self-approval, not as a missing role.
+  await grant('user', a.userId, 'reviewer');
+  await grant('user', b.userId, 'editor');
+  await grant('user', c.userId, 'editor');
+  await grant('user', r.userId, 'reviewer');
+  await grant('user', v.userId, 'viewer');
+  await grant('agent', AGENT_ID, 'editor');
+
+  function token(
+    principalType: 'user' | 'agent',
+    principalId: string,
+    access: CollabClaims['access'] = 'write'
+  ): string {
+    return signCollabToken(
+      { tenantId: tenant.id, pageId: page.id, principalType, principalId, access },
+      getCollabTokenSecret()
+    );
+  }
+
+  return {
+    owner,
+    tenant,
+    headers,
+    space,
+    page,
+    a,
+    b,
+    c,
+    r,
+    v,
+    agentId: AGENT_ID,
+    name: documentName(tenant.id, page.id),
+    token,
+  };
+}

@@ -180,6 +180,33 @@ export const blockActivity = pgTable(
   (t) => [uniqueIndex('block_activity_page_block_idx').on(t.tenantId, t.pageId, t.blockId)]
 );
 
+/**
+ * Who changed a page since its last snapshot, one row per principal: written
+ * by collab for every attributed live change, read into the next snapshot's
+ * `version_contributors` and cleared by it (in the snapshot transaction).
+ */
+export const pagePendingContributors = pgTable(
+  'page_pending_contributors',
+  {
+    tenantId: uuid('tenant_id')
+      .notNull()
+      .references(() => tenants.id),
+    pageId: uuid('page_id')
+      .notNull()
+      .references(() => documents.id, { onDelete: 'cascade' }),
+    principalType: text('principal_type', { enum: ['user', 'agent'] }).notNull(),
+    principalId: uuid('principal_id').notNull(),
+  },
+  (t) => [
+    uniqueIndex('page_pending_contributors_unique_idx').on(
+      t.tenantId,
+      t.pageId,
+      t.principalType,
+      t.principalId
+    ),
+  ]
+);
+
 export const chunks = pgTable(
   'chunks',
   {

@@ -1,16 +1,15 @@
 import { Server, type Extension, type Hocuspocus } from '@hocuspocus/server';
 import { Database } from '@hocuspocus/extension-database';
-import { and, eq } from 'drizzle-orm';
-import { withTenantTx, pages, blockActivity, enqueueJob } from '@living-wiki/db';
+import { and, eq, sql } from 'drizzle-orm';
+import { withTenantTx, pages } from '@living-wiki/db';
 import { parseDocumentName } from '@living-wiki/shared';
 import { authenticateCollabConnection, type CollabContext } from './auth.js';
-import { directOriginOf, resolveOriginActor } from './origin.js';
 import { handleInternalRequest } from './internal.js';
+import { recordPageTransactions } from './recorder.js';
 import {
   markStored,
   newServerState,
   registerCollabServer,
-  trackWork,
   type CollabServerDeps,
 } from './serverState.js';
 
@@ -19,6 +18,7 @@ export { openDirectSession, type DirectSession } from './directSession.js';
 export { collabServerDeps, collabSettle, trackCollabWork } from './serverState.js';
 export { flushDocument, replaceDocumentBlocks, INTERNAL_PATHS } from './internal.js';
 export { BLOCK_FRAGMENT } from './fragment.js';
+export { changedBlockIds, changesPage } from './attribution.js';
 
 export type { CollabServerDeps } from './serverState.js';
 
@@ -37,72 +37,6 @@ function requireDocumentName(name: string): { tenantId: string; pageId: string }
   return parsed;
 }
 
-async function handleCollabChange(args: {
-  documentName: string;
-  context: CollabContext;
-  transactionOrigin: unknown;
-}) {
-  const { context, transactionOrigin } = args;
-  const actor = resolveOriginActor(transactionOrigin);
-  // Dev visibility: one line per collab change (log only a safe shape).
-  console.log(`[collab] change on ${args.documentName} (origin=${actor?.source ?? 'none'})`);
-  // No actor (initial load, replayed or foreign origin): nothing to attribute.
-  if (!actor) return;
-
-  const { source, actorId, actorType } = actor;
-  const changedBlockIds = directOriginOf(transactionOrigin)?.changedBlockIds;
-  const { tenantId, pageId, quietSeconds } = context;
-
-  await withTenantTx(tenantId, async (tx) => {
-    await tx
-      .update(pages)
-      .set({
-        liveUpdatedAt: new Date(),
-        liveChangedSinceSnapshot: true,
-        ...(source === 'agent' ? { agentChangedAt: new Date() } : {}),
-      })
-      .where(and(eq(pages.tenantId, tenantId), eq(pages.documentId, pageId)));
-
-    if (changedBlockIds?.length) {
-      for (const blockId of changedBlockIds) {
-        await tx
-          .insert(blockActivity)
-          .values({
-            tenantId,
-            pageId,
-            blockId,
-            actorType,
-            actorId,
-            changedAt: new Date(),
-          })
-          .onConflictDoUpdate({
-            target: [blockActivity.tenantId, blockActivity.pageId, blockActivity.blockId],
-            set: {
-              actorType,
-              actorId,
-              changedAt: new Date(),
-            },
-          });
-      }
-    }
-
-    // Schedule or push out the debounced quiet snapshot job
-    const runAt = new Date(Date.now() + quietSeconds * 1000);
-    await enqueueJob(tx, {
-      tenantId,
-      queue: 'page.snapshot',
-      idempotencyKey: `quiet:${pageId}`,
-      payload: {
-        pageId,
-        reason: 'quiet',
-        actorType,
-        actorId,
-      },
-      runAt,
-    });
-  });
-}
-
 /** Postgres store: the page's whole Yjs state lives in `pages.ydoc_state`. */
 function pageStateStore(): Database {
   return new Database({
@@ -118,11 +52,22 @@ function pageStateStore(): Database {
     },
     async store({ documentName, state }) {
       const { tenantId, pageId } = requireDocumentName(documentName);
+      const bytes = Buffer.from(state);
       await withTenantTx(tenantId, async (tx) => {
+        // A store that changes the stored state also marks the page
+        // live-changed (R20), so a snapshot that read the older state just
+        // before this landed cannot leave the page looking unchanged since
+        // it. Identical bytes change nothing and are not written again.
         await tx
           .update(pages)
-          .set({ ydocState: Buffer.from(state) })
-          .where(and(eq(pages.tenantId, tenantId), eq(pages.documentId, pageId)));
+          .set({ ydocState: bytes, liveUpdatedAt: sql`now()`, liveChangedSinceSnapshot: true })
+          .where(
+            and(
+              eq(pages.tenantId, tenantId),
+              eq(pages.documentId, pageId),
+              sql`${pages.ydocState} IS DISTINCT FROM ${bytes}`
+            )
+          );
       });
     },
   });
@@ -130,11 +75,12 @@ function pageStateStore(): Database {
 
 /**
  * Builds a collab server: Hocuspocus 4 with signed-token authentication, the
- * Postgres page store, and change bookkeeping. Nothing is shared between
- * instances, so tests (and future shards) can run several side by side.
+ * Postgres page store, and per-transaction authorship bookkeeping. Nothing
+ * is shared between instances, so tests (and future shards) can run several
+ * side by side.
  *
  * `extraHooks` is merged in as one more extension after the built-in ones —
- * a seam for tests to observe hooks (e.g. `onChange`).
+ * a seam for tests to observe hooks (e.g. `onChange`, `onStoreDocument`).
  *
  * The HTTP server defaults to port 0 (any free port) until `listen(port)`.
  */
@@ -146,8 +92,8 @@ export function createCollabServer(
 
   const core: Extension<CollabContext> = {
     extensionName: 'LivingWikiCollab',
-    // Runs before other extensions, so its onChange has started by the time a
-    // direct session's transact returns.
+    // First among the extensions: its afterLoadDocument attaches the
+    // transaction recorder before anything else can touch the loaded document.
     priority: 1000,
     async onConnect({ documentName, socketId }) {
       console.log(`[collab] ws connect ${documentName} (${socketId})`);
@@ -167,21 +113,10 @@ export function createCollabServer(
       connectionConfig.readOnly = context.readOnly;
       return context;
     },
-    async onChange({ documentName, context, transactionOrigin }) {
-      const work = handleCollabChange({ documentName, context, transactionOrigin }).catch(
-        (err: unknown) => {
-          // Never break the hook chain (or leave an unhandled rejection) over
-          // bookkeeping; the edit itself is already applied and will be stored.
-          console.error(
-            `[collab] change bookkeeping failed on ${documentName}:`,
-            err instanceof Error ? err.message : err
-          );
-        }
-      );
-      // Keyed by the change's context: a direct-session call stamps a fresh
-      // context per transaction, so it can wait for exactly its own work.
-      trackWork(state, work, context && typeof context === 'object' ? context : undefined);
-      await work;
+    async afterLoadDocument({ document, documentName }) {
+      // Attached after the stored state was applied: the initial load is
+      // never attributed. Every later transaction with an actor is recorded.
+      recordPageTransactions(state, document, documentName);
     },
     async afterStoreDocument(payload) {
       // Runs only when every onStoreDocument hook succeeded: the evidence
