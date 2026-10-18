@@ -50,9 +50,12 @@ function isRetryable(err: unknown): boolean {
  * new transaction guarded by the claim's lease. A job that lands in the
  * dead-letter list gets its handler's `onDeadLetter` called once. Result
  * statuses: `completed`, `queued` (retry or rerun), `dead_letter`, `lost` (the
- * lease expired and another worker reclaimed the job, nothing recorded), or
- * `running` (recording the outcome failed; the lease expiry recovers it).
- * Jobs released on abort are not listed.
+ * lease expired and another worker reclaimed the job, nothing recorded),
+ * `running` (recording the outcome failed; the lease expiry recovers it), or
+ * `skipped_expired` (the job's lease ran out while earlier jobs of the batch
+ * ran, so it was not started; it stays `running` for the expired-lease
+ * reclaim). Jobs released on abort are not listed; dead-lettered rows of an
+ * aborted batch are still notified and listed as `dead_letter`.
  */
 export async function runPendingJobsForTenant(
   tenantId: string,
@@ -74,18 +77,42 @@ export async function runPendingJobsForTenant(
     for (let i = 0; i < claimed.length; i++) {
       const job = claimed[i]!;
       if (o.signal?.aborted) {
-        await releaseUnstarted(tenantId, claimed.slice(i));
+        const rest = claimed.slice(i);
+        await releaseUnstarted(tenantId, rest);
+        // claimJobs already dead-lettered these rows; nothing else will notify them.
+        for (const dead of rest.filter((j) => j.status === 'dead_letter')) {
+          const status = await notifyClaimDeadLetter(dead, registry);
+          processed.push({ id: dead.id, queue: dead.queue, status });
+        }
         return processed;
       }
-      const status =
-        job.status === 'dead_letter'
-          ? await notifyDeadLetter(job, registry[job.queue], job.lastError ?? 'dead-lettered')
-          : await runOne(tenantId, job, registry, clock, embeddingProvider);
+      let status: string;
+      if (job.status === 'dead_letter') {
+        status = await notifyClaimDeadLetter(job, registry);
+      } else if (leaseExpired(job, clock())) {
+        // Earlier jobs in this batch outlived this job's lease: another worker
+        // may already have reclaimed it. Leave it for the expired-lease reclaim.
+        console.warn(
+          `[worker] job ${job.id} (${job.queue}): lease expired before it started; left for reclaim`
+        );
+        status = 'skipped_expired';
+      } else {
+        status = await runOne(tenantId, job, registry, clock, embeddingProvider);
+      }
       processed.push({ id: job.id, queue: job.queue, status });
     }
   }
 
   return processed;
+}
+
+/** True when the claim's lease (`locked_at + LEASE_SECONDS`) is at or before `now`. */
+function leaseExpired(job: Job, now: Date): boolean {
+  return job.lockedAt !== null && now.getTime() >= job.lockedAt.getTime() + LEASE_SECONDS * 1000;
+}
+
+function notifyClaimDeadLetter(job: Job, registry: Record<string, JobHandler>): Promise<'dead_letter'> {
+  return notifyDeadLetter(job, registry[job.queue], job.lastError ?? 'dead-lettered');
 }
 
 async function releaseUnstarted(tenantId: string, claimed: Job[]): Promise<void> {

@@ -384,4 +384,113 @@ describe('worker runner', () => {
     expect(released.lockedAt).toBeNull();
     expect(released.attempts).toBe(0);
   });
+
+  it('on abort, still calls onDeadLetter once for dead-lettered rows in the un-started slice', async () => {
+    const tenantId = await seedTenant();
+    const first = await withTenantTx(tenantId, (tx) =>
+      enqueueJob(tx, {
+        tenantId,
+        queue: 'test.abort',
+        idempotencyKey: 'a',
+        payload: {},
+        runAt: new Date(Date.now() - 2000),
+      })
+    );
+    // A crashed run whose expired lease used its last attempt: claimJobs
+    // returns it as dead_letter, after `first`.
+    const crashed = await enqueue(tenantId, 'test.abort', 'b', {}, 1);
+    await withTenantTx(tenantId, (tx) =>
+      tx
+        .update(jobs)
+        .set({ status: 'running', lockedAt: new Date(Date.now() - 600_000) })
+        .where(and(eq(jobs.tenantId, tenantId), eq(jobs.id, crashed.id)))
+    );
+    const controller = new AbortController();
+    const ran: string[] = [];
+    const deadLetters: string[] = [];
+    const handler: JobHandler = {
+      async run(job) {
+        ran.push(job.id);
+        controller.abort();
+      },
+      async onDeadLetter(job) {
+        deadLetters.push(job.id);
+      },
+    };
+
+    const processed = await runPendingJobsForTenant(tenantId, {
+      signal: controller.signal,
+      handlers: { 'test.abort': handler },
+    });
+
+    expect(ran).toEqual([first.id]);
+    expect(deadLetters).toEqual([crashed.id]);
+    expect(processed).toEqual([
+      { id: first.id, queue: 'test.abort', status: 'completed' },
+      { id: crashed.id, queue: 'test.abort', status: 'dead_letter' },
+    ]);
+    expect((await load(tenantId, crashed.id)).status).toBe('dead_letter');
+
+    // A later run does not notify it again.
+    await runPendingJobsForTenant(tenantId, { handlers: { 'test.abort': handler } });
+    expect(deadLetters).toEqual([crashed.id]);
+  });
+
+  it('does not start a claimed job whose lease expired while earlier jobs in the batch ran', async () => {
+    const tenantId = await seedTenant();
+    const base = Date.now();
+    let t = base;
+    const clock = () => new Date(t);
+    const first = await withTenantTx(tenantId, (tx) =>
+      enqueueJob(tx, {
+        tenantId,
+        queue: 'test.slow',
+        idempotencyKey: 'a',
+        payload: {},
+        runAt: new Date(base - 2000),
+      })
+    );
+    const second = await enqueue(tenantId, 'test.slow', 'b');
+    const ran: string[] = [];
+
+    const processed = await runPendingJobsForTenant(tenantId, {
+      clock,
+      handlers: {
+        'test.slow': {
+          async run(job) {
+            ran.push(job.id);
+            t += 300_000; // exactly one lease: the second job's lease is now expired
+          },
+        },
+      },
+    });
+
+    expect(ran).toEqual([first.id]);
+    expect(processed).toEqual([
+      { id: first.id, queue: 'test.slow', status: 'completed' },
+      { id: second.id, queue: 'test.slow', status: 'skipped_expired' },
+    ]);
+    // Left exactly as claimed, for reclaim by the expired-lease path.
+    const left = await load(tenantId, second.id);
+    expect(left.status).toBe('running');
+    expect(left.lockedAt!.getTime()).toBe(base);
+    expect(left.attempts).toBe(0);
+
+    // Once the lease is past, a later run reclaims and runs it under a new lease.
+    t += 1_000;
+    const later = await runPendingJobsForTenant(tenantId, {
+      clock,
+      handlers: {
+        'test.slow': {
+          async run(job) {
+            ran.push(job.id);
+            expect(job.lockedAt!.getTime()).toBe(t);
+          },
+        },
+      },
+    });
+    expect(ran).toEqual([first.id, second.id]);
+    expect(later).toEqual([{ id: second.id, queue: 'test.slow', status: 'completed' }]);
+    expect((await load(tenantId, second.id)).status).toBe('completed');
+  });
 });
