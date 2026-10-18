@@ -4,7 +4,6 @@
     "baseUrl": ".",
     "jsx": "preserve",
     "noEmit": true,
-    "allowImportingTsExtensions": true,
     "types": ["node"],
     "paths": {
       "@living-wiki/contracts": ["packages/contracts/src/index.ts"],

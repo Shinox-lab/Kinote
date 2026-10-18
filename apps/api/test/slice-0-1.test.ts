@@ -1,4 +1,4 @@
-import { test, describe, beforeEach, after } from 'node:test';
+import { test, describe, beforeEach, afterAll } from 'vitest';
 import assert from 'node:assert/strict';
 import { sql } from 'drizzle-orm';
 import {
@@ -26,7 +26,7 @@ describe('Living Wiki — Slice 0 (Foundations) & Slice 1 (Live Pages)', () => {
     defaultEmbeddingProvider.callCount = 0;
   });
 
-  after(async () => {
+  afterAll(async () => {
     // Tear down any leftover collab documents/sessions so the test process can exit.
     collabServer.activeDocs.clear();
   });
