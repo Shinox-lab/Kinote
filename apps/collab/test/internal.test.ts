@@ -1,5 +1,6 @@
 import { describe, test, beforeAll, afterEach, afterAll, expect } from 'vitest';
 import { randomUUID } from 'node:crypto';
+import net from 'node:net';
 import { and, eq } from 'drizzle-orm';
 import { withTenantTx, pages } from '@living-wiki/db';
 import type { CollabServer } from '../src/server.js';
@@ -85,6 +86,69 @@ describe('collab internal endpoints', () => {
     return { id, type: 'paragraph', props: {}, content: [{ type: 'text', text, styles: {} }], children: [] };
   }
 
+  /**
+   * Writes `head` (and then `body`, if any) on a raw TCP connection and
+   * collects what comes back until the server closes it, or `ms` passes.
+   */
+  function rawRequest(
+    head: string,
+    opts: { body?: Buffer; ms?: number } = {}
+  ): Promise<{ text: string; closed: boolean; elapsedMs: number }> {
+    return new Promise((resolve) => {
+      const started = Date.now();
+      const socket = net.connect(port, '127.0.0.1');
+      let text = '';
+      let settled = false;
+      const finish = (closed: boolean) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        socket.destroy();
+        resolve({ text, closed, elapsedMs: Date.now() - started });
+      };
+      const timer = setTimeout(() => finish(false), opts.ms ?? 3000);
+      socket.on('data', (d) => (text += d.toString('latin1')));
+      socket.on('close', () => finish(true));
+      socket.on('error', () => finish(true));
+      socket.on('connect', () => {
+        socket.write(head);
+        if (opts.body) socket.write(opts.body);
+      });
+    });
+  }
+
+  describe('malformed request targets', () => {
+    const rejections: unknown[] = [];
+    const onRejection = (reason: unknown) => rejections.push(reason);
+
+    beforeAll(() => {
+      process.on('unhandledRejection', onRejection);
+    });
+
+    afterAll(() => {
+      process.off('unhandledRejection', onRejection);
+    });
+
+    test('targets that URL parsing rejects never crash the server', async () => {
+      for (const target of ['http://[x', 'http://a:99999/', '//[', 'http://%zz/', 'http://:80/']) {
+        await rawRequest(`GET ${target} HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n`);
+        await rawRequest(
+          `POST ${target} HTTP/1.1\r\nHost: x\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}`
+        );
+      }
+      // Give any stray rejection a chance to surface.
+      await new Promise((r) => setTimeout(r, 50));
+      expect(rejections).toEqual([]);
+
+      // Still serving: the default reply and a secret-authenticated flush.
+      const health = await fetch(`http://127.0.0.1:${port}/`);
+      expect(health.status).toBe(200);
+      const w = await buildCollabWorld(app);
+      const res = await call('/internal/flush', { json: { documentName: w.docName(w.pageA.id) } });
+      expect(res.status).toBe(204);
+    });
+  });
+
   describe('authentication and request handling', () => {
     test('no secret is 401 unauthenticated', async () => {
       const res = await call('/internal/flush', { secret: null, json: { documentName: 'x' } });
@@ -112,10 +176,45 @@ describe('collab internal endpoints', () => {
       expect(await res.json()).toMatchObject({ error: 'validation_failed' });
     });
 
-    test('an oversized body is 413', async () => {
+    test('an oversized declared body is 413 at once and the connection is closed unread', async () => {
+      // Only the headers are sent: the reply must not wait for the 50 MB body.
+      const res = await rawRequest(
+        `POST /internal/flush HTTP/1.1\r\nHost: x\r\nContent-Type: application/json\r\n` +
+          `x-internal-secret: ${TEST_INTERNAL_SECRET}\r\nContent-Length: ${50 * 1024 * 1024}\r\n\r\n`
+      );
+      expect(res.text).toMatch(/^HTTP\/1\.1 413 /);
+      expect(res.text.toLowerCase()).toContain('connection: close');
+      expect(res.closed).toBe(true);
+      expect(res.elapsedMs).toBeLessThan(2000);
+    });
+
+    test('a streamed body that grows past the cap is refused and its connection closed', async () => {
       const big = JSON.stringify({ documentName: 'x', pad: 'a'.repeat(3 * 1024 * 1024) });
-      const res = await call('/internal/flush', { body: big });
-      expect(res.status).toBe(413);
+      const res = await rawRequest(
+        `POST /internal/flush HTTP/1.1\r\nHost: x\r\nContent-Type: application/json\r\n` +
+          `x-internal-secret: ${TEST_INTERNAL_SECRET}\r\nTransfer-Encoding: chunked\r\n\r\n`,
+        { body: Buffer.from(`${big.length.toString(16)}\r\n${big}\r\n0\r\n\r\n`) }
+      );
+      // The 413 may be lost to a reset while the client is still sending;
+      // what matters is that the server stops reading and closes promptly.
+      if (res.text) expect(res.text).toMatch(/^HTTP\/1\.1 413 /);
+      expect(res.closed).toBe(true);
+      expect(res.elapsedMs).toBeLessThan(2000);
+      expect((await fetch(`http://127.0.0.1:${port}/`)).status).toBe(200);
+    });
+
+    test('a 401 for a huge declared body answers at once and closes the connection', async () => {
+      const res = await rawRequest(
+        `POST /internal/flush HTTP/1.1\r\nHost: x\r\nContent-Type: application/json\r\n` +
+          `Content-Length: ${100 * 1024 * 1024}\r\n\r\n`
+      );
+      expect(res.text).toMatch(/^HTTP\/1\.1 401 /);
+      expect(res.text.toLowerCase()).toContain('connection: close');
+      expect(res.text).toContain('"error":"unauthenticated"');
+      // Closed by the server well inside the 3 s window, none of the 100 MB sent.
+      expect(res.closed).toBe(true);
+      expect(res.elapsedMs).toBeLessThan(2000);
+      expect((await fetch(`http://127.0.0.1:${port}/`)).status).toBe(200);
     });
 
     test('a malformed document name is 400', async () => {
@@ -249,6 +348,47 @@ describe('collab internal endpoints', () => {
       });
       expect(res.status).toBe(404);
       expect(await res.json()).toMatchObject({ error: 'page_not_found' });
+    });
+
+    test('empty blocks are 400 validation_failed and leave the document unchanged', async () => {
+      const w = await buildCollabWorld(app);
+      const before = readBlocks(await storedDoc(w.tenant.id, w.pageA.id));
+      const res = await call('/internal/replace-blocks', {
+        json: {
+          documentName: w.docName(w.pageA.id),
+          title: 'Nothing',
+          blocks: [],
+          actor: { type: 'user', id: w.owner.userId },
+          source: 'restore',
+        },
+      });
+      expect(res.status).toBe(400);
+      expect(await res.json()).toMatchObject({ error: 'validation_failed' });
+      expect(readBlocks(await storedDoc(w.tenant.id, w.pageA.id))).toEqual(before);
+      expect(server.documents.has(w.docName(w.pageA.id))).toBe(false);
+    });
+
+    test('source and actor type must agree: agent needs an agent, restore needs a user', async () => {
+      const w = await buildCollabWorld(app);
+      for (const [actor, source] of [
+        [{ type: 'user', id: w.owner.userId }, 'agent'],
+        [{ type: 'agent', id: w.agentId }, 'restore'],
+      ] as const) {
+        const res = await call('/internal/replace-blocks', {
+          json: {
+            documentName: w.docName(w.pageA.id),
+            title: 'Mismatch',
+            blocks: [paragraph('mismatch-1', 'Should not land')],
+            actor,
+            source,
+          },
+        });
+        expect(res.status).toBe(400);
+        expect(await res.json()).toMatchObject({ error: 'validation_failed' });
+      }
+      expect(JSON.stringify(readBlocks(await storedDoc(w.tenant.id, w.pageA.id)))).not.toContain(
+        'Should not land'
+      );
     });
 
     test('an invalid body is 400 validation_failed', async () => {

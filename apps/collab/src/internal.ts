@@ -154,25 +154,60 @@ function sendError(response: ServerResponse, code: ErrorCode, status: number, he
 
 class BodyTooLarge extends Error {}
 
-/** Reads the whole body (draining past the cap so the reply is delivered). */
+/**
+ * Replies and closes the connection without reading the rest of the body
+ * (401, 413), so a caller cannot tie the connection up by streaming more.
+ * `Connection: close` makes Node end and destroy the socket once the reply is
+ * flushed. A client still pushing a large body at that moment may see a reset
+ * instead of the reply; either way the call has failed and nothing is held.
+ */
+function sendAndClose(
+  request: IncomingMessage,
+  response: ServerResponse,
+  status: number,
+  body: unknown
+): void {
+  response.writeHead(status, { 'Content-Type': 'application/json', Connection: 'close' });
+  response.end(JSON.stringify(body), () => request.destroy());
+}
+
+/**
+ * Reads the whole JSON body, up to `limit` bytes. A declared or streamed size
+ * over the limit rejects with BodyTooLarge as soon as it is known, without
+ * reading further.
+ */
 function readBody(request: IncomingMessage, limit: number): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const declared = Number(request.headers['content-length']);
-    let tooLarge = Number.isFinite(declared) && declared > limit;
+    if (Number.isFinite(declared) && declared > limit) {
+      reject(new BodyTooLarge());
+      return;
+    }
     const chunks: Buffer[] = [];
     let size = 0;
+    let done = false;
     request.on('data', (chunk: Buffer) => {
-      if (tooLarge) return;
+      if (done) return;
       size += chunk.length;
       if (size > limit) {
-        tooLarge = true;
+        done = true;
         chunks.length = 0;
+        request.pause();
+        reject(new BodyTooLarge());
         return;
       }
       chunks.push(chunk);
     });
-    request.on('end', () => (tooLarge ? reject(new BodyTooLarge()) : resolve(Buffer.concat(chunks))));
-    request.on('error', reject);
+    request.on('end', () => {
+      if (done) return;
+      done = true;
+      resolve(Buffer.concat(chunks));
+    });
+    request.on('error', (err) => {
+      if (done) return;
+      done = true;
+      reject(err);
+    });
   });
 }
 
@@ -184,8 +219,10 @@ async function handleInternal(
 ): Promise<void> {
   const { internalSecret } = collabServerDeps(server);
   if (!secretMatches(request.headers['x-internal-secret'], internalSecret)) {
-    request.resume();
-    return sendError(response, 'unauthenticated', 401);
+    return sendAndClose(request, response, 401, {
+      error: 'unauthenticated',
+      message: ERROR_SENTENCES.unauthenticated,
+    });
   }
   if (request.method !== 'POST') {
     request.resume();
@@ -203,7 +240,7 @@ async function handleInternal(
     input = JSON.parse(raw.toString('utf8'));
   } catch (err) {
     if (err instanceof BodyTooLarge) {
-      return sendJson(response, 413, {
+      return sendAndClose(request, response, 413, {
         error: 'validation_failed',
         message: 'The request body is too large.',
       });
@@ -228,26 +265,50 @@ async function handleInternal(
 }
 
 /**
+ * The internal handler for a request target, or undefined. Matches the raw
+ * origin-form path exactly (query string ignored) without URL parsing: Node
+ * accepts request targets that `new URL` rejects (`http://[x`, `//[`), and
+ * this must never throw. Anything else (absolute-form, unknown) is not internal.
+ */
+function internalHandlerFor(url: unknown) {
+  if (typeof url !== 'string') return undefined;
+  const path = url.split('?', 1)[0];
+  return Object.hasOwn(HANDLERS, path) ? HANDLERS[path] : undefined;
+}
+
+/**
  * The Hocuspocus 4 `onRequest` hook for the internal endpoints. Any other
- * path resolves untouched, so later hooks and Hocuspocus' default response
- * (`GET /`, a health check) still run. For an internal path the reply is sent
- * here and the hook rejects with `null`: Hocuspocus then skips the remaining
- * hooks and its default response without logging an error.
+ * request target resolves untouched, so later hooks and Hocuspocus' default
+ * response (`GET /`, a health check) still run. For an internal path the reply
+ * is sent here and the hook rejects with `null`: Hocuspocus then skips the
+ * remaining hooks and its default response without logging an error.
+ *
+ * It never rejects with anything else: Hocuspocus re-throws a truthy hook
+ * error out of its async request listener, an unhandled rejection that would
+ * take the whole collab process (and every unsaved edit) down.
  */
 export async function handleInternalRequest(
   server: Hocuspocus,
   request: IncomingMessage,
   response: ServerResponse
 ): Promise<void> {
-  const path = new URL(request.url ?? '/', 'http://collab.internal').pathname;
-  const handler = Object.hasOwn(HANDLERS, path) ? HANDLERS[path] : undefined;
+  let handler: ReturnType<typeof internalHandlerFor>;
+  try {
+    handler = internalHandlerFor(request.url);
+  } catch {
+    return;
+  }
   if (!handler) return;
   try {
     await handleInternal(server, handler, request, response);
   } catch (err) {
-    console.error('[collab] internal request failed:', err instanceof Error ? err.message : err);
-    if (!response.headersSent) sendError(response, 'internal_error', 500);
-    else response.end();
+    try {
+      console.error('[collab] internal request failed:', err instanceof Error ? err.message : err);
+      if (!response.headersSent) sendError(response, 'internal_error', 500);
+      else response.end();
+    } catch {
+      // The connection is already gone; nothing more to report.
+    }
   }
   throw null;
 }

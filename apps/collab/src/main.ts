@@ -53,6 +53,14 @@ async function main(): Promise<void> {
       process.exit(1);
     }
   };
+  // Defense in depth: a stray rejection is logged and the server keeps
+  // serving (exiting would drop every edit still waiting for its store).
+  process.on('unhandledRejection', (reason: unknown) => {
+    console.error(
+      'collab: unhandled rejection (still running):',
+      reason instanceof Error ? reason.message : reason
+    );
+  });
   process.on('SIGTERM', () => void shutdown());
   process.on('SIGINT', () => void shutdown());
 }

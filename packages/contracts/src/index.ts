@@ -273,16 +273,29 @@ export type CollabFlushRequest = z.infer<typeof CollabFlushRequestSchema>;
 /**
  * Replaces a live page's BlockNote content and title. `source` decides the
  * attribution: an `agent` change marks the page agent-changed, a `restore`
- * never does.
+ * never does. The two are tied: only an agent makes an `agent` change, and a
+ * restore is always a person's. At least one block (an empty block group is
+ * not a valid BlockNote document).
  */
-export const CollabReplaceBlocksRequestSchema = z.object({
-  documentName: z.string().min(1).max(200),
-  title: z.string().trim().min(1).max(200),
-  blocks: z.array(z.record(z.unknown())).max(10_000),
-  actor: z.object({
-    type: z.enum(['user', 'agent']),
-    id: z.string().uuid(),
-  }),
-  source: z.enum(['restore', 'agent']),
-});
+export const CollabReplaceBlocksRequestSchema = z
+  .object({
+    documentName: z.string().min(1).max(200),
+    title: z.string().trim().min(1).max(200),
+    blocks: z.array(z.record(z.unknown())).min(1).max(10_000),
+    actor: z.object({
+      type: z.enum(['user', 'agent']),
+      id: z.string().uuid(),
+    }),
+    source: z.enum(['restore', 'agent']),
+  })
+  .superRefine((req, ctx) => {
+    const expected = req.source === 'agent' ? 'agent' : 'user';
+    if (req.actor.type !== expected) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['actor', 'type'],
+        message: `A ${req.source} change must be made by a${expected === 'agent' ? 'n agent' : ' user'}.`,
+      });
+    }
+  });
 export type CollabReplaceBlocksRequest = z.infer<typeof CollabReplaceBlocksRequestSchema>;
