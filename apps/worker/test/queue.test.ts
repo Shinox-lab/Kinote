@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import {
   claimJobs,
   completeJob,
@@ -237,6 +237,155 @@ describe('leased job queue', () => {
     await withTenantTx(tenantId, (tx) =>
       failJob(tx, tenantId, job.id, { message: 'x', retryable: false })
     );
+    expect(await claim(tenantId, seconds(10_000))).toEqual([]);
+  });
+
+  describe('lease guard', () => {
+    it('a stale worker cannot complete or fail a job another worker reclaimed', async () => {
+      const tenantId = await seedTenant();
+      const job = await enqueue(tenantId, 'k');
+      const [claimA] = await claim(tenantId, NOW);
+      const [claimB] = await claim(tenantId, seconds(301));
+      expect(claimB!.lockedAt!.getTime()).toBe(seconds(301).getTime());
+
+      const completeA = await withTenantTx(tenantId, (tx) =>
+        completeJob(tx, tenantId, job.id, { lease: claimA!.lockedAt! })
+      );
+      expect(completeA.status).toBe('lost');
+      let row = await load(tenantId, job.id);
+      expect(row.status).toBe('running');
+      expect(row.lockedAt!.toISOString()).toBe(seconds(301).toISOString());
+
+      const failA = await withTenantTx(tenantId, (tx) =>
+        failJob(tx, tenantId, job.id, { message: 'x', retryable: false, lease: claimA!.lockedAt! })
+      );
+      expect(failA.status).toBe('lost');
+      row = await load(tenantId, job.id);
+      expect(row.status).toBe('running');
+      expect(row.lastError).toBeNull();
+      expect(row.lockedAt!.toISOString()).toBe(seconds(301).toISOString());
+
+      const completeB = await withTenantTx(tenantId, (tx) =>
+        completeJob(tx, tenantId, job.id, { lease: claimB!.lockedAt! })
+      );
+      expect(completeB.status).toBe('completed');
+      expect((await load(tenantId, job.id)).status).toBe('completed');
+    });
+
+    it('a lease token does not match a job that is no longer running', async () => {
+      const tenantId = await seedTenant();
+      const job = await enqueue(tenantId, 'k');
+      const [claimed] = await claim(tenantId);
+      await withTenantTx(tenantId, (tx) => completeJob(tx, tenantId, job.id));
+      const again = await withTenantTx(tenantId, (tx) =>
+        failJob(tx, tenantId, job.id, { message: 'x', retryable: true, lease: claimed!.lockedAt! })
+      );
+      expect(again.status).toBe('lost');
+      expect((await load(tenantId, job.id)).status).toBe('completed');
+    });
+
+    it('matches a lease stored with microsecond precision', async () => {
+      const tenantId = await seedTenant();
+      const job = await enqueue(tenantId, 'k');
+      await withTenantTx(tenantId, (tx) =>
+        tx.execute(sql`UPDATE jobs SET status = 'running',
+          locked_at = '2026-10-19T12:00:00.123456Z'::timestamptz
+          WHERE tenant_id = ${tenantId} AND id = ${job.id}`)
+      );
+      const running = await load(tenantId, job.id);
+      expect(running.lockedAt!.toISOString()).toBe('2026-10-19T12:00:00.123Z');
+
+      const result = await withTenantTx(tenantId, (tx) =>
+        completeJob(tx, tenantId, job.id, { lease: running.lockedAt! })
+      );
+      expect(result.status).toBe('completed');
+    });
+
+    it('completeJob and failJob report lost for a row that no longer exists', async () => {
+      const tenantId = await seedTenant();
+      const missing = randomUUID();
+      expect(
+        (await withTenantTx(tenantId, (tx) => completeJob(tx, tenantId, missing))).status
+      ).toBe('lost');
+      expect(
+        (
+          await withTenantTx(tenantId, (tx) =>
+            failJob(tx, tenantId, missing, { message: 'x', retryable: false })
+          )
+        ).status
+      ).toBe('lost');
+    });
+  });
+
+  describe('failJob with rerun_requested', () => {
+    it('a retry keeps counting attempts and waits for the later requested run_at', async () => {
+      const tenantId = await seedTenant();
+      const job = await enqueue(tenantId, 'k', { step: 1 });
+      await claim(tenantId);
+      await enqueue(tenantId, 'k', { step: 2 }, seconds(30));
+
+      const result = await withTenantTx(tenantId, (tx) =>
+        failJob(tx, tenantId, job.id, { message: 'temp', retryable: true, now: NOW })
+      );
+      expect(result.status).toBe('queued');
+      const row = await load(tenantId, job.id);
+      expect(row.attempts).toBe(1);
+      expect(row.rerunRequested).toBe(false);
+      expect(row.lockedAt).toBeNull();
+      expect(row.payload).toEqual({ step: 2 });
+      expect(row.runAt.toISOString()).toBe(seconds(30).toISOString());
+    });
+
+    it('a retry uses the backoff when it is later than the requested run_at', async () => {
+      const tenantId = await seedTenant();
+      const job = await enqueue(tenantId, 'k');
+      await claim(tenantId);
+      await enqueue(tenantId, 'k', {}, seconds(-5));
+
+      await withTenantTx(tenantId, (tx) =>
+        failJob(tx, tenantId, job.id, { message: 'temp', retryable: true, now: NOW })
+      );
+      const row = await load(tenantId, job.id);
+      expect(row.attempts).toBe(1);
+      expect(row.runAt.toISOString()).toBe(seconds(1).toISOString());
+    });
+
+    it('a would-be dead letter is revived with attempts 0 at the requested run_at', async () => {
+      const tenantId = await seedTenant();
+      const job = await enqueue(tenantId, 'k', { step: 1 });
+      await claim(tenantId);
+      await enqueue(tenantId, 'k', { step: 2 }, seconds(30));
+
+      const result = await withTenantTx(tenantId, (tx) =>
+        failJob(tx, tenantId, job.id, { message: 'fatal', retryable: false, now: NOW })
+      );
+      expect(result.status).toBe('queued');
+      const row = await load(tenantId, job.id);
+      expect(row.status).toBe('queued');
+      expect(row.attempts).toBe(0);
+      expect(row.rerunRequested).toBe(false);
+      expect(row.lastError).toBe('fatal');
+      expect(row.runAt.toISOString()).toBe(seconds(30).toISOString());
+    });
+  });
+
+  it('reclaiming an expired lease counts an attempt and dead-letters at max_attempts', async () => {
+    const tenantId = await seedTenant();
+    const job = await enqueue(tenantId, 'k', {}, seconds(-60), 2);
+    const first = await claim(tenantId, NOW);
+    expect(first[0]!.attempts).toBe(0);
+
+    const second = await claim(tenantId, seconds(301));
+    expect(second.map((j) => [j.id, j.status, j.attempts])).toEqual([[job.id, 'running', 1]]);
+
+    const third = await claim(tenantId, seconds(602));
+    expect(third.map((j) => [j.id, j.status, j.attempts])).toEqual([[job.id, 'dead_letter', 2]]);
+    const row = await load(tenantId, job.id);
+    expect(row.status).toBe('dead_letter');
+    expect(row.attempts).toBe(2);
+    expect(row.lockedAt).toBeNull();
+    expect(row.lastError).toMatch(/lease expired/);
+
     expect(await claim(tenantId, seconds(10_000))).toEqual([]);
   });
 });

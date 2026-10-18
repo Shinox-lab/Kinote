@@ -4,6 +4,7 @@ import { and, eq } from 'drizzle-orm';
 import { AppError } from '@living-wiki/contracts';
 import {
   NonRetryableError,
+  claimJobs,
   enqueueJob,
   jobs,
   tenants,
@@ -225,5 +226,162 @@ describe('worker runner', () => {
     expect(ran.sort()).toEqual([ja.id, jb.id].sort());
     expect((await load(a, ja.id)).status).toBe('completed');
     expect((await load(b, jb.id)).status).toBe('completed');
+  });
+
+  it('computes retry backoff from the failure time, not the pass start', async () => {
+    const tenantId = await seedTenant();
+    const base = Date.now();
+    let t = base;
+    const clock = () => new Date(t);
+    const job = await enqueue(tenantId, 'test.slow');
+    let runs = 0;
+
+    await runPendingJobsForTenant(tenantId, {
+      clock,
+      handlers: {
+        'test.slow': {
+          async run() {
+            runs++;
+            t += 10_000; // the handler takes 10 s, then the embedding service is unavailable
+            throw new AppError('embedding_unavailable');
+          },
+        },
+      },
+    });
+
+    expect(runs).toBe(1);
+    const row = await load(tenantId, job.id);
+    expect(row.status).toBe('queued');
+    expect(row.attempts).toBe(1);
+    expect(row.runAt.getTime()).toBe(base + 10_000 + 1_000);
+  });
+
+  it('leases each pass from the clock at claim time', async () => {
+    const tenantId = await seedTenant();
+    const base = Date.now();
+    let t = base;
+    const clock = () => new Date(t);
+    await enqueue(tenantId, 'test.first');
+    let secondLockedAt: Date | null = null;
+
+    await runPendingJobsForTenant(tenantId, {
+      clock,
+      handlers: {
+        'test.first': {
+          async run() {
+            t += 5_000;
+            await withTenantTx(tenantId, (tx) =>
+              enqueueJob(tx, {
+                tenantId,
+                queue: 'test.second',
+                idempotencyKey: 'k2',
+                payload: {},
+                runAt: new Date(t),
+              })
+            );
+          },
+        },
+        'test.second': {
+          async run(job) {
+            secondLockedAt = job.lockedAt;
+          },
+        },
+      },
+    });
+
+    expect(secondLockedAt).not.toBeNull();
+    expect(secondLockedAt!.getTime()).toBe(base + 5_000);
+  });
+
+  it('records a lost lease without dead-lettering or calling onDeadLetter', async () => {
+    const tenantId = await seedTenant();
+    const job = await enqueue(tenantId, 'test.stale');
+    const deadLetters: string[] = [];
+    let reclaimedLockedAt: Date | null = null;
+
+    const processed = await runPendingJobsForTenant(tenantId, {
+      handlers: {
+        'test.stale': {
+          async run() {
+            // Another worker reclaims the job after this run's lease expired.
+            const [reclaimed] = await withTenantTx(tenantId, (tx) =>
+              claimJobs(tx, tenantId, {
+                now: new Date(Date.now() + 301_000),
+                limit: 10,
+                leaseSeconds: 300,
+              })
+            );
+            reclaimedLockedAt = reclaimed!.lockedAt;
+            throw new NonRetryableError('fatal');
+          },
+          async onDeadLetter(j) {
+            deadLetters.push(j.id);
+          },
+        },
+      },
+    });
+
+    expect(processed).toEqual([{ id: job.id, queue: 'test.stale', status: 'lost' }]);
+    expect(deadLetters).toEqual([]);
+    const row = await load(tenantId, job.id);
+    expect(row.status).toBe('running');
+    expect(row.lockedAt!.getTime()).toBe(reclaimedLockedAt!.getTime());
+  });
+
+  it('dead-letters a job whose expired lease used its last attempt, calling onDeadLetter once', async () => {
+    const tenantId = await seedTenant();
+    const job = await enqueue(tenantId, 'test.crashy', 'k', {}, 1);
+    await withTenantTx(tenantId, (tx) =>
+      tx
+        .update(jobs)
+        .set({ status: 'running', lockedAt: new Date(Date.now() - 600_000) })
+        .where(and(eq(jobs.tenantId, tenantId), eq(jobs.id, job.id)))
+    );
+    const t = throwing(() => new Error('unreachable'));
+
+    const processed = await runPendingJobsForTenant(tenantId, {
+      handlers: { 'test.crashy': t.handler },
+    });
+
+    expect(t.runs).toEqual([]);
+    expect(t.deadLetters).toHaveLength(1);
+    expect(t.deadLetters[0]!.error).toMatch(/lease expired/);
+    expect(processed).toEqual([{ id: job.id, queue: 'test.crashy', status: 'dead_letter' }]);
+    expect((await load(tenantId, job.id)).status).toBe('dead_letter');
+  });
+
+  it('stops between jobs when the signal aborts and releases claimed jobs it did not start', async () => {
+    const tenantId = await seedTenant();
+    const first = await withTenantTx(tenantId, (tx) =>
+      enqueueJob(tx, {
+        tenantId,
+        queue: 'test.abort',
+        idempotencyKey: 'a',
+        payload: {},
+        runAt: new Date(Date.now() - 2000),
+      })
+    );
+    const second = await enqueue(tenantId, 'test.abort', 'b');
+    const controller = new AbortController();
+    const ran: string[] = [];
+
+    const processed = await runPendingJobsForTenant(tenantId, {
+      signal: controller.signal,
+      handlers: {
+        'test.abort': {
+          async run(job) {
+            ran.push(job.id);
+            controller.abort();
+          },
+        },
+      },
+    });
+
+    expect(ran).toEqual([first.id]);
+    expect(processed).toEqual([{ id: first.id, queue: 'test.abort', status: 'completed' }]);
+    const released = await load(tenantId, second.id);
+    expect(released.status).toBe('queued');
+    expect(released.lockedAt).toBeNull();
+    expect(released.attempts).toBe(0);
   });
 });

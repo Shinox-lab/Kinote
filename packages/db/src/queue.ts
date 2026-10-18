@@ -83,6 +83,13 @@ export async function enqueueJob(
  * running with a lease older than `leaseSeconds`. A single UPDATE over a
  * `FOR UPDATE SKIP LOCKED` selection sets `status = 'running'` and
  * `locked_at = now` together, so concurrent workers never claim the same job.
+ *
+ * Reclaiming an expired lease counts the abandoned run as an attempt
+ * (`attempts + 1`); when that reaches `max_attempts` the job is dead-lettered
+ * instead of claimed, so a handler that crashes or hangs is not reclaimed
+ * forever. Such rows come back with `status = 'dead_letter'`: do not run them
+ * (call the queue's dead-letter hook instead). Every other returned row is
+ * `running`, and its `locked_at` is the lease token for `completeJob`/`failJob`.
  * Returned in `run_at` order. Commit the transaction before running handlers.
  */
 export async function claimJobs(
@@ -107,9 +114,20 @@ export async function claimJobs(
     .limit(o.limit)
     .for('update', { skipLocked: true });
 
+  // In SET, column references are the row's values before this update.
+  const reclaim = sql`"jobs"."status" = 'running'`;
+  const exhausted = sql`(${reclaim} AND "jobs"."attempts" + 1 >= "jobs"."max_attempts")`;
   const claimed = await tx
     .update(jobs)
-    .set({ status: 'running', lockedAt: o.now })
+    .set({
+      status: sql`CASE WHEN ${exhausted} THEN 'dead_letter' ELSE 'running' END`,
+      lockedAt: sql`CASE WHEN ${exhausted} THEN NULL ELSE ${o.now.toISOString()}::timestamptz END`,
+      attempts: sql`CASE WHEN ${reclaim} THEN "jobs"."attempts" + 1 ELSE "jobs"."attempts" END`,
+      rerunRequested: sql`CASE WHEN ${exhausted} THEN false ELSE "jobs"."rerun_requested" END`,
+      lastError: sql`CASE WHEN ${exhausted}
+        THEN 'lease expired after ' || ${o.leaseSeconds}::int || ' s on the final attempt'
+        ELSE "jobs"."last_error" END`,
+    })
     .where(and(eq(jobs.tenantId, tenantId), inArray(jobs.id, due)))
     .returning();
 
@@ -118,26 +136,57 @@ export async function claimJobs(
   );
 }
 
-async function lockJob(tx: DbTransaction, tenantId: string, jobId: string): Promise<Job | undefined> {
+/**
+ * Locks the job row for an outcome update. With a lease token (the `locked_at`
+ * of the caller's claim) the row must still be `running` under that lease;
+ * compared at millisecond precision because a JS Date carries no microseconds.
+ */
+async function lockJob(
+  tx: DbTransaction,
+  tenantId: string,
+  jobId: string,
+  lease?: Date
+): Promise<Job | undefined> {
   const [job] = await tx
     .select()
     .from(jobs)
-    .where(and(eq(jobs.tenantId, tenantId), eq(jobs.id, jobId)))
+    .where(
+      and(
+        eq(jobs.tenantId, tenantId),
+        eq(jobs.id, jobId),
+        lease
+          ? and(
+              eq(jobs.status, 'running'),
+              sql`date_trunc('milliseconds', ${jobs.lockedAt}) =
+                date_trunc('milliseconds', ${lease.toISOString()}::timestamptz)`
+            )
+          : undefined
+      )
+    )
     .for('update');
   return job;
+}
+
+/** Postgres text cannot hold NUL; error messages can. */
+function storableMessage(message: string): string {
+  return message.replace(/\u0000/g, '');
 }
 
 /**
  * Ends a run successfully and releases the lease: `completed`, or back to
  * `queued` (attempts reset, flag cleared) when an enqueue arrived during the run.
+ * Pass `lease` (the claimed job's `locked_at`): if the job is no longer running
+ * under that lease (it expired and another worker reclaimed it), or the row is
+ * gone, nothing changes and the result is `lost`.
  */
 export async function completeJob(
   tx: DbTransaction,
   tenantId: string,
-  jobId: string
-): Promise<{ status: 'completed' | 'queued' }> {
-  const job = await lockJob(tx, tenantId, jobId);
-  if (!job) return { status: 'completed' };
+  jobId: string,
+  o: { lease?: Date } = {}
+): Promise<{ status: 'completed' | 'queued' | 'lost' }> {
+  const job = await lockJob(tx, tenantId, jobId, o.lease);
+  if (!job) return { status: 'lost' };
 
   const status = job.rerunRequested ? 'queued' : 'completed';
   await tx
@@ -156,22 +205,26 @@ export async function completeJob(
  * attempt and records `last_error`. A retryable error re-queues the job with
  * `run_at = now + 2^(attempts - 1)` seconds (1 s after the first failure, 2 s
  * after the second, ...) until `attempts` reaches `max_attempts`, when the job
- * is dead-lettered; a non-retryable error dead-letters it at once.
+ * is dead-lettered; a non-retryable error dead-letters it at once. `now` is the
+ * failure time (default: the wall clock at this call).
  *
  * When an enqueue arrived during the run (`rerun_requested`) the job is queued
  * again either way, exactly as that enqueue would have done after the failure:
  * a job that would have been dead-lettered is revived with `attempts = 0` at the
  * requested `run_at`; a retry keeps its attempt count and runs no earlier than
  * both the backoff and the requested `run_at`.
+ *
+ * `lease` works as in `completeJob`: a lost lease or a missing row changes
+ * nothing and returns `lost`.
  */
 export async function failJob(
   tx: DbTransaction,
   tenantId: string,
   jobId: string,
-  e: { message: string; retryable: boolean; now?: Date }
-): Promise<{ status: 'queued' | 'dead_letter' }> {
-  const job = await lockJob(tx, tenantId, jobId);
-  if (!job) return { status: 'dead_letter' };
+  e: { message: string; retryable: boolean; now?: Date; lease?: Date }
+): Promise<{ status: 'queued' | 'dead_letter' | 'lost' }> {
+  const job = await lockJob(tx, tenantId, jobId, e.lease);
+  if (!job) return { status: 'lost' };
 
   const now = e.now ?? new Date();
   const attempts = job.attempts + 1;
@@ -192,9 +245,31 @@ export async function failJob(
 
   await tx
     .update(jobs)
-    .set({ ...set, lastError: e.message, lockedAt: null })
+    .set({ ...set, lastError: storableMessage(e.message), lockedAt: null })
     .where(and(eq(jobs.tenantId, tenantId), eq(jobs.id, jobId)));
   return { status: set.status as 'queued' | 'dead_letter' };
+}
+
+/**
+ * Puts claimed jobs that were never started back in the queue (worker
+ * shutdown). Only rows still running under the given lease are touched, and
+ * no attempt is counted.
+ */
+export async function releaseJobs(
+  tx: DbTransaction,
+  tenantId: string,
+  claimed: Array<{ id: string; lockedAt: Date | null }>
+): Promise<void> {
+  for (const job of claimed) {
+    if (!job.lockedAt) continue;
+    const row = await lockJob(tx, tenantId, job.id, job.lockedAt);
+    if (!row) continue;
+    await tx
+      .update(jobs)
+      // Not started yet, so a pending rerun is satisfied by the next run.
+      .set({ status: 'queued', lockedAt: null, rerunRequested: false })
+      .where(and(eq(jobs.tenantId, tenantId), eq(jobs.id, job.id)));
+  }
 }
 
 /**
