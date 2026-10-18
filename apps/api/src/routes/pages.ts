@@ -240,28 +240,82 @@ export async function submitPageSnapshot(actor: Actor, pageId: string) {
   });
 }
 
-export async function approveVersion(actor: Actor, versionId: string, input: unknown = {}) {
+/** Test seam for approve and reject: `beforeLock` runs after the version was found, before its document is locked. */
+export interface ReviewHooks {
+  beforeLock?: () => Promise<void>;
+}
+
+/**
+ * Finds the document a version belongs to (versions never change document).
+ * Its own short transaction, so nothing is held while waiting for the lock.
+ */
+async function documentIdOfVersion(actor: Actor, versionId: string): Promise<string> {
+  const [found] = await withTenantTx(actor.tenantId, (tx) =>
+    tx
+      .select({ documentId: versions.documentId })
+      .from(versions)
+      .where(and(eq(versions.tenantId, actor.tenantId), eq(versions.id, versionId)))
+  );
+  if (!found) {
+    throw new AppError('version_not_found', 'Version not found.');
+  }
+  return found.documentId;
+}
+
+/**
+ * Locks the version's document (lock order everywhere: document row first,
+ * then version rows), then re-reads the version under the lock. A version
+ * that is not there any more is 404 `version_not_found`.
+ */
+async function lockReviewTarget(tx: DbTransaction, actor: Actor, versionId: string, documentId: string) {
+  let doc: DocumentRow;
+  try {
+    doc = await lockDocument(tx, actor.tenantId, documentId);
+  } catch (err) {
+    if (err instanceof AppError && err.code === 'document_not_found') {
+      throw new AppError('version_not_found', 'Version not found.');
+    }
+    throw err;
+  }
+  const [ver] = await tx
+    .select()
+    .from(versions)
+    .where(
+      and(
+        eq(versions.tenantId, actor.tenantId),
+        eq(versions.id, versionId),
+        eq(versions.documentId, documentId)
+      )
+    )
+    .for('update');
+  if (!ver) {
+    throw new AppError('version_not_found', 'Version not found.');
+  }
+  return { doc, ver };
+}
+
+/**
+ * Approves a `pending_review` version: it moves to `indexing` and its
+ * `version.index` job is enqueued. Runs under the document lock and only
+ * moves a version that is still `pending_review`, so a withdraw, archive or
+ * move that committed first wins (409 `version_not_pending`). Agents never
+ * approve; the actor must be reviewer or higher in the space and, unless the
+ * space allows self-approval, neither its creator nor a human contributor.
+ */
+export async function approveVersion(
+  actor: Actor,
+  versionId: string,
+  input: unknown = {},
+  hooks: ReviewHooks = {}
+) {
   assertValidUuid(versionId, 'version_not_found');
   const parsed = ApproveVersionRequestSchema.parse(input);
 
+  const documentId = await documentIdOfVersion(actor, versionId);
+  if (hooks.beforeLock) await hooks.beforeLock();
+
   return withTenantTx(actor.tenantId, async (tx) => {
-    const [ver] = await tx
-      .select()
-      .from(versions)
-      .where(and(eq(versions.tenantId, actor.tenantId), eq(versions.id, versionId)));
-
-    if (!ver) {
-      throw new AppError('version_not_found', 'Version not found.');
-    }
-
-    const [doc] = await tx
-      .select()
-      .from(documents)
-      .where(and(eq(documents.tenantId, actor.tenantId), eq(documents.id, ver.documentId)));
-
-    if (!doc) {
-      throw new AppError('document_not_found', 'Document not found.');
-    }
+    const { doc, ver } = await lockReviewTarget(tx, actor, versionId, documentId);
 
     // Rule 3 & S4: Agents can never approve; user must hold reviewer or admin in the space
     if (actor.principalType === 'agent') {
@@ -295,7 +349,7 @@ export async function approveVersion(actor: Actor, versionId: string, input: unk
     }
 
     const reviewedAt = new Date();
-    const [updatedVer] = await tx
+    const updatedRows = await tx
       .update(versions)
       .set({
         status: 'indexing',
@@ -303,8 +357,18 @@ export async function approveVersion(actor: Actor, versionId: string, input: unk
         reviewedAt,
         reviewNote: parsed.review_note ?? null,
       })
-      .where(and(eq(versions.tenantId, actor.tenantId), eq(versions.id, ver.id)))
+      .where(
+        and(
+          eq(versions.tenantId, actor.tenantId),
+          eq(versions.id, ver.id),
+          eq(versions.status, 'pending_review')
+        )
+      )
       .returning();
+    if (updatedRows.length !== 1) {
+      throw new AppError('version_not_pending', 'Version is not waiting for review.');
+    }
+    const [updatedVer] = updatedRows;
 
     // Clear agent_changed_at ONLY when no agent change happened after the approved snapshot was taken
     if (doc.kind === 'page') {
@@ -342,24 +406,24 @@ export async function approveVersion(actor: Actor, versionId: string, input: unk
   });
 }
 
-export async function rejectVersion(actor: Actor, versionId: string, input: unknown) {
+/**
+ * Rejects a `pending_review` version (reviewer or higher). Same lock order and
+ * `pending_review` guard as approve.
+ */
+export async function rejectVersion(
+  actor: Actor,
+  versionId: string,
+  input: unknown,
+  hooks: ReviewHooks = {}
+) {
   assertValidUuid(versionId, 'version_not_found');
   const parsed = RejectVersionRequestSchema.parse(input);
 
+  const documentId = await documentIdOfVersion(actor, versionId);
+  if (hooks.beforeLock) await hooks.beforeLock();
+
   return withTenantTx(actor.tenantId, async (tx) => {
-    const [ver] = await tx
-      .select()
-      .from(versions)
-      .where(and(eq(versions.tenantId, actor.tenantId), eq(versions.id, versionId)));
-
-    if (!ver) {
-      throw new AppError('version_not_found', 'Version not found.');
-    }
-
-    const [doc] = await tx
-      .select()
-      .from(documents)
-      .where(and(eq(documents.tenantId, actor.tenantId), eq(documents.id, ver.documentId)));
+    const { doc, ver } = await lockReviewTarget(tx, actor, versionId, documentId);
 
     await requireSpaceRole(tx, actor, doc.spaceId, 'reviewer');
 
@@ -367,7 +431,7 @@ export async function rejectVersion(actor: Actor, versionId: string, input: unkn
       throw new AppError('version_not_pending', 'Version is not waiting for review.');
     }
 
-    const [updated] = await tx
+    const updatedRows = await tx
       .update(versions)
       .set({
         status: 'rejected',
@@ -375,8 +439,18 @@ export async function rejectVersion(actor: Actor, versionId: string, input: unkn
         reviewedAt: new Date(),
         reviewNote: parsed.review_note,
       })
-      .where(and(eq(versions.tenantId, actor.tenantId), eq(versions.id, ver.id)))
+      .where(
+        and(
+          eq(versions.tenantId, actor.tenantId),
+          eq(versions.id, ver.id),
+          eq(versions.status, 'pending_review')
+        )
+      )
       .returning();
+    if (updatedRows.length !== 1) {
+      throw new AppError('version_not_pending', 'Version is not waiting for review.');
+    }
+    const [updated] = updatedRows;
 
     await writeAuditEvent(tx, {
       tenantId: actor.tenantId,
