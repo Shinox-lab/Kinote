@@ -90,7 +90,8 @@ const samePath = (a: string[], b: string[]) => a.length === b.length && a.every(
 
 /**
  * Splits extracted text into chunks. A new chunk starts when the heading path
- * changes; paragraphs under one heading fill a chunk up to `targetWords`; a
+ * or the page changes (a citation names one page); paragraphs under one heading
+ * on one page fill a chunk up to `targetWords`; a
  * table is never mixed with prose and stays whole unless over `maxWords`, when
  * it splits by rows with its header line repeated. Every chunk's text starts
  * with the title and heading path (Rule 8), carries the pages it spans and has
@@ -124,11 +125,14 @@ export function chunkExtracted(
   const drafts: Draft[] = [];
   let current: Draft | null = null;
   for (const u of units) {
+    // Pages are what a citation points at, so text from another page never joins a chunk.
     const joins =
       current !== null &&
       !u.table &&
       !current.table &&
       samePath(current.headingPath, u.headingPath) &&
+      current.pageFrom === u.pageFrom &&
+      current.pageTo === u.pageTo &&
       current.words + u.words <= opts.targetWords;
     if (!joins) {
       current = { headingPath: u.headingPath, texts: [], words: 0, table: u.table, pageFrom: null, pageTo: null };

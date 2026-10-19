@@ -131,6 +131,19 @@ with `EXTRACTOR_URL` points the worker at the Docling service (compose profile `
 (default 240 s, at most 270 s) stays below the worker's 300 s job lease. Extracted text above `MAX_EXTRACTED_CHARS`
 fails the file with a sentence; it is never truncated. The api and worker create the S3 bucket at start when it is missing.
 
+To read PDFs, Office files and images, start the extractor (Docling, `apps/extractor`; its models are baked into the
+image at build time, so the first build downloads several gigabytes) and point the worker at it:
+
+```sh
+EXTRACTOR_MODE=http docker compose --profile extractor up -d --build extractor worker
+```
+
+The extractor shares an internal network with the worker only: no internet, no database, no object storage. The worker
+sends the bytes and gets text back. Without the profile everything still works for TXT, MD and CSV, audio and video are
+stored for download, and other files wait for the extractor and fail with a plain sentence after their retries (Retry
+recovers them). `EXTRACTOR_MODE=fake` (tests and `pnpm e2e:local`) reads the text a test file carries after a
+`FAKE-EXTRACT` line instead.
+
 ## Database client
 
 `initDb({ url })` creates one pool per process. Calling it again replaces the

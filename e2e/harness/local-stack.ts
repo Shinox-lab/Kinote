@@ -21,8 +21,8 @@ import { fileURLToPath } from 'node:url';
 import { build, createLogger, preview, type PreviewServer } from 'vite';
 import { assertEmbeddingDimensions, closeDb } from '@living-wiki/db';
 import { createTestDb } from '@living-wiki/db/testing';
-import { defaultEmbeddingProvider } from '@living-wiki/core';
-import { loadConfig } from '@living-wiki/shared';
+import { FakeExtractor, defaultEmbeddingProvider } from '@living-wiki/core';
+import { InMemoryObjectStorage, loadConfig } from '@living-wiki/shared';
 import { buildApiServer } from '../../apps/api/src/server.js';
 import { HttpCollabClient } from '../../apps/api/src/collab/client.js';
 import { collabSettle, createCollabServer } from '../../apps/collab/src/server.js';
@@ -75,7 +75,14 @@ const collab = createCollabServer({
 });
 await collab.server.listen(collabPort);
 
+// Files: one in-memory store shared by the api and the worker, and the fake extractor, which reads
+// the text a test file carries (a first line FAKE-EXTRACT; see FakeExtractor). No MinIO, no Docling.
+const storage = new InMemoryObjectStorage();
+const extractor = new FakeExtractor();
+
 const app = buildApiServer({
+  storage,
+  maxUploadBytes: config.MAX_UPLOAD_BYTES,
   // Every spec signs accounts up from this one address.
   authRateLimit: { max: 10_000, timeWindow: '1 minute' },
   collab: new HttpCollabClient(`http://${HOST}:${collabPort}`, internalSecret),
@@ -87,6 +94,9 @@ const worker = runWorkerLoop({
   intervalMs: millis('E2E_WORKER_POLL_MS', 250),
   signal: stopWorker.signal,
   embeddingProvider: defaultEmbeddingProvider,
+  storage,
+  extractor,
+  maxExtractedChars: config.MAX_EXTRACTED_CHARS,
 });
 
 // The console, built fresh so the specs run against the production bundle; vite.config.ts

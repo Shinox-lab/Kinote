@@ -38,7 +38,7 @@ x-app-env: &app-env
   MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-52428800}
   MAX_EXTRACTED_CHARS: ${MAX_EXTRACTED_CHARS:-2000000}
   EXTRACTOR_MODE: ${EXTRACTOR_MODE:-off}
-  EXTRACTOR_URL: ${EXTRACTOR_URL:-}
+  EXTRACTOR_URL: ${EXTRACTOR_URL:-http://extractor:8000}
   EXTRACTOR_TIMEOUT_MS: ${EXTRACTOR_TIMEOUT_MS:-240000}
 
 services:
@@ -128,10 +128,30 @@ services:
       context: .
       target: worker
     environment: *app-env
+    networks: [default, extractor_net]
     depends_on:
       migrate:
         condition: service_completed_successfully
     restart: unless-stopped
+
+  # Docling behind POST /extract. Off by default (its models are large):
+  #   docker compose --profile extractor up -d --build extractor worker
+  # and set EXTRACTOR_MODE=http. It shares an internal network with the worker only:
+  # no internet, no database, no object storage.
+  extractor:
+    profiles: ["extractor"]
+    build:
+      context: .
+      dockerfile: apps/extractor/Dockerfile
+      target: runtime
+    environment:
+      MAX_EXTRACTED_CHARS: ${MAX_EXTRACTED_CHARS:-2000000}
+    networks: [extractor_net]
+    restart: unless-stopped
+
+networks:
+  extractor_net:
+    internal: true
 
 volumes:
   pgdata:

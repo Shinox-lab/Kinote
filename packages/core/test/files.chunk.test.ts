@@ -82,9 +82,19 @@ describe('chunkExtracted', () => {
     expect(chunks.map((c) => c.ordinal)).toEqual([0, 1]);
   });
 
-  it('joins consecutive sections with the same path and spans their pages', () => {
-    const chunks = chunkExtracted('D', [text(['A'], 'first', 2), text(['A'], 'second', 3)]);
+  it('joins consecutive sections with the same path on the same page', () => {
+    const chunks = chunkExtracted('D', [text(['A'], 'first', 2), text(['A'], 'second', 2)]);
     expect(chunks).toHaveLength(1);
+    expect(chunks[0]).toMatchObject({ pageFrom: 2, pageTo: 2 });
+  });
+
+  it('starts a new chunk at a page change, so a citation names one page', () => {
+    const chunks = chunkExtracted('D', [text(['A'], 'first', 2), text(['A'], 'second', 3)]);
+    expect(chunks.map((c) => [c.pageFrom, c.pageTo])).toEqual([[2, 2], [3, 3]]);
+  });
+
+  it('keeps the span of a section that itself covers two pages', () => {
+    const chunks = chunkExtracted('D', [text(['A'], 'runs over', 2, 3)]);
     expect(chunks[0]).toMatchObject({ pageFrom: 2, pageTo: 3 });
   });
 
