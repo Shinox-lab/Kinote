@@ -17,6 +17,9 @@ export interface RawChunk {
   text: string;
   tokenCount: number;
   contentHash: string;
+  /** Pages the chunk spans: set for file chunks only (a page's chunks do not carry them). */
+  pageFrom?: number | null;
+  pageTo?: number | null;
 }
 
 interface Draft {

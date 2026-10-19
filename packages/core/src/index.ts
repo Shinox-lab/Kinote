@@ -32,3 +32,5 @@ export {
   type DetectResult,
   type FileHandling,
 } from './files/detect.js';
+export { readTextNative, parseCsv } from './files/textNative.js';
+export { chunkExtracted } from './files/chunkExtracted.js';
