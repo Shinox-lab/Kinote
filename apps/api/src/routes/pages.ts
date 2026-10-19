@@ -12,6 +12,8 @@ import {
   pagePendingContributors,
   blockActivity,
   chunks,
+  users,
+  agents,
   enqueueJob,
   writeAuditEvent,
   lockDocument,
@@ -26,9 +28,15 @@ import {
   CollabTokenResponseSchema,
   RetryVersionResponseSchema,
   VersionSummarySchema,
+  VersionListSchema,
+  VersionDetailSchema,
+  BlockDiffSchema,
+  CompareQuerySchema,
   AppError,
   type RetryVersionResponse,
   type VersionSummary,
+  type VersionDetail,
+  type BlockDiffEntry,
 } from '@living-wiki/contracts';
 import {
   requireSpaceRole,
@@ -46,7 +54,9 @@ import {
   documentName,
   COLLAB_TOKEN_TTL_SECONDS,
 } from '@living-wiki/shared';
+import type { BlockLike } from '@living-wiki/shared';
 import { computePageBadge } from '../pages/badge.js';
+import { diffBlocks } from '../pages/diff.js';
 import type { CollabClient } from '../collab/client.js';
 
 const blockNote = ServerBlockNoteEditor.create();
@@ -264,6 +274,221 @@ export async function getPageDetails(actor: Actor, pageId: string) {
       versions: pageVersions,
       blockActivity: activity,
     };
+  });
+}
+
+/**
+ * Reads: version history, version detail and block diffs. All are viewer reads
+ * through `requireDocumentRole`, so a document the actor cannot see (hidden
+ * Inbox item, unreadable space) answers the same 404 body as an unknown id.
+ * They take no document lock (plain reads) and filter on tenant_id.
+ */
+
+/** The page document, readable by the actor (404 `page_not_found` otherwise). */
+async function readablePage(tx: DbTransaction, actor: Actor, pageId: string): Promise<DocumentRow> {
+  const [doc] = await tx
+    .select()
+    .from(documents)
+    .where(and(eq(documents.tenantId, actor.tenantId), eq(documents.id, pageId)));
+  if (!doc || doc.kind !== 'page') {
+    throw new AppError('page_not_found');
+  }
+  await requireDocumentRole(tx, actor, doc, 'viewer', { notFound: 'page_not_found' });
+  return doc;
+}
+
+/** The stored BlockNote blocks of a version (`[]` while it has none). */
+function storedBlocks(blocks: unknown): BlockLike[] {
+  return Array.isArray(blocks) ? (blocks as BlockLike[]) : [];
+}
+
+/** `block_activity` of a page: the last actor per block. */
+async function pageActivity(tx: DbTransaction, tenantId: string, pageId: string) {
+  return tx
+    .select({
+      blockId: blockActivity.blockId,
+      actorType: blockActivity.actorType,
+      actorId: blockActivity.actorId,
+    })
+    .from(blockActivity)
+    .where(and(eq(blockActivity.tenantId, tenantId), eq(blockActivity.pageId, pageId)));
+}
+
+/** The blocks of the document's currently indexed version, or null when none is indexed. */
+async function indexedBlocks(tx: DbTransaction, tenantId: string, doc: DocumentRow) {
+  if (!doc.indexedVersionId) return null;
+  const [row] = await tx
+    .select({ blocks: versions.blocks })
+    .from(versions)
+    .where(and(eq(versions.tenantId, tenantId), eq(versions.id, doc.indexedVersionId)));
+  return row ? storedBlocks(row.blocks) : null;
+}
+
+/** GET /api/v1/pages/:id/versions: the page's versions as summaries, newest first. */
+export async function listPageVersions(actor: Actor, pageId: string): Promise<VersionSummary[]> {
+  assertValidUuid(pageId, 'page_not_found');
+  return withTenantTx(actor.tenantId, async (tx) => {
+    await readablePage(tx, actor, pageId);
+    const rows = await tx
+      .select(versionSummaryColumns)
+      .from(versions)
+      .where(and(eq(versions.tenantId, actor.tenantId), eq(versions.documentId, pageId)))
+      .orderBy(desc(versions.number));
+    return VersionListSchema.parse(rows.map(toVersionSummary));
+  });
+}
+
+/**
+ * Finds a version and its document and checks the actor may read it: unknown
+ * ids and versions of hidden documents are the same 404 `version_not_found`.
+ */
+async function readableVersion(tx: DbTransaction, actor: Actor, versionId: string) {
+  const [ver] = await tx
+    .select({
+      ...versionSummaryColumns,
+      documentId: versions.documentId,
+      markdown: versions.markdown,
+      blocks: versions.blocks,
+    })
+    .from(versions)
+    .where(and(eq(versions.tenantId, actor.tenantId), eq(versions.id, versionId)));
+  if (!ver) {
+    throw new AppError('version_not_found');
+  }
+  const [doc] = await tx
+    .select()
+    .from(documents)
+    .where(and(eq(documents.tenantId, actor.tenantId), eq(documents.id, ver.documentId)));
+  if (!doc) {
+    throw new AppError('version_not_found');
+  }
+  await requireDocumentRole(tx, actor, doc, 'viewer', { notFound: 'version_not_found' });
+  return { ver, doc };
+}
+
+/**
+ * GET /api/v1/versions/:id: the summary plus markdown, stored blocks and the
+ * contributors with their display names. The Yjs snapshot is never selected.
+ */
+export async function getVersionDetail(actor: Actor, versionId: string): Promise<VersionDetail> {
+  assertValidUuid(versionId, 'version_not_found');
+  return withTenantTx(actor.tenantId, async (tx) => {
+    const { ver } = await readableVersion(tx, actor, versionId);
+
+    const rows = await tx
+      .select({
+        type: versionContributors.principalType,
+        id: versionContributors.principalId,
+        userName: users.name,
+        agentName: agents.name,
+      })
+      .from(versionContributors)
+      .leftJoin(users, eq(users.id, versionContributors.principalId))
+      .leftJoin(
+        agents,
+        and(eq(agents.id, versionContributors.principalId), eq(agents.tenantId, actor.tenantId))
+      )
+      .where(
+        and(
+          eq(versionContributors.tenantId, actor.tenantId),
+          eq(versionContributors.versionId, versionId)
+        )
+      );
+    const contributors = rows
+      .map((r) => ({
+        type: r.type,
+        id: r.id,
+        name: (r.type === 'agent' ? r.agentName : r.userName) ?? r.id,
+        isAgent: r.type === 'agent',
+      }))
+      .sort((a, b) => a.type.localeCompare(b.type) || a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
+
+    return VersionDetailSchema.parse({
+      ...toVersionSummary(ver),
+      markdown: ver.markdown,
+      blocks: Array.isArray(ver.blocks) ? ver.blocks : [],
+      contributors,
+    });
+  });
+}
+
+/**
+ * GET /api/v1/pages/:id/changes: the indexed version's blocks against the
+ * live content (all `added` when nothing is indexed), authored from
+ * `block_activity`.
+ */
+export async function getPageChanges(actor: Actor, pageId: string): Promise<BlockDiffEntry[]> {
+  assertValidUuid(pageId, 'page_not_found');
+  return withTenantTx(actor.tenantId, async (tx) => {
+    const doc = await readablePage(tx, actor, pageId);
+    const before = (await indexedBlocks(tx, actor.tenantId, doc)) ?? [];
+
+    const [page] = await tx
+      .select({ ydocState: pages.ydocState })
+      .from(pages)
+      .where(and(eq(pages.tenantId, actor.tenantId), eq(pages.documentId, pageId)));
+    if (!page) {
+      throw new AppError('page_not_found');
+    }
+    const ydoc = new Y.Doc();
+    Y.applyUpdate(ydoc, page.ydocState);
+    const live = blockNote.yDocToBlocks(ydoc, 'document-store') as BlockLike[];
+
+    const activity = await pageActivity(tx, actor.tenantId, pageId);
+    return BlockDiffSchema.parse(diffBlocks(before, live, activity));
+  });
+}
+
+/**
+ * GET /api/v1/pages/:id/compare?from=<n>&to=<m>: the diff between two versions
+ * of the page, by version number (400 `validation_failed` unless both are
+ * positive integers, 404 `version_not_found` for a number the page lacks).
+ *
+ * Authors are not attributed: `block_activity` keeps only the LAST actor per
+ * block, not who changed it between two particular versions, so an author here
+ * could be wrong. The activity list is empty on purpose.
+ */
+export async function comparePageVersions(
+  actor: Actor,
+  pageId: string,
+  query: unknown
+): Promise<BlockDiffEntry[]> {
+  assertValidUuid(pageId, 'page_not_found');
+  const { from, to } = CompareQuerySchema.parse(query);
+  return withTenantTx(actor.tenantId, async (tx) => {
+    await readablePage(tx, actor, pageId);
+    const rows = await tx
+      .select({ number: versions.number, blocks: versions.blocks })
+      .from(versions)
+      .where(
+        and(
+          eq(versions.tenantId, actor.tenantId),
+          eq(versions.documentId, pageId),
+          inArray(versions.number, [from, to])
+        )
+      );
+    const fromRow = rows.find((r) => r.number === from);
+    const toRow = rows.find((r) => r.number === to);
+    if (!fromRow || !toRow) {
+      throw new AppError('version_not_found');
+    }
+    return BlockDiffSchema.parse(diffBlocks(storedBlocks(fromRow.blocks), storedBlocks(toRow.blocks), []));
+  });
+}
+
+/**
+ * GET /api/v1/versions/:id/diff: the version against the document's CURRENT
+ * indexed version. When none is indexed, or the version is the indexed one,
+ * there is nothing to compare against and every block is `unchanged`.
+ */
+export async function getVersionDiff(actor: Actor, versionId: string): Promise<BlockDiffEntry[]> {
+  assertValidUuid(versionId, 'version_not_found');
+  return withTenantTx(actor.tenantId, async (tx) => {
+    const { ver, doc } = await readableVersion(tx, actor, versionId);
+    const after = storedBlocks(ver.blocks);
+    const indexed = doc.indexedVersionId === ver.id ? null : await indexedBlocks(tx, actor.tenantId, doc);
+    // No authors, for the reason given at comparePageVersions.
+    return BlockDiffSchema.parse(diffBlocks(indexed ?? after, after, []));
   });
 }
 

@@ -276,6 +276,54 @@ export const VersionSummarySchema = z.object({
 });
 export type VersionSummary = z.infer<typeof VersionSummarySchema>;
 
+/** A principal that contributed to a version, with the name shown in history. */
+export const VersionContributorSchema = z.object({
+  type: z.enum(['user', 'agent']),
+  id: z.string().uuid(),
+  name: z.string(),
+  isAgent: z.boolean(),
+});
+export type VersionContributor = z.infer<typeof VersionContributorSchema>;
+
+/**
+ * Reply of GET /api/v1/versions/:id: the summary plus the stored markdown (the
+ * reviewed form), the stored BlockNote blocks and who contributed. Never
+ * carries the Yjs snapshot bytes.
+ */
+export const VersionDetailSchema = VersionSummarySchema.extend({
+  markdown: z.string().nullable(),
+  blocks: z.array(z.unknown()),
+  contributors: z.array(VersionContributorSchema),
+});
+export type VersionDetail = z.infer<typeof VersionDetailSchema>;
+
+/**
+ * One block in a diff, aligned by block id. `before` is the old text
+ * (`changed`, `removed`), `after` the new text (`added`, `changed`,
+ * `unchanged`). `author` is the last actor recorded for the block
+ * (`block_activity`), set for `added` and `changed` only.
+ */
+export const BlockDiffEntrySchema = z.object({
+  blockId: z.string(),
+  change: z.enum(['added', 'removed', 'changed', 'unchanged']),
+  before: z.string().optional(),
+  after: z.string().optional(),
+  author: z.object({ type: z.enum(['user', 'agent']), id: z.string() }).optional(),
+});
+export type BlockDiffEntry = z.infer<typeof BlockDiffEntrySchema>;
+
+/** Reply of GET /api/v1/pages/:id/versions (newest first). */
+export const VersionListSchema = z.array(VersionSummarySchema);
+
+/** Reply of GET /api/v1/pages/:id/changes, /compare and GET /api/v1/versions/:id/diff. */
+export const BlockDiffSchema = z.array(BlockDiffEntrySchema);
+
+/** Query of GET /api/v1/pages/:id/compare: two version numbers of the page. */
+export const CompareQuerySchema = z.object({
+  from: z.coerce.number().int().positive(),
+  to: z.coerce.number().int().positive(),
+});
+
 /** Reply of POST /api/v1/versions/:id/retry (no request body): the summary plus its document. */
 export const RetryVersionResponseSchema = VersionSummarySchema.extend({
   documentId: z.string().uuid(),

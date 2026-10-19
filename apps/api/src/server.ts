@@ -43,6 +43,11 @@ import {
   archivePage,
   restorePage,
   withdrawPage,
+  listPageVersions,
+  getVersionDetail,
+  getPageChanges,
+  comparePageVersions,
+  getVersionDiff,
 } from './routes/pages.js';
 import { authRoutes, type AuthRateLimit } from './routes/auth.js';
 import { requireSession, resolveActor, type AuthSession } from './auth/actor.js';
@@ -221,6 +226,26 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
     const actor = actorOf(req);
     const res = await getPageDetails(actor, (req.params as any).id);
     return reply.send(res);
+  });
+
+  app.get('/api/v1/pages/:id/versions', async (req, reply) => {
+    return reply.send(await listPageVersions(actorOf(req), (req.params as any).id));
+  });
+
+  app.get('/api/v1/pages/:id/changes', async (req, reply) => {
+    return reply.send(await getPageChanges(actorOf(req), (req.params as any).id));
+  });
+
+  app.get('/api/v1/pages/:id/compare', async (req, reply) => {
+    return reply.send(await comparePageVersions(actorOf(req), (req.params as any).id, req.query));
+  });
+
+  app.get('/api/v1/versions/:id', async (req, reply) => {
+    return reply.send(await getVersionDetail(actorOf(req), (req.params as any).id));
+  });
+
+  app.get('/api/v1/versions/:id/diff', async (req, reply) => {
+    return reply.send(await getVersionDiff(actorOf(req), (req.params as any).id));
   });
 
   app.post('/api/v1/pages/:id/collab-token', async (req, reply) => {
