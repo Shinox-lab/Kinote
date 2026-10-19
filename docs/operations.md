@@ -49,6 +49,10 @@ docker compose up -d --build   # the whole stack (migrate runs before the servic
 pnpm stack:down                # docker compose down -v: containers and data are deleted
 ```
 
+`pnpm test:pg` fails with a message naming `TEST_DATABASE_URL` and
+`TEST_DATABASE_MIGRATE_URL` when either is unset, so a run that would have
+skipped every real-Postgres test never reports success.
+
 Database and object data live in anonymous volumes: they survive
 `docker compose restart` and `stop`/`start`, and `down -v` deletes them.
 
