@@ -128,7 +128,9 @@ export async function createPage(actor: Actor, input: unknown) {
   const parsed = CreatePageRequestSchema.parse(input);
 
   return withTenantTx(actor.tenantId, async (tx) => {
-    const { space } = await requireSpaceRole(tx, actor, parsed.space_id, 'editor');
+    const { space } = await requireSpaceRole(tx, actor, parsed.space_id, 'editor', {
+      lock: 'share',
+    });
 
     if (parsed.parent_id) {
       await requireVisibleParent(tx, actor, parsed.parent_id, parsed.space_id);
@@ -777,7 +779,10 @@ export async function movePage(actor: Actor, pageId: string, input: unknown) {
       tx,
       actor,
       parsed.target_space_id,
-      'editor'
+      'editor',
+      // Share-locked: see SpaceRoleOptions.lock (a live page must not land in a
+      // space that is being archived).
+      { lock: 'share' }
     );
     // Moving into the Inbox keeps the document's creator, so afterwards only
     // the creator and tenant owners and admins see it (as `chunks.inbox_owner`
@@ -931,7 +936,11 @@ export async function restorePage(actor: Actor, pageId: string) {
   return withTenantTx(actor.tenantId, async (tx) => {
     const doc = await lockPage(tx, actor.tenantId, pageId);
 
-    await requireDocumentRole(tx, actor, doc, 'admin', { notFound: 'page_not_found' });
+    // Document lock first (lockPage), then the space share lock: see SpaceRoleOptions.lock.
+    await requireDocumentRole(tx, actor, doc, 'admin', {
+      notFound: 'page_not_found',
+      lock: 'share',
+    });
 
     if (!doc.archivedAt) {
       return doc;

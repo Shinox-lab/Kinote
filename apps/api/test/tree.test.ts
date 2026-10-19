@@ -1,12 +1,16 @@
 import { describe, test, beforeEach } from 'vitest';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { and, eq } from 'drizzle-orm';
-import { withTenantTx, versions, documents, auditEvents } from '@living-wiki/db';
+import { and, eq, sql } from 'drizzle-orm';
+import { withTenantTx, rowsOf, versions, documents, auditEvents } from '@living-wiki/db';
+import { requireSpaceRole, type Actor } from '@living-wiki/core';
+import { createPage as createPageAs } from '../src/routes/pages.js';
+import { getSpaceTree, getSpaceArchived } from '../src/routes/foundations.js';
 import {
   buildTestApp,
   bootstrapTenant,
   signUpMember,
+  createAgent,
   useTestDb,
 } from './support/testkit.js';
 
@@ -228,6 +232,64 @@ describe('tree, archived list, space archive, page restore', () => {
     });
   });
 
+  describe('the archived list on an archived space', () => {
+    test('a tenant admin can still read it; a member gets 404 space_not_found', async () => {
+      const page = await createPage(ctx.editor.headers, ctx.docs.id, 'p', 'P');
+      assert.equal((await archivePage(ctx.spaceAdmin.headers, page)).statusCode, 200);
+      assert.equal(
+        (await post(ctx.ownerHeaders, `/api/v1/spaces/${ctx.docs.id}/archive`)).statusCode,
+        200
+      );
+      assert.deepEqual((await archivedList(ctx.ownerHeaders, ctx.docs.id)).map((n) => n.id), [page]);
+      const member = await app.inject({
+        method: 'GET',
+        url: `/api/v1/spaces/${ctx.docs.id}/archived`,
+        headers: ctx.spaceAdmin.headers,
+      });
+      assert.equal(member.statusCode, 404, member.body);
+      assert.equal(member.json().error, 'space_not_found');
+    });
+  });
+
+  describe('an agent in the Inbox', () => {
+    test('sees only its own pages in the tree and the archived list; admins see all', async () => {
+      const agentId = await createAgent(ctx.tenant.id, ctx.owner.userId, { name: 'Scribe' });
+      const agent: Actor = { tenantId: ctx.tenant.id, principalType: 'agent', principalId: agentId };
+      const theirs = await createPage(ctx.editor.headers, ctx.inbox.id, 'theirs', 'Theirs');
+      const { document } = await createPageAs(agent, {
+        space_id: ctx.inbox.id,
+        title: 'Agent note',
+        slug: 'agent-note',
+        markdown: 'x',
+      });
+      const own2 = (
+        await createPageAs(agent, {
+          space_id: ctx.inbox.id,
+          title: 'Agent old',
+          slug: 'agent-old',
+          markdown: 'x',
+        })
+      ).document;
+      await withTenantTx(ctx.tenant.id, (tx) =>
+        tx
+          .update(documents)
+          .set({ archivedAt: new Date() })
+          .where(and(eq(documents.tenantId, ctx.tenant.id), eq(documents.id, own2.id)))
+      );
+
+      assert.deepEqual((await getSpaceTree(agent, ctx.inbox.id)).nodes.map((n) => n.id), [document.id]);
+      // The archived list needs space admin, which an agent can never be.
+      await assert.rejects(getSpaceArchived(agent, ctx.inbox.id), { code: 'forbidden' });
+      assert.deepEqual(
+        (await tree(ctx.ownerHeaders, ctx.inbox.id)).map((n) => n.id).sort(),
+        [theirs, document.id].sort()
+      );
+      assert.deepEqual((await archivedList(ctx.ownerHeaders, ctx.inbox.id)).map((n) => n.id), [own2.id]);
+      // A member sees none of the agent's pages.
+      assert.deepEqual((await tree(ctx.editor.headers, ctx.inbox.id)).map((n) => n.id), [theirs]);
+    });
+  });
+
   describe('POST /spaces/:id/archive', () => {
     test('is refused while a page remains and succeeds once every page is archived', async () => {
       const page = await createPage(ctx.editor.headers, ctx.docs.id, 'p', 'P');
@@ -302,10 +364,12 @@ describe('tree, archived list, space archive, page restore', () => {
       assert.equal(second.json().error, 'space_archived');
     });
 
-    test('an unknown or unreadable space is 404 space_not_found', async () => {
+    test('an unreadable space answers exactly like an unknown space id (whole body)', async () => {
       const res = await post(ctx.outsider.headers, `/api/v1/spaces/${ctx.docs.id}/archive`);
+      const unknown = await post(ctx.outsider.headers, `/api/v1/spaces/${randomUUID()}/archive`);
       assert.equal(res.statusCode, 404, res.body);
       assert.equal(res.json().error, 'space_not_found');
+      assert.deepEqual(res.json(), unknown.json());
     });
   });
 
@@ -369,6 +433,51 @@ describe('tree, archived list, space archive, page restore', () => {
       assert.equal(res.json().parentId, parent);
     });
 
+    /** Points an archived page at `parentId` directly in the database (no route can build these states). */
+    async function forceParent(pageId: string, parentId: string) {
+      await withTenantTx(ctx.tenant.id, (tx) =>
+        tx
+          .update(documents)
+          .set({ parentId })
+          .where(and(eq(documents.tenantId, ctx.tenant.id), eq(documents.id, pageId)))
+      );
+    }
+
+    test('drops a parent that lives in another space', async () => {
+      const elsewhere = await createSpace(ctx.ownerHeaders, 'elsewhere');
+      const foreign = await createPage(ctx.ownerHeaders, elsewhere.id, 'foreign', 'Foreign');
+      const child = await createPage(ctx.editor.headers, ctx.docs.id, 'child', 'Child');
+      assert.equal((await archivePage(ctx.spaceAdmin.headers, child)).statusCode, 200);
+      await forceParent(child, foreign);
+
+      const res = await post(ctx.spaceAdmin.headers, `/api/v1/pages/${child}/restore`);
+      assert.equal(res.statusCode, 200, res.body);
+      assert.equal(res.json().parentId, null);
+    });
+
+    test('drops a parent that is not a page', async () => {
+      const [file] = await withTenantTx(ctx.tenant.id, (tx) =>
+        tx
+          .insert(documents)
+          .values({
+            tenantId: ctx.tenant.id,
+            spaceId: ctx.docs.id,
+            kind: 'file',
+            title: 'A file',
+            createdByType: 'user',
+            createdBy: ctx.owner.userId,
+          })
+          .returning({ id: documents.id })
+      );
+      const child = await createPage(ctx.editor.headers, ctx.docs.id, 'child', 'Child');
+      assert.equal((await archivePage(ctx.spaceAdmin.headers, child)).statusCode, 200);
+      await forceParent(child, file.id);
+
+      const res = await post(ctx.spaceAdmin.headers, `/api/v1/pages/${child}/restore`);
+      assert.equal(res.statusCode, 200, res.body);
+      assert.equal(res.json().parentId, null);
+    });
+
     test('a space editor gets 403 forbidden', async () => {
       const page = await createPage(ctx.editor.headers, ctx.docs.id, 'p');
       assert.equal((await archivePage(ctx.spaceAdmin.headers, page)).statusCode, 200);
@@ -407,6 +516,107 @@ describe('tree, archived list, space archive, page restore', () => {
       const res = await post(ctx.ownerHeaders, `/api/v1/pages/${page}/restore`);
       assert.equal(res.statusCode, 409, res.body);
       assert.equal(res.json().error, 'space_archived');
+      const [row] = await withTenantTx(ctx.tenant.id, (tx) =>
+        tx.select().from(documents).where(and(eq(documents.tenantId, ctx.tenant.id), eq(documents.id, page)))
+      );
+      assert.notEqual(row.archivedAt, null);
+    });
+  });
+  /**
+   * Writers that put a live document into a space share-lock its row before
+   * deciding whether it is archived (SpaceRoleOptions.lock), so a concurrent
+   * archiveSpace cannot slip between the check and the write. PGlite runs one
+   * connection, so the real interleaving of two transactions cannot be
+   * reproduced here: these tests cover (a) the gate really locks the row and
+   * (b) the three write paths refuse an already archived space and write
+   * nothing. The interleaving itself relies on Postgres row-lock semantics.
+   */
+  describe('write paths and an archived space', () => {
+    /** True when the space row's xmax is this transaction, i.e. this transaction holds a row lock on it. */
+    async function holdsSpaceLock(tx: Parameters<Parameters<typeof withTenantTx>[1]>[0]) {
+      const res = await tx.execute(
+        sql`SELECT (xmax::text::bigint = pg_current_xact_id()::text::bigint) AS mine
+            FROM spaces WHERE id = ${ctx.docs.id}::uuid`
+      );
+      const mine = rowsOf<{ mine: boolean | string }>(res)[0].mine;
+      return mine === true || mine === 't';
+    }
+
+    test('requireSpaceRole with lock "share" locks the space row; without it nothing is locked', async () => {
+      const actor: Actor = {
+        tenantId: ctx.tenant.id,
+        principalType: 'user',
+        principalId: ctx.editor.userId,
+        tenantRole: 'member',
+      };
+      await withTenantTx(ctx.tenant.id, async (tx) => {
+        await requireSpaceRole(tx, actor, ctx.docs.id, 'editor');
+        assert.equal(await holdsSpaceLock(tx), false);
+        await requireSpaceRole(tx, actor, ctx.docs.id, 'editor', { lock: 'share' });
+        assert.equal(await holdsSpaceLock(tx), true);
+      });
+    });
+
+    async function archivedDocsSpace() {
+      assert.equal(
+        (await post(ctx.ownerHeaders, `/api/v1/spaces/${ctx.docs.id}/archive`)).statusCode,
+        200
+      );
+    }
+
+    test('create page: 409 space_archived for a tenant admin, 404 for a member; nothing inserted', async () => {
+      await archivedDocsSpace(); // docs holds no document yet
+      const payload = { space_id: ctx.docs.id, title: 'T', slug: 't', markdown: '' };
+      const admin = await app.inject({ method: 'POST', url: '/api/v1/pages', headers: ctx.ownerHeaders, payload });
+      assert.equal(admin.statusCode, 409, admin.body);
+      assert.equal(admin.json().error, 'space_archived');
+      const member = await app.inject({ method: 'POST', url: '/api/v1/pages', headers: ctx.editor.headers, payload });
+      assert.equal(member.statusCode, 404, member.body);
+      assert.equal(member.json().error, 'space_not_found');
+      const rows = await withTenantTx(ctx.tenant.id, (tx) =>
+        tx.select().from(documents).where(and(eq(documents.tenantId, ctx.tenant.id), eq(documents.spaceId, ctx.docs.id)))
+      );
+      assert.equal(rows.length, 0);
+    });
+
+    test('move into an archived space: 409 for a tenant admin, 404 for a member; the page stays put', async () => {
+      const spare = await createSpace(ctx.ownerHeaders, 'spare');
+      await grant(ctx.ownerHeaders, spare.id, ctx.editor.userId, 'editor');
+      const page = await createPage(ctx.editor.headers, spare.id, 'mv', 'Mv');
+      await archivedDocsSpace();
+      const body = { target_space_id: ctx.docs.id };
+      const admin = await app.inject({
+        method: 'POST',
+        url: `/api/v1/pages/${page}/move`,
+        headers: ctx.ownerHeaders,
+        payload: body,
+      });
+      assert.equal(admin.statusCode, 409, admin.body);
+      assert.equal(admin.json().error, 'space_archived');
+      const member = await app.inject({
+        method: 'POST',
+        url: `/api/v1/pages/${page}/move`,
+        headers: ctx.editor.headers,
+        payload: body,
+      });
+      assert.equal(member.statusCode, 404, member.body);
+      assert.equal(member.json().error, 'space_not_found');
+      const [row] = await withTenantTx(ctx.tenant.id, (tx) =>
+        tx.select().from(documents).where(and(eq(documents.tenantId, ctx.tenant.id), eq(documents.id, page)))
+      );
+      assert.equal(row.spaceId, spare.id);
+    });
+
+    test('restore in an archived space: 409 for a tenant admin, 404 for a member; the page stays archived', async () => {
+      const page = await createPage(ctx.editor.headers, ctx.docs.id, 'rs', 'Rs');
+      assert.equal((await archivePage(ctx.ownerHeaders, page)).statusCode, 200);
+      await archivedDocsSpace();
+      const admin = await post(ctx.ownerHeaders, `/api/v1/pages/${page}/restore`);
+      assert.equal(admin.statusCode, 409, admin.body);
+      assert.equal(admin.json().error, 'space_archived');
+      const member = await post(ctx.spaceAdmin.headers, `/api/v1/pages/${page}/restore`);
+      assert.equal(member.statusCode, 404, member.body);
+      assert.equal(member.json().error, 'page_not_found');
       const [row] = await withTenantTx(ctx.tenant.id, (tx) =>
         tx.select().from(documents).where(and(eq(documents.tenantId, ctx.tenant.id), eq(documents.id, page)))
       );

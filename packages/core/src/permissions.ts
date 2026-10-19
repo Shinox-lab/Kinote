@@ -35,6 +35,22 @@ export interface SpaceRoleOptions {
    * `space_archived`. Never makes an archived space visible to a non-admin.
    */
   allowArchived?: boolean;
+  /**
+   * `'share'` reads the space row `FOR SHARE`, BEFORE the archived-state
+   * decision. For writers that put a live document into a space (create, move
+   * target, restore): `archiveSpace` locks the same row `FOR UPDATE` and then
+   * checks the space holds no live document, so a writer that has not yet
+   * committed either blocks the archive or, if the archive committed first,
+   * is blocked here and (READ COMMITTED re-reads the updated row) answers 409
+   * `space_archived` / 404 instead of leaving a live page in an archived space.
+   *
+   * Lock order: document row (`lockPage`) first, then this space lock.
+   * `archiveSpace` takes only the space lock and reads documents without
+   * locking them, so no cycle exists. A writer's later INSERT/UPDATE of a
+   * document takes KEY SHARE on the space row through the foreign key, which
+   * is compatible with this FOR SHARE.
+   */
+  lock?: 'share';
 }
 
 export interface DocumentRoleOptions extends SpaceRoleOptions {
@@ -59,15 +75,17 @@ export function isTenantAdmin(actor: Actor): boolean {
 async function resolveSpaceAccess(
   tx: DbTransaction,
   actor: Actor,
-  spaceId: string
+  spaceId: string,
+  opts: SpaceRoleOptions = {}
 ): Promise<SpaceAccess> {
   assertValidUuid(spaceId, 'space_not_found');
 
   // Always filter on tenant_id explicitly in addition to RLS
-  const [space] = await tx
+  const spaceQuery = tx
     .select()
     .from(spaces)
     .where(and(eq(spaces.tenantId, actor.tenantId), eq(spaces.id, spaceId)));
+  const [space] = opts.lock === 'share' ? await spaceQuery.for('share') : await spaceQuery;
 
   if (!space) {
     throw new AppError('space_not_found');
@@ -175,7 +193,7 @@ export async function requireSpaceRole(
   minimumRole: SpaceRole,
   opts: SpaceRoleOptions = {}
 ): Promise<SpaceAccess> {
-  const access = await resolveSpaceAccess(tx, actor, spaceId);
+  const access = await resolveSpaceAccess(tx, actor, spaceId, opts);
   checkMinimumRole(access, minimumRole, opts);
   return access;
 }
@@ -200,7 +218,7 @@ export async function requireDocumentRole(
 
   let access: SpaceAccess;
   try {
-    access = await resolveSpaceAccess(tx, actor, doc.spaceId);
+    access = await resolveSpaceAccess(tx, actor, doc.spaceId, opts);
   } catch (err) {
     if (err instanceof AppError && err.code === 'space_not_found') {
       throw new AppError(notFound);

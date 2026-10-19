@@ -633,6 +633,7 @@ describe('page lifecycle: withdraw, archive, move', () => {
     assert.equal(res.statusCode, 409, res.body);
     assert.equal(res.json().error, 'page_archived');
   });
+
   describe('moving into the Inbox (R27)', () => {
     async function inboxId(headers: Headers): Promise<string> {
       const res = await app.inject({ method: 'GET', url: '/api/v1/spaces', headers });

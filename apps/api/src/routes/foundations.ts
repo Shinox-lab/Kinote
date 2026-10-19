@@ -219,7 +219,10 @@ async function listTreeNodes(
   archived: boolean
 ): Promise<TreeResponse> {
   return withTenantTx(actor.tenantId, async (tx) => {
-    const { space } = await requireSpaceRole(tx, actor, spaceId, minimumRole);
+    // The archived list is a read: a tenant admin may open it on an archived space.
+    const { space } = await requireSpaceRole(tx, actor, spaceId, minimumRole, {
+      allowArchived: true,
+    });
 
     const rows = await tx
       .select({
