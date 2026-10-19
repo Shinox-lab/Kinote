@@ -381,7 +381,8 @@ export const PageDetailsSchema = z.object({
   slug: z.string(),
   badge: z.string(),
   liveMarkdown: z.string(),
-  liveBlocks: z.array(z.unknown()),
+  // BlockNote blocks: every one has an id and a type; the rest (props, content, children) passes through.
+  liveBlocks: z.array(z.object({ id: z.string(), type: z.string() }).passthrough()),
   liveChangedSinceSnapshot: z.boolean(),
   agentChangedAt: z.string().datetime().nullable(),
   archivedAt: z.string().datetime().nullable(),
