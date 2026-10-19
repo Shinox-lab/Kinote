@@ -48,3 +48,8 @@ export {
   type InsertFileVersionParams,
   type VersionRow,
 } from './files/versions.js';
+export {
+  extractVersion,
+  type ExtractDeps,
+  type ExtractVersionResult,
+} from './files/extractVersion.js';

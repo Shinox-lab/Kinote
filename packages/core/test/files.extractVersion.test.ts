@@ -1,0 +1,247 @@
+import { randomUUID } from 'node:crypto';
+import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { and, eq } from 'drizzle-orm';
+import { auditEvents, documents, jobs, lockDocument, versions, withTenantTx } from '@living-wiki/db';
+import { createTestDb, type TestDb } from '@living-wiki/db/testing';
+import { AppError } from '@living-wiki/contracts';
+import { InMemoryObjectStorage } from '@living-wiki/shared';
+import {
+  FakeExtractor,
+  detectFileType,
+  extractVersion,
+  fileObjectPath,
+  insertFileVersion,
+  type Extractor,
+} from '../src/index.js';
+import { seedFileDocument, type FileSeed } from './fixtures/fileSeed.js';
+
+let testDb: TestDb;
+beforeAll(async () => {
+  testDb = await createTestDb();
+});
+beforeEach(async () => {
+  await testDb.reset();
+});
+
+const enc = (s: string) => new TextEncoder().encode(s);
+const deps = (over: Partial<{ extractor: Extractor; maxChars: number }> = {}) => ({
+  storage,
+  extractor: new FakeExtractor(),
+  maxChars: 1_000_000,
+  ...over,
+});
+let storage: InMemoryObjectStorage;
+beforeEach(() => {
+  storage = new InMemoryObjectStorage();
+});
+
+/** Stores the bytes and inserts the version, as an upload does. */
+async function upload(
+  seed: FileSeed,
+  name: string,
+  content: string | Uint8Array,
+  actorType: 'user' | 'agent' | 'connector' = 'user'
+) {
+  const bytes = typeof content === 'string' ? enc(content) : content;
+  const detected = detectFileType(name, bytes);
+  if (!detected.ok) throw new Error(`fixture ${name} is not a valid file`);
+  const versionId = randomUUID();
+  const { objectKey } = await storage.put(
+    seed.tenantId,
+    fileObjectPath(seed.documentId, versionId, 'original'),
+    bytes,
+    detected.file.mimeType
+  );
+  return withTenantTx(seed.tenantId, async (tx) => {
+    const doc = await lockDocument(tx, seed.tenantId, seed.documentId);
+    return insertFileVersion(tx, {
+      tenantId: seed.tenantId,
+      doc,
+      versionId,
+      file: {
+        name,
+        mimeType: detected.file.mimeType,
+        sizeBytes: bytes.length,
+        contentHash: randomUUID(),
+        objectKey,
+        handling: detected.file.handling,
+      },
+      actor: { type: actorType, id: seed.userId },
+      reason: actorType === 'connector' ? 'source' : 'upload',
+    });
+  });
+}
+
+const reload = (seed: FileSeed, id: string) =>
+  withTenantTx(seed.tenantId, async (tx) => {
+    const [row] = await tx.select().from(versions).where(and(eq(versions.tenantId, seed.tenantId), eq(versions.id, id)));
+    return row!;
+  });
+const jobsOf = (seed: FileSeed, queue: string) =>
+  withTenantTx(seed.tenantId, (tx) =>
+    tx.select().from(jobs).where(and(eq(jobs.tenantId, seed.tenantId), eq(jobs.queue, queue)))
+  );
+
+describe('extractVersion', () => {
+  it('reads a text file in the worker and sends it straight to indexing in a space without review', async () => {
+    const seed = await seedFileDocument({ title: 'notes.txt' });
+    const v = await upload(seed, 'notes.txt', 'hello world');
+    const result = await extractVersion({ tenantId: seed.tenantId, versionId: v.id }, deps());
+    expect(result).toEqual({ outcome: 'extracted', status: 'indexing' });
+    const row = await reload(seed, v.id);
+    expect(row.status).toBe('indexing');
+    expect(row.extractedKey).toBe(`${seed.tenantId}/${fileObjectPath(seed.documentId, v.id, 'extracted.json')}`);
+    const stored = JSON.parse(new TextDecoder().decode((await storage.get(seed.tenantId, row.extractedKey!)).bytes));
+    expect(stored.sections[0].text).toBe('hello world');
+    const [job] = await jobsOf(seed, 'version.index');
+    expect(job).toMatchObject({ idempotencyKey: `index:${v.id}`, payload: { versionId: v.id } });
+  });
+
+  it('holds the version for review in a review space', async () => {
+    const seed = await seedFileDocument({ reviewRequired: true, title: 'notes.txt' });
+    const v = await upload(seed, 'notes.txt', 'hello');
+    expect(await extractVersion({ tenantId: seed.tenantId, versionId: v.id }, deps())).toEqual({
+      outcome: 'extracted',
+      status: 'pending_review',
+    });
+    expect((await reload(seed, v.id)).status).toBe('pending_review');
+    expect(await jobsOf(seed, 'version.index')).toEqual([]);
+  });
+
+  it('always holds an agent version, and a connector version, for review', async () => {
+    for (const actor of ['agent', 'connector'] as const) {
+      const seed = await seedFileDocument({ title: 'notes.txt' });
+      const v = await upload(seed, 'notes.txt', 'hello', actor);
+      await extractVersion({ tenantId: seed.tenantId, versionId: v.id }, deps());
+      expect((await reload(seed, v.id)).status).toBe('pending_review');
+    }
+  });
+
+  it('stores a file whose extraction has no text, with a plain reason', async () => {
+    const seed = await seedFileDocument();
+    const bytes = new Uint8Array([...enc('%PDF-1.7\n'), ...enc('x')]);
+    const v = await upload(seed, 'a.pdf', bytes);
+    const result = await extractVersion(
+      { tenantId: seed.tenantId, versionId: v.id },
+      deps({ extractor: { extract: async () => ({ pageCount: 1, sections: [{ headingPath: [], pageFrom: 1, pageTo: 1, kind: 'text', text: '  ' }], ocrUsed: true }) } })
+    );
+    expect(result).toEqual({ outcome: 'extracted', status: 'stored' });
+    const row = await reload(seed, v.id);
+    expect(row).toMatchObject({ status: 'stored', error: 'No text could be read from this file.' });
+    expect(row.extractedKey).not.toBeNull();
+    expect(await jobsOf(seed, 'version.index')).toEqual([]);
+  });
+
+  it('keeps pages from the extractor in the stored text', async () => {
+    const seed = await seedFileDocument();
+    const v = await upload(seed, 'a.pdf', enc('%PDF-1.7\nx'));
+    const extractor: Extractor = {
+      extract: async () => ({
+        pageCount: 2,
+        ocrUsed: false,
+        sections: [
+          { headingPath: [], pageFrom: 1, pageTo: 1, kind: 'text', text: 'first page text' },
+          { headingPath: [], pageFrom: 2, pageTo: 2, kind: 'text', text: 'second page text' },
+        ],
+      }),
+    };
+    await extractVersion({ tenantId: seed.tenantId, versionId: v.id }, deps({ extractor }));
+    const row = await reload(seed, v.id);
+    const stored = JSON.parse(new TextDecoder().decode((await storage.get(seed.tenantId, row.extractedKey!)).bytes));
+    expect(stored.sections.map((s: { pageFrom: number }) => s.pageFrom)).toEqual([1, 2]);
+  });
+
+  it('leaves the version extracting and throws extractor_unavailable when the extractor is down', async () => {
+    const seed = await seedFileDocument();
+    const v = await upload(seed, 'a.pdf', enc('%PDF-1.7\nx'));
+    const down: Extractor = { extract: async () => { throw new AppError('extractor_unavailable'); } };
+    await expect(extractVersion({ tenantId: seed.tenantId, versionId: v.id }, deps({ extractor: down }))).rejects.toMatchObject({
+      code: 'extractor_unavailable',
+    });
+    expect((await reload(seed, v.id)).status).toBe('extracting');
+  });
+
+  it('rejects an unreadable file with file_unreadable', async () => {
+    const seed = await seedFileDocument();
+    const v = await upload(seed, 'a.pdf', enc('%PDF-1.7\nx'));
+    await expect(extractVersion({ tenantId: seed.tenantId, versionId: v.id }, deps())).rejects.toMatchObject({ code: 'file_unreadable' });
+  });
+
+  it('rejects text over the limit with file_text_too_large and writes no extracted text', async () => {
+    const seed = await seedFileDocument({ title: 'notes.txt' });
+    const v = await upload(seed, 'notes.txt', 'this is more than ten characters');
+    await expect(extractVersion({ tenantId: seed.tenantId, versionId: v.id }, deps({ maxChars: 10 }))).rejects.toMatchObject({
+      code: 'file_text_too_large',
+    });
+    expect((await reload(seed, v.id)).extractedKey).toBeNull();
+  });
+
+  it('does nothing the second time', async () => {
+    const seed = await seedFileDocument({ title: 'notes.txt' });
+    const v = await upload(seed, 'notes.txt', 'hello');
+    await extractVersion({ tenantId: seed.tenantId, versionId: v.id }, deps());
+    expect(await extractVersion({ tenantId: seed.tenantId, versionId: v.id }, deps())).toEqual({
+      outcome: 'skipped',
+      reason: 'not_extracting',
+    });
+    expect(await jobsOf(seed, 'version.index')).toHaveLength(1);
+  });
+
+  it('skips a version that a newer upload replaced', async () => {
+    const seed = await seedFileDocument({ title: 'notes.txt' });
+    const first = await upload(seed, 'notes.txt', 'one');
+    await upload(seed, 'notes.txt', 'two');
+    expect(await extractVersion({ tenantId: seed.tenantId, versionId: first.id }, deps())).toEqual({
+      outcome: 'skipped',
+      reason: 'not_extracting',
+    });
+  });
+
+  it('supersedes a version that is no longer the document\'s latest when its extraction finishes', async () => {
+    const seed = await seedFileDocument({ title: 'notes.txt' });
+    const v = await upload(seed, 'notes.txt', 'one');
+    const slow: Extractor = {
+      extract: async () => {
+        throw new Error('not used');
+      },
+    };
+    // a newer version appears while the first is being read
+    const racing = deps({ extractor: slow });
+    const original = racing.storage.get.bind(racing.storage);
+    racing.storage.get = async (tenantId: string, key: string) => {
+      const out = await original(tenantId, key);
+      await withTenantTx(tenantId, (tx) =>
+        tx.update(documents).set({ latestVersionId: randomUUID() }).where(eq(documents.id, seed.documentId))
+      );
+      return out;
+    };
+    expect(await extractVersion({ tenantId: seed.tenantId, versionId: v.id }, racing)).toEqual({
+      outcome: 'skipped',
+      reason: 'superseded',
+    });
+    expect((await reload(seed, v.id)).status).toBe('superseded');
+  });
+
+  it('withdraws the version when the document was archived meanwhile', async () => {
+    const seed = await seedFileDocument({ title: 'notes.txt' });
+    const v = await upload(seed, 'notes.txt', 'one');
+    await withTenantTx(seed.tenantId, (tx) =>
+      tx.update(documents).set({ archivedAt: new Date() }).where(eq(documents.id, seed.documentId))
+    );
+    expect(await extractVersion({ tenantId: seed.tenantId, versionId: v.id }, deps())).toEqual({
+      outcome: 'skipped',
+      reason: 'archived',
+    });
+    expect((await reload(seed, v.id)).status).toBe('withdrawn');
+  });
+
+  it('audits the extraction', async () => {
+    const seed = await seedFileDocument({ title: 'notes.txt' });
+    const v = await upload(seed, 'notes.txt', 'hello');
+    await extractVersion({ tenantId: seed.tenantId, versionId: v.id }, deps());
+    const events = await withTenantTx(seed.tenantId, (tx) =>
+      tx.select().from(auditEvents).where(and(eq(auditEvents.tenantId, seed.tenantId), eq(auditEvents.subjectId, v.id)))
+    );
+    expect(events.map((e) => e.type).sort()).toEqual(['file.extracted', 'version.created']);
+  });
+});
