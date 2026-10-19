@@ -128,7 +128,7 @@ export async function encodePageYDoc(title: string, markdown: string): Promise<B
  * another member's Inbox item behaves exactly like a nonexistent parent (same
  * status, code and message) and can never get children it does not know of.
  */
-async function requireVisibleParent(
+export async function requireVisibleParent(
   tx: DbTransaction,
   actor: Actor,
   parentId: string,

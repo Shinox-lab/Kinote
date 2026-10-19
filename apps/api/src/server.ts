@@ -1,7 +1,8 @@
 import Fastify, { type FastifyRequest } from 'fastify';
 import rateLimit from '@fastify/rate-limit';
+import multipart from '@fastify/multipart';
 import { withTenantTx } from '@living-wiki/db';
-import { DEFAULT_AUTH_RATE_LIMIT_MAX } from '@living-wiki/shared';
+import { DEFAULT_AUTH_RATE_LIMIT_MAX, type ObjectStorage } from '@living-wiki/shared';
 import {
   SearchRequestSchema,
   AskRequestSchema,
@@ -31,6 +32,7 @@ import {
   ReviewListSchema,
   UpdatesResponseSchema,
   RetryVersionResponseSchema,
+  UploadFileResponseSchema,
   SearchResponseSchema,
   AskResponseSchema,
 } from '@living-wiki/contracts';
@@ -83,6 +85,7 @@ import {
   getVersionDiff,
 } from './routes/pages.js';
 import { listReviewQueue } from './routes/reviews.js';
+import { readMultipartUpload, replaceFile, uploadFile } from './routes/files.js';
 import { listUpdates } from './routes/updates.js';
 import { authRoutes, type AuthRateLimit } from './routes/auth.js';
 import { requireSession, resolveActor, type AuthSession } from './auth/actor.js';
@@ -115,7 +118,13 @@ export interface ApiServerOptions {
    * server is silent, as tests want it; main.ts always passes one.
    */
   logger?: ApiLoggerOptions;
+  /** Where file bytes live. Without it the file routes answer internal_error (tests that never upload). */
+  storage?: ObjectStorage;
+  /** Largest upload in bytes (default 50 MB; MAX_UPLOAD_BYTES in config). */
+  maxUploadBytes?: number;
 }
+
+const DEFAULT_MAX_UPLOAD_BYTES = 52_428_800;
 
 /**
  * Fastify's `trustProxy` for our setting. A hop count N becomes a trust
@@ -205,6 +214,15 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
     errorResponseBuilder: () => new AppError('rate_limited'),
   });
   app.register(authRoutes, { authRateLimit: opts.authRateLimit ?? DEFAULT_AUTH_RATE_LIMIT });
+  // One file part per request, never buffered past the limit (the parser stops at it).
+  app.register(multipart, {
+    limits: { fileSize: opts.maxUploadBytes ?? DEFAULT_MAX_UPLOAD_BYTES, files: 1, fields: 4, parts: 6 },
+  });
+
+  const fileDeps = () => {
+    if (!opts.storage) throw new AppError('internal_error');
+    return { storage: opts.storage };
+  };
 
   app.post('/api/v1/tenants', { config: { auth: 'session' } }, async (req, reply) => {
     const res = await createTenantWithInbox(sessionOf(req).userId, req.body);
@@ -405,6 +423,26 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
     const actor = actorOf(req);
     const res = await withdrawPage(actor, (req.params as any).id);
     return reply.send(parseReply(DocumentSummarySchema, res));
+  });
+
+  app.post('/api/v1/files', async (req, reply) => {
+    const actor = actorOf(req);
+    const deps = fileDeps();
+    const upload = await readMultipartUpload(req);
+    const out = await uploadFile(actor, upload, deps);
+    return reply
+      .status(out.status === 'created' ? 201 : 200)
+      .send(parseReply(UploadFileResponseSchema, out.response));
+  });
+
+  app.post('/api/v1/files/:id/versions', async (req, reply) => {
+    const actor = actorOf(req);
+    const deps = fileDeps();
+    const upload = await readMultipartUpload(req);
+    const out = await replaceFile(actor, (req.params as any).id, upload.file, deps);
+    return reply
+      .status(out.status === 'created' ? 201 : 200)
+      .send(parseReply(UploadFileResponseSchema, out.response));
   });
 
   app.get('/api/v1/updates', async (req, reply) => {
