@@ -9,6 +9,9 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 // The API's default port (API_PORT in packages/shared/src/config.ts).
 const API_URL = process.env.API_URL ?? 'http://127.0.0.1:8787';
 
+// The collab server's default port (COLLAB_PORT in packages/shared/src/config.ts).
+const COLLAB_URL = process.env.COLLAB_URL ?? 'http://127.0.0.1:1234';
+
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   server: {
@@ -17,6 +20,8 @@ export default defineConfig({
     proxy: {
       '/api': { target: API_URL, changeOrigin: true },
       '/mcp': { target: API_URL, changeOrigin: true },
+      // The live-editing websocket (collab server), same origin too: /collab is stripped before forwarding.
+      '/collab': { target: COLLAB_URL, ws: true, changeOrigin: true, rewrite: (p) => p.replace(/^\/collab/, '') },
     },
   },
   resolve: {

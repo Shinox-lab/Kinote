@@ -1,32 +1,41 @@
-import { Link, Outlet, useNavigate, useRouter, useSearch } from '@tanstack/react-router';
+import { Link, Outlet, useNavigate, useParams, useRouter } from '@tanstack/react-router';
 import { useMutation } from '@tanstack/react-query';
 import { api } from '../lib/api.js';
 import { adminScreens } from '../lib/console.js';
-import { useSpaces, useWorkspace } from '../lib/queries.js';
+import { usePage, useSpaces, useWorkspace } from '../lib/queries.js';
 import { endSession } from '../lib/queryClient.js';
 import { loadSession } from '../lib/session.js';
-import { Button, ErrorNote, SelectField } from '../components/ui.js';
+import { Button, SelectField } from '../components/ui.js';
 
 const NAV_LINK = 'rounded-md px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-100';
 
+/** Picks a space and opens its page tree; on a space or page screen it shows that screen's space. */
 function SpaceSwitcher() {
   const { tenant } = useWorkspace();
-  const { space } = useSearch({ from: '/w/$tenantSlug' });
+  const { spaceSlug, pageId } = useParams({ strict: false });
   const navigate = useNavigate();
   const { data: spaces = [] } = useSpaces();
+  // On a page screen the space is the page's (same cached query the screen itself uses).
+  const { data: page } = usePage(pageId);
   const open = spaces.filter((s) => s.archivedAt === null);
   if (open.length === 0) return null;
+
+  const current = spaceSlug ?? spaces.find((s) => s.id === page?.spaceId)?.slug ?? '';
+  const options = open.some((s) => s.slug === current)
+    ? []
+    : [{ value: current, label: current === '' ? 'Choose a space…' : (spaces.find((s) => s.slug === current)?.name ?? current) }];
 
   return (
     <div className="w-48">
       <SelectField
         compact
         label="Space"
-        value={open.find((s) => s.slug === space)?.slug ?? open[0].slug}
-        options={open.map((s) => ({ value: s.slug, label: s.name }))}
-        onChange={(slug) =>
-          void navigate({ to: '/w/$tenantSlug', params: { tenantSlug: tenant.slug }, search: { space: slug } })
-        }
+        value={current}
+        options={[...options, ...open.map((s) => ({ value: s.slug, label: s.name }))]}
+        onChange={(slug) => {
+          if (slug === '') return;
+          void navigate({ to: '/w/$tenantSlug/s/$spaceSlug', params: { tenantSlug: tenant.slug, spaceSlug: slug } });
+        }}
       />
     </div>
   );

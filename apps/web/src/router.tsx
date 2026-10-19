@@ -1,6 +1,7 @@
 import {
   Link,
   Outlet,
+  lazyRouteComponent,
   createRootRoute,
   createRoute,
   createRouter,
@@ -20,6 +21,7 @@ import { SpacesPage } from './routes/admin/spaces.js';
 import { WorkspaceLayout } from './routes/layout.js';
 import { SignInPage } from './routes/sign-in.js';
 import { SignUpPage } from './routes/sign-up.js';
+import { SpacePage } from './routes/space.js';
 import { WorkspaceHomePage } from './routes/workspace-home.js';
 import { CreateWorkspacePage } from './routes/workspaces.js';
 
@@ -111,8 +113,6 @@ const indexRoute = createRoute({
 const workspaceRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/w/$tenantSlug',
-  validateSearch: (search: Record<string, unknown>): { space?: string } =>
-    typeof search.space === 'string' ? { space: search.space } : {},
   beforeLoad: async ({ params, location }) => {
     const session = requireSession(location.href);
     const me = await loadMe(30_000);
@@ -128,6 +128,19 @@ const workspaceHomeRoute = createRoute({
   getParentRoute: () => workspaceRoute,
   path: '/',
   component: WorkspaceHomePage,
+});
+
+const spaceRoute = createRoute({
+  getParentRoute: () => workspaceRoute,
+  path: 's/$spaceSlug',
+  component: SpacePage,
+});
+
+const pageRoute = createRoute({
+  getParentRoute: () => workspaceRoute,
+  path: 'p/$pageId',
+  // The editor and its dependencies are heavy: load them only when a page is opened.
+  component: lazyRouteComponent(() => import('./routes/page.js'), 'PagePage'),
 });
 
 const adminRoute = createRoute({
@@ -155,6 +168,8 @@ const routeTree = rootRoute.addChildren([
   indexRoute,
   workspaceRoute.addChildren([
     workspaceHomeRoute,
+    spaceRoute,
+    pageRoute,
     adminRoute.addChildren([adminIndexRoute, membersRoute, groupsRoute, spacesRoute]),
   ]),
 ]);

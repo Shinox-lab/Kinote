@@ -1,35 +1,42 @@
-import { useSearch } from '@tanstack/react-router';
+import { Link } from '@tanstack/react-router';
 import { useSpaces, useWorkspace } from '../lib/queries.js';
 import { Card, ErrorNote, Loading } from '../components/ui.js';
 
-/** `/w/$tenantSlug`: the chosen space's summary. Pages and the editor arrive with the next screens. */
+/** `/w/$tenantSlug`: the spaces the user can open, each linking to its page tree. */
 export function WorkspaceHomePage() {
   const { tenant } = useWorkspace();
-  const { space: slug } = useSearch({ from: '/w/$tenantSlug' });
   const { data: spaces, error, isPending } = useSpaces();
 
   if (isPending) return <Loading what="spaces" />;
   if (error) return <ErrorNote error={error} />;
 
   const open = spaces.filter((s) => s.archivedAt === null);
-  const space = open.find((s) => s.slug === slug) ?? open[0];
 
   return (
     <div className="flex flex-col gap-4">
-      <h1 className="text-xl font-semibold">{space ? space.name : tenant.name}</h1>
-      {space ? (
-        <Card>
-          <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 text-sm">
-            <dt className="text-slate-500">Your role</dt>
-            <dd>{space.myRole}</dd>
-            <dt className="text-slate-500">Review</dt>
-            <dd>
-              {space.reviewRequired ? 'Changes need review before they are indexed' : 'Changes are indexed directly'}
-            </dd>
-          </dl>
-        </Card>
-      ) : (
+      <h1 className="text-xl font-semibold">{tenant.name}</h1>
+      {open.length === 0 ? (
         <p className="text-sm text-slate-600">You cannot see any space in this workspace yet.</p>
+      ) : (
+        <Card title="Spaces">
+          <ul className="divide-y divide-slate-100">
+            {open.map((space) => (
+              <li key={space.id} className="flex flex-wrap items-baseline gap-x-4 gap-y-1 py-3 first:pt-0 last:pb-0">
+                <Link
+                  to="/w/$tenantSlug/s/$spaceSlug"
+                  params={{ tenantSlug: tenant.slug, spaceSlug: space.slug }}
+                  className="text-sm font-semibold text-indigo-700 hover:underline"
+                >
+                  {space.name}
+                </Link>
+                <span className="text-xs text-slate-500">Your role: {space.myRole}</span>
+                <span className="text-xs text-slate-500">
+                  {space.reviewRequired ? 'Changes need review before they are indexed' : 'Changes are indexed directly'}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </Card>
       )}
     </div>
   );
