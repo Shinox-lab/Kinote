@@ -359,7 +359,7 @@ async function readableVersion(tx: DbTransaction, actor: Actor, versionId: strin
     .select()
     .from(documents)
     .where(and(eq(documents.tenantId, actor.tenantId), eq(documents.id, ver.documentId)));
-  if (!doc) {
+  if (!doc || doc.kind !== 'page') {
     throw new AppError('version_not_found');
   }
   await requireDocumentRole(tx, actor, doc, 'viewer', { notFound: 'version_not_found' });
@@ -406,7 +406,7 @@ export async function getVersionDetail(actor: Actor, versionId: string): Promise
     return VersionDetailSchema.parse({
       ...toVersionSummary(ver),
       markdown: ver.markdown,
-      blocks: Array.isArray(ver.blocks) ? ver.blocks : [],
+      blocks: storedBlocks(ver.blocks),
       contributors,
     });
   });
@@ -415,7 +415,9 @@ export async function getVersionDetail(actor: Actor, versionId: string): Promise
 /**
  * GET /api/v1/pages/:id/changes: the indexed version's blocks against the
  * live content (all `added` when nothing is indexed), authored from
- * `block_activity`.
+ * `block_activity`. "Live" is the last STORED collab state (`pages.ydoc_state`,
+ * written by the debounced store or a flush), like `getPageDetails`: keystrokes
+ * not yet stored by the collab server are not in it.
  */
 export async function getPageChanges(actor: Actor, pageId: string): Promise<BlockDiffEntry[]> {
   assertValidUuid(pageId, 'page_not_found');
@@ -478,17 +480,22 @@ export async function comparePageVersions(
 
 /**
  * GET /api/v1/versions/:id/diff: the version against the document's CURRENT
- * indexed version. When none is indexed, or the version is the indexed one,
- * there is nothing to compare against and every block is `unchanged`.
+ * indexed version. When the version IS the indexed one every block is
+ * `unchanged`; when the document has no indexed version the base is empty and
+ * every block is `added`.
  */
 export async function getVersionDiff(actor: Actor, versionId: string): Promise<BlockDiffEntry[]> {
   assertValidUuid(versionId, 'version_not_found');
   return withTenantTx(actor.tenantId, async (tx) => {
     const { ver, doc } = await readableVersion(tx, actor, versionId);
     const after = storedBlocks(ver.blocks);
-    const indexed = doc.indexedVersionId === ver.id ? null : await indexedBlocks(tx, actor.tenantId, doc);
+    // The indexed version itself: nothing to differ from (all `unchanged`).
+    // Nothing indexed: against an empty base, so a new page's first version
+    // shows all its content as `added`.
+    const base =
+      doc.indexedVersionId === ver.id ? after : ((await indexedBlocks(tx, actor.tenantId, doc)) ?? []);
     // No authors, for the reason given at comparePageVersions.
-    return BlockDiffSchema.parse(diffBlocks(indexed ?? after, after, []));
+    return BlockDiffSchema.parse(diffBlocks(base, after, []));
   });
 }
 

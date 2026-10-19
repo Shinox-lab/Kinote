@@ -320,8 +320,9 @@ export const BlockDiffSchema = z.array(BlockDiffEntrySchema);
 
 /** Query of GET /api/v1/pages/:id/compare: two version numbers of the page. */
 export const CompareQuerySchema = z.object({
-  from: z.coerce.number().int().positive(),
-  to: z.coerce.number().int().positive(),
+  // max: the largest Postgres integer, so an oversize value is a 400, not a database error.
+  from: z.coerce.number().int().positive().max(2147483647),
+  to: z.coerce.number().int().positive().max(2147483647),
 });
 
 /** Reply of POST /api/v1/versions/:id/retry (no request body): the summary plus its document. */

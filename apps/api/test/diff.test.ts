@@ -291,10 +291,41 @@ describe('version history, changes and compare routes', () => {
     });
   });
 
+  test('version diff: a never-indexed document shows every block added; the indexed version itself is unchanged; a pending v2 shows changes against indexed v1', async () => {
+    const w = await buildReviewWorld(h.app);
+    // Review space, nothing approved: v1 is pending_review and nothing is indexed.
+    const first = await snapshot(w, w.headers);
+    expect(first.status).toBe('pending_review');
+    const none = await get(`/api/v1/versions/${first.id}/diff`, w.v.headers);
+    expect(none.statusCode, none.body).toBe(200);
+    const added = none.json() as BlockDiffEntry[];
+    expect(added.map((e) => e.change)).toEqual(['added', 'added', 'added']);
+    expect(added.map((e) => e.after)).toEqual(['First paragraph.', 'Second paragraph.', 'Third paragraph.']);
+
+    // Approve and index it: it is now the indexed version, all unchanged.
+    const approved = await h.app.inject({
+      method: 'POST',
+      url: `/api/v1/versions/${first.id}/approve`,
+      headers: w.r.headers,
+      payload: {},
+    });
+    expect(approved.statusCode, approved.body).toBe(200);
+    await runPendingJobsForTenant(w.tenant.id);
+    const self = await get(`/api/v1/versions/${first.id}/diff`, w.v.headers);
+    expect((self.json() as BlockDiffEntry[]).map((e) => e.change)).toEqual(['unchanged', 'unchanged', 'unchanged']);
+
+    // A pending v2 differs from the indexed v1.
+    await editAs(w, w.a.userId, 2, ' edited');
+    const v2 = await snapshot(w, w.b.headers);
+    expect(v2.status).toBe('pending_review');
+    const vs = await get(`/api/v1/versions/${v2.id}/diff`, w.v.headers);
+    expect((vs.json() as BlockDiffEntry[]).map((e) => e.change)).toEqual(['unchanged', 'unchanged', 'changed']);
+  });
+
   test('compare: bad params are 400 validation_failed, an unknown number is 404 version_not_found', async () => {
     const w = await buildReviewWorld(h.app);
     await indexedV1(w);
-    for (const q of ['', '?from=1', '?to=1', '?from=0&to=1', '?from=-1&to=1', '?from=a&to=1', '?from=1.5&to=1']) {
+    for (const q of ['', '?from=1', '?to=1', '?from=0&to=1', '?from=-1&to=1', '?from=a&to=1', '?from=1.5&to=1', '?from=99999999999&to=1', '?from=1&to=99999999999', '?from=1&to=1&from=2']) {
       const res = await get(`/api/v1/pages/${w.page.id}/compare${q}`, w.headers);
       expect(res.statusCode, q).toBe(400);
       expect(res.json().error).toBe('validation_failed');
@@ -405,7 +436,13 @@ describe('version history, changes and compare routes', () => {
 
   test('invalid uuids are 404 like unknown ones', async () => {
     const w = await buildReviewWorld(h.app);
-    for (const url of ['/api/v1/pages/nope/versions', '/api/v1/pages/nope/changes', '/api/v1/versions/nope']) {
+    for (const url of [
+      '/api/v1/pages/nope/versions',
+      '/api/v1/pages/nope/changes',
+      '/api/v1/pages/nope/compare?from=1&to=1',
+      '/api/v1/versions/nope',
+      '/api/v1/versions/nope/diff',
+    ]) {
       const res = await get(url, w.headers);
       expect(res.statusCode, url).toBe(404);
     }
