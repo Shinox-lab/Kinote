@@ -61,7 +61,7 @@ that header to believe:
 | `TRUST_PROXY` | Client IP | Use |
 | --- | --- | --- |
 | `false` (default) | the TCP peer; the header is ignored | no proxy in front. Behind a proxy every user shares the proxy's bucket. |
-| `1`, `2`, ... (hop count) | the address that many hops from the right of the header | **recommended** behind a proxy: the number of proxies in front of the api. |
+| `1`, `2`, ... (hop count) | the address that many hops from the right of the header | **recommended** behind a proxy: the number of proxies in front of the api. The api must then be reachable only through them (a direct client would count as a proxy). |
 | `true` | the leftmost address | avoid: a client-supplied `X-Forwarded-For` is trusted, so a client can pick a fresh rate-limit bucket per request and evade the limit. |
 
 The edge proxy must overwrite `X-Forwarded-For` or append the address it saw

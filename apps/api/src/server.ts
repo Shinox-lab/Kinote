@@ -115,6 +115,18 @@ export interface ApiServerOptions {
   logger?: ApiLoggerOptions;
 }
 
+/**
+ * Fastify's `trustProxy` for our setting. A hop count N becomes a trust
+ * function over hop indexes (0 is the TCP peer): the peer and the next N-1
+ * addresses from the right of X-Forwarded-For are proxies, the one after them
+ * is the client. (Fastify 5 itself treats a bare number as "trust nothing".)
+ * The api must then be reachable only through those proxies.
+ */
+function trustProxyOption(setting: boolean | number | undefined): boolean | ((addr: string, hop: number) => boolean) {
+  if (typeof setting !== 'number') return setting ?? false;
+  return (_addr, hop) => hop < setting;
+}
+
 const DEFAULT_AUTH_RATE_LIMIT: AuthRateLimit = { max: DEFAULT_AUTH_RATE_LIMIT_MAX, timeWindow: '1 minute' };
 
 /** The tenant actor attached by the auth hook (routes default to `auth: 'tenant'`). */
@@ -129,7 +141,7 @@ function sessionOf(req: FastifyRequest): AuthSession {
 }
 
 export function buildApiServer(opts: ApiServerOptions = {}) {
-  const app = Fastify({ logger: fastifyLogger(opts.logger), trustProxy: opts.trustProxy ?? false });
+  const app = Fastify({ logger: fastifyLogger(opts.logger), trustProxy: trustProxyOption(opts.trustProxy) });
   registerErrorHandler(app);
 
   // Identity comes only from the session token and, for tenant routes, the

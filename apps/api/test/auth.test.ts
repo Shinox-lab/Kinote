@@ -310,20 +310,23 @@ describe('sessions and the database-derived actor', () => {
     }
   });
 
-  test('a hop count trusts only that many proxies: a spoofed leftmost X-Forwarded-For is ignored', async () => {
-    // One trusted proxy appends the real client address; whatever the client
-    // put before it is not trusted, so it cannot pick a fresh rate-limit bucket.
-    const attempt = (spoofed: string) =>
+  test('a hop count trusts only that many proxies: real clients get their own bucket, a spoofed leftmost X-Forwarded-For does not', async () => {
+    // One trusted proxy appends the address it saw; whatever the client put
+    // before it is not trusted, so it cannot pick a fresh rate-limit bucket.
+    const attempt = (xff: string) =>
       oneHop.inject({
         method: 'POST',
         url: '/api/v1/auth/sign-in',
-        headers: { 'x-forwarded-for': `${spoofed}, 198.51.100.7` },
+        headers: { 'x-forwarded-for': xff },
         payload: { email: 'nobody@example.test', password: 'not-the-password' },
       });
     const oneHop = buildApiServer({ authRateLimit: { max: 1, timeWindow: '1 minute' }, trustProxy: 1 });
     try {
-      assert.equal((await attempt('203.0.113.1')).statusCode, 401);
-      assert.equal((await attempt('203.0.113.2')).statusCode, 429);
+      assert.equal((await attempt('198.51.100.7')).statusCode, 401);
+      // A different client behind the same proxy has its own bucket.
+      assert.equal((await attempt('198.51.100.8')).statusCode, 401);
+      // The first client again, with a forged leftmost entry: same bucket.
+      assert.equal((await attempt('203.0.113.99, 198.51.100.7')).statusCode, 429);
     } finally {
       await oneHop.close();
     }

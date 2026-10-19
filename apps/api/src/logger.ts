@@ -22,9 +22,10 @@ const REDACT_PATHS = [
 ];
 
 interface SerializedError {
+  [key: string]: unknown;
   type: string;
   message: string;
-  stack?: string;
+  stack: string;
   code?: unknown;
   cause?: SerializedError;
 }
@@ -37,14 +38,14 @@ interface SerializedError {
  */
 export function serializeError(err: unknown, depth = 0): SerializedError {
   if (!(err instanceof Error)) {
-    return { type: typeof err, message: String(err) };
+    return { type: typeof err, message: String(err), stack: '' };
   }
   let message = err.message;
-  let stack = err.stack;
+  let stack = err.stack ?? '';
   const query = (err as { query?: unknown }).query;
   if (typeof query === 'string' && 'params' in err) {
     message = `Failed query: ${query}`;
-    stack = stack?.replace(err.message, message);
+    stack = stack.replace(err.message, message);
   }
   const out: SerializedError = { type: err.name, message, stack };
   const code = (err as { code?: unknown }).code;
@@ -60,6 +61,6 @@ export function fastifyLogger(opts: ApiLoggerOptions | undefined): FastifyServer
     level: opts.level,
     ...(opts.stream ? { stream: opts.stream } : {}),
     redact: { paths: REDACT_PATHS, censor: '[redacted]' },
-    serializers: { err: (err: unknown) => serializeError(err) },
+    serializers: { err: (err: Error) => serializeError(err) },
   };
 }
