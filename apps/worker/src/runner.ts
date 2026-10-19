@@ -132,12 +132,13 @@ async function releaseUnstarted(tenantId: string, claimed: Job[]): Promise<void>
 async function notifyDeadLetter(
   job: Job,
   handler: JobHandler | undefined,
-  message: string
+  message: string,
+  thrown?: unknown
 ): Promise<'dead_letter'> {
   console.error(`[worker] job ${job.id} (${job.queue}) dead-lettered: ${message}`);
   if (handler?.onDeadLetter) {
     try {
-      await handler.onDeadLetter(job, message);
+      await handler.onDeadLetter(job, message, thrown);
     } catch (hookErr) {
       console.error(`[worker] onDeadLetter for job ${job.id} failed:`, errorMessage(hookErr));
     }
@@ -199,7 +200,7 @@ async function runOne(
       lockedAt: null,
       lastError: message,
     };
-    await notifyDeadLetter(deadJob, handler, message);
+    await notifyDeadLetter(deadJob, handler, message, failure?.err);
   }
   return status;
 }

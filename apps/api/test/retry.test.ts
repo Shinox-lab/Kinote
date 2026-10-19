@@ -5,6 +5,7 @@ import { withTenantTx, versions, jobs, auditEvents, type Job } from '@living-wik
 import type { EmbeddingProvider } from '@living-wiki/core';
 import { runPendingJobsForTenant } from '../../worker/src/runner.js';
 import { handlers } from '../../worker/src/registry.js';
+import { ERROR_SENTENCES } from '@living-wiki/contracts';
 import {
   buildTestApp,
   bootstrapTenant,
@@ -258,12 +259,47 @@ describe('failed versions and retry', () => {
     const { tenant, v1 } = ctx;
     const job = await loadIndexJob(tenant.id, v1.id);
 
-    await handlers['version.index']!.onDeadLetter!({ ...job, attempts: 5 }, 'x'.repeat(2000));
+    await handlers['version.index']!.onDeadLetter!(
+      { ...job, attempts: 5 },
+      `${ERROR_SENTENCES.embedding_unavailable} (cause: ${'x'.repeat(2000)})`
+    );
 
     const row = await loadVersion(tenant.id, v1.id);
     assert.equal(row.status, 'failed');
     assert.equal(row.error!.length, 500);
     assert.ok(row.error!.startsWith('Indexing failed after 5 attempts: xxx'));
+  });
+
+  test('an unexpected failure stores a generic sentence on the version; the detail stays in jobs.last_error', async () => {
+    const { tenant, v1 } = ctx;
+    // Not an AppError: the provider answers with the wrong number of vectors.
+    const wrongCount: EmbeddingProvider = {
+      model: 'living-wiki-deterministic-1536-v1',
+      dimensions: 1536,
+      async embed() {
+        return [];
+      },
+    };
+    const job = await runUntilDeadLetter(tenant.id, v1.id, wrongCount);
+    assert.match(job.lastError ?? '', /embedding provider returned 0 vectors/);
+
+    const row = await loadVersion(tenant.id, v1.id);
+    assert.equal(row.status, 'failed');
+    assert.equal(
+      row.error,
+      `Indexing failed after 1 attempt: ${ERROR_SENTENCES.internal_error}`
+    );
+  });
+
+  test('a raw database error text never reaches versions.error', async () => {
+    const { tenant, v1 } = ctx;
+    const job = await loadIndexJob(tenant.id, v1.id);
+    await handlers['version.index']!.onDeadLetter!(
+      { ...job, attempts: 5 },
+      'Failed query: select * from chunks where tenant_id = $1\nparams: secret-value'
+    );
+    const row = await loadVersion(tenant.id, v1.id);
+    assert.equal(row.error, `Indexing failed after 5 attempts: ${ERROR_SENTENCES.internal_error}`);
   });
 
   test('onDeadLetter leaves a version that is no longer indexing alone', async () => {

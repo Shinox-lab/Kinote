@@ -1,6 +1,6 @@
 import { and, eq } from 'drizzle-orm';
 import { withTenantTx, versions, storableMessage, type Job } from '@living-wiki/db';
-import { ERROR_SENTENCES } from '@living-wiki/contracts';
+import { AppError, ERROR_SENTENCES } from '@living-wiki/contracts';
 import { takePageSnapshot, indexVersion, type EmbeddingProvider } from '@living-wiki/core';
 
 /** Longest `versions.error` stored for a failed version. */
@@ -28,9 +28,23 @@ function failureDetail(error: string): string {
   return error;
 }
 
-/** `versions.error` for a version whose index job dead-lettered after `attempts` attempts. */
-export function failedVersionError(attempts: number, error: string): string {
-  const text = `Indexing failed after ${attempts} attempt${attempts === 1 ? '' : 's'}: ${failureDetail(error)}`;
+/** Every contract sentence: the texts an AppError carries by default. */
+const CONTRACT_SENTENCES = Object.values(ERROR_SENTENCES);
+
+/**
+ * `versions.error` for a version whose index job dead-lettered after
+ * `attempts` attempts. Every viewer of the page can read it, so it carries
+ * the failure's detail only when that detail is ours to show: an AppError
+ * (`thrown`, or a text that starts with a contract sentence, as
+ * `embedding_unavailable` with the provider's cause does). Anything else (a
+ * database error quoting SQL, a bug) becomes the generic `internal_error`
+ * sentence; the full text stays in `jobs.last_error` for operators.
+ */
+export function failedVersionError(attempts: number, error: string, thrown?: unknown): string {
+  const ours =
+    thrown instanceof AppError || CONTRACT_SENTENCES.some((sentence) => error.startsWith(sentence));
+  const detail = ours ? failureDetail(error) : ERROR_SENTENCES.internal_error;
+  const text = `Indexing failed after ${attempts} attempt${attempts === 1 ? '' : 's'}: ${detail}`;
   return storableMessage(text).slice(0, MAX_VERSION_ERROR_LENGTH);
 }
 
@@ -47,7 +61,7 @@ export interface JobContext {
  */
 export interface JobHandler {
   run(job: Job, ctx: JobContext): Promise<void>;
-  onDeadLetter?(job: Job, error: string): Promise<void>;
+  onDeadLetter?(job: Job, error: string, thrown?: unknown): Promise<void>;
 }
 
 export const handlers: Record<string, JobHandler> = {
@@ -84,18 +98,19 @@ export const handlers: Record<string, JobHandler> = {
     },
     /**
      * Marks the version `failed` with a neutral error text ("Indexing failed
-     * after N attempts: <cause>", NUL-free, at most 500 characters), only while it is
+     * after N attempts: <cause>", the cause generic unless it is an AppError's;
+     * see `failedVersionError`; NUL-free, at most 500 characters), only while it is
      * still `indexing`: a version withdrawn, superseded or indexed meanwhile
      * keeps its status. A retry (POST /versions/:id/retry) revives it.
      */
-    async onDeadLetter(job, error) {
+    async onDeadLetter(job, error, thrown) {
       const payload = job.payload as { versionId?: unknown };
       if (typeof payload?.versionId !== 'string') return;
       const versionId = payload.versionId;
       await withTenantTx(job.tenantId, (tx) =>
         tx
           .update(versions)
-          .set({ status: 'failed', error: failedVersionError(job.attempts, error) })
+          .set({ status: 'failed', error: failedVersionError(job.attempts, error, thrown) })
           .where(
             and(
               eq(versions.tenantId, job.tenantId),
