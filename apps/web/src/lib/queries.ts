@@ -38,12 +38,25 @@ export function useGrants(spaceId: string) {
   return useQuery({ queryKey: useTenantKey('grants', spaceId), queryFn: () => api.listGrants(spaceId) });
 }
 
-/** A space's live documents (the tree), newest server state each time the key is invalidated. */
-export function useSpaceTree(spaceId: string | undefined) {
+/** How often the tree of the space being read asks again (its status dots move under the page). */
+export const TREE_POLL_MS = 30_000;
+
+/**
+ * A space's live documents (the tree), newest server state each time the key is
+ * invalidated. The sidebar passes `enabled` (only once a space is opened),
+ * `refetchOnFocus` (dots are server state) and `poll` (the space being read,
+ * while the tab is visible).
+ */
+export function useSpaceTree(
+  spaceId: string | undefined,
+  opts: { enabled?: boolean; refetchOnFocus?: boolean; poll?: boolean } = {}
+) {
   return useQuery({
     queryKey: useTenantKey('tree', spaceId),
     queryFn: () => api.spaceTree(spaceId!),
-    enabled: spaceId !== undefined,
+    enabled: spaceId !== undefined && (opts.enabled ?? true),
+    refetchOnWindowFocus: opts.refetchOnFocus ?? false,
+    refetchInterval: opts.poll ? TREE_POLL_MS : false,
   });
 }
 

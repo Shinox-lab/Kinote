@@ -53,6 +53,48 @@ export function descendantIds(nodes: readonly TreeNode[], id: string): Set<strin
   return found;
 }
 
+/** What a status dot means, in words (the dot is colour, so the words are its accessible name). */
+export function attentionLabel(attention: NonNullable<TreeNode['attention']>): string {
+  switch (attention) {
+    case 'failed':
+      return 'Indexing failed';
+    case 'review':
+      return 'Waiting for review';
+    case 'editing':
+      return 'Edited just now';
+  }
+}
+
+/** Whether a space role may add pages (the server decides; this only shows or hides the "+"). */
+export function canCreatePages(role: SpaceRole | undefined): boolean {
+  return role === 'editor' || role === 'reviewer' || role === 'admin';
+}
+
+/** The parents of `id`, from the root down (not `id` itself); empty for a root or an unknown id. */
+export function ancestorIds(nodes: readonly TreeNode[], id: string): string[] {
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  const chain: string[] = [];
+  const seen = new Set<string>([id]);
+  let parentId = byId.get(id)?.parentId ?? null;
+  while (parentId !== null && byId.has(parentId) && !seen.has(parentId)) {
+    seen.add(parentId);
+    chain.unshift(parentId);
+    parentId = byId.get(parentId)!.parentId;
+  }
+  return chain;
+}
+
+/** The nodes to show open: what the person opened, plus the parents of the current page so it is never hidden. */
+export function expandedFor(
+  nodes: readonly TreeNode[],
+  currentPageId: string | undefined,
+  saved: ReadonlySet<string>
+): Set<string> {
+  const open = new Set(saved);
+  if (currentPageId !== undefined) for (const id of ancestorIds(nodes, currentPageId)) open.add(id);
+  return open;
+}
+
 // --- Authors --------------------------------------------------------------------
 
 export interface AuthorColor {

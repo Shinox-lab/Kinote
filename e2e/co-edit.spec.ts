@@ -159,7 +159,8 @@ test('two editors and a reviewer: co-edit, hold until approval, index, cite v1',
     expect(held.latest).toMatchObject({ number: 1, status: 'pending_review' });
 
     // Search and Ask return the decoy but never the held page (by link, not by text).
-    const heldLink = a.locator(`a[href="/w/${slug}/p/${pageId}"]`);
+    // Inside <main> only: the sidebar's page tree links to the held page by design.
+    const heldLink = a.getByRole('main').locator(`a[href="/w/${slug}/p/${pageId}"]`);
     await a.goto(`/w/${slug}/search`);
     await a.getByLabel('Search or ask a question').fill(text.a);
     await a.getByRole('button', { name: 'Search', exact: true }).click();
@@ -198,7 +199,7 @@ test('two editors and a reviewer: co-edit, hold until approval, index, cite v1',
     await expect(results).toContainText(CITE);
     // The selector that found nothing while the page was held finds it now,
     // so its count of 0 above was a real absence, not a selector that never matches.
-    const indexedLink = a.locator(`a[href="/w/${slug}/p/${pageId}"]`);
+    const indexedLink = a.getByRole('main').locator(`a[href="/w/${slug}/p/${pageId}"]`);
     expect(await indexedLink.count()).toBeGreaterThanOrEqual(1);
 
     await a.getByRole('button', { name: 'Ask', exact: true }).click();

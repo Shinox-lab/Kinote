@@ -1,41 +1,11 @@
 import { Link } from '@tanstack/react-router';
 import { adminScreens } from '../../lib/console.js';
-import { useReviews, useSpaces, useWorkspace } from '../../lib/queries.js';
-import { BookIcon, InboxIcon, SearchIcon, SettingsIcon, SidebarIcon, ReviewsIcon } from '../icons.js';
+import { useReviews, useWorkspace } from '../../lib/queries.js';
+import { SearchIcon, SettingsIcon, SidebarIcon, ReviewsIcon } from '../icons.js';
 import { AccountRow } from './AccountRow.js';
 import { ROW, ROW_ACTIVE, RowContent } from './NavRow.js';
+import { SpacesSection } from './SpacesSection.js';
 import { WorkspaceMenu } from './WorkspaceMenu.js';
-
-function SectionLabel({ children }: { children: string }) {
-  return <h2 className="px-2 pb-1 pt-4 text-xs font-medium uppercase tracking-wide text-muted">{children}</h2>;
-}
-
-/** The Spaces list (a flat list of spaces for now; the page tree nests under each one). */
-function SpacesSection() {
-  const { tenant } = useWorkspace();
-  const { data: spaces = [] } = useSpaces();
-  const open = spaces.filter((s) => s.archivedAt === null);
-  if (open.length === 0) return null;
-  return (
-    <>
-      <SectionLabel>Spaces</SectionLabel>
-      <ul className="flex flex-col gap-px">
-        {open.map((space) => (
-          <li key={space.id}>
-            <Link
-              to="/w/$tenantSlug/s/$spaceSlug"
-              params={{ tenantSlug: tenant.slug, spaceSlug: space.slug }}
-              className={ROW}
-              activeProps={{ className: ROW_ACTIVE }}
-            >
-              <RowContent icon={space.kind === 'inbox' ? <InboxIcon /> : <BookIcon />} label={space.name} />
-            </Link>
-          </li>
-        ))}
-      </ul>
-    </>
-  );
-}
 
 /**
  * The one sidebar of the console: the workspace, search and reviews, the
