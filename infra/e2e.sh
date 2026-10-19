@@ -5,6 +5,9 @@
 # against it; playwright.config.ts serves the console with `vite dev` on 5173.
 # Needs the variables listed in .env.example, exported or in .env. The stack is
 # left running afterwards: `pnpm stack:down` deletes it and its data.
+# Port 5173 must be free (Playwright never adopts a running dev server there);
+# set E2E_WEB_PORT to use another. Deployment note: never expose the collab
+# server's /internal/* paths or INTERNAL_SECRET at the edge (docs/operations.md).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

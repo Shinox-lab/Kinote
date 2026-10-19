@@ -196,6 +196,10 @@ test('two editors and a reviewer: co-edit, hold until approval, index, cite v1',
     await expect(results.getByRole('link', { name: 'Leave policy' })).toBeVisible();
     await expect(results).toContainText(text.a);
     await expect(results).toContainText(CITE);
+    // The selector that found nothing while the page was held finds it now,
+    // so its count of 0 above was a real absence, not a selector that never matches.
+    const indexedLink = a.locator(`a[href="/w/${slug}/p/${pageId}"]`);
+    expect(await indexedLink.count()).toBeGreaterThanOrEqual(1);
 
     await a.getByRole('button', { name: 'Ask', exact: true }).click();
     const sources = a.getByRole('list', { name: 'Sources' });

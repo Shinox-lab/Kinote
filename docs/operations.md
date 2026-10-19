@@ -100,7 +100,9 @@ pnpm e2e:local   # no Docker: e2e/harness/local-stack.ts, stopped again afterwar
 minute allows), runs `pnpm stack:up`, starts `api`, `collab` and `worker` with
 `docker compose up -d --build --no-deps`, waits for them, and runs the specs;
 Playwright serves the console with `vite dev` on 5173 against 8787 and 1234. The
-stack stays up afterwards (`pnpm stack:down` deletes it and its data).
+stack stays up afterwards (`pnpm stack:down` deletes it and its data). Port 5173
+must be free: Playwright never adopts a dev server already running there (it
+could proxy to another stack); `E2E_WEB_PORT=<port> pnpm e2e` uses another.
 
 `pnpm e2e:local` runs the api, collab and worker in one Node process on an
 in-memory PGlite database, builds the console and serves it with `vite preview`.
