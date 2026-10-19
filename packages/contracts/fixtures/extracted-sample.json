@@ -1,0 +1,20 @@
+{
+  "pageCount": 2,
+  "ocrUsed": false,
+  "sections": [
+    {
+      "headingPath": ["Leave policy", "Annual leave"],
+      "pageFrom": 1,
+      "pageTo": 1,
+      "kind": "text",
+      "text": "Full-time staff accrue 1.5 days of annual leave per month."
+    },
+    {
+      "headingPath": ["Leave policy", "Carry over"],
+      "pageFrom": 2,
+      "pageTo": 2,
+      "kind": "table",
+      "text": "Grade | Days carried over\nA | 5\nB | 3"
+    }
+  ]
+}

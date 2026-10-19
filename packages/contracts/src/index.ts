@@ -679,3 +679,116 @@ export const CollabReplaceBlocksRequestSchema = z
     }
   });
 export type CollabReplaceBlocksRequest = z.infer<typeof CollabReplaceBlocksRequestSchema>;
+
+// ---------------------------------------------------------------------------
+// Files (Slice 2)
+// ---------------------------------------------------------------------------
+
+/** What a file is, decided by the server from its bytes. SVG and HTML are not types: they are refused. */
+export const FILE_TYPES = [
+  'pdf',
+  'docx',
+  'pptx',
+  'xlsx',
+  'csv',
+  'txt',
+  'md',
+  'png',
+  'jpeg',
+  'webp',
+  'gif',
+  'audio',
+  'video',
+] as const;
+export const FileTypeSchema = z.enum(FILE_TYPES);
+export type FileType = z.infer<typeof FileTypeSchema>;
+
+/** One run of extracted text: a section of prose or a whole table, with where it sits (page, sheet or slide). */
+export const ExtractedSectionSchema = z.object({
+  headingPath: z.array(z.string()),
+  pageFrom: z.number().int().positive().nullable(),
+  pageTo: z.number().int().positive().nullable(),
+  kind: z.enum(['text', 'table']),
+  text: z.string(),
+});
+export type ExtractedSection = z.infer<typeof ExtractedSectionSchema>;
+
+/** The extractor's answer, stored beside the file as `extracted.json`. Shared with the Python service. */
+export const ExtractedDocumentSchema = z.object({
+  pageCount: z.number().int().nonnegative().nullable(),
+  sections: z.array(ExtractedSectionSchema),
+  ocrUsed: z.boolean(),
+});
+export type ExtractedDocument = z.infer<typeof ExtractedDocumentSchema>;
+
+/** The text fields of the multipart upload (the file itself is the one file part). */
+export const UploadFileFieldsSchema = z.object({
+  space_id: z.string().uuid().optional(),
+  parent_id: z.string().uuid().optional(),
+});
+export type UploadFileFields = z.infer<typeof UploadFileFieldsSchema>;
+
+/** A version of a file: the 12 summary keys plus what was uploaded and whether text was read. */
+export const FileVersionSchema = VersionSummarySchema.extend({
+  fileName: z.string(),
+  mimeType: z.string(),
+  sizeBytes: z.number().int().nonnegative(),
+  hasText: z.boolean(),
+});
+export type FileVersion = z.infer<typeof FileVersionSchema>;
+
+/** Reply of GET /api/v1/files/:id/versions (newest first), each with who made it. */
+export const FileVersionListSchema = z.array(FileVersionSchema.extend({ createdByName: z.string() }));
+export type FileVersionList = z.infer<typeof FileVersionListSchema>;
+
+/** Reply of GET /api/v1/files/:id: the file, its server-computed badge and its latest and indexed versions. */
+export const FileDetailsSchema = z.object({
+  id: z.string().uuid(),
+  spaceId: z.string().uuid(),
+  parentId: z.string().uuid().nullable(),
+  title: z.string(),
+  archivedAt: z.string().datetime().nullable(),
+  placement: z.enum(['pinned', 'synced']),
+  sourceDeletedAt: z.string().datetime().nullable(),
+  badge: z.string(),
+  latestVersion: FileVersionSchema.nullable(),
+  indexedVersion: FileVersionSchema.nullable(),
+});
+export type FileDetails = z.infer<typeof FileDetailsSchema>;
+
+/** Reply of POST /api/v1/files and POST /api/v1/files/:id/versions. `unchanged`: the same bytes were already there. */
+export const UploadFileResponseSchema = z.object({
+  document: DocumentSummarySchema,
+  version: FileVersionSchema,
+  unchanged: z.boolean(),
+});
+export type UploadFileResponse = z.infer<typeof UploadFileResponseSchema>;
+
+/** Body of POST /api/v1/files/:id/move: the same as moving a page. */
+export const MoveFileRequestSchema = MovePageRequestSchema;
+export type MoveFileRequest = z.input<typeof MoveFileRequestSchema>;
+
+/**
+ * Reply of GET /api/v1/versions/:id/chunks: the extracted text and the chunks
+ * as they are (or would be) indexed. `ready` is false while the text is still
+ * being read; `indexed` is true when this is the document's searchable version.
+ */
+export const ChunkInspectorSchema = z.object({
+  versionId: z.string().uuid(),
+  indexed: z.boolean(),
+  ready: z.boolean(),
+  pageCount: z.number().int().nonnegative().nullable(),
+  ocrUsed: z.boolean(),
+  sections: z.array(ExtractedSectionSchema),
+  chunks: z.array(
+    z.object({
+      ordinal: z.number().int().nonnegative(),
+      headingPath: z.array(z.string()),
+      pageFrom: z.number().int().nullable(),
+      pageTo: z.number().int().nullable(),
+      text: z.string(),
+      tokenCount: z.number().int().nonnegative(),
+    })
+  ),
+});
+export type ChunkInspector = z.infer<typeof ChunkInspectorSchema>;
