@@ -19,6 +19,7 @@ import {
   PageSummarySchema,
   RetryVersionResponseSchema,
   ReviewListSchema,
+  UpdatesResponseSchema,
   SearchResponseSchema,
   SpaceListSchema,
   SpaceResponseSchema,
@@ -227,6 +228,7 @@ export const api = {
     request(`/api/v1/pages/${e(pageId)}/versions/${n}/restore`, VersionSummarySchema, send('POST')),
   reviewQueue: (spaceId?: string) =>
     request(`/api/v1/reviews${spaceId ? `?space_id=${e(spaceId)}` : ''}`, ReviewListSchema),
+  updates: (limit = 8) => request(`/api/v1/updates?limit=${limit}`, UpdatesResponseSchema),
   approveVersion: (id: string, body: ApproveVersionRequest = {}) =>
     request(`/api/v1/versions/${e(id)}/approve`, VersionSummarySchema, send('POST', body)),
   rejectVersion: (id: string, body: RejectVersionRequest) =>

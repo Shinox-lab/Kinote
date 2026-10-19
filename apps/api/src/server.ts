@@ -29,6 +29,7 @@ import {
   BlockDiffSchema,
   CollabTokenResponseSchema,
   ReviewListSchema,
+  UpdatesResponseSchema,
   RetryVersionResponseSchema,
   SearchResponseSchema,
   AskResponseSchema,
@@ -82,6 +83,7 @@ import {
   getVersionDiff,
 } from './routes/pages.js';
 import { listReviewQueue } from './routes/reviews.js';
+import { listUpdates } from './routes/updates.js';
 import { authRoutes, type AuthRateLimit } from './routes/auth.js';
 import { requireSession, resolveActor, type AuthSession } from './auth/actor.js';
 import { registerErrorHandler } from './errors.js';
@@ -403,6 +405,10 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
     const actor = actorOf(req);
     const res = await withdrawPage(actor, (req.params as any).id);
     return reply.send(parseReply(DocumentSummarySchema, res));
+  });
+
+  app.get('/api/v1/updates', async (req, reply) => {
+    return reply.send(parseReply(UpdatesResponseSchema, await listUpdates(actorOf(req), req.query)));
   });
 
   app.get('/api/v1/reviews', async (req, reply) => {

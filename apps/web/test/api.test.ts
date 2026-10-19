@@ -178,6 +178,33 @@ describe('web api client', () => {
     });
   });
 
+  test('updates asks for the limit and parses the feed, rejecting a malformed reply', async () => {
+    const item = {
+      versionId: '8d1c2b0e-6d2c-4a52-9c83-8f1f7c2b1a44',
+      number: 2,
+      status: 'indexed',
+      reason: 'submit',
+      createdAt: '2026-10-19T10:00:00.000Z',
+      document: {
+        id: '8d1c2b0e-6d2c-4a52-9c83-8f1f7c2b1a55',
+        title: 'Leave policy',
+        spaceId: '8d1c2b0e-6d2c-4a52-9c83-8f1f7c2b1a66',
+        spaceName: 'Handbook',
+      },
+      actor: { type: 'user', id: '8d1c2b0e-6d2c-4a52-9c83-8f1f7c2b1a77', name: 'Aisha' },
+    };
+    // A fresh Response per call: a body can be read only once.
+    fetchMock.mockImplementation(async () => jsonResponse([item]));
+    await expect(api.updates(5)).resolves.toEqual([item]);
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/v1/updates?limit=5');
+
+    await api.updates();
+    expect(fetchMock.mock.calls[1][0]).toBe('/api/v1/updates?limit=8');
+
+    fetchMock.mockImplementation(async () => jsonResponse([{ ...item, status: 'superseded' }]));
+    await expect(api.updates()).rejects.toThrow();
+  });
+
   test('errorSentence gives the contract sentence, or a generic one that never contains the code', () => {
     expect(errorSentence('space_not_found')).toBe(ERROR_SENTENCES.space_not_found);
     const generic = errorSentence('nope');

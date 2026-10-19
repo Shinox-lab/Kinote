@@ -419,6 +419,41 @@ export type ReviewItem = z.infer<typeof ReviewItemSchema>;
 /** Reply of GET /api/v1/reviews (oldest version first). */
 export const ReviewListSchema = z.array(ReviewItemSchema);
 
+/** Query of GET /api/v1/updates: how many recent changes to return (default 8, at most 30). */
+export const UpdatesQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(30).default(8),
+});
+export type UpdatesQuery = z.infer<typeof UpdatesQuerySchema>;
+
+/**
+ * One entry of the workspace updates feed: a version of a page (newest
+ * first) with its page and space and who made it. `actor.type` is `system` for
+ * a connector's version (`id` null, name "System"); a user who left the
+ * workspace shows as "Former member". No markdown, blocks or Yjs bytes.
+ */
+export const UpdateItemSchema = z.object({
+  versionId: z.string().uuid(),
+  number: z.number().int(),
+  status: z.enum(['pending_review', 'indexed', 'rejected', 'withdrawn', 'failed']),
+  reason: VersionReasonSchema,
+  createdAt: z.string().datetime(),
+  document: z.object({
+    id: z.string().uuid(),
+    title: z.string(),
+    spaceId: z.string().uuid(),
+    spaceName: z.string(),
+  }),
+  actor: z.object({
+    type: z.enum(['user', 'agent', 'system']),
+    id: z.string().uuid().nullable(),
+    name: z.string(),
+  }),
+});
+export type UpdateItem = z.infer<typeof UpdateItemSchema>;
+
+/** Reply of GET /api/v1/updates. */
+export const UpdatesResponseSchema = z.array(UpdateItemSchema);
+
 /**
  * Reply of GET /api/v1/versions/:id: the summary plus the stored markdown (the
  * reviewed form), the stored BlockNote blocks and who contributed. Never
