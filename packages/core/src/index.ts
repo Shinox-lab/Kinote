@@ -1,9 +1,13 @@
 export {
   requireSpaceRole,
+  requireDocumentRole,
   getReadableSpaceIds,
   assertValidUuid,
   type Actor,
   type SpaceRole,
+  type SpaceAccess,
+  type SpaceRoleOptions,
+  type DocumentRoleOptions,
 } from './permissions.js';
 export { takePageSnapshot, type TakePageSnapshotHooks } from './snapshot.js';
 export { indexVersion, type IndexVersionResult } from './indexing/indexVersion.js';

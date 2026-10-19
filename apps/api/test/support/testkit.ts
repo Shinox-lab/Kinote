@@ -3,7 +3,7 @@ import { beforeAll, beforeEach } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { and, eq } from 'drizzle-orm';
-import { withTenantTx, memberships } from '@living-wiki/db';
+import { withTenantTx, memberships, agents } from '@living-wiki/db';
 import { createTestDb, type TestDb } from '@living-wiki/db/testing';
 import { buildApiServer, type ApiServerOptions } from '../../src/server.js';
 
@@ -117,6 +117,31 @@ export async function signUpMember(
   const session = await signUp(app, email);
   await addMember(tenantId, session.userId, role);
   return { ...session, headers: asUser(session, tenantId) };
+}
+
+/**
+ * Creates an agent row in the tenant directly in the database (agents have no
+ * management route yet) and returns its id. Space grants to an agent need
+ * the agent to exist and not be disabled.
+ */
+export async function createAgent(
+  tenantId: string,
+  createdBy: string,
+  opts: { id?: string; name?: string; disabled?: boolean } = {}
+): Promise<string> {
+  const [row] = await withTenantTx(tenantId, (tx) =>
+    tx
+      .insert(agents)
+      .values({
+        ...(opts.id ? { id: opts.id } : {}),
+        tenantId,
+        name: opts.name ?? `agent-${randomUUID()}`,
+        createdBy,
+        disabledAt: opts.disabled ? new Date() : null,
+      })
+      .returning({ id: agents.id })
+  );
+  return row.id;
 }
 
 /** Changes a member's tenant role directly in the database. */

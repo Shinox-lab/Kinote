@@ -98,11 +98,12 @@ describe('POST /api/v1/pages/:id/collab-token', () => {
       expect(res.json().error).toBe('page_not_found');
     }
 
-    // A member with no grant in the space cannot read the page: 404, not 403.
+    // A member with no grant in the space cannot read the page: 404, not 403,
+    // and the same code as an unknown page, so the page's existence never leaks.
     const nobody = await signUpMember(app, w.tenant.id, 'member');
     const res = await issue(nobody.headers, w.page.id);
     expect(res.statusCode).toBe(404);
-    expect(res.json().error).toBe('space_not_found');
+    expect(res.json().error).toBe('page_not_found');
   });
 
   test('requires a session', async () => {

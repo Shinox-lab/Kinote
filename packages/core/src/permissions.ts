@@ -1,6 +1,6 @@
 import { and, eq } from 'drizzle-orm';
 import { spaces, spaceGrants, groupMembers } from '@living-wiki/db';
-import type { DbTransaction } from '@living-wiki/db';
+import type { DbTransaction, DocumentRow } from '@living-wiki/db';
 import { AppError, type ErrorCode } from '@living-wiki/contracts';
 
 const ROLE_RANK = { viewer: 1, editor: 2, reviewer: 3, admin: 4 } as const;
@@ -21,12 +21,45 @@ export function assertValidUuid(id: string, notFoundError: ErrorCode = 'document
   }
 }
 
-export async function requireSpaceRole(
+export type SpaceRow = typeof spaces.$inferSelect;
+
+export interface SpaceAccess {
+  space: SpaceRow;
+  effectiveRole: SpaceRole;
+}
+
+export interface SpaceRoleOptions {
+  /**
+   * Lets a tenant owner/admin act above `viewer` on an archived space (the
+   * space archive/restore routes). Without it such a request is 409
+   * `space_archived`. Never makes an archived space visible to a non-admin.
+   */
+  allowArchived?: boolean;
+}
+
+export interface DocumentRoleOptions extends SpaceRoleOptions {
+  /** The 404 code answered when the actor may not see the document (default `document_not_found`). */
+  notFound?: ErrorCode;
+}
+
+function isTenantAdmin(actor: Actor): boolean {
+  return (
+    actor.principalType === 'user' &&
+    (actor.tenantRole === 'owner' || actor.tenantRole === 'admin')
+  );
+}
+
+/**
+ * Loads the space and the actor's effective role in it, or throws 404
+ * `space_not_found` when the actor cannot read it (another tenant, unknown,
+ * no grant, or archived for a non-admin). Does not compare against a
+ * minimum role: see `checkMinimumRole`.
+ */
+async function resolveSpaceAccess(
   tx: DbTransaction,
   actor: Actor,
-  spaceId: string,
-  minimumRole: SpaceRole
-) {
+  spaceId: string
+): Promise<SpaceAccess> {
   assertValidUuid(spaceId, 'space_not_found');
 
   // Always filter on tenant_id explicitly in addition to RLS
@@ -39,17 +72,23 @@ export async function requireSpaceRole(
     throw new AppError('space_not_found', 'Space not found.');
   }
 
+  const tenantAdmin = isTenantAdmin(actor);
+
+  // An archived space is invisible to everyone but tenant owners and admins.
+  if (space.archivedAt && !tenantAdmin) {
+    throw new AppError('space_not_found', 'Space not found.');
+  }
+
   let effectiveRole: SpaceRole | null = null;
 
   // Tenant owners and admins act as space admins everywhere
-  if (
-    actor.principalType === 'user' &&
-    (actor.tenantRole === 'owner' || actor.tenantRole === 'admin')
-  ) {
+  if (tenantAdmin) {
     effectiveRole = 'admin';
   } else if (space.kind === 'inbox') {
-    // Inbox is accessible to all tenant members/agents (item-level visibility applied in queries)
-    effectiveRole = actor.tenantRole === 'viewer' ? 'viewer' : 'editor';
+    // Every tenant member and agent may use the Inbox. Item-level visibility
+    // (creator or tenant admin only) is applied by `requireDocumentRole` and
+    // in search via `chunks.inbox_owner`.
+    effectiveRole = 'editor';
   } else {
     const groupsForActor = await tx
       .select({ groupId: groupMembers.groupId })
@@ -82,26 +121,102 @@ export async function requireSpaceRole(
     }
   }
 
-  // Agents can hold viewer or editor, never reviewer or admin (S4)
-  if (
-    actor.principalType === 'agent' &&
-    effectiveRole &&
-    ROLE_RANK[effectiveRole] > ROLE_RANK.editor
-  ) {
-    effectiveRole = 'editor';
-  }
-
   // Unreadable spaces return 404, never 403
   if (!effectiveRole) {
     throw new AppError('space_not_found', 'Space not found.');
   }
 
-  // Readable space but insufficient role returns 403 forbidden
-  if (ROLE_RANK[effectiveRole] < ROLE_RANK[minimumRole]) {
-    throw new AppError('forbidden', 'You do not have permission to perform this action.');
+  // A user whose tenant role is `viewer` is read-only in every space, the
+  // Inbox included, whatever their grants say (a grant of editor to such a
+  // user is accepted and capped here). Agents have no tenant role.
+  if (actor.principalType === 'user' && actor.tenantRole === 'viewer') {
+    effectiveRole = 'viewer';
+  }
+
+  // Agents can hold viewer or editor, never reviewer or admin (S4)
+  if (actor.principalType === 'agent' && ROLE_RANK[effectiveRole] > ROLE_RANK.editor) {
+    effectiveRole = 'editor';
   }
 
   return { space, effectiveRole };
+}
+
+/**
+ * The minimum-role half of the gate, for a space the actor can read: an
+ * archived space accepts only reads (409 `space_archived` unless
+ * `allowArchived`), and a role below the minimum is 403 `forbidden`.
+ */
+function checkMinimumRole(access: SpaceAccess, minimumRole: SpaceRole, opts: SpaceRoleOptions) {
+  if (
+    access.space.archivedAt &&
+    ROLE_RANK[minimumRole] > ROLE_RANK.viewer &&
+    !opts.allowArchived
+  ) {
+    throw new AppError('space_archived', 'Space is archived.');
+  }
+
+  // Readable space but insufficient role returns 403 forbidden
+  if (ROLE_RANK[access.effectiveRole] < ROLE_RANK[minimumRole]) {
+    throw new AppError('forbidden', 'You do not have permission to perform this action.');
+  }
+}
+
+/**
+ * The permission gate for space-level operations. 404 `space_not_found` when
+ * the actor cannot read the space (never 403); 409 `space_archived` for a
+ * change to an archived space; 403 `forbidden` when the role is too low.
+ * Document-level operations use `requireDocumentRole` instead.
+ */
+export async function requireSpaceRole(
+  tx: DbTransaction,
+  actor: Actor,
+  spaceId: string,
+  minimumRole: SpaceRole,
+  opts: SpaceRoleOptions = {}
+): Promise<SpaceAccess> {
+  const access = await resolveSpaceAccess(tx, actor, spaceId);
+  checkMinimumRole(access, minimumRole, opts);
+  return access;
+}
+
+/**
+ * The permission gate for one document: the space gate plus the Inbox's
+ * per-item rule (the one written exception to "access belongs to the space"):
+ * an Inbox document is visible only to its creator and to tenant owners and
+ * admins. Anything the actor cannot see answers `opts.notFound` (404), also
+ * when the space itself is unreadable, so a document's existence never leaks
+ * through a different code; only then are the archive (409) and role (403)
+ * checks applied.
+ */
+export async function requireDocumentRole(
+  tx: DbTransaction,
+  actor: Actor,
+  doc: Pick<DocumentRow, 'id' | 'spaceId' | 'createdByType' | 'createdBy'>,
+  minimumRole: SpaceRole,
+  opts: DocumentRoleOptions = {}
+): Promise<SpaceAccess> {
+  const notFound = opts.notFound ?? 'document_not_found';
+
+  let access: SpaceAccess;
+  try {
+    access = await resolveSpaceAccess(tx, actor, doc.spaceId);
+  } catch (err) {
+    if (err instanceof AppError && err.code === 'space_not_found') {
+      throw new AppError(notFound);
+    }
+    throw err;
+  }
+
+  if (access.space.kind === 'inbox' && !isTenantAdmin(actor)) {
+    const isCreator =
+      doc.createdByType === actor.principalType && doc.createdBy === actor.principalId;
+    if (!isCreator) {
+      throw new AppError(notFound);
+    }
+  }
+
+  checkMinimumRole(access, minimumRole, opts);
+  return access;
 }
 
 export async function getReadableSpaceIds(
@@ -116,10 +231,7 @@ export async function getReadableSpaceIds(
   const inboxSpace = allSpaces.find((s) => s.kind === 'inbox');
   const inboxSpaceId = inboxSpace?.id ?? '00000000-0000-0000-0000-000000000000';
 
-  if (
-    actor.principalType === 'user' &&
-    (actor.tenantRole === 'owner' || actor.tenantRole === 'admin')
-  ) {
+  if (isTenantAdmin(actor)) {
     return {
       readableSpaceIds: allSpaces.filter((s) => !s.archivedAt).map((s) => s.id),
       inboxSpaceId,

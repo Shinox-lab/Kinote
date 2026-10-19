@@ -237,7 +237,8 @@ describe('failed versions and retry', () => {
 
     const unreadable = await retry(outsider.headers, v1.id);
     assert.equal(unreadable.statusCode, 404, unreadable.body);
-    assert.equal(unreadable.json().error, 'space_not_found');
+    // Same code as an unknown version: the version's existence never leaks.
+    assert.equal(unreadable.json().error, 'version_not_found');
 
     assert.equal((await loadVersion(tenant.id, v1.id)).status, 'failed');
   });

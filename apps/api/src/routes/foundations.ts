@@ -7,11 +7,13 @@ import {
   users,
   memberships,
   invitations,
+  agents,
   groups,
   groupMembers,
   spaces,
   spaceGrants,
   writeAuditEvent,
+  type DbTransaction,
 } from '@living-wiki/db';
 import {
   CreateTenantRequestSchema,
@@ -195,6 +197,46 @@ export async function updateSpaceSettings(actor: Actor, spaceId: string, input: 
   });
 }
 
+/**
+ * True when the grant's principal belongs to the actor's tenant: a user with a
+ * membership row, a group of the tenant, or an agent of the tenant that is not
+ * disabled. Every lookup filters on tenant_id explicitly (RLS is a second wall).
+ */
+async function principalExists(
+  tx: DbTransaction,
+  tenantId: string,
+  principalType: 'user' | 'group' | 'agent',
+  principalId: string
+): Promise<boolean> {
+  if (principalType === 'user') {
+    const [row] = await tx
+      .select({ userId: memberships.userId })
+      .from(memberships)
+      .where(and(eq(memberships.tenantId, tenantId), eq(memberships.userId, principalId)));
+    return row !== undefined;
+  }
+  if (principalType === 'group') {
+    const [row] = await tx
+      .select({ id: groups.id })
+      .from(groups)
+      .where(and(eq(groups.tenantId, tenantId), eq(groups.id, principalId)));
+    return row !== undefined;
+  }
+  const [row] = await tx
+    .select({ id: agents.id })
+    .from(agents)
+    .where(and(eq(agents.tenantId, tenantId), eq(agents.id, principalId), isNull(agents.disabledAt)));
+  return row !== undefined;
+}
+
+/**
+ * Grants a role in a space (space admin). The principal must belong to the
+ * tenant (404 `principal_not_found` otherwise, also for another tenant's ids
+ * and disabled agents). Agents may hold viewer or editor only (403). A grant
+ * of editor (or higher) to a user whose tenant role is `viewer` is accepted
+ * as given: `requireSpaceRole` caps that user at viewer when it is read, so
+ * the grant takes effect if the tenant role is later raised.
+ */
 export async function upsertSpaceGrant(actor: Actor, spaceId: string, input: unknown) {
   const parsed = UpsertSpaceGrantSchema.parse(input);
   return withTenantTx(actor.tenantId, async (tx) => {
@@ -205,6 +247,10 @@ export async function upsertSpaceGrant(actor: Actor, spaceId: string, input: unk
       (parsed.role === 'reviewer' || parsed.role === 'admin')
     ) {
       throw new AppError('forbidden', 'Agents can hold viewer or editor roles, never reviewer or admin.');
+    }
+
+    if (!(await principalExists(tx, actor.tenantId, parsed.principal_type, parsed.principal_id))) {
+      throw new AppError('principal_not_found');
     }
 
     const [grant] = await tx

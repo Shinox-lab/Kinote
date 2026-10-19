@@ -2,7 +2,7 @@ import { describe, test, beforeAll, afterEach, afterAll, expect } from 'vitest';
 import assert from 'node:assert/strict';
 import type * as Y from 'yjs';
 import { and, eq } from 'drizzle-orm';
-import { withTenantTx, memberships } from '@living-wiki/db';
+import { withTenantTx, memberships, spaces } from '@living-wiki/db';
 import {
   signCollabToken,
   getCollabTokenSecret,
@@ -292,6 +292,73 @@ describe('collab connection authentication', () => {
     );
     await expect(connect({ documentName: name, token })).rejects.toThrow(/authentication failed/);
     await expect(authenticateCollabConnection(token, name)).rejects.toBeTruthy();
+  });
+
+  test('a tenant viewer holding an editor grant and a write token connects read-only', async () => {
+    const w = await world();
+    const name = documentName(w.tenant.id, w.pageA.id);
+    const tenantViewer = await signUpMember(app, w.tenant.id, 'viewer');
+    await post(w.headers, `/api/v1/spaces/${w.space.id}/grants`, {
+      principal_type: 'user',
+      principal_id: tenantViewer.userId,
+      role: 'editor',
+    });
+    const token = tokenFor(w, w.pageA.id, tenantViewer.userId, 'write');
+
+    const ctx = await authenticateCollabConnection(token, name);
+    expect(ctx.readOnly).toBe(true);
+
+    const client = await connect({ documentName: name, token });
+    client.doc.getMap('probe').set('tenant-viewer', 'edit');
+    await stays(() => serverDoc(name).getMap('probe').get('tenant-viewer') === undefined, 400);
+  });
+
+  test("another member's Inbox page: a member is refused, the creator and a tenant admin connect", async () => {
+    const w = await world();
+    const creator = await signUpMember(app, w.tenant.id, 'member');
+    const other = await signUpMember(app, w.tenant.id, 'member');
+    const admin = await signUpMember(app, w.tenant.id, 'admin');
+    const spaceList = await app.inject({ method: 'GET', url: '/api/v1/spaces', headers: creator.headers });
+    const inbox = (spaceList.json() as Array<{ id: string; kind: string }>).find((s) => s.kind === 'inbox');
+    assert.ok(inbox);
+    const item = (
+      await post(creator.headers, '/api/v1/pages', {
+        space_id: inbox.id,
+        title: 'Private note',
+        slug: 'private-note',
+        markdown: '# mine',
+      })
+    ).document;
+    const name = documentName(w.tenant.id, item.id);
+
+    const refused = tokenFor(w, item.id, other.userId, 'write');
+    await expect(authenticateCollabConnection(refused, name)).rejects.toMatchObject({
+      code: 'page_not_found',
+    });
+    await expect(connect({ documentName: name, token: refused })).rejects.toThrow(/authentication failed/);
+
+    for (const userId of [creator.userId, admin.userId]) {
+      const ctx = await authenticateCollabConnection(tokenFor(w, item.id, userId, 'write'), name);
+      expect(ctx.readOnly).toBe(false);
+    }
+  });
+
+  test('a page in an archived space is read-only even for a tenant admin', async () => {
+    const w = await world();
+    await withTenantTx(w.tenant.id, (tx) =>
+      tx
+        .update(spaces)
+        .set({ archivedAt: new Date() })
+        .where(and(eq(spaces.tenantId, w.tenant.id), eq(spaces.id, w.space.id)))
+        .then(() => undefined)
+    );
+    const name = documentName(w.tenant.id, w.pageA.id);
+    const ctx = await authenticateCollabConnection(tokenFor(w, w.pageA.id, w.owner.userId, 'write'), name);
+    expect(ctx.readOnly).toBe(true);
+    // A member of the space cannot see an archived space at all.
+    await expect(
+      authenticateCollabConnection(tokenFor(w, w.pageA.id, w.editor.userId, 'write'), name)
+    ).rejects.toMatchObject({ code: 'page_not_found' });
   });
 
   test('openDirectSession refuses read-only contexts: a read token cannot transact', async () => {

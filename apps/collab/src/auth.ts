@@ -1,6 +1,6 @@
 import { and, eq, isNull } from 'drizzle-orm';
 import { withTenantTx, documents, pages, memberships, tenants } from '@living-wiki/db';
-import { requireSpaceRole, type Actor } from '@living-wiki/core';
+import { requireDocumentRole, type Actor } from '@living-wiki/core';
 import { AppError } from '@living-wiki/contracts';
 import { getCollabTokenSecret, parseDocumentName, verifyCollabToken } from '@living-wiki/shared';
 
@@ -26,7 +26,9 @@ export interface CollabContext {
  *
  * Agents have no membership row and no agent authentication yet: for
  * `principalType: 'agent'` the membership lookup is skipped and permissions
- * come from the agent's space grants, capped by `requireSpaceRole`.
+ * come from the agent's space grants, capped by `requireDocumentRole`
+ * (which also applies the Inbox rule: only the creator and tenant admins may
+ * open an Inbox page).
  *
  * `secret` is the collab token signing secret; the collab server passes the
  * one it was built with, other callers default to `COLLAB_TOKEN_SECRET`.
@@ -84,7 +86,9 @@ export async function authenticateCollabConnection(
       throw new AppError('page_not_found', 'Page not found.');
     }
 
-    const { space, effectiveRole } = await requireSpaceRole(tx, actor, row.spaceId, 'viewer');
+    const { space, effectiveRole } = await requireDocumentRole(tx, actor, row, 'viewer', {
+      notFound: 'page_not_found',
+    });
 
     const [page] = await tx
       .select()
@@ -103,8 +107,13 @@ export async function authenticateCollabConnection(
       actorType: actor.principalType,
       actorId: actor.principalId,
       quietSeconds: space.quietSeconds,
-      // Archived pages stay readable but are never live-edited.
-      readOnly: claims.access === 'read' || !canWrite || row.archivedAt !== null,
+      // Archived pages, and every page of an archived space, stay readable but
+      // are never live-edited.
+      readOnly:
+        claims.access === 'read' ||
+        !canWrite ||
+        row.archivedAt !== null ||
+        space.archivedAt !== null,
     };
   });
 }

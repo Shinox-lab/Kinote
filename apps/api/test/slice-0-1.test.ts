@@ -38,6 +38,7 @@ import {
   signUp,
   signUpMember,
   setMemberRole,
+  createAgent,
   asUser,
   useTestDb,
 } from './support/testkit.js';
@@ -579,7 +580,8 @@ describe('Living Wiki — Slice 0 (Foundations) & Slice 1 (Live Pages)', () => {
     await runPendingJobsForTenant(tenant.id);
 
     // Grant an external agent editor access to the no-review space
-    const agentId = '00000000-0000-0000-0000-000000000777';
+    // A grant needs a real, enabled agent of the tenant.
+    const agentId = await createAgent(tenant.id, owner.userId);
     await app.inject({
       method: 'POST',
       url: `/api/v1/spaces/${openSpace.id}/grants`,

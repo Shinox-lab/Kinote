@@ -32,6 +32,7 @@ import {
 } from '@living-wiki/contracts';
 import {
   requireSpaceRole,
+  requireDocumentRole,
   assertValidUuid,
   takePageSnapshot,
   chunkInboxOwner,
@@ -186,7 +187,9 @@ export async function getPageDetails(actor: Actor, pageId: string) {
       throw new AppError('page_not_found', 'Page not found.');
     }
 
-    const { space } = await requireSpaceRole(tx, actor, doc.spaceId, 'viewer');
+    const { space } = await requireDocumentRole(tx, actor, doc, 'viewer', {
+      notFound: 'page_not_found',
+    });
 
     const [page] = await tx
       .select()
@@ -249,14 +252,27 @@ export async function getPageDetails(actor: Actor, pageId: string) {
 
 /**
  * Manual snapshot of a page's live state (the "submit" button, or an agent's
- * explicit snapshot). The actor must be able to read the page.
+ * explicit snapshot). The actor must be editor or higher on the page
+ * (`requireDocumentRole`): a reader who cannot see it gets 404
+ * `page_not_found`, a viewer 403 `forbidden`, an archived space 409
+ * `space_archived`.
  *
  * The live document is flushed through `collab` first, so the snapshot holds
  * what was typed a moment ago rather than the last debounced store. A failed
  * flush fails the snapshot (`internal_error`): it never snapshots stale state.
  */
 export async function submitPageSnapshot(actor: Actor, pageId: string, collab?: CollabClient) {
-  await getPageDetails(actor, pageId);
+  assertValidUuid(pageId, 'page_not_found');
+  await withTenantTx(actor.tenantId, async (tx) => {
+    const [doc] = await tx
+      .select()
+      .from(documents)
+      .where(and(eq(documents.tenantId, actor.tenantId), eq(documents.id, pageId)));
+    if (!doc || doc.kind !== 'page') {
+      throw new AppError('page_not_found', 'Page not found.');
+    }
+    await requireDocumentRole(tx, actor, doc, 'editor', { notFound: 'page_not_found' });
+  });
   if (collab) {
     await collab.flush(documentName(actor.tenantId, pageId));
   }
@@ -328,9 +344,12 @@ async function lockReviewTarget(tx: DbTransaction, actor: Actor, versionId: stri
  * Approves a `pending_review` version: it moves to `indexing` and its
  * `version.index` job is enqueued. Runs under the document lock and only
  * moves a version that is still `pending_review`, so a withdraw, archive or
- * move that committed first wins (409 `version_not_pending`). Agents never
- * approve; the actor must be reviewer or higher in the space and, unless the
- * space allows self-approval, neither its creator nor a human contributor.
+ * move that committed first wins (409 `version_not_pending`). Access is
+ * checked first (`requireDocumentRole` reviewer): a version the actor cannot
+ * see is 404 `version_not_found`, a lower role (every agent: agents are capped
+ * at editor) 403 `forbidden`. Only then the `self_approval` rule: unless the
+ * space allows self-approval, the actor is neither its creator nor a human
+ * contributor.
  */
 export async function approveVersion(
   actor: Actor,
@@ -347,12 +366,16 @@ export async function approveVersion(
   return withTenantTx(actor.tenantId, async (tx) => {
     const { doc, ver } = await lockReviewTarget(tx, actor, versionId, documentId);
 
-    // Rule 3 & S4: Agents can never approve; user must hold reviewer or admin in the space
+    // Access first, before anything about the version is revealed: a document
+    // the actor cannot see is 404 version_not_found, a role below reviewer is
+    // 403 forbidden. Agents are capped at editor, so they always stop here
+    // (Rule 3 & S4: agents never approve).
+    const { space } = await requireDocumentRole(tx, actor, doc, 'reviewer', {
+      notFound: 'version_not_found',
+    });
     if (actor.principalType === 'agent') {
-      throw new AppError('self_approval', 'Agents cannot approve snapshots.');
+      throw new AppError('forbidden', 'Agents cannot approve snapshots.');
     }
-
-    const { space } = await requireSpaceRole(tx, actor, doc.spaceId, 'reviewer');
 
     if (ver.status !== 'pending_review') {
       throw new AppError('version_not_pending', 'Version is not waiting for review.');
@@ -455,7 +478,9 @@ export async function rejectVersion(
   return withTenantTx(actor.tenantId, async (tx) => {
     const { doc, ver } = await lockReviewTarget(tx, actor, versionId, documentId);
 
-    await requireSpaceRole(tx, actor, doc.spaceId, 'reviewer');
+    // Access first (404 version_not_found for a document the actor cannot
+    // see, 403 forbidden below reviewer; agents are capped at editor).
+    await requireDocumentRole(tx, actor, doc, 'reviewer', { notFound: 'version_not_found' });
 
     if (ver.status !== 'pending_review') {
       throw new AppError('version_not_pending', 'Version is not waiting for review.');
@@ -516,8 +541,16 @@ export async function retryVersion(actor: Actor, versionId: string): Promise<Ret
       throw new AppError('version_not_found', 'Version not found.');
     }
 
-    const doc = await lockDocument(tx, actor.tenantId, found.documentId);
-    await requireSpaceRole(tx, actor, doc.spaceId, 'editor');
+    let doc: DocumentRow;
+    try {
+      doc = await lockDocument(tx, actor.tenantId, found.documentId);
+    } catch (err) {
+      if (err instanceof AppError && err.code === 'document_not_found') {
+        throw new AppError('version_not_found', 'Version not found.');
+      }
+      throw err;
+    }
+    await requireDocumentRole(tx, actor, doc, 'editor', { notFound: 'version_not_found' });
     if (doc.archivedAt) {
       throw new AppError('page_archived', 'Page is archived.');
     }
@@ -719,11 +752,15 @@ export async function movePage(actor: Actor, pageId: string, input: unknown) {
 
   return withTenantTx(actor.tenantId, async (tx) => {
     const doc = await lockPage(tx, actor.tenantId, pageId);
+
+    // Access before any state check, so a page the actor cannot see is 404
+    // whatever its state.
+    await requireDocumentRole(tx, actor, doc, 'editor', { notFound: 'page_not_found' });
     if (doc.archivedAt) {
       throw new AppError('page_archived', 'Page is archived.');
     }
-
-    await requireSpaceRole(tx, actor, doc.spaceId, 'editor');
+    // Moving into the Inbox keeps the document's creator, so afterwards only
+    // the creator and tenant admins see it (as `chunks.inbox_owner` does).
     const { space: targetSpace, effectiveRole: targetRole } = await requireSpaceRole(
       tx,
       actor,
@@ -829,7 +866,7 @@ export async function archivePage(actor: Actor, pageId: string) {
   return withTenantTx(actor.tenantId, async (tx) => {
     const doc = await lockPage(tx, actor.tenantId, pageId);
 
-    await requireSpaceRole(tx, actor, doc.spaceId, 'admin');
+    await requireDocumentRole(tx, actor, doc, 'admin', { notFound: 'page_not_found' });
 
     const [liveChild] = await tx
       .select({ id: documents.id })
@@ -880,7 +917,7 @@ export async function withdrawPage(actor: Actor, pageId: string) {
   return withTenantTx(actor.tenantId, async (tx) => {
     const doc = await lockPage(tx, actor.tenantId, pageId);
 
-    await requireSpaceRole(tx, actor, doc.spaceId, 'reviewer');
+    await requireDocumentRole(tx, actor, doc, 'reviewer', { notFound: 'page_not_found' });
 
     await withdrawLiveVersions(tx, actor.tenantId, pageId);
 
@@ -906,7 +943,8 @@ export async function withdrawPage(actor: Actor, pageId: string) {
 /**
  * Issues a short-lived collab (live editing) token for a page. Readable pages
  * only, checked exactly like getPageDetails (archived pages included); the
- * token carries `write` only for effective space role editor or higher. The
+ * token carries `write` only for effective space role editor or higher in a
+ * space that is not archived. The
  * collab server re-reads the role from the database on connect.
  */
 export async function issueCollabToken(actor: Actor, pageId: string) {
@@ -922,10 +960,14 @@ export async function issueCollabToken(actor: Actor, pageId: string) {
       throw new AppError('page_not_found', 'Page not found.');
     }
 
-    const { effectiveRole } = await requireSpaceRole(tx, actor, doc.spaceId, 'viewer');
+    const { space, effectiveRole } = await requireDocumentRole(tx, actor, doc, 'viewer', {
+      notFound: 'page_not_found',
+    });
+    // An archived space is read-only for everyone, tenant admins included.
+    const canWrite = effectiveRole !== 'viewer' && space.archivedAt === null;
     return {
       documentId: doc.id,
-      access: effectiveRole === 'viewer' ? ('read' as const) : ('write' as const),
+      access: canWrite ? ('write' as const) : ('read' as const),
     };
   });
 

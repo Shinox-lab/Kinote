@@ -10,6 +10,7 @@ import {
 } from '@living-wiki/shared';
 import {
   bootstrapTenant,
+  createAgent,
   signUpMember,
   type buildTestApp,
 } from '../../../api/test/support/testkit.js';
@@ -28,8 +29,6 @@ async function post(
   assert.equal(res.statusCode, 201, res.body);
   return res.json();
 }
-
-export const AGENT_ID = '00000000-0000-0000-0000-000000000abc';
 
 /**
  * A tenant with one space, two pages, an editor user and an agent, both granted
@@ -63,9 +62,11 @@ export async function buildCollabWorld(app: FastifyInstance) {
     principal_id: editor.userId,
     role: 'editor',
   });
+  // Grants need a real, enabled agent of the tenant.
+  const agentId = await createAgent(tenant.id, owner.userId);
   await post(app, headers, `/api/v1/spaces/${space.id}/grants`, {
     principal_type: 'agent',
-    principal_id: AGENT_ID,
+    principal_id: agentId,
     role: 'editor',
   });
 
@@ -89,7 +90,7 @@ export async function buildCollabWorld(app: FastifyInstance) {
     pageA,
     pageB,
     editor,
-    agentId: AGENT_ID,
+    agentId,
     docName: (pageId: string) => documentName(tenant.id, pageId),
     token,
   };
@@ -158,7 +159,8 @@ export async function buildReviewWorld(app: FastifyInstance) {
   await grant('user', c.userId, 'editor');
   await grant('user', r.userId, 'reviewer');
   await grant('user', v.userId, 'viewer');
-  await grant('agent', AGENT_ID, 'editor');
+  const agentId = await createAgent(tenant.id, owner.userId);
+  await grant('agent', agentId, 'editor');
 
   function token(
     principalType: 'user' | 'agent',
@@ -182,7 +184,7 @@ export async function buildReviewWorld(app: FastifyInstance) {
     c,
     r,
     v,
-    agentId: AGENT_ID,
+    agentId,
     name: documentName(tenant.id, page.id),
     token,
   };
