@@ -20,7 +20,9 @@
     "packages/**/*.ts",
     "packages/**/*.tsx",
     "apps/**/*.ts",
-    "apps/**/*.tsx"
+    "apps/**/*.tsx",
+    "e2e/**/*.ts",
+    "playwright.config.ts"
   ],
   "exclude": [
     "dist/**",

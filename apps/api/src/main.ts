@@ -10,6 +10,7 @@ async function main(): Promise<void> {
 
   const app = buildApiServer({
     trustProxy: config.TRUST_PROXY,
+    authRateLimit: { max: config.AUTH_RATE_LIMIT_MAX, timeWindow: '1 minute' },
     collab: new HttpCollabClient(config.COLLAB_INTERNAL_URL, config.INTERNAL_SECRET),
   });
   await app.listen({ port: config.API_PORT, host: config.HOST });

@@ -23,7 +23,9 @@ x-app-env: &app-env
   COLLAB_PORT: "1234"
   HOST: 0.0.0.0
   TRUST_PROXY: ${TRUST_PROXY:-false}
-  EMBEDDING_PROVIDER: deterministic
+  # `pnpm e2e` sets both (the suite signs up more accounts than 10 a minute).
+  AUTH_RATE_LIMIT_MAX: ${AUTH_RATE_LIMIT_MAX:-10}
+  EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-deterministic}
   EMBEDDING_DIMENSIONS: "1536"
   S3_ENDPOINT: http://minio:9000
   S3_BUCKET: ${S3_BUCKET:-living-wiki}

@@ -52,6 +52,32 @@ pnpm stack:down                # docker compose down -v: containers and data are
 Database and object data live in anonymous volumes: they survive
 `docker compose restart` and `stop`/`start`, and `down -v` deletes them.
 
+## End-to-end specs
+
+`playwright.config.ts` runs the specs in `e2e/` (Chromium; install it once with
+`pnpm exec playwright install chromium`). Two ways to run them:
+
+```sh
+pnpm e2e         # compose stack (infra/e2e.sh), then playwright test
+pnpm e2e:local   # no Docker: e2e/harness/local-stack.ts, stopped again afterwards
+```
+
+`pnpm e2e` exports `EMBEDDING_PROVIDER=deterministic` (the only provider
+`loadConfig` accepts, passed through to the containers by docker-compose.yml) and
+`AUTH_RATE_LIMIT_MAX=1000` (the specs sign up more accounts than the default 10 a
+minute allows), runs `pnpm stack:up`, starts `api`, `collab` and `worker` with
+`docker compose up -d --build --no-deps`, waits for them, and runs the specs;
+Playwright serves the console with `vite dev` on 5173 against 8787 and 1234. The
+stack stays up afterwards (`pnpm stack:down` deletes it and its data).
+
+`pnpm e2e:local` runs the api, collab and worker in one Node process on an
+in-memory PGlite database, builds the console and serves it with `vite preview`.
+Ports and timings come from the environment: `E2E_API_PORT` (18787),
+`E2E_COLLAB_PORT` (11234), `E2E_WEB_PORT` (15173), `E2E_WORKER_POLL_MS` (250),
+`E2E_COLLAB_DEBOUNCE_MS` (300) and `E2E_COLLAB_MAX_DEBOUNCE_MS` (1000). Nothing
+is left running after the run. The specs submit pages explicitly, so they do not
+wait for a space's quiet window (a space setting, 10 s at least).
+
 ## Database client
 
 `initDb({ url })` creates one pool per process. Calling it again replaces the

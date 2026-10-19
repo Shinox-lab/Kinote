@@ -23,6 +23,8 @@ export const ConfigSchema = z.object({
     .enum(['true', 'false'])
     .default('false')
     .transform((v) => v === 'true'),
+  /** Per-IP sign-up and sign-in attempts per minute (each route counted separately). */
+  AUTH_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(10),
   EMBEDDING_PROVIDER: z.enum(['deterministic']).default('deterministic'),
   EMBEDDING_DIMENSIONS: z.coerce.number().int().positive().max(4000).default(1536),
   S3_ENDPOINT: z.string().min(1).optional(),
