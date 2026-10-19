@@ -587,6 +587,17 @@ export const CollabFlushRequestSchema = z.object({
 export type CollabFlushRequest = z.infer<typeof CollabFlushRequestSchema>;
 
 /**
+ * Closes every live editing connection of a tenant (only those of `user_id`
+ * when given), after an admin change that can alter access. The clients
+ * reconnect and authenticate again, so the new role applies at once.
+ */
+export const CollabRevokeRequestSchema = z.object({
+  tenant_id: z.string().uuid(),
+  user_id: z.string().uuid().optional(),
+});
+export type CollabRevokeRequest = z.infer<typeof CollabRevokeRequestSchema>;
+
+/**
  * Replaces a live page's BlockNote content and title. `source` decides the
  * attribution: an `agent` change marks the page agent-changed, a `restore`
  * never does. The two are tied: only an agent makes an `agent` change, and a

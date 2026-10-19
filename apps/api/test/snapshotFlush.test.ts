@@ -95,6 +95,7 @@ describe('manual snapshots flush the live document first', () => {
         if (failFlush) throw new AppError('internal_error');
       },
       async replaceBlocks() {},
+      async revoke() {},
     };
     const stubApp = buildTestApp({ collab: stub });
     const w = await buildCollabWorld(stubApp);

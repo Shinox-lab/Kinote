@@ -70,7 +70,8 @@ pass a client's header through unchanged as the last entry.
 
 The edge must also not expose the collab server's internal endpoints: block
 `/internal/*` on the public collab host (only the api calls them, over the
-internal network), and never hand `INTERNAL_SECRET` to anything outside the
+internal network: flush, replace-blocks and revoke, which closes live editing
+sockets after a member, grant or group change), and never hand `INTERNAL_SECRET` to anything outside the
 api and collab services. The secret is the only barrier on those paths.
 
 ## End-to-end specs

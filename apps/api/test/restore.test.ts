@@ -357,6 +357,7 @@ describe('restore a version', () => {
         if (fail) throw new AppError('internal_error');
         return real.replaceBlocks(a);
       },
+      revoke: (t) => real.revoke(t),
     };
     const flakyApp = buildTestApp({ collab: flaky });
     const w = await setup();

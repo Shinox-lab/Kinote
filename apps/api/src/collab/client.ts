@@ -24,6 +24,12 @@ export interface CollabClient {
     actor: { type: 'user' | 'agent'; id: string };
     source: 'restore' | 'agent';
   }): Promise<void>;
+  /**
+   * Closes the live editing connections of a tenant (only `userId`'s when
+   * given), so they reconnect and authenticate with the current role. Call it
+   * after the access change committed, never inside a transaction.
+   */
+  revoke(target: { tenantId: string; userId?: string }): Promise<void>;
 }
 
 /** How long one internal call may take before it is abandoned. */
@@ -58,6 +64,13 @@ export class HttpCollabClient implements CollabClient {
       blocks: a.blocks,
       actor: a.actor,
       source: a.source,
+    });
+  }
+
+  async revoke(target: { tenantId: string; userId?: string }): Promise<void> {
+    await this.#post('/internal/revoke', {
+      tenant_id: target.tenantId,
+      ...(target.userId !== undefined ? { user_id: target.userId } : {}),
     });
   }
 

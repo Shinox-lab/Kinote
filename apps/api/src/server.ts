@@ -147,6 +147,27 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
   // Identity comes only from the session token and, for tenant routes, the
   // membership row of the session user in x-tenant-id. Routes declare
   // config.auth ('public' | 'session' | 'tenant'); undeclared means 'tenant'.
+  /**
+   * Closes the live editing sessions an access change can affect (only
+   * `userId`'s when the change names one user), so they reconnect under the
+   * new role. Called by the admin routes AFTER their transaction committed;
+   * best effort: a failure is logged, the admin change stands, and the
+   * sockets keep their old access until they reconnect.
+   */
+  async function revokeLiveSessions(req: FastifyRequest, target: { tenantId: string; userId?: string }) {
+    if (!opts.collab) return;
+    try {
+      await opts.collab.revoke(target);
+    } catch (err) {
+      req.log.error({ err }, 'collab revoke failed');
+    }
+  }
+  /** Revocation target of a grant or group change: one user, or the whole tenant. */
+  const revokeTarget = (actor: Actor, principalType: string, principalId: string) =>
+    principalType === 'user'
+      ? { tenantId: actor.tenantId, userId: principalId.toLowerCase() }
+      : { tenantId: actor.tenantId };
+
   app.decorateRequest('authSession', null);
   app.decorateRequest('actor', null);
   app.addHook('preHandler', async (req) => {
@@ -222,6 +243,7 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
   app.post('/api/v1/spaces/:id/grants', async (req, reply) => {
     const actor = actorOf(req);
     const res = await upsertSpaceGrant(actor, (req.params as any).id, req.body);
+    await revokeLiveSessions(req, revokeTarget(actor, res.principalType, res.principalId));
     return reply.status(201).send(parseReply(UpsertGrantResponseSchema, res));
   });
 
@@ -232,7 +254,9 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
 
   app.delete('/api/v1/spaces/:id/grants/:principalType/:principalId', async (req, reply) => {
     const p = req.params as any;
-    await deleteSpaceGrant(actorOf(req), p.id, p.principalType, p.principalId);
+    const actor = actorOf(req);
+    await deleteSpaceGrant(actor, p.id, p.principalType, p.principalId);
+    await revokeLiveSessions(req, revokeTarget(actor, p.principalType, p.principalId));
     return reply.status(204).send();
   });
 
@@ -241,12 +265,17 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
   });
 
   app.patch('/api/v1/members/:userId', async (req, reply) => {
-    const res = await changeMemberRole(actorOf(req), (req.params as any).userId, req.body);
+    const actor = actorOf(req);
+    const res = await changeMemberRole(actor, (req.params as any).userId, req.body);
+    await revokeLiveSessions(req, { tenantId: actor.tenantId, userId: res.userId });
     return reply.send(parseReply(MemberSchema, res));
   });
 
   app.delete('/api/v1/members/:userId', async (req, reply) => {
-    await removeMember(actorOf(req), (req.params as any).userId);
+    const actor = actorOf(req);
+    const userId = String((req.params as any).userId).toLowerCase();
+    await removeMember(actor, userId);
+    await revokeLiveSessions(req, { tenantId: actor.tenantId, userId });
     return reply.status(204).send();
   });
 
@@ -260,13 +289,17 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
   });
 
   app.post('/api/v1/groups/:id/members', async (req, reply) => {
-    const res = await addGroupMember(actorOf(req), (req.params as any).id, req.body);
+    const actor = actorOf(req);
+    const res = await addGroupMember(actor, (req.params as any).id, req.body);
+    await revokeLiveSessions(req, revokeTarget(actor, res.principalType, res.principalId));
     return reply.send(parseReply(GroupMemberResponseSchema, res));
   });
 
   app.delete('/api/v1/groups/:id/members/:principalType/:principalId', async (req, reply) => {
     const p = req.params as any;
-    await removeGroupMember(actorOf(req), p.id, p.principalType, p.principalId);
+    const actor = actorOf(req);
+    await removeGroupMember(actor, p.id, p.principalType, p.principalId);
+    await revokeLiveSessions(req, revokeTarget(actor, p.principalType, p.principalId));
     return reply.status(204).send();
   });
 

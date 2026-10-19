@@ -22,7 +22,8 @@ export interface CollabContext {
  * time (it lives five minutes). The role is always re-read from the database
  * here, so a holder demoted since issuance gets a read-only connection and a
  * removed holder is refused. Any failure throws; callers treat that as a
- * refused connection.
+ * refused connection. An admin change that can alter access closes the
+ * affected live sockets (`/internal/revoke`), so this runs again for them.
  *
  * Agents have no membership row and no agent authentication yet: for
  * `principalType: 'agent'` the membership lookup is skipped and permissions

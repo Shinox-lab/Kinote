@@ -12,7 +12,8 @@ import {
   TEST_INTERNAL_SECRET,
   waitFor,
 } from './support/collabWorld.js';
-import { buildTestApp, useTestDb } from '../../api/test/support/testkit.js';
+import { documentName, getCollabTokenSecret, signCollabToken } from '@living-wiki/shared';
+import { bootstrapTenant, buildTestApp, useTestDb } from '../../api/test/support/testkit.js';
 
 /**
  * The privileged API-to-collab endpoints (Task 4.2). Only the shared internal
@@ -403,6 +404,106 @@ describe('collab internal endpoints', () => {
       });
       expect(res.status).toBe(400);
       expect(await res.json()).toMatchObject({ error: 'validation_failed' });
+    });
+  });
+
+  describe('POST /internal/revoke', () => {
+    /** Counts the times the client's websocket was closed under it. */
+    function watchDisconnects(client: ConnectedClient) {
+      const seen = { count: 0 };
+      client.provider.configuration.websocketProvider.on('disconnect', () => {
+        seen.count += 1;
+      });
+      return seen;
+    }
+
+    /** A page in a second tenant, and a write token for its owner. */
+    async function otherTenantPage() {
+      const other = await bootstrapTenant(app, { name: 'Elsewhere Co', slug: 'elsewhere-co' });
+      const post = async (url: string, payload: unknown) => {
+        const res = await app.inject({ method: 'POST', url, headers: other.headers, payload: payload as any });
+        expect(res.statusCode, res.body).toBe(201);
+        return res.json();
+      };
+      const space = await post('/api/v1/spaces', { name: 'Docs', slug: 'docs' });
+      const page = await post('/api/v1/pages', { space_id: space.id, title: 'Far', slug: 'far', markdown: '# Far' });
+      return {
+        documentName: documentName(other.tenant.id, page.id),
+        token: signCollabToken(
+          { tenantId: other.tenant.id, pageId: page.id, principalType: 'user', principalId: other.owner.userId, access: 'write' },
+          getCollabTokenSecret()
+        ),
+      };
+    }
+
+    async function fourClients() {
+      const w = await buildCollabWorld(app);
+      const editor = await connect({
+        documentName: w.docName(w.pageA.id),
+        token: w.token(w.pageA.id, 'user', w.editor.userId),
+      });
+      const owner = await connect({
+        documentName: w.docName(w.pageB.id),
+        token: w.token(w.pageB.id, 'user', w.owner.userId),
+      });
+      const agent = await connect({
+        documentName: w.docName(w.pageA.id),
+        token: w.token(w.pageA.id, 'agent', w.agentId),
+      });
+      const elsewhere = await connect(await otherTenantPage());
+      return {
+        w,
+        drops: {
+          editor: watchDisconnects(editor),
+          owner: watchDisconnects(owner),
+          agent: watchDisconnects(agent),
+          elsewhere: watchDisconnects(elsewhere),
+        },
+      };
+    }
+
+    async function staysZero(counts: Array<{ count: number }>, ms = 300) {
+      const end = Date.now() + ms;
+      while (Date.now() < end) {
+        expect(counts.map((c) => c.count)).toEqual(counts.map(() => 0));
+        await new Promise((r) => setTimeout(r, 25));
+      }
+    }
+
+    test("with user_id it closes that user's connections in the tenant and nobody else's", async () => {
+      const { w, drops } = await fourClients();
+      const res = await call('/internal/revoke', {
+        json: { tenant_id: w.tenant.id, user_id: w.editor.userId },
+      });
+      expect(res.status).toBe(204);
+      await waitFor(() => drops.editor.count > 0);
+      await staysZero([drops.owner, drops.agent, drops.elsewhere]);
+    });
+
+    test('without user_id it closes every connection of the tenant, and only that tenant', async () => {
+      const { w, drops } = await fourClients();
+      const res = await call('/internal/revoke', { json: { tenant_id: w.tenant.id } });
+      expect(res.status).toBe(204);
+      await waitFor(() => drops.editor.count > 0 && drops.owner.count > 0 && drops.agent.count > 0);
+      await staysZero([drops.elsewhere]);
+    });
+
+    test('no or a wrong secret is 401 and closes nothing', async () => {
+      const { w, drops } = await fourClients();
+      for (const secret of [null, 'wrong-secret']) {
+        const res = await call('/internal/revoke', { secret, json: { tenant_id: w.tenant.id } });
+        expect(res.status).toBe(401);
+        expect(await res.json()).toMatchObject({ error: 'unauthenticated' });
+      }
+      await staysZero(Object.values(drops));
+    });
+
+    test('an invalid body is 400 validation_failed', async () => {
+      for (const json of [{}, { tenant_id: 'nope' }, { tenant_id: randomUUID(), user_id: 'nope' }]) {
+        const res = await call('/internal/revoke', { json });
+        expect(res.status).toBe(400);
+        expect(await res.json()).toMatchObject({ error: 'validation_failed' });
+      }
     });
   });
 });

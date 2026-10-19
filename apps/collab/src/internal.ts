@@ -9,6 +9,7 @@ import {
   AppError,
   CollabFlushRequestSchema,
   CollabReplaceBlocksRequestSchema,
+  CollabRevokeRequestSchema,
   ERROR_SENTENCES,
   type ErrorCode,
 } from '@living-wiki/contracts';
@@ -26,7 +27,15 @@ import { collabServerDeps, storeDocumentNow } from './serverState.js';
 export const INTERNAL_PATHS = {
   flush: '/internal/flush',
   replaceBlocks: '/internal/replace-blocks',
+  revoke: '/internal/revoke',
 } as const;
+
+/**
+ * Close code of a revoked websocket: Hocuspocus' "Reset Connection". The
+ * provider treats it like any dropped socket: it reconnects and sends a
+ * token again (the console fetches a fresh one).
+ */
+export const REVOKED_CLOSE = { code: 4205, reason: 'Reset Connection' } as const;
 
 /** Largest JSON body the internal endpoints read. */
 export const MAX_INTERNAL_BODY_BYTES = 2 * 1024 * 1024;
@@ -128,9 +137,51 @@ export async function replaceDocumentBlocks(server: Hocuspocus, input: unknown):
   }
 }
 
+/**
+ * POST /internal/revoke: closes the websocket under every live connection of
+ * `tenant_id` (only `user_id`'s when given). The API calls it after an admin
+ * change that can alter access (member removed or re-roled, grants, groups).
+ * The clients reconnect and authenticate again, and `authenticateCollabConnection`
+ * re-reads the role: a removed member is refused, a demoted one read-only.
+ *
+ * The whole socket is closed, not only the document connection: a closed
+ * document connection alone leaves the provider's socket open and
+ * unauthenticated, with nothing that makes it authenticate again. Other
+ * documents multiplexed on the same socket reconnect with it.
+ */
+export async function revokeConnections(server: Hocuspocus, input: unknown): Promise<void> {
+  const parsed = CollabRevokeRequestSchema.safeParse(input);
+  if (!parsed.success) throw new AppError('validation_failed');
+  const tenantId = parsed.data.tenant_id.toLowerCase();
+  const userId = parsed.data.user_id?.toLowerCase();
+
+  const sockets = new Set<{ close(code?: number, reason?: string): void }>();
+  for (const document of server.documents.values()) {
+    for (const connection of document.getConnections()) {
+      const context = connection.context as CollabContext | undefined;
+      if (!context || context.tenantId.toLowerCase() !== tenantId) continue;
+      if (
+        userId !== undefined &&
+        !(context.actorType === 'user' && context.actorId.toLowerCase() === userId)
+      ) {
+        continue;
+      }
+      sockets.add(connection.webSocket);
+    }
+  }
+  for (const socket of sockets) {
+    try {
+      socket.close(REVOKED_CLOSE.code, REVOKED_CLOSE.reason);
+    } catch {
+      // Already closing or gone: nothing left to revoke.
+    }
+  }
+}
+
 const HANDLERS: Record<string, (server: Hocuspocus, input: unknown) => Promise<void>> = {
   [INTERNAL_PATHS.flush]: flushDocument,
   [INTERNAL_PATHS.replaceBlocks]: replaceDocumentBlocks,
+  [INTERNAL_PATHS.revoke]: revokeConnections,
 };
 
 function digest(value: string): Buffer {
