@@ -30,7 +30,8 @@ import {
   type VersionRow,
 } from '@living-wiki/core';
 import type { ObjectStorage } from '@living-wiki/shared';
-import { requireVisibleParent, toDocumentSummary, toVersionSummary } from './pages.js';
+import { requireVisibleParent } from '../documents/lifecycle.js';
+import { toDocumentSummary, toVersionSummary } from './pages.js';
 
 /** What the file routes need besides the database. */
 export interface FileDeps {
