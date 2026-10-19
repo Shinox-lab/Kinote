@@ -1,69 +1,65 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import { Link, useParams } from '@tanstack/react-router';
-import { useMutation } from '@tanstack/react-query';
-import type { PageDetails } from '@living-wiki/contracts';
-import { api } from '../lib/api.js';
-import { usePage, useRefresh, useSpaces, useWorkspace } from '../lib/queries.js';
-import { pageControls } from '../lib/wiki.js';
+import { usePageChanges, useRefresh, useSpaceTree, useWorkspace } from '../lib/queries.js';
+import { closeHistory, openHistory, useHistoryOpen } from '../lib/pageUi.js';
+import { usePageView } from '../lib/usePageView.js';
+import { ancestorIds, blockHighlightCss } from '../lib/wiki.js';
 import { Badge } from '../components/Badge.js';
-import { ChangesPanel } from '../components/ChangesPanel.js';
 import { Editor } from '../components/Editor.js';
 import { HistoryDrawer } from '../components/HistoryDrawer.js';
 import { LifecycleMenu } from '../components/LifecycleMenu.js';
+import { PageActions } from '../components/PageActions.js';
+import { useSidebarColumn } from '../components/sidebar/SidebarContext.js';
 import { Button, ErrorNote, Loading } from '../components/ui.js';
 
-/** Snapshot, retry and restore-indexed: each calls its route, then the page (and so the badge) is fetched again. */
-function PageActions({
-  page,
-  controls,
-  onChanged,
-}: {
-  page: PageDetails;
-  controls: ReturnType<typeof pageControls>;
-  onChanged: () => void;
-}) {
-  const snapshot = useMutation({ mutationFn: () => api.snapshot(page.id), onSettled: onChanged });
-  const retry = useMutation({ mutationFn: (versionId: string) => api.retryVersion(versionId), onSettled: onChanged });
-  const restoreIndexed = useMutation({
-    mutationFn: (n: number) => api.restoreVersion(page.id, n),
-    onSettled: onChanged,
-  });
-  const busy = snapshot.isPending || retry.isPending || restoreIndexed.isPending;
-  // Retry targets the version that failed: the page's latest one (the badge says "Index failed" only for it).
-  const failed = page.latestVersion;
+const CRUMB = 'max-w-[12rem] truncate rounded px-1 py-0.5 text-muted hover:bg-hover hover:text-fg';
 
+/** The page's place in the workspace: its space, then each parent page, as links. */
+function Breadcrumb({ pageId, spaceId, tenantSlug }: { pageId: string; spaceId: string; tenantSlug: string }) {
+  const { spaces } = usePageView(pageId);
+  const { data: tree } = useSpaceTree(spaceId);
+  const space = spaces.find((s) => s.id === spaceId);
+  const nodes = tree?.nodes ?? [];
+  const parents = ancestorIds(nodes, pageId)
+    .map((id) => nodes.find((n) => n.id === id))
+    .filter((n): n is NonNullable<typeof n> => n !== undefined);
   return (
-    <div className="flex flex-col gap-2">
-      <div className="flex flex-wrap items-center gap-2">
-        {controls.primary && (
-          <Button onClick={() => snapshot.mutate()} disabled={busy}>
-            {controls.primary}
-          </Button>
+    <nav aria-label="Breadcrumb" className="min-w-0 text-sm">
+      <ol className="flex flex-wrap items-center gap-0.5">
+        {space && (
+          <li className="flex items-center gap-0.5">
+            <Link to="/w/$tenantSlug/s/$spaceSlug" params={{ tenantSlug, spaceSlug: space.slug }} className={CRUMB}>
+              {space.name}
+            </Link>
+          </li>
         )}
-        {controls.retry && failed && (
-          <Button variant="secondary" onClick={() => retry.mutate(failed.id)} disabled={busy}>
-            Retry
-          </Button>
-        )}
-        {controls.restoreIndexed && page.indexedVersion && (
-          <Button variant="secondary" onClick={() => restoreIndexed.mutate(page.indexedVersion!.number)} disabled={busy}>
-            Restore indexed version
-          </Button>
-        )}
-      </div>
-      <ErrorNote error={snapshot.error ?? retry.error ?? restoreIndexed.error} />
-    </div>
+        {parents.map((p) => (
+          <li key={p.id} className="flex items-center gap-0.5">
+            <span aria-hidden="true" className="text-muted">
+              /
+            </span>
+            <Link to="/w/$tenantSlug/p/$pageId" params={{ tenantSlug, pageId: p.id }} className={CRUMB}>
+              {p.title}
+            </Link>
+          </li>
+        ))}
+      </ol>
+    </nav>
   );
 }
 
-/** `/w/$tenantSlug/p/$pageId`: the live editor with the page's badge, actions and changes. */
+/** `/w/$tenantSlug/p/$pageId`: a quiet page: where it is, its status, its title, and the live editor. */
 export function PagePage() {
   const { tenant } = useWorkspace();
   const { pageId } = useParams({ from: '/w/$tenantSlug/p/$pageId' });
   const refresh = useRefresh();
-  const { data: page, error, isPending } = usePage(pageId);
-  const { data: spaces = [] } = useSpaces();
-  const [historyOpen, setHistoryOpen] = useState(false);
+  const { page, error, isPending, spaces, archived, controls, reload, changed } = usePageView(pageId);
+  const { data: entries } = usePageChanges(pageId);
+  const historyOpen = useHistoryOpen(pageId);
+  const sidebarColumn = useSidebarColumn();
+
+  // The drawer belongs to this page: leaving it closes the drawer.
+  useEffect(() => () => closeHistory(), [pageId]);
 
   // The badge moved (indexing finished, a review landed): what changed since the indexed version moved with it.
   const badge = page?.badge;
@@ -76,68 +72,36 @@ export function PagePage() {
     // `refresh` is a new function every render; the badge is the trigger.
   }, [badge, pageId]);
 
-  if (!page) return isPending ? <Loading what="page" /> : <ErrorNote error={error} />;
-
-  const space = spaces.find((s) => s.id === page.spaceId);
-  const archived = page.archivedAt !== null || (space?.archivedAt ?? null) !== null;
-  const controls = pageControls({
-    badge: page.badge,
-    role: space?.myRole ?? null,
-    reviewRequired: space?.reviewRequired ?? false,
-    archived,
-  });
-  // The page and everything keyed under it (its changes).
-  const reload = () => void refresh('page', pageId);
-  // After an action: also the trees the page appears in.
-  const changed = () => {
-    reload();
-    void refresh('tree');
-    void refresh('archived');
-  };
+  if (!page || !controls) return isPending ? <Loading what="page" /> : <ErrorNote error={error} />;
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="flex flex-col gap-2">
-          {space && (
-            <Link
-              to="/w/$tenantSlug/s/$spaceSlug"
-              params={{ tenantSlug: tenant.slug, spaceSlug: space.slug }}
-              className="text-sm text-indigo-700 hover:underline"
-            >
-              {space.name}
-            </Link>
-          )}
-          <h1 className="text-xl font-semibold">{page.title}</h1>
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge badge={page.badge} />
-            {archived && <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-900">Archived</span>}
-          </div>
-        </div>
-        <div className="flex flex-col items-end gap-2">
-          <div className="flex flex-wrap items-start justify-end gap-2">
-            <Button variant="secondary" aria-haspopup="dialog" onClick={() => setHistoryOpen(true)}>
-              History
-            </Button>
-            <PageActions page={page} controls={controls} onChanged={changed} />
-          </div>
+    <article className="mx-auto flex w-full max-w-[720px] flex-col gap-4">
+      {/* The changed blocks wear their author's colour here, as in the sidebar's list. */}
+      <style>{blockHighlightCss(entries ?? [])}</style>
+      <header className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+        <Breadcrumb pageId={pageId} spaceId={page.spaceId} tenantSlug={tenant.slug} />
+        <div className="flex items-center gap-2">
+          <Badge badge={page.badge} />
+          {archived && <span className="rounded-full bg-hover px-2 py-0.5 text-xs text-muted">Archived</span>}
           <LifecycleMenu page={page} spaces={spaces} controls={controls} onChanged={changed} />
         </div>
-      </div>
+      </header>
+      <h1 className="text-4xl font-bold leading-tight tracking-tight">{page.title}</h1>
+      {/* With no sidebar column the page carries its own actions; otherwise they are in the sidebar. */}
+      {!sidebarColumn && (
+        <div className="flex flex-wrap items-start gap-2">
+          <PageActions page={page} controls={controls} onChanged={changed} />
+          <Button variant="secondary" aria-haspopup="dialog" onClick={() => openHistory(pageId)}>
+            History
+          </Button>
+        </div>
+      )}
       {/* A failed refetch keeps the last page on screen and says so. */}
       <ErrorNote error={error} />
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
-        <Editor key={pageId} pageId={pageId} archived={archived} onSynced={reload} />
-        <ChangesPanel pageId={pageId} />
-      </div>
+      <Editor key={pageId} pageId={pageId} archived={archived} onSynced={reload} />
       {historyOpen && (
-        <HistoryDrawer
-          pageId={pageId}
-          canRestore={controls.restoreVersion}
-          onClose={() => setHistoryOpen(false)}
-          onRestored={changed}
-        />
+        <HistoryDrawer pageId={pageId} canRestore={controls.restoreVersion} onClose={closeHistory} onRestored={changed} />
       )}
-    </div>
+    </article>
   );
 }

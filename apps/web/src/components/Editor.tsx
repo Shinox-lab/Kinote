@@ -8,6 +8,7 @@ import '@blocknote/mantine/style.css';
 import { api } from '../lib/api.js';
 import { collabDocumentName, collabUrl, connectionState, type ConnectionState } from '../lib/collab.js';
 import { useWorkspace } from '../lib/queries.js';
+import { useResolvedTheme } from '../lib/useResolvedTheme.js';
 import { loadSession } from '../lib/session.js';
 import { authorColor } from '../lib/wiki.js';
 import { Button, ErrorNote, Loading } from './ui.js';
@@ -43,7 +44,8 @@ function BoundEditor({ live, editable }: { live: Live; editable: boolean }) {
     },
     [live]
   );
-  return <BlockNoteView editor={editor} editable={editable} theme="light" />;
+  const theme = useResolvedTheme();
+  return <BlockNoteView editor={editor} editable={editable} theme={theme} />;
 }
 
 /**
@@ -173,7 +175,7 @@ export function Editor({ pageId, archived, onSynced }: { pageId: string; archive
   const editable = access === 'write' && !archived;
   return (
     <div className="flex flex-col gap-2">
-      <div className="flex flex-wrap items-center gap-3 text-xs text-slate-600">
+      <div className="flex flex-wrap items-center gap-3 text-xs text-muted">
         <span role="status" data-connection={state}>
           {STATE_TEXT[state]}
         </span>
@@ -182,9 +184,10 @@ export function Editor({ pageId, archived, onSynced }: { pageId: string; archive
             Reconnect
           </Button>
         )}
-        {!editable && live && <span className="rounded bg-slate-200 px-2 py-0.5 text-slate-800">Read only</span>}
+        {!editable && live && <span className="rounded-full bg-hover px-2 py-0.5 text-fg">Read only</span>}
       </div>
-      <div className="rounded-lg border border-slate-200 bg-white py-3">
+      {/* BlockNote indents its blocks to leave room for the side handles; on a wide screen the indent hangs in the margin so the text lines up with the title. */}
+      <div className="min-h-[16rem] md:-mx-[54px]">
         {live ? <BoundEditor live={live} editable={editable} /> : <Loading what="editor" />}
       </div>
     </div>

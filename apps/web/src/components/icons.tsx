@@ -114,3 +114,10 @@ export const CloseIcon = (p: IconProps) => (
     <path d="m6 6 12 12M18 6 6 18" />
   </Icon>
 );
+export const MoreIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <circle cx="5.5" cy="12" r="1.2" fill="currentColor" />
+    <circle cx="12" cy="12" r="1.2" fill="currentColor" />
+    <circle cx="18.5" cy="12" r="1.2" fill="currentColor" />
+  </Icon>
+);

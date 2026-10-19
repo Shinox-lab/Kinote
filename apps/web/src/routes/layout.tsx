@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Outlet, useRouterState } from '@tanstack/react-router';
 import { MenuIcon, SidebarIcon } from '../components/icons.js';
 import { Sidebar } from '../components/sidebar/Sidebar.js';
+import { SidebarColumnContext } from '../components/sidebar/SidebarContext.js';
 import {
   SIDEBAR_BREAKPOINT_PX,
   isCollapseShortcut,
@@ -90,7 +91,9 @@ export function WorkspaceLayout() {
           </div>
         )}
         <main className="mx-auto w-full max-w-5xl px-4 py-6 md:px-8">
-          <Outlet />
+          <SidebarColumnContext.Provider value={column}>
+            <Outlet />
+          </SidebarColumnContext.Provider>
         </main>
       </div>
     </div>

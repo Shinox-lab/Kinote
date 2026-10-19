@@ -138,3 +138,33 @@
     }
   }
 }
+
+/*
+ * BlockNote reads its own variables (set per colour scheme on .bn-container);
+ * these map them onto the console's tokens so the editor is part of the page:
+ * no frame, the page's own background and text, a menu that matches the sidebar.
+ */
+:root .bn-container[data-color-scheme] {
+  --bn-colors-editor-background: transparent;
+  --bn-colors-editor-text: var(--fg);
+  --bn-colors-menu-background: var(--surface);
+  --bn-colors-menu-text: var(--fg);
+  --bn-colors-tooltip-background: var(--surface);
+  --bn-colors-tooltip-text: var(--fg);
+  --bn-colors-hovered-background: var(--hover);
+  --bn-colors-hovered-text: var(--fg);
+  --bn-colors-selected-background: var(--active);
+  --bn-colors-selected-text: var(--fg);
+  --bn-colors-disabled-background: var(--hover);
+  --bn-colors-disabled-text: var(--muted);
+  --bn-colors-border: var(--line);
+  --bn-colors-side-menu: var(--muted);
+  --bn-font-family: var(--font-sans);
+}
+
+/* On a phone there is no gutter for the side handles: keep the text wide. */
+@media (max-width: 767px) {
+  .bn-editor {
+    padding-inline: 4px;
+  }
+}

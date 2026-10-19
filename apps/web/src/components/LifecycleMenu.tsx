@@ -4,6 +4,7 @@ import type { PageDetails, SpaceResponse } from '@living-wiki/contracts';
 import { api } from '../lib/api.js';
 import { useSpaceTree } from '../lib/queries.js';
 import { buildTree, descendantIds, type PageControls, type TreeItem } from '../lib/wiki.js';
+import { MoreIcon } from './icons.js';
 import { Button, ErrorNote, SelectField } from './ui.js';
 
 type Action = 'move' | 'withdraw' | 'archive';
@@ -18,6 +19,9 @@ function parentOptions(items: TreeItem[], skip: Set<string>, depth = 0): { value
 }
 
 const TOP_LEVEL = '';
+
+/** The floating panel under the "…" button that holds an action's form. */
+const PANEL = 'absolute right-0 top-full z-20 mt-1 w-80 max-w-[90vw] rounded-lg border border-line bg-surface p-3 shadow-pop';
 
 /** Moves the page to a space (one it can edit) and a parent page there. */
 function MoveForm({
@@ -52,7 +56,7 @@ function MoveForm({
 
   return (
     <form
-      className="flex flex-col gap-3 rounded-md border border-slate-200 bg-slate-50 p-3"
+      className="flex flex-col gap-3"
       onSubmit={(e) => {
         e.preventDefault();
         move.mutate();
@@ -95,7 +99,7 @@ function Confirm({
 }) {
   const mutation = useMutation({ mutationFn: run });
   return (
-    <div className="flex flex-col gap-3 rounded-md border border-slate-200 bg-slate-50 p-3">
+    <div className="flex flex-col gap-3">
       <p className="text-sm">{text}</p>
       <ErrorNote error={mutation.error} />
       <div className="flex gap-2">
@@ -150,37 +154,40 @@ export function LifecycleMenu({
   if (shown.length === 0 && !controls.restorePage) return null;
 
   return (
-    <div className="relative flex flex-col gap-2">
+    <div className="relative">
       {controls.restorePage && (
-        <>
+        <div className="flex items-center gap-2">
           <Button variant="secondary" onClick={() => restore.mutate()} disabled={restore.isPending}>
             Restore page
           </Button>
           <ErrorNote error={restore.error} />
-        </>
+        </div>
       )}
       {shown.length > 0 && (
         <div onKeyDown={(e) => e.key === 'Escape' && setOpen(false)}>
-          <Button
-            variant="secondary"
+          <button
+            type="button"
+            aria-label="Page actions"
+            title="Page actions"
             aria-haspopup="true"
             aria-expanded={open}
             aria-controls="lifecycle-actions"
             onClick={() => setOpen((v) => !v)}
+            className="flex size-8 items-center justify-center rounded-md text-lg text-muted hover:bg-hover"
           >
-            Page actions
-          </Button>
+            <MoreIcon />
+          </button>
           {open && (
             <ul
               id="lifecycle-actions"
               aria-label="Page actions"
-              className="absolute right-0 z-10 mt-1 w-56 rounded-md border border-slate-200 bg-white p-1 shadow-lg"
+              className="absolute right-0 top-full z-20 mt-1 w-56 rounded-lg border border-line bg-surface p-1 shadow-pop"
             >
               {shown.map((item) => (
                 <li key={item.key}>
                   <button
                     type="button"
-                    className="w-full rounded px-3 py-2 text-left text-sm hover:bg-slate-100"
+                    className="w-full rounded px-3 py-2 text-left text-sm text-fg hover:bg-hover"
                     onClick={() => {
                       setAction(item.key);
                       setOpen(false);
@@ -194,22 +201,30 @@ export function LifecycleMenu({
           )}
         </div>
       )}
-      {action === 'move' && <MoveForm page={page} spaces={spaces} onDone={done} onCancel={() => setAction(null)} />}
+      {action === 'move' && (
+        <div className={PANEL}>
+          <MoveForm page={page} spaces={spaces} onDone={done} onCancel={() => setAction(null)} />
+        </div>
+      )}
       {action === 'withdraw' && (
+        <div className={PANEL}>
         <Confirm
           text="Withdrawing removes this page from search and from answers. Its history stays."
           label="Withdraw page"
           run={run(() => api.withdrawPage(page.id))}
           onCancel={() => setAction(null)}
         />
+        </div>
       )}
       {action === 'archive' && (
+        <div className={PANEL}>
         <Confirm
           text="Archiving removes this page from search and from the tree. A page with live child pages cannot be archived."
           label="Archive page"
           run={run(() => api.archivePage(page.id))}
           onCancel={() => setAction(null)}
         />
+        </div>
       )}
     </div>
   );

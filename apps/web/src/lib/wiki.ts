@@ -98,9 +98,9 @@ export function expandedFor(
 // --- Authors --------------------------------------------------------------------
 
 export interface AuthorColor {
-  /** Dark enough for text and borders on white. */
+  /** A CSS colour for text, borders and dots (a theme token, so it reads in light and dark). */
   accent: string;
-  /** A light wash of the same hue for backgrounds. */
+  /** A soft wash of the same hue for backgrounds. */
   tint: string;
 }
 
@@ -114,15 +114,20 @@ function hash32(text: string): number {
   return h;
 }
 
-/** A stable colour for an author id: the same id is the same colour in every session. */
+/** The theme has this many author colours (--author-0 to --author-7, each with a -tint). */
+const AUTHOR_SLOTS = 8;
+
+/** A stable colour for an author id: the same id is the same theme token in every session, in light and dark. */
 export function authorColor(authorId: string): AuthorColor {
-  const hue = hash32(authorId) % 360;
-  return { accent: `hsl(${hue} 65% 38%)`, tint: `hsl(${hue} 85% 94%)` };
+  const slot = hash32(authorId) % AUTHOR_SLOTS;
+  return { accent: `var(--author-${slot})`, tint: `var(--author-${slot}-tint)` };
 }
 
 export interface Author {
   type: 'user' | 'agent';
   id: string;
+  /** The display name the server sent with the change (every role gets it). */
+  name?: string;
 }
 
 export interface AuthorLabel {
@@ -131,9 +136,9 @@ export interface AuthorLabel {
 }
 
 /**
- * What to show for the author of a change: the signed-in user is "You", a known
- * name is used as is, and anyone else gets a neutral name with a short id suffix
- * (the API only publishes names to workspace admins).
+ * What to show for the author of a change: the signed-in user is "You", then the
+ * name the server sent, then a name from the members list; anyone else gets a
+ * neutral name with a short id suffix.
  */
 export function authorLabel(
   author: Author | undefined,
@@ -143,9 +148,42 @@ export function authorLabel(
   if (!author) return { name: 'Unknown author', isAgent: false };
   const isAgent = author.type === 'agent';
   if (!isAgent && author.id === selfId) return { name: 'You', isAgent };
-  const known = names.get(author.id);
+  const known = author.name || names.get(author.id);
   if (known) return { name: known, isAgent };
   return { name: `${isAgent ? 'Agent' : 'Collaborator'} ${author.id.slice(-4)}`, isAgent };
+}
+
+/** An id inside a double-quoted CSS attribute selector: backslash, quote and line breaks escaped. */
+function cssString(text: string): string {
+  return text.replace(/[\\"]/g, '\\$&').replace(/\r?\n/g, '\\a ');
+}
+
+/**
+ * The entries worth showing as changes: not the unchanged ones, and not a blank
+ * added block (the editor always keeps an empty block at the end of a page).
+ */
+export function visibleChanges<T extends { change: string; after?: string }>(entries: readonly T[]): T[] {
+  return entries.filter((e) => e.change !== 'unchanged' && !(e.change === 'added' && (e.after ?? '').trim() === ''));
+}
+
+/**
+ * CSS that washes each added or changed block of the page in its author's colour
+ * (a left rule and a tint), matching the colours of the changes list. BlockNote
+ * puts the block id in `data-id`. Blocks with no recorded author get a neutral wash.
+ */
+export function blockHighlightCss(
+  entries: ReadonlyArray<{ blockId: string; change: string; after?: string; author?: { id: string } }>
+): string {
+  return visibleChanges(entries)
+    .filter((e) => e.change === 'added' || e.change === 'changed')
+    .map((e) => {
+      const color = e.author ? authorColor(e.author.id) : { accent: 'var(--muted)', tint: 'var(--hover)' };
+      return (
+        `[data-id="${cssString(e.blockId)}"] > .bn-block > .bn-block-content ` +
+        `{ box-shadow: inset 3px 0 0 ${color.accent}; background: ${color.tint}; border-radius: 3px; padding-left: 8px; }`
+      );
+    })
+    .join('\n');
 }
 
 // --- Badge and controls ---------------------------------------------------------

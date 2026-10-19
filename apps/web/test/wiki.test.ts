@@ -3,6 +3,8 @@ import type { TreeNode } from '@living-wiki/contracts';
 import {
   authorColor,
   authorLabel,
+  blockHighlightCss,
+  visibleChanges,
   badgeTone,
   badgeSettles,
   buildTree,
@@ -74,20 +76,22 @@ describe('descendantIds', () => {
 });
 
 describe('authorColor', () => {
-  test('is stable for one author and differs between authors', () => {
+  test('is stable for one author', () => {
     expect(authorColor(id(1))).toEqual(authorColor(id(1)));
-    expect(authorColor(id(1)).accent).not.toBe(authorColor(id(2)).accent);
   });
 
-  test('returns hsl strings for the accent and the tint', () => {
-    const c = authorColor(id(7));
-    expect(c.accent).toMatch(/^hsl\(\d{1,3} \d{1,3}% \d{1,3}%\)$/);
-    expect(c.tint).toMatch(/^hsl\(\d{1,3} \d{1,3}% \d{1,3}%\)$/);
+  test('is one of the eight theme tokens, with its tint, so it follows light and dark', () => {
+    for (let n = 0; n < 40; n++) {
+      const c = authorColor(id(n));
+      const slot = /^var\(--author-([0-7])\)$/.exec(c.accent)?.[1];
+      expect(slot, c.accent).toBeDefined();
+      expect(c.tint).toBe(`var(--author-${slot}-tint)`);
+    }
   });
 
-  test('spreads many authors over the hue wheel', () => {
-    const hues = new Set(Array.from({ length: 60 }, (_, n) => authorColor(`author-${n}`).accent.split(' ')[0]));
-    expect(hues.size).toBeGreaterThan(30);
+  test('spreads many authors over the palette', () => {
+    const slots = new Set(Array.from({ length: 60 }, (_, n) => authorColor(`author-${n}`).accent));
+    expect(slots.size).toBeGreaterThanOrEqual(7);
   });
 });
 
@@ -106,6 +110,17 @@ describe('authorLabel', () => {
   test('an unknown author gets a neutral name with a short id so two of them stay apart', () => {
     expect(authorLabel({ type: 'user', id: id(3) }, names, null).name).toBe('Collaborator 0003');
     expect(authorLabel({ type: 'agent', id: id(4) }, names, null)).toEqual({ name: 'Agent 0004', isAgent: true });
+  });
+
+  test('a name the server sent is used for anyone, admin or not, and "You" still wins for oneself', () => {
+    expect(authorLabel({ type: 'user', id: id(5), name: 'Aisha' }, new Map(), null)).toEqual({ name: 'Aisha', isAgent: false });
+    expect(authorLabel({ type: 'agent', id: id(6), name: 'Support bot' }, new Map(), null)).toEqual({
+      name: 'Support bot',
+      isAgent: true,
+    });
+    expect(authorLabel({ type: 'user', id: id(2), name: 'Ada' }, names, id(2))).toEqual({ name: 'You', isAgent: false });
+    // The server's name outranks the members list.
+    expect(authorLabel({ type: 'user', id: id(1), name: 'Ada Lovelace' }, names, null).name).toBe('Ada Lovelace');
   });
 
   test('a block with no recorded author is unattributed', () => {
@@ -229,5 +244,73 @@ describe('pageControls', () => {
     });
     expect(controls({ archived: true, role: 'reviewer' }).restorePage).toBe(false);
     expect(controls({ archived: false, role: 'admin' }).restorePage).toBe(false);
+  });
+});
+
+
+describe('blockHighlightCss', () => {
+  const a = id(1);
+  const b = id(2);
+  const slotOf = (author: string) => /author-(\d)/.exec(authorColor(author).accent)![1];
+
+  test('washes each changed block in its author colour, by block id', () => {
+    const css = blockHighlightCss([
+      { blockId: 'blk-1', change: 'changed', author: { id: a } },
+      { blockId: 'blk-2', change: 'added', after: 'New', author: { id: b } },
+    ]);
+    expect(css).toContain('[data-id="blk-1"] > .bn-block > .bn-block-content');
+    expect(css).toContain(`var(--author-${slotOf(a)})`);
+    expect(css).toContain('[data-id="blk-2"] > .bn-block > .bn-block-content');
+    expect(css).toContain(`var(--author-${slotOf(b)}-tint)`);
+  });
+
+  test('skips unchanged and removed blocks, and changes with no author get a neutral wash', () => {
+    const css = blockHighlightCss([
+      { blockId: 'same', change: 'unchanged', author: { id: a } },
+      { blockId: 'gone', change: 'removed', author: { id: a } },
+      { blockId: 'anon', change: 'added', after: 'Anon text' },
+    ]);
+    expect(css).not.toContain('same');
+    expect(css).not.toContain('gone');
+    expect(css).toContain('[data-id="anon"]');
+    expect(css).toContain('var(--muted)');
+  });
+
+  test('escapes a block id so it cannot leave its attribute selector', () => {
+    const id = 'x"] { color: red } [data-id="y';
+    const css = blockHighlightCss([{ blockId: id, change: 'added', after: 'Words', author: { id: a } }]);
+    // With every escaped character removed, only the selector's own two quotes remain.
+    const selector = css.slice(0, css.indexOf(' > .bn-block'));
+    expect(selector.replace(/\\./g, '').split('"').length - 1).toBe(2);
+    expect(selector).toBe('[data-id="x\\"] { color: red } [data-id=\\"y"]');
+  });
+
+  test('is empty when nothing changed', () => {
+    expect(blockHighlightCss([])).toBe('');
+  });
+});
+
+
+describe('visibleChanges', () => {
+  test('drops unchanged blocks and blank added ones (the editor keeps an empty trailing block)', () => {
+    const entries = [
+      { blockId: 'a', change: 'unchanged', after: 'same' },
+      { blockId: 'b', change: 'added', after: 'New text' },
+      { blockId: 'c', change: 'added', after: '' },
+      { blockId: 'd', change: 'added', after: '   ' },
+      { blockId: 'e', change: 'added' },
+      { blockId: 'f', change: 'changed', before: 'old', after: '' },
+      { blockId: 'g', change: 'removed', before: 'gone' },
+    ];
+    expect(visibleChanges(entries).map((e) => e.blockId)).toEqual(['b', 'f', 'g']);
+  });
+
+  test('blank added blocks are not highlighted in the page either', () => {
+    const css = blockHighlightCss([
+      { blockId: 'text', change: 'added', after: 'Words' },
+      { blockId: 'blank', change: 'added', after: '' },
+    ]);
+    expect(css).toContain('data-id="text"');
+    expect(css).not.toContain('blank');
   });
 });

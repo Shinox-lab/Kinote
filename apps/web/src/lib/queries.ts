@@ -91,12 +91,21 @@ export function usePage(pageId: string | undefined) {
   });
 }
 
-/** The page's changes since its indexed version; keyed under the page so refreshing the page refreshes them. */
+/** How often the open page's changes list asks again: the server stores keystrokes a few seconds after they are typed. */
+export const CHANGES_POLL_MS = 8_000;
+
+/**
+ * The page's changes since its indexed version; keyed under the page so
+ * refreshing the page refreshes them. It also asks again on focus and on a
+ * timer (while the tab is visible), so what people are typing shows up.
+ */
 export function usePageChanges(pageId: string) {
   return useQuery({
     queryKey: useTenantKey('page', pageId, 'changes'),
     queryFn: () => api.pageChanges(pageId),
     staleTime: 0,
+    refetchOnWindowFocus: true,
+    refetchInterval: CHANGES_POLL_MS,
   });
 }
 
