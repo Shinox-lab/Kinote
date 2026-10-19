@@ -282,6 +282,27 @@ export const RetryVersionResponseSchema = VersionSummarySchema.extend({
 });
 export type RetryVersionResponse = z.infer<typeof RetryVersionResponseSchema>;
 
+/**
+ * One document in a space's tree (or archived list), as
+ * GET /api/v1/spaces/:id/tree and /archived list them. `slug` is null for a
+ * document that is not a page (files).
+ */
+export const TreeNodeSchema = z.object({
+  id: z.string().uuid(),
+  parentId: z.string().uuid().nullable(),
+  position: z.string(),
+  kind: z.enum(['page', 'file']),
+  title: z.string(),
+  slug: z.string().nullable(),
+});
+export type TreeNode = z.infer<typeof TreeNodeSchema>;
+
+/** Reply of GET /api/v1/spaces/:id/tree and GET /api/v1/spaces/:id/archived. */
+export const TreeResponseSchema = z.object({
+  nodes: z.array(TreeNodeSchema),
+});
+export type TreeResponse = z.infer<typeof TreeResponseSchema>;
+
 export const CollabTokenResponseSchema = z.object({
   token: z.string(),
   expiresAt: z.string(),

@@ -3,6 +3,7 @@ export {
   requireDocumentRole,
   getReadableSpaceIds,
   assertValidUuid,
+  isTenantAdmin,
   type Actor,
   type SpaceRole,
   type SpaceAccess,

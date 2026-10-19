@@ -13,6 +13,9 @@ import {
   getSpaceForActor,
   listSpacesForActor,
   updateSpaceSettings,
+  getSpaceTree,
+  getSpaceArchived,
+  archiveSpace,
   upsertSpaceGrant,
   inviteMember,
   acceptInvitation,
@@ -38,6 +41,7 @@ import {
   retryVersion,
   movePage,
   archivePage,
+  restorePage,
   withdrawPage,
 } from './routes/pages.js';
 import { authRoutes, type AuthRateLimit } from './routes/auth.js';
@@ -141,6 +145,21 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
     return reply.send(res);
   });
 
+  app.get('/api/v1/spaces/:id/tree', async (req, reply) => {
+    const res = await getSpaceTree(actorOf(req), (req.params as any).id);
+    return reply.send(res);
+  });
+
+  app.get('/api/v1/spaces/:id/archived', async (req, reply) => {
+    const res = await getSpaceArchived(actorOf(req), (req.params as any).id);
+    return reply.send(res);
+  });
+
+  app.post('/api/v1/spaces/:id/archive', async (req, reply) => {
+    const res = await archiveSpace(actorOf(req), (req.params as any).id);
+    return reply.send(res);
+  });
+
   app.post('/api/v1/spaces/:id/grants', async (req, reply) => {
     const actor = actorOf(req);
     const res = await upsertSpaceGrant(actor, (req.params as any).id, req.body);
@@ -223,6 +242,11 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
   app.post('/api/v1/pages/:id/archive', async (req, reply) => {
     const actor = actorOf(req);
     const res = await archivePage(actor, (req.params as any).id);
+    return reply.send(res);
+  });
+
+  app.post('/api/v1/pages/:id/restore', async (req, reply) => {
+    const res = await restorePage(actorOf(req), (req.params as any).id);
     return reply.send(res);
   });
 

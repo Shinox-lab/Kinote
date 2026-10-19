@@ -37,6 +37,7 @@ import {
   takePageSnapshot,
   chunkInboxOwner,
   pageSlugScope,
+  isTenantAdmin,
   type Actor,
 } from '@living-wiki/core';
 import {
@@ -772,14 +773,24 @@ export async function movePage(actor: Actor, pageId: string, input: unknown) {
     if (doc.archivedAt) {
       throw new AppError('page_archived', 'Page is archived.');
     }
-    // Moving into the Inbox keeps the document's creator, so afterwards only
-    // the creator and tenant admins see it (as `chunks.inbox_owner` does).
     const { space: targetSpace, effectiveRole: targetRole } = await requireSpaceRole(
       tx,
       actor,
       parsed.target_space_id,
       'editor'
     );
+    // Moving into the Inbox keeps the document's creator, so afterwards only
+    // the creator and tenant owners and admins see it (as `chunks.inbox_owner`
+    // does). Anyone else would lose sight of the page and could probe the
+    // creator's private slugs through `slug_taken`: 403 (the actor can see
+    // the page, so this reveals nothing).
+    if (
+      targetSpace.kind === 'inbox' &&
+      !isTenantAdmin(actor) &&
+      !(doc.createdByType === actor.principalType && doc.createdBy === actor.principalId)
+    ) {
+      throw new AppError('forbidden', 'Only the creator of a page can move it into the Inbox.');
+    }
 
     if (parsed.target_parent_id) {
       if (parsed.target_parent_id === pageId) {
@@ -827,8 +838,9 @@ export async function movePage(actor: Actor, pageId: string, input: unknown) {
     if (crossSpace) {
       // The slug scope follows the space: the document's creator in the
       // Inbox, '' elsewhere. A slug already used in the target scope violates
-      // pages_space_slug_idx -> 409 slug_taken (mapDbError); the mover can see
-      // the target space, so this reveals nothing.
+      // pages_space_slug_idx -> 409 slug_taken (mapDbError). Into the Inbox
+      // only the creator or a tenant admin gets here (checked above), so the
+      // scope is the creator's own and a collision reveals nothing.
       await tx
         .update(pages)
         .set({ spaceId: parsed.target_space_id, slugScope: pageSlugScope(targetSpace.kind, doc) })
@@ -898,6 +910,67 @@ export async function archivePage(actor: Actor, pageId: string) {
       actorId: actor.principalId,
       subjectType: 'page',
       subjectId: pageId,
+    });
+
+    return updated;
+  });
+}
+
+/**
+ * Restores an archived page (space admin on the page's space). Clears
+ * `archived_at`; the page's versions stay `withdrawn` (it comes back with the
+ * `Withdrawn` badge and goes through review and indexing like any page). A
+ * parent that is archived, or no longer a page in the same space, is dropped:
+ * the page returns at the root. Restoring a page that is not archived changes
+ * nothing and answers the page. Same lock as the other lifecycle writers; an
+ * archived space is 409 `space_archived` (checked by the gate).
+ */
+export async function restorePage(actor: Actor, pageId: string) {
+  assertValidUuid(pageId, 'page_not_found');
+
+  return withTenantTx(actor.tenantId, async (tx) => {
+    const doc = await lockPage(tx, actor.tenantId, pageId);
+
+    await requireDocumentRole(tx, actor, doc, 'admin', { notFound: 'page_not_found' });
+
+    if (!doc.archivedAt) {
+      return doc;
+    }
+
+    let parentId = doc.parentId;
+    if (parentId) {
+      const [parent] = await tx
+        .select({
+          spaceId: documents.spaceId,
+          kind: documents.kind,
+          archivedAt: documents.archivedAt,
+        })
+        .from(documents)
+        .where(and(eq(documents.tenantId, actor.tenantId), eq(documents.id, parentId)));
+      if (
+        !parent ||
+        parent.archivedAt !== null ||
+        parent.kind !== 'page' ||
+        parent.spaceId !== doc.spaceId
+      ) {
+        parentId = null;
+      }
+    }
+
+    const [updated] = await tx
+      .update(documents)
+      .set({ archivedAt: null, parentId })
+      .where(and(eq(documents.tenantId, actor.tenantId), eq(documents.id, pageId)))
+      .returning();
+
+    await writeAuditEvent(tx, {
+      tenantId: actor.tenantId,
+      type: 'page.restored',
+      actorType: actor.principalType,
+      actorId: actor.principalId,
+      subjectType: 'page',
+      subjectId: pageId,
+      payload: { parentId },
     });
 
     return updated;

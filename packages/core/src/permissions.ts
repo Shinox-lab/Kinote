@@ -42,7 +42,8 @@ export interface DocumentRoleOptions extends SpaceRoleOptions {
   notFound?: ErrorCode;
 }
 
-function isTenantAdmin(actor: Actor): boolean {
+/** True for a user who is a tenant owner or admin (they act as space admins everywhere). */
+export function isTenantAdmin(actor: Actor): boolean {
   return (
     actor.principalType === 'user' &&
     (actor.tenantRole === 'owner' || actor.tenantRole === 'admin')

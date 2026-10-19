@@ -1,4 +1,4 @@
-import { and, eq, gt, isNull, sql } from 'drizzle-orm';
+import { and, asc, eq, gt, isNotNull, isNull, sql } from 'drizzle-orm';
 import { randomBytes, randomUUID } from 'node:crypto';
 import {
   getDb,
@@ -11,6 +11,8 @@ import {
   groups,
   spaces,
   spaceGrants,
+  documents,
+  pages,
   writeAuditEvent,
   type DbTransaction,
 } from '@living-wiki/db';
@@ -21,12 +23,19 @@ import {
   UpsertSpaceGrantSchema,
   InviteMemberRequestSchema,
   AcceptInvitationRequestSchema,
+  TreeResponseSchema,
   AppError,
+  type TreeResponse,
   type InviteMemberResponse,
   type AcceptInvitationResponse,
 } from '@living-wiki/contracts';
 import { sha256Hex } from '@living-wiki/shared';
-import { requireSpaceRole, getReadableSpaceIds, type Actor } from '@living-wiki/core';
+import {
+  requireSpaceRole,
+  getReadableSpaceIds,
+  isTenantAdmin,
+  type Actor,
+} from '@living-wiki/core';
 
 /**
  * Creates a tenant owned by `userId` (the signed-in session user) together
@@ -193,6 +202,134 @@ export async function updateSpaceSettings(actor: Actor, spaceId: string, input: 
     });
 
     return updated;
+  });
+}
+
+/**
+ * The documents of a space as tree nodes (viewer or higher). `archived`
+ * picks the archived documents (by title) instead of the live ones (by
+ * `position`, then title; id last so the order is total). In the Inbox, the
+ * one space with per-item visibility, everyone but a tenant owner or admin
+ * sees only the documents they created.
+ */
+async function listTreeNodes(
+  actor: Actor,
+  spaceId: string,
+  minimumRole: 'viewer' | 'admin',
+  archived: boolean
+): Promise<TreeResponse> {
+  return withTenantTx(actor.tenantId, async (tx) => {
+    const { space } = await requireSpaceRole(tx, actor, spaceId, minimumRole);
+
+    const rows = await tx
+      .select({
+        id: documents.id,
+        parentId: documents.parentId,
+        position: documents.position,
+        kind: documents.kind,
+        title: documents.title,
+        slug: pages.slug,
+      })
+      .from(documents)
+      .leftJoin(
+        pages,
+        and(eq(pages.tenantId, documents.tenantId), eq(pages.documentId, documents.id))
+      )
+      .where(
+        and(
+          eq(documents.tenantId, actor.tenantId),
+          eq(documents.spaceId, space.id),
+          archived ? isNotNull(documents.archivedAt) : isNull(documents.archivedAt),
+          space.kind === 'inbox' && !isTenantAdmin(actor)
+            ? and(
+                eq(documents.createdByType, actor.principalType),
+                eq(documents.createdBy, actor.principalId)
+              )
+            : undefined
+        )
+      )
+      .orderBy(
+        ...(archived
+          ? [asc(documents.title), asc(documents.id)]
+          : [asc(documents.position), asc(documents.title), asc(documents.id)])
+      );
+
+    return TreeResponseSchema.parse({ nodes: rows });
+  });
+}
+
+/** `GET /spaces/:id/tree`: the live documents of a space (viewer). */
+export function getSpaceTree(actor: Actor, spaceId: string): Promise<TreeResponse> {
+  return listTreeNodes(actor, spaceId, 'viewer', false);
+}
+
+/** `GET /spaces/:id/archived`: the archived documents of a space (space admin). */
+export function getSpaceArchived(actor: Actor, spaceId: string): Promise<TreeResponse> {
+  return listTreeNodes(actor, spaceId, 'admin', true);
+}
+
+/**
+ * Archives a space (space admin). Order of answers: unreadable space 404
+ * `space_not_found`; role below admin 403 `forbidden`; an already archived
+ * space 409 `space_archived` (the gate: nothing but reads is allowed on an
+ * archived space); the Inbox 403 `forbidden` (it can never be archived); any
+ * non-archived document left 409 `has_children`. The space row is locked
+ * first, so two archives run one after another.
+ */
+export async function archiveSpace(actor: Actor, spaceId: string) {
+  return withTenantTx(actor.tenantId, async (tx) => {
+    const { effectiveRole } = await requireSpaceRole(tx, actor, spaceId, 'admin');
+
+    // Re-read under the lock: a concurrent archive that committed first wins.
+    const [locked] = await tx
+      .select()
+      .from(spaces)
+      .where(and(eq(spaces.tenantId, actor.tenantId), eq(spaces.id, spaceId)))
+      .for('update');
+    if (!locked) {
+      throw new AppError('space_not_found');
+    }
+    if (locked.archivedAt) {
+      throw new AppError('space_archived', 'Space is archived.');
+    }
+    if (locked.kind === 'inbox') {
+      throw new AppError('forbidden', 'The Inbox cannot be archived.');
+    }
+
+    const [liveDocument] = await tx
+      .select({ id: documents.id })
+      .from(documents)
+      .where(
+        and(
+          eq(documents.tenantId, actor.tenantId),
+          eq(documents.spaceId, spaceId),
+          isNull(documents.archivedAt)
+        )
+      )
+      .limit(1);
+    if (liveDocument) {
+      throw new AppError('has_children', 'Archive every document in this space before archiving it.');
+    }
+
+    const [updated] = await tx
+      .update(spaces)
+      .set({ archivedAt: new Date() })
+      .where(and(eq(spaces.tenantId, actor.tenantId), eq(spaces.id, spaceId)))
+      .returning();
+
+    await writeAuditEvent(tx, {
+      tenantId: actor.tenantId,
+      type: 'space.archived',
+      actorType: actor.principalType,
+      actorId: actor.principalId,
+      subjectType: 'space',
+      subjectId: spaceId,
+      payload: { name: updated.name, slug: updated.slug },
+    });
+
+    // The role was resolved before the archive: afterwards the space is
+    // invisible to anyone but tenant admins, a space admin included.
+    return { ...updated, myRole: effectiveRole };
   });
 }
 

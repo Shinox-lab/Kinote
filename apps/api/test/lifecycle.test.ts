@@ -633,4 +633,32 @@ describe('page lifecycle: withdraw, archive, move', () => {
     assert.equal(res.statusCode, 409, res.body);
     assert.equal(res.json().error, 'page_archived');
   });
+  describe('moving into the Inbox (R27)', () => {
+    async function inboxId(headers: Headers): Promise<string> {
+      const res = await app.inject({ method: 'GET', url: '/api/v1/spaces', headers });
+      assert.equal(res.statusCode, 200, res.body);
+      return (res.json() as Array<{ id: string; kind: string }>).find((s) => s.kind === 'inbox')!.id;
+    }
+
+    test('only the creator or a tenant admin may move a page into the Inbox', async () => {
+      const inbox = await inboxId(ctx.ownerHeaders);
+      // `editor` creates the pages; `mover` is also an editor of the same space.
+      const p1 = await createPage(ctx.editor.headers, ctx.open.id, 'into-inbox-1');
+      const p2 = await createPage(ctx.editor.headers, ctx.open.id, 'into-inbox-2');
+      const p3 = await createPage(ctx.editor.headers, ctx.open.id, 'into-inbox-3');
+
+      const other = await move(ctx.mover.headers, p1, { target_space_id: inbox });
+      assert.equal(other.statusCode, 403, other.body);
+      assert.equal(other.json().error, 'forbidden');
+      assert.equal((await documentRow(p1)).spaceId, ctx.open.id);
+
+      const creator = await move(ctx.editor.headers, p2, { target_space_id: inbox });
+      assert.equal(creator.statusCode, 200, creator.body);
+      assert.equal((await documentRow(p2)).spaceId, inbox);
+
+      const admin = await move(ctx.ownerHeaders, p3, { target_space_id: inbox });
+      assert.equal(admin.statusCode, 200, admin.body);
+      assert.equal((await documentRow(p3)).spaceId, inbox);
+    });
+  });
 });
