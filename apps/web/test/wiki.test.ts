@@ -155,6 +155,7 @@ describe('pageControls', () => {
         withdraw: false,
         archive: false,
         restorePage: false,
+        restoreVersion: false,
       });
     }
   });
@@ -163,6 +164,14 @@ describe('pageControls', () => {
     expect(controls({ role: 'editor' })).toMatchObject({ move: true, withdraw: false, archive: false });
     expect(controls({ role: 'reviewer' })).toMatchObject({ move: true, withdraw: true, archive: false });
     expect(controls({ role: 'admin' })).toMatchObject({ move: true, withdraw: true, archive: true });
+  });
+
+  test('restoring a version needs an editor on a live page', () => {
+    expect(controls({ role: 'editor' }).restoreVersion).toBe(true);
+    expect(controls({ role: 'admin' }).restoreVersion).toBe(true);
+    expect(controls({ role: 'viewer' }).restoreVersion).toBe(false);
+    expect(controls({ role: null }).restoreVersion).toBe(false);
+    expect(controls({ role: 'admin', archived: true }).restoreVersion).toBe(false);
   });
 
   test('Retry shows only for exactly "Index failed"', () => {
@@ -189,6 +198,7 @@ describe('pageControls', () => {
       withdraw: false,
       archive: false,
       restorePage: true,
+      restoreVersion: false,
     });
     expect(controls({ archived: true, role: 'reviewer' }).restorePage).toBe(false);
     expect(controls({ archived: false, role: 'admin' }).restorePage).toBe(false);

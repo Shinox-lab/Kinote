@@ -1,6 +1,8 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouteContext } from '@tanstack/react-router';
 import { api } from './api.js';
+import { canAdminister } from './console.js';
+import { loadSession } from './session.js';
 import { badgeSettles } from './wiki.js';
 
 // Query keys and hooks. Every key of a workspace starts with its tenant id, so
@@ -76,6 +78,50 @@ export function usePageChanges(pageId: string) {
     queryFn: () => api.pageChanges(pageId),
     staleTime: 0,
   });
+}
+
+/** The review queue (optionally one space's): what the actor can review, empty for anyone who cannot. */
+export function useReviews(spaceId?: string) {
+  return useQuery({
+    queryKey: useTenantKey('reviews', spaceId ?? 'all'),
+    queryFn: () => api.reviewQueue(spaceId),
+    staleTime: 0,
+  });
+}
+
+/** A version's block diff; `enabled` false until someone opens it, so a queue never fetches every diff up front. */
+export function useVersionDiff(versionId: string, enabled: boolean) {
+  return useQuery({
+    queryKey: useTenantKey('versionDiff', versionId),
+    queryFn: () => api.versionDiff(versionId),
+    enabled,
+  });
+}
+
+/** A page's versions, newest first; `enabled` false while the history drawer is closed. */
+export function usePageVersions(pageId: string, enabled: boolean) {
+  return useQuery({
+    queryKey: useTenantKey('versions', pageId),
+    queryFn: () => api.listVersions(pageId),
+    enabled,
+    staleTime: 0,
+  });
+}
+
+/** The block diff between two numbered versions of a page; nothing is asked until both are chosen. */
+export function useComparison(pageId: string, pair: { from: number; to: number } | null) {
+  return useQuery({
+    queryKey: useTenantKey('compare', pageId, pair?.from, pair?.to),
+    queryFn: () => api.compareVersions(pageId, pair!.from, pair!.to),
+    enabled: pair !== null,
+  });
+}
+
+/** Names to show for authors (only workspace admins may list members) and the signed-in user's id. */
+export function useAuthorNames() {
+  const { role } = useWorkspace();
+  const { data: members = [] } = useMembers(canAdminister(role));
+  return { names: new Map(members.map((m) => [m.userId, m.name])), selfId: loadSession()?.user.id ?? null };
 }
 
 /** Refetches the workspace's lists that start with `part` (e.g. 'spaces' also refreshes the grants of a space). */

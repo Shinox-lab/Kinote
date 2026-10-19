@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useParams } from '@tanstack/react-router';
 import { useMutation } from '@tanstack/react-query';
 import type { PageDetails } from '@living-wiki/contracts';
@@ -8,6 +8,7 @@ import { pageControls } from '../lib/wiki.js';
 import { Badge } from '../components/Badge.js';
 import { ChangesPanel } from '../components/ChangesPanel.js';
 import { Editor } from '../components/Editor.js';
+import { HistoryDrawer } from '../components/HistoryDrawer.js';
 import { LifecycleMenu } from '../components/LifecycleMenu.js';
 import { Button, ErrorNote, Loading } from '../components/ui.js';
 
@@ -62,6 +63,7 @@ export function PagePage() {
   const refresh = useRefresh();
   const { data: page, error, isPending } = usePage(pageId);
   const { data: spaces = [] } = useSpaces();
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   // The badge moved (indexing finished, a review landed): what changed since the indexed version moved with it.
   const badge = page?.badge;
@@ -113,7 +115,12 @@ export function PagePage() {
           </div>
         </div>
         <div className="flex flex-col items-end gap-2">
-          <PageActions page={page} controls={controls} onChanged={changed} />
+          <div className="flex flex-wrap items-start justify-end gap-2">
+            <Button variant="secondary" aria-haspopup="dialog" onClick={() => setHistoryOpen(true)}>
+              History
+            </Button>
+            <PageActions page={page} controls={controls} onChanged={changed} />
+          </div>
           <LifecycleMenu page={page} spaces={spaces} controls={controls} onChanged={changed} />
         </div>
       </div>
@@ -123,6 +130,14 @@ export function PagePage() {
         <Editor key={pageId} pageId={pageId} archived={archived} onSynced={reload} />
         <ChangesPanel pageId={pageId} />
       </div>
+      {historyOpen && (
+        <HistoryDrawer
+          pageId={pageId}
+          canRestore={controls.restoreVersion}
+          onClose={() => setHistoryOpen(false)}
+          onRestored={changed}
+        />
+      )}
     </div>
   );
 }

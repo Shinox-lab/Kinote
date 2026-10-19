@@ -146,6 +146,8 @@ export interface PageControls {
   withdraw: boolean;
   archive: boolean;
   restorePage: boolean;
+  /** Restoring an older version as a new change (editor, live page). */
+  restoreVersion: boolean;
 }
 
 const RANK: Record<SpaceRole, number> = { viewer: 0, editor: 1, reviewer: 2, admin: 3 };
@@ -153,7 +155,7 @@ const RANK: Record<SpaceRole, number> = { viewer: 0, editor: 1, reviewer: 2, adm
 /**
  * Which controls to show. The server enforces every one of these again; hiding is
  * only so a person is not offered what would be refused. Roles mirror the routes:
- * snapshot, retry, restore and move need editor, withdraw reviewer, archive and
+ * snapshot, retry, restore (of a page version too) and move need editor, withdraw reviewer, archive and
  * restoring an archived page admin.
  */
 export function pageControls({ badge, role, reviewRequired, archived }: PageControlsInput): PageControls {
@@ -168,5 +170,6 @@ export function pageControls({ badge, role, reviewRequired, archived }: PageCont
     withdraw: live && rank >= RANK.reviewer,
     archive: live && rank >= RANK.admin,
     restorePage: archived && rank >= RANK.admin,
+    restoreVersion: editor,
   };
 }

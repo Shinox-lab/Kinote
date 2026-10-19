@@ -2,7 +2,7 @@ import { Link, Outlet, useNavigate, useParams, useRouter } from '@tanstack/react
 import { useMutation } from '@tanstack/react-query';
 import { api } from '../lib/api.js';
 import { adminScreens } from '../lib/console.js';
-import { usePage, useSpaces, useWorkspace } from '../lib/queries.js';
+import { usePage, useReviews, useSpaces, useWorkspace } from '../lib/queries.js';
 import { endSession } from '../lib/queryClient.js';
 import { loadSession } from '../lib/session.js';
 import { Button, SelectField } from '../components/ui.js';
@@ -41,7 +41,30 @@ function SpaceSwitcher() {
   );
 }
 
-/** The shell of `/w/$tenantSlug`: workspace name, space switcher, admin links, sign-out. */
+/** The Reviews link; a count of what waits for the user (the same query the screen uses) when there is any. */
+function ReviewsLink() {
+  const { tenant } = useWorkspace();
+  const { data: items } = useReviews();
+  const waiting = items?.length ?? 0;
+  return (
+    <Link
+      to="/w/$tenantSlug/reviews"
+      params={{ tenantSlug: tenant.slug }}
+      className={NAV_LINK}
+      activeProps={{ className: `${NAV_LINK} bg-slate-100` }}
+    >
+      Reviews
+      {waiting > 0 && (
+        <span className="ml-1.5 rounded-full bg-indigo-600 px-1.5 py-0.5 text-xs text-white">
+          {waiting}
+          <span className="sr-only"> waiting</span>
+        </span>
+      )}
+    </Link>
+  );
+}
+
+/** The shell of `/w/$tenantSlug`: workspace name, space switcher, reviews, search and admin links, sign-out. */
 export function WorkspaceLayout() {
   const { tenant, role } = useWorkspace();
   const router = useRouter();
@@ -66,6 +89,15 @@ export function WorkspaceLayout() {
           </Link>
           <SpaceSwitcher />
           <nav aria-label="Workspace" className="flex flex-1 flex-wrap gap-1">
+            <ReviewsLink />
+            <Link
+              to="/w/$tenantSlug/search"
+              params={{ tenantSlug: tenant.slug }}
+              className={NAV_LINK}
+              activeProps={{ className: `${NAV_LINK} bg-slate-100` }}
+            >
+              Search
+            </Link>
             {screens.length > 0 && (
               <Link
                 to={screens[0].to}

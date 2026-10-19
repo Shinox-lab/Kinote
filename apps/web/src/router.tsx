@@ -19,6 +19,8 @@ import { GroupsPage } from './routes/admin/groups.js';
 import { MembersPage } from './routes/admin/members.js';
 import { SpacesPage } from './routes/admin/spaces.js';
 import { WorkspaceLayout } from './routes/layout.js';
+import { ReviewsPage } from './routes/reviews.js';
+import { SearchPage } from './routes/search.js';
 import { SignInPage } from './routes/sign-in.js';
 import { SignUpPage } from './routes/sign-up.js';
 import { SpacePage } from './routes/space.js';
@@ -143,6 +145,18 @@ const pageRoute = createRoute({
   component: lazyRouteComponent(() => import('./routes/page.js'), 'PagePage'),
 });
 
+const reviewsRoute = createRoute({
+  getParentRoute: () => workspaceRoute,
+  path: 'reviews',
+  component: ReviewsPage,
+});
+
+const searchRoute = createRoute({
+  getParentRoute: () => workspaceRoute,
+  path: 'search',
+  component: SearchPage,
+});
+
 const adminRoute = createRoute({
   getParentRoute: () => workspaceRoute,
   path: 'admin',
@@ -170,6 +184,8 @@ const routeTree = rootRoute.addChildren([
     workspaceHomeRoute,
     spaceRoute,
     pageRoute,
+    reviewsRoute,
+    searchRoute,
     adminRoute.addChildren([adminIndexRoute, membersRoute, groupsRoute, spacesRoute]),
   ]),
 ]);
