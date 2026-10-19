@@ -351,6 +351,20 @@ export const CompareQuerySchema = z.object({
   to: z.coerce.number().int().positive().max(2147483647),
 });
 
+/**
+ * Params of POST /api/v1/pages/:id/versions/:n/restore: the version number as
+ * written in the URL, plain digits (no sign, decimals, exponent or leading
+ * zero) and at most the largest Postgres integer. The handler answers a
+ * failure with 404 `version_not_found`, the same as a number the page lacks.
+ */
+export const RestoreVersionParamsSchema = z.object({
+  n: z
+    .string()
+    .regex(/^[1-9][0-9]{0,9}$/)
+    .transform(Number)
+    .pipe(z.number().int().max(2147483647)),
+});
+
 /** Reply of POST /api/v1/versions/:id/retry (no request body): the summary plus its document. */
 export const RetryVersionResponseSchema = VersionSummarySchema.extend({
   documentId: z.string().uuid(),

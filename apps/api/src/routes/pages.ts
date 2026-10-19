@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from 'node:util';
 import * as Y from 'yjs';
 import { ServerBlockNoteEditor } from '@blocknote/server-util';
 import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
@@ -32,6 +33,7 @@ import {
   VersionDetailSchema,
   BlockDiffSchema,
   CompareQuerySchema,
+  RestoreVersionParamsSchema,
   AppError,
   type RetryVersionResponse,
   type VersionSummary,
@@ -534,6 +536,100 @@ export async function submitPageSnapshot(actor: Actor, pageId: string, collab?: 
     actorId: actor.principalId,
     manual: true,
   });
+}
+
+/**
+ * POST /api/v1/pages/:id/versions/:n/restore: puts version `n`'s blocks and
+ * title back as the page's live content and snapshots that as a NEW version
+ * (reason `restore`; older versions are never touched). The actor must be
+ * editor or higher (`requireDocumentRole`, as for a manual snapshot).
+ * 404 `version_not_found` for a number the page lacks or that is not one;
+ * 409 `no_changes` when the latest version already has that content.
+ *
+ * No lock is held across the collab calls: collab's own bookkeeping takes
+ * FOR KEY SHARE on the document row, so a held `lockDocument` would deadlock
+ * until the call times out. The checks run in a short transaction first;
+ * `takePageSnapshot` then locks, and decides review, on its own.
+ */
+export async function restorePageVersion(
+  actor: Actor,
+  pageId: string,
+  params: unknown,
+  collab?: CollabClient
+): Promise<VersionSummary> {
+  assertValidUuid(pageId, 'page_not_found');
+  const parsed = RestoreVersionParamsSchema.safeParse(params);
+  const target = await withTenantTx(actor.tenantId, async (tx) => {
+    const [doc] = await tx
+      .select()
+      .from(documents)
+      .where(and(eq(documents.tenantId, actor.tenantId), eq(documents.id, pageId)));
+    if (!doc || doc.kind !== 'page') {
+      throw new AppError('page_not_found');
+    }
+    await requireDocumentRole(tx, actor, doc, 'editor', { notFound: 'page_not_found' });
+    if (doc.archivedAt !== null) {
+      throw new AppError('page_archived');
+    }
+    if (!parsed.success) {
+      throw new AppError('version_not_found');
+    }
+
+    const [wanted] = await tx
+      .select({ title: versions.title, blocks: versions.blocks })
+      .from(versions)
+      .where(
+        and(
+          eq(versions.tenantId, actor.tenantId),
+          eq(versions.documentId, pageId),
+          eq(versions.number, parsed.data.n)
+        )
+      );
+    if (!wanted) {
+      throw new AppError('version_not_found');
+    }
+    const [latest] = await tx
+      .select({ title: versions.title, blocks: versions.blocks })
+      .from(versions)
+      .where(and(eq(versions.tenantId, actor.tenantId), eq(versions.documentId, pageId)))
+      .orderBy(desc(versions.number))
+      .limit(1);
+    if (
+      latest &&
+      latest.title === wanted.title &&
+      isDeepStrictEqual(storedBlocks(latest.blocks), storedBlocks(wanted.blocks))
+    ) {
+      throw new AppError('no_changes', 'The latest version already has this content.');
+    }
+    return { title: wanted.title, blocks: storedBlocks(wanted.blocks) };
+  });
+
+  // Restoring needs the live document, which only collab can change.
+  if (!collab) {
+    throw new AppError('internal_error');
+  }
+  await collab.replaceBlocks({
+    tenantId: actor.tenantId,
+    pageId,
+    blocks: target.blocks,
+    title: target.title,
+    actor: { type: actor.principalType, id: actor.principalId },
+    source: 'restore',
+  });
+  await collab.flush(documentName(actor.tenantId, pageId));
+  const created = await takePageSnapshot({
+    tenantId: actor.tenantId,
+    pageId,
+    reason: 'restore',
+    actorType: actor.principalType,
+    actorId: actor.principalId,
+    manual: true,
+  });
+  // A manual snapshot either makes a version or throws; null is the quiet path.
+  if (!created) {
+    throw new AppError('internal_error');
+  }
+  return toVersionSummary(created);
 }
 
 /** Test seam for approve and reject: `beforeLock` runs after the version was found, before its document is locked. */

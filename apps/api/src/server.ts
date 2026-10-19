@@ -36,6 +36,7 @@ import {
   getPageDetails,
   issueCollabToken,
   submitPageSnapshot,
+  restorePageVersion,
   approveVersion,
   rejectVersion,
   retryVersion,
@@ -256,6 +257,12 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
 
   app.post('/api/v1/pages/:id/snapshot', async (req, reply) => {
     const res = await submitPageSnapshot(actorOf(req), (req.params as any).id, opts.collab);
+    return reply.status(201).send(res);
+  });
+
+  app.post('/api/v1/pages/:id/versions/:n/restore', async (req, reply) => {
+    const { id, ...params } = req.params as any;
+    const res = await restorePageVersion(actorOf(req), id, params, opts.collab);
     return reply.status(201).send(res);
   });
 
