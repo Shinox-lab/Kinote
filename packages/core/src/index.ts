@@ -42,3 +42,9 @@ export {
   type Extractor,
   type ExtractInput,
 } from './files/extractor.js';
+export {
+  fileObjectPath,
+  insertFileVersion,
+  type InsertFileVersionParams,
+  type VersionRow,
+} from './files/versions.js';
