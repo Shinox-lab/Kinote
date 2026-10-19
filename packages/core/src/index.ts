@@ -34,3 +34,11 @@ export {
 } from './files/detect.js';
 export { readTextNative, parseCsv } from './files/textNative.js';
 export { chunkExtracted } from './files/chunkExtracted.js';
+export {
+  FakeExtractor,
+  HttpExtractor,
+  UnavailableExtractor,
+  createExtractor,
+  type Extractor,
+  type ExtractInput,
+} from './files/extractor.js';
