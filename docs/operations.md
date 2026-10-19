@@ -33,7 +33,17 @@ compares the tenant column with `current_tenant_id()`.
 pgvector), MinIO, a one-shot `migrate`, and the `api`, `collab` and `worker`
 services built from the root `Dockerfile` (one build; each service runs its
 TypeScript entry point with tsx). Host ports, all on 127.0.0.1: postgres
-55543, MinIO 59000 (S3) and 59001 (console), api 8787, collab 1234.
+55543, MinIO 59000 (S3) and 59001 (console), api 8787, collab 1234. Each can be
+changed in `.env` (`POSTGRES_HOST_PORT`, `MINIO_HOST_PORT`,
+`MINIO_CONSOLE_HOST_PORT`, `API_HOST_PORT`, `COLLAB_HOST_PORT`) when a default
+is taken on your machine; `pnpm dev`, `pnpm web` and `pnpm e2e` follow them.
+
+To run the whole app, fill in `.env` and run `pnpm dev`: it starts the Docker
+stack and then the console at http://localhost:5173.
+
+If Docker Desktop shows a port as in use although no container holds it (a
+leftover forward of `com.docker.backend`), restarting Docker Desktop clears it;
+until then set another host port in `.env`.
 
 MinIO comes from `pgsty/minio`, a community build (the official `minio/minio`
 image is no longer published on Docker Hub), pinned by tag and digest. It is

@@ -50,7 +50,8 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
     ports:
-      - "127.0.0.1:55543:5432"
+      # Host ports can be changed in .env (POSTGRES_HOST_PORT, MINIO_HOST_PORT, ...) when a default is taken.
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-55543}:5432"
     healthcheck:
       # TCP, not the socket: the entrypoint's temporary init server listens on
       # the socket only, so this passes once the real server is up.
@@ -71,8 +72,8 @@ services:
     volumes:
       - miniodata:/data
     ports:
-      - "127.0.0.1:59000:9000"
-      - "127.0.0.1:59001:9001"
+      - "127.0.0.1:${MINIO_HOST_PORT:-59000}:9000"
+      - "127.0.0.1:${MINIO_CONSOLE_HOST_PORT:-59001}:9001"
     healthcheck:
       test: ["CMD", "mc", "ready", "local"]
       interval: 2s
@@ -98,7 +99,7 @@ services:
       target: api
     environment: *app-env
     ports:
-      - "127.0.0.1:8787:8787"
+      - "127.0.0.1:${API_HOST_PORT:-8787}:8787"
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -110,7 +111,7 @@ services:
       target: collab
     environment: *app-env
     ports:
-      - "127.0.0.1:1234:1234"
+      - "127.0.0.1:${COLLAB_HOST_PORT:-1234}:1234"
     depends_on:
       migrate:
         condition: service_completed_successfully

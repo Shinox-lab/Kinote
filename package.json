@@ -5,6 +5,7 @@
   "type": "module",
   "packageManager": "pnpm@9.12.0",
   "scripts": {
+    "dev": "bash infra/dev.sh",
     "web": "pnpm --filter @living-wiki/web run dev",
     "web:build": "pnpm --filter @living-wiki/web run build",
     "test": "vitest run",

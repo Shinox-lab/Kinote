@@ -27,7 +27,11 @@ wait_for() {
   echo "e2e: $1 did not answer within 90 s" >&2
   return 1
 }
-wait_for http://127.0.0.1:8787/api/v1/me
-wait_for http://127.0.0.1:1234/
+# The host ports the stack published (API_HOST_PORT / COLLAB_HOST_PORT in .env; defaults 8787 and 1234).
+env_value() { [[ -f .env ]] && sed -n "s/^$1=//p" .env | tail -n 1 || true; }
+API_HOST_PORT="${API_HOST_PORT:-$(env_value API_HOST_PORT)}"
+COLLAB_HOST_PORT="${COLLAB_HOST_PORT:-$(env_value COLLAB_HOST_PORT)}"
+wait_for "http://127.0.0.1:${API_HOST_PORT:-8787}/api/v1/me"
+wait_for "http://127.0.0.1:${COLLAB_HOST_PORT:-1234}/"
 
 exec pnpm exec playwright test "$@"

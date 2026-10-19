@@ -11,6 +11,12 @@ if [[ -z "${POSTGRES_PASSWORD:-}" && -f .env ]]; then
 fi
 : "${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD (see .env.example)}"
 
+# The host port postgres is published on (POSTGRES_HOST_PORT in .env, default 55543).
+if [[ -z "${POSTGRES_HOST_PORT:-}" && -f .env ]]; then
+  POSTGRES_HOST_PORT=$(sed -n 's/^POSTGRES_HOST_PORT=//p' .env | tail -n 1)
+fi
+POSTGRES_HOST_PORT="${POSTGRES_HOST_PORT:-55543}"
+
 docker compose up -d --wait --wait-timeout 180 postgres minio
-DATABASE_MIGRATE_URL="postgres://postgres:${POSTGRES_PASSWORD}@127.0.0.1:55543/living_wiki" \
+DATABASE_MIGRATE_URL="postgres://postgres:${POSTGRES_PASSWORD}@127.0.0.1:${POSTGRES_HOST_PORT}/living_wiki" \
   pnpm db:migrate
