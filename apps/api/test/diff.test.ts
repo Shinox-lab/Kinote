@@ -244,7 +244,8 @@ describe('version history, changes and compare routes', () => {
       change: 'changed',
       before: 'Second paragraph.',
       after: 'Second paragraph. A was here',
-      author: { type: 'user', id: w.a.userId },
+      // /changes alone names its authors (exact names: changesNames.test.ts).
+      author: { type: 'user', id: w.a.userId, name: expect.stringMatching(/\S/) },
     });
   });
 

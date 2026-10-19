@@ -57,6 +57,7 @@ import {
 import type { BlockLike } from '@living-wiki/shared';
 import { computePageBadge } from '../pages/badge.js';
 import { diffBlocks } from '../pages/diff.js';
+import { resolveActorNames } from '../people.js';
 import { canApprove } from '../pages/approval.js';
 import type { CollabClient } from '../collab/client.js';
 
@@ -440,9 +441,10 @@ export async function getVersionDetail(actor: Actor, versionId: string): Promise
 /**
  * GET /api/v1/pages/:id/changes: the indexed version's blocks against the
  * live content (all `added` when nothing is indexed), authored from
- * `block_activity`. "Live" is the last STORED collab state (`pages.ydoc_state`,
- * written by the debounced store or a flush), like `getPageDetails`: keystrokes
- * not yet stored by the collab server are not in it.
+ * `block_activity`, each author with a display name (the only diff that has
+ * one). "Live" is the last STORED collab state (`pages.ydoc_state`, written by
+ * the debounced store or a flush), like `getPageDetails`: keystrokes not yet
+ * stored by the collab server are not in it.
  */
 export async function getPageChanges(actor: Actor, pageId: string): Promise<BlockDiffEntry[]> {
   assertValidUuid(pageId, 'page_not_found');
@@ -462,7 +464,19 @@ export async function getPageChanges(actor: Actor, pageId: string): Promise<Bloc
     const live = blockNote.yDocToBlocks(ydoc, 'document-store') as BlockLike[];
 
     const activity = await pageActivity(tx, actor.tenantId, pageId);
-    return diffBlocks(before, live, activity);
+    const diff = diffBlocks(before, live, activity);
+    // Names for every role that can read the page: the author's display name
+    // only, resolved against the tenant's memberships (see resolveActorNames).
+    const names = await resolveActorNames(
+      tx,
+      actor.tenantId,
+      diff.flatMap((e) => (e.author ? [e.author] : []))
+    );
+    return diff.map((e) =>
+      e.author
+        ? { ...e, author: { ...e.author, name: names.get(`${e.author.type}:${e.author.id}`) } }
+        : e
+    );
   });
 }
 

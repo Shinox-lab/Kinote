@@ -435,14 +435,19 @@ export type VersionDetail = z.infer<typeof VersionDetailSchema>;
  * One block in a diff, aligned by block id. `before` is the old text
  * (`changed`, `removed`), `after` the new text (`added`, `changed`,
  * `unchanged`). `author` is the last actor recorded for the block
- * (`block_activity`), set for `added` and `changed` only.
+ * (`block_activity`), set for `added` and `changed` only. `author.name` is the
+ * author's display name, filled by GET /pages/:id/changes alone (`Former
+ * member` / `Agent` when unknown to the tenant); /compare and the version diff
+ * send none.
  */
 export const BlockDiffEntrySchema = z.object({
   blockId: z.string(),
   change: z.enum(['added', 'removed', 'changed', 'unchanged']),
   before: z.string().optional(),
   after: z.string().optional(),
-  author: z.object({ type: z.enum(['user', 'agent']), id: z.string() }).optional(),
+  author: z
+    .object({ type: z.enum(['user', 'agent']), id: z.string(), name: z.string().optional() })
+    .optional(),
 });
 export type BlockDiffEntry = z.infer<typeof BlockDiffEntrySchema>;
 
