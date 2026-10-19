@@ -5,8 +5,11 @@ import {
   isCollapseShortcut,
   loadCollapsed,
   loadExpanded,
+  loadUpdatesOpen,
   saveCollapsed,
   saveExpanded,
+  saveUpdatesOpen,
+  UPDATES_OPEN_KEY,
 } from '../src/lib/sidebar.js';
 
 /** A Storage stand-in over a map. */
@@ -74,5 +77,19 @@ describe('isCollapseShortcut', () => {
     expect(isCollapseShortcut({ key: '\\', ctrlKey: false, metaKey: false })).toBe(false);
     expect(isCollapseShortcut({ key: 'b', ctrlKey: true, metaKey: false })).toBe(false);
     expect(isCollapseShortcut({ key: '/', ctrlKey: true, metaKey: false })).toBe(false);
+  });
+});
+
+describe('updates section state', () => {
+  test('is open by default, remembers closing, survives blocked storage', () => {
+    const s = store();
+    expect(loadUpdatesOpen(s)).toBe(true);
+    saveUpdatesOpen(false, s);
+    expect(s.data.get(UPDATES_OPEN_KEY)).toBe('0');
+    expect(loadUpdatesOpen(s)).toBe(false);
+    saveUpdatesOpen(true, s);
+    expect(loadUpdatesOpen(s)).toBe(true);
+    expect(loadUpdatesOpen(throwing)).toBe(true);
+    expect(() => saveUpdatesOpen(false, throwing)).not.toThrow();
   });
 });

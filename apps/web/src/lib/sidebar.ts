@@ -32,6 +32,25 @@ export function saveCollapsed(collapsed: boolean, storage: WriteStorage = browse
   }
 }
 
+export const UPDATES_OPEN_KEY = 'lw-sidebar-updates-open';
+
+/** The Updates section is open unless the person closed it. */
+export function loadUpdatesOpen(storage: ReadStorage = browserStorage()): boolean {
+  try {
+    return storage?.getItem(UPDATES_OPEN_KEY) !== '0';
+  } catch {
+    return true;
+  }
+}
+
+export function saveUpdatesOpen(open: boolean, storage: WriteStorage = browserStorage()): void {
+  try {
+    storage?.setItem(UPDATES_OPEN_KEY, open ? '1' : '0');
+  } catch {
+    // Forgotten at the next visit; nothing else to do.
+  }
+}
+
 /** Per tenant: another workspace never inherits this one's open nodes. */
 export function expandedKey(tenantId: string): string {
   return `lw-sidebar-expanded-${tenantId}`;

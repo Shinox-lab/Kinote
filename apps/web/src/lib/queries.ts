@@ -100,6 +100,20 @@ export function usePageChanges(pageId: string) {
   });
 }
 
+/** How often the Updates feed asks again while the tab is visible. */
+export const UPDATES_POLL_MS = 30_000;
+
+/** The workspace's recent changes for the sidebar: asked again on focus and on a timer, never trusted from cache. */
+export function useUpdates(limit: number) {
+  return useQuery({
+    queryKey: useTenantKey('updates', limit),
+    queryFn: () => api.updates(limit),
+    staleTime: 0,
+    refetchOnWindowFocus: true,
+    refetchInterval: UPDATES_POLL_MS,
+  });
+}
+
 /** The review queue (optionally one space's): what the actor can review, empty for anyone who cannot. */
 export function useReviews(spaceId?: string) {
   return useQuery({
