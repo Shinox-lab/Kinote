@@ -312,3 +312,67 @@ disk unreferenced, `down -v` deletes them.
 | `pnpm typecheck` | exit 0 (includes `e2e/**` and `playwright.config.ts`) |
 | `pnpm --filter @living-wiki/web build` | exit 0 |
 | `pnpm install --frozen-lockfile` | up to date |
+
+---
+
+## Sidebar console (Notion-style) — 2026-10-19
+
+What changed: the console's top bar became one sidebar (workspace, search and reviews, an Updates feed, the spaces as a page tree with status dots, and an "On this page" section), in a light and a dark theme. Design: `docs/superpowers/specs/2026-10-19-notion-sidebar-ui-design.md`. Plan: `docs/superpowers/plans/2026-10-19-notion-sidebar-ui.md`.
+
+Environment: the PGlite harness (`pnpm e2e:local`; no Docker), v22.23.2, tree at `5ea86ac` plus this section. Nothing in this section ran against real Postgres or the compose stack: the three API additions (tree `attention`, author `name` on changes, `GET /api/v1/updates`) are covered by PGlite route tests only; `pnpm test:pg` was not re-run for this work.
+
+### Checks run (real output)
+
+```
+$ pnpm vitest run     → exit 0
+ Test Files  64 passed (64)
+      Tests  704 passed | 30 skipped (734)
+$ pnpm typecheck      → exit 0
+$ pnpm --filter @living-wiki/web build → exit 0
+```
+
+### `pnpm e2e:local`, three runs in a row (all 12 specs: 5 earlier ones and the 7 new sidebar ones)
+
+```
+run 1:  12 passed (21.2s)
+run 2:  12 passed (18.3s)
+run 3:  12 passed (20.5s)
+
+run 3, every spec:
+  ✓   1 [chromium] › e2e/co-edit.spec.ts:53:1 › two editors and a reviewer: co-edit, hold until approval, index, cite v1 (6.1s)
+  ✓   2 [chromium] › e2e/console.spec.ts:51:1 › review queue: Approve and Reject states, lazy diff (1.2s)
+  ✓   3 [chromium] › e2e/console.spec.ts:118:1 › history drawer: compare two versions, restore with confirmation, Escape returns focus (885ms)
+  ✓   4 [chromium] › e2e/console.spec.ts:179:1 › citations link to the cited page (515ms)
+  ✓   5 [chromium] › e2e/sidebar.spec.ts:44:1 › the tree: open a space, open a page from it, see its status dot and the review count (611ms)
+  ✓   6 [chromium] › e2e/sidebar.spec.ts:83:1 › adding a page from the sidebar opens it (399ms)
+  ✓   7 [chromium] › e2e/sidebar.spec.ts:98:1 › updates show what others did, and your own changes read "You"; typing shows the edited dot (3.0s)
+  ✓   8 [chromium] › e2e/sidebar.spec.ts:142:1 › someone else's Inbox page is in neither the tree nor Updates, but the creator and an admin see it (611ms)
+  ✓   9 [chromium] › e2e/sidebar.spec.ts:184:1 › the theme: choose dark, it survives a reload, and System follows the operating system (424ms)
+  ✓  10 [chromium] › e2e/sidebar.spec.ts:207:1 › a phone: the sidebar is a slide-over that closes on navigation and on Escape (225ms)
+  ✓  11 [chromium] › e2e/sidebar.spec.ts:229:1 › on a wide screen Ctrl+\ hides and shows the sidebar (200ms)
+  ✓  12 [chromium] › e2e/viewer.spec.ts:4:1 › a viewer sees the page read-only, without Submit (758ms)
+```
+
+### What the sidebar specs prove
+
+| Spec | Shows |
+|---|---|
+| the tree | a space opens into its pages; a page held for review wears the amber dot named "Waiting for review"; the Reviews count reads "1 waiting"; the current page has `aria-current`; a folder can be closed and a reload reveals the page again; a closed space stays closed after a reload |
+| adding a page | "+" on a space makes a page, opens it, and the tree row is current |
+| updates | another editor's publish reads "Eli Editor published v1 of Notes" for the owner and "You published v1 of Notes" for Eli; the edited dot ("Edited just now") shows for a page being typed in; an update links to its page |
+| Inbox privacy | another member's Inbox page is in neither the tree nor Updates for a viewer, and is for its creator and for an admin |
+| theme | Dark persists across a reload with no flash; System follows the emulated colour scheme both ways |
+| phone | at 390 px the sidebar is a slide-over that closes on navigation and on Escape, and focus returns to the menu button |
+| shortcut | Ctrl+\ hides and shows the sidebar and the choice survives a reload |
+
+### Looked at by eye (headless Chrome screenshots, light and dark)
+
+Sign-in, workspace home, space page, Reviews, Search, members and spaces administration, and a page with changes at 1280 px and 390 px (plus the phone slide-over) were opened in both themes during the build. Text, dots, badges and the highlighted changed blocks were readable in both. This is a human-eye check by the author, not a recorded test; the colour contrast itself is pinned by `apps/web/test/theme.test.ts` (WCAG AA ratios computed from the real CSS tokens).
+
+### Not run
+
+| Item | Command owed |
+|---|---|
+| The three new API routes on real Postgres | `pnpm test:pg` (and add the tree/updates cases to the real-Postgres suite if wanted) |
+| The sidebar specs against the compose stack | `pnpm e2e` once Docker Desktop's stale port forwards are cleared (see the earlier sections) |
+| Screen readers, real phones | manual |
