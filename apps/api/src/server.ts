@@ -160,9 +160,6 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
     strictJson(req, text, done);
   });
 
-  // Identity comes only from the session token and, for tenant routes, the
-  // membership row of the session user in x-tenant-id. Routes declare
-  // config.auth ('public' | 'session' | 'tenant'); undeclared means 'tenant'.
   /**
    * Closes the live editing sessions an access change can affect (only
    * `userId`'s when the change names one user), so they reconnect under the
@@ -184,9 +181,14 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
       ? { tenantId: actor.tenantId, userId: principalId.toLowerCase() }
       : { tenantId: actor.tenantId };
 
+  // Identity comes only from the session token and, for tenant routes, the
+  // membership row of the session user in x-tenant-id. Routes declare
+  // config.auth ('public' | 'session' | 'tenant'); undeclared means 'tenant'.
+  // Checked in onRequest, before the body is read or parsed: an
+  // unauthenticated request never gets as far as the JSON parser.
   app.decorateRequest('authSession', null);
   app.decorateRequest('actor', null);
-  app.addHook('preHandler', async (req) => {
+  app.addHook('onRequest', async (req) => {
     const mode = req.routeOptions.config?.auth ?? 'tenant';
     if (mode === 'public') return;
     req.authSession = await requireSession(req);

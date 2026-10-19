@@ -117,7 +117,7 @@ describe('error model', () => {
     const session = await signUp(app);
     const res = await app.inject({
       method: 'POST',
-      url: '/api/v1/spaces',
+      url: '/api/v1/tenants',
       headers: { ...asUser(session), 'content-type': 'application/json' },
       payload: '{not json',
     });
@@ -174,7 +174,7 @@ describe('error model', () => {
     for (const payload of ['{not json', ' ', 'null x']) {
       const res = await app.inject({
         method: 'POST',
-        url: '/api/v1/spaces',
+        url: '/api/v1/tenants',
         headers: { ...asUser(session), 'content-type': 'application/json' },
         payload,
       });
@@ -194,18 +194,29 @@ describe('error model', () => {
     const session = await signUp(app);
     const res = await app.inject({
       method: 'POST',
-      url: '/api/v1/spaces',
+      url: '/api/v1/tenants',
       headers: { ...asUser(session), 'content-type': 'application/json' },
       payload: '{"name":"x","slug":"x","__proto__":{"admin":true}}',
     });
     assert.equal(res.statusCode, 400);
   });
 
+  test('an unauthenticated request is refused before its body is parsed', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/spaces',
+      headers: { 'content-type': 'application/json' },
+      payload: '{not json',
+    });
+    assert.equal(res.statusCode, 401);
+    assert.equal(res.json().error, 'unauthenticated');
+  });
+
   test('unsupported media type answers 415 validation_failed', async () => {
     const session = await signUp(app);
     const res = await app.inject({
       method: 'POST',
-      url: '/api/v1/spaces',
+      url: '/api/v1/tenants',
       headers: { ...asUser(session), 'content-type': 'application/x-weird' },
       payload: 'abc',
     });
