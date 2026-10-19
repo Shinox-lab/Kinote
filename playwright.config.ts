@@ -41,7 +41,8 @@ export default defineConfig({
         command: `pnpm --filter @living-wiki/web exec vite --host 127.0.0.1 --port ${webPort} --strictPort`,
         url: baseURL,
         timeout: 120_000,
-        reuseExistingServer: true,
+        // Never adopt a console some other session left on the port: it may proxy to another stack.
+        reuseExistingServer: false,
         gracefulShutdown: { signal: 'SIGTERM', timeout: 5_000 },
       },
 });

@@ -1,6 +1,7 @@
 import Fastify, { type FastifyRequest } from 'fastify';
 import rateLimit from '@fastify/rate-limit';
 import { withTenantTx } from '@living-wiki/db';
+import { DEFAULT_AUTH_RATE_LIMIT_MAX } from '@living-wiki/shared';
 import {
   SearchRequestSchema,
   AskRequestSchema,
@@ -106,7 +107,7 @@ export interface ApiServerOptions {
   collab?: CollabClient;
 }
 
-const DEFAULT_AUTH_RATE_LIMIT: AuthRateLimit = { max: 10, timeWindow: '1 minute' };
+const DEFAULT_AUTH_RATE_LIMIT: AuthRateLimit = { max: DEFAULT_AUTH_RATE_LIMIT_MAX, timeWindow: '1 minute' };
 
 /** The tenant actor attached by the auth hook (routes default to `auth: 'tenant'`). */
 function actorOf(req: FastifyRequest): Actor {

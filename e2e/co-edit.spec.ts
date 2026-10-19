@@ -1,7 +1,22 @@
 import { expect, test, type Page } from '@playwright/test';
 import { badgeOf, editorOf, expectConnected, PASSWORD, uniqueSuffix } from './support.js';
 
+
 const CITE = /\(v1, updated \d{4}-\d{2}-\d{2}\)/;
+
+interface Stored {
+  token: string;
+  tenantId: string;
+}
+
+/** The api state of a page as the signed-in page's own session sees it. */
+async function pageState(page: Page, pageId: string) {
+  const { token, tenantId } = await page.evaluate<Stored>(() => JSON.parse(localStorage.getItem('living-wiki.session')!));
+  const headers = { authorization: `Bearer ${token}`, 'x-tenant-id': tenantId };
+  const details = await (await page.request.get(`/api/v1/pages/${pageId}`, { headers })).json();
+  const versions: { number: number; status: string }[] = await (await page.request.get(`/api/v1/pages/${pageId}/versions`, { headers })).json();
+  return { indexedVersion: details.indexedVersion as { number: number } | null, latest: versions[0] };
+}
 
 /** Signs the visitor up through the form; lands on the page the form redirects to. */
 async function signUp(page: Page, name: string, email: string, redirect?: string): Promise<void> {
@@ -81,6 +96,22 @@ test('two editors and a reviewer: co-edit, hold until approval, index, cite v1',
   });
 
   let pageId = '';
+  await test.step('a decoy page in the Inbox is indexed, so that search has something to return', async () => {
+    // The tenant's search is not lexical: with nothing indexed an empty result would prove nothing.
+    await a.goto(`/w/${slug}/s/inbox`);
+    await a.getByLabel('Title').fill('Holiday calendar');
+    await a.getByRole('button', { name: 'Create page' }).click();
+    await a.waitForURL(/\/p\/[0-9a-f-]{36}$/);
+    await expectConnected(a);
+    await editorOf(a).click();
+    await a.keyboard.type('Public holidays follow the national calendar.');
+    await a.getByRole('button', { name: 'Index now' }).click();
+    await expect(async () => {
+      await a.reload();
+      await expect(badgeOf(a)).toHaveText('Indexed · v1', { timeout: 2_000 });
+    }).toPass({ timeout: 30_000 });
+  });
+
   await test.step('A and B type into the same page at the same time', async () => {
     await a.goto(`/w/${slug}/s/docs`);
     await a.getByLabel('Title').fill('Leave policy');
@@ -122,11 +153,22 @@ test('two editors and a reviewer: co-edit, hold until approval, index, cite v1',
     await expect(item.getByRole('button', { name: 'Approve' })).toBeDisabled();
     await expect(item).toContainText("You can't approve this change");
 
-    // Nothing is indexed: A's search finds nothing for the new text.
+    // Held: no version is indexed yet, and the version waits for review.
+    const held = await pageState(a, pageId);
+    expect(held.indexedVersion).toBeNull();
+    expect(held.latest).toMatchObject({ number: 1, status: 'pending_review' });
+
+    // Search and Ask return the decoy but never the held page (by link, not by text).
+    const heldLink = a.locator(`a[href="/w/${slug}/p/${pageId}"]`);
     await a.goto(`/w/${slug}/search`);
     await a.getByLabel('Search or ask a question').fill(text.a);
     await a.getByRole('button', { name: 'Search', exact: true }).click();
-    await expect(a.getByText('No passages matched.')).toBeVisible();
+    const results = a.getByRole('region', { name: 'Search results' });
+    await expect(results.getByRole('link', { name: 'Holiday calendar' })).toBeVisible();
+    await expect(heldLink).toHaveCount(0);
+    await a.getByRole('button', { name: 'Ask', exact: true }).click();
+    await expect(a.getByRole('list', { name: 'Sources' }).getByRole('link', { name: /^Holiday calendar / })).toBeVisible();
+    await expect(heldLink).toHaveCount(0);
   });
 
   await test.step('R approves', async () => {
@@ -137,7 +179,10 @@ test('two editors and a reviewer: co-edit, hold until approval, index, cite v1',
     await expect(r.getByText('Nothing is waiting for your review.')).toBeVisible();
   });
 
-  await test.step('the worker indexes v1; the badge, search and Ask cite it', async () => {
+  await test.step('the worker indexes v1; the api, the badge, search and Ask show it', async () => {
+    await expect
+      .poll(async () => pageState(a, pageId).then((s) => [s.indexedVersion !== null, s.latest?.status]), { timeout: 30_000 })
+      .toEqual([true, 'indexed']);
     // The page view only polls while the badge is moving by itself, so look again until the worker is done.
     await expect(async () => {
       await a.goto(`/w/${slug}/p/${pageId}`);
@@ -154,7 +199,8 @@ test('two editors and a reviewer: co-edit, hold until approval, index, cite v1',
 
     await a.getByRole('button', { name: 'Ask', exact: true }).click();
     const sources = a.getByRole('list', { name: 'Sources' });
-    const citation = sources.getByRole('link').first();
+    await expect(sources.getByRole('link', { name: /^Holiday calendar / })).toBeVisible();
+    const citation = sources.getByRole('link', { name: /^Leave policy / });
     await expect(citation).toHaveText(new RegExp(`^Leave policy ${CITE.source}$`));
     await citation.click();
     await a.waitForURL(`**/w/${slug}/p/${pageId}`);

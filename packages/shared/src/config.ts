@@ -1,5 +1,8 @@
 import { z } from 'zod';
 
+/** Per-IP sign-up and sign-in attempts per minute when `AUTH_RATE_LIMIT_MAX` is unset. */
+export const DEFAULT_AUTH_RATE_LIMIT_MAX = 10;
+
 /**
  * Environment contract shared by the api, collab and worker services.
  * `DATABASE_URL` is the `living_wiki_app` role (no superuser, no BYPASSRLS);
@@ -23,8 +26,12 @@ export const ConfigSchema = z.object({
     .enum(['true', 'false'])
     .default('false')
     .transform((v) => v === 'true'),
-  /** Per-IP sign-up and sign-in attempts per minute (each route counted separately). */
-  AUTH_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(10),
+  /**
+   * Per-IP sign-up and sign-in attempts per minute (each route counted
+   * separately). Capped so a typo (an extra zero, a byte count) cannot turn the
+   * brute-force limit into no limit at all.
+   */
+  AUTH_RATE_LIMIT_MAX: z.coerce.number().int().positive().max(100_000).default(DEFAULT_AUTH_RATE_LIMIT_MAX),
   EMBEDDING_PROVIDER: z.enum(['deterministic']).default('deterministic'),
   EMBEDDING_DIMENSIONS: z.coerce.number().int().positive().max(4000).default(1536),
   S3_ENDPOINT: z.string().min(1).optional(),

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { loadConfig } from '../src/config.js';
+import { DEFAULT_AUTH_RATE_LIMIT_MAX, loadConfig } from '../src/config.js';
 
 const base = {
   DATABASE_URL: 'postgres://x',
@@ -10,7 +10,8 @@ const base = {
 describe('loadConfig: auth rate limit and embeddings', () => {
   it('defaults to 10 auth attempts a minute and the deterministic provider', () => {
     const config = loadConfig(base);
-    expect(config.AUTH_RATE_LIMIT_MAX).toBe(10);
+    expect(config.AUTH_RATE_LIMIT_MAX).toBe(DEFAULT_AUTH_RATE_LIMIT_MAX);
+    expect(DEFAULT_AUTH_RATE_LIMIT_MAX).toBe(10);
     expect(config.EMBEDDING_PROVIDER).toBe('deterministic');
   });
 
@@ -22,5 +23,7 @@ describe('loadConfig: auth rate limit and embeddings', () => {
   it('refuses a provider it does not know and a limit that is not a positive number', () => {
     expect(() => loadConfig({ ...base, EMBEDDING_PROVIDER: 'openai' })).toThrow(/EMBEDDING_PROVIDER/);
     expect(() => loadConfig({ ...base, AUTH_RATE_LIMIT_MAX: '0' })).toThrow(/AUTH_RATE_LIMIT_MAX/);
+    expect(() => loadConfig({ ...base, AUTH_RATE_LIMIT_MAX: '100001' })).toThrow(/AUTH_RATE_LIMIT_MAX/);
+    expect(loadConfig({ ...base, AUTH_RATE_LIMIT_MAX: '100000' }).AUTH_RATE_LIMIT_MAX).toBe(100_000);
   });
 });

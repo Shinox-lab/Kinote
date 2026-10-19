@@ -8,7 +8,7 @@ export {
   getCollabTokenSecret,
   type CollabClaims,
 } from './collabToken.js';
-export { ConfigSchema, loadConfig, type Config } from './config.js';
+export { ConfigSchema, DEFAULT_AUTH_RATE_LIMIT_MAX, loadConfig, type Config } from './config.js';
 export {
   InMemoryObjectStorage,
   S3ObjectStorage,

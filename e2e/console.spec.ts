@@ -1,5 +1,6 @@
 // The console screens that need a real browser: the review queue, the history drawer and
 // citations. The accounts are made through the api; each spec drives the screen it covers.
+// Serial: the tests share one workspace and build on each other's pages, so running a single test with --grep is not supported.
 import { expect, test, type Page, type Request } from '@playwright/test';
 import {
   addMember,
