@@ -238,6 +238,8 @@ describe('error model', () => {
       empty_file: 400,
       file_too_large: 413,
       unsupported_file_type: 415,
+      file_unreadable: 422,
+      file_text_too_large: 422,
       quota_exceeded: 429,
       rate_limited: 429,
       embedding_unavailable: 503,

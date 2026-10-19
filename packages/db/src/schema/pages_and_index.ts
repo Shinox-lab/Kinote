@@ -4,6 +4,7 @@ import {
   text,
   boolean,
   integer,
+  bigint,
   timestamp,
   jsonb,
   customType,
@@ -144,8 +145,18 @@ export const versions = pgTable(
     markdown: text('markdown'),
     blocks: jsonb('blocks'),
     ydocSnapshot: bytea('ydoc_snapshot'),
+    // File versions only (page versions leave these null).
+    objectKey: text('object_key'),
+    fileName: text('file_name'),
+    mimeType: text('mime_type'),
+    sizeBytes: bigint('size_bytes', { mode: 'number' }),
+    sourceRevision: text('source_revision'),
+    extractedKey: text('extracted_key'),
   },
-  (t) => [uniqueIndex('versions_doc_number_idx').on(t.tenantId, t.documentId, t.number)]
+  (t) => [
+    uniqueIndex('versions_doc_number_idx').on(t.tenantId, t.documentId, t.number),
+    index('versions_tenant_hash_idx').on(t.tenantId, t.contentHash),
+  ]
 );
 
 export const versionContributors = pgTable(
