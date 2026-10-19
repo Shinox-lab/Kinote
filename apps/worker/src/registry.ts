@@ -149,7 +149,8 @@ export const handlers: Record<string, JobHandler> = {
       const payload = job.payload as { versionId: string };
       const result = await indexVersion(
         { tenantId: job.tenantId, versionId: payload.versionId },
-        ctx.embeddingProvider
+        ctx.embeddingProvider,
+        { storage: ctx.storage }
       );
       if (result.outcome === 'skipped') {
         console.warn(

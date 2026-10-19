@@ -11,7 +11,8 @@ export {
   type DocumentRoleOptions,
 } from './permissions.js';
 export { takePageSnapshot, type TakePageSnapshotHooks } from './snapshot.js';
-export { indexVersion, type IndexVersionResult } from './indexing/indexVersion.js';
+export { indexVersion, type IndexVersionResult, type IndexDeps } from './indexing/indexVersion.js';
+export { loadFileChunks } from './files/loadChunks.js';
 export { principalKey, chunkInboxOwner, pageSlugScope } from './indexing/inboxOwner.js';
 export {
   chunkPageBlocks,

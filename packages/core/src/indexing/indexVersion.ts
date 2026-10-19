@@ -12,9 +12,15 @@ import {
 } from '@living-wiki/db';
 import { defaultEmbeddingProvider, type EmbeddingProvider } from '../embedding.js';
 import { AppError } from '@living-wiki/contracts';
-import type { BlockLike } from '@living-wiki/shared';
+import type { BlockLike, ObjectStorage } from '@living-wiki/shared';
 import { chunkPageBlocks } from './chunkPage.js';
 import { chunkInboxOwner } from './inboxOwner.js';
+import { loadFileChunks } from '../files/loadChunks.js';
+
+/** What indexing needs beyond the database: file versions read their extracted text from storage. */
+export interface IndexDeps {
+  storage?: ObjectStorage;
+}
 
 export type IndexVersionResult =
   | { outcome: 'indexed' }
@@ -37,8 +43,10 @@ function batches<T>(rows: T[], size: number): T[][] {
  * Publishes an approved version's chunks, in three phases so no transaction is
  * held across the embedding call:
  *
- * A. (transaction) load the version (skip unless `indexing`), chunk it, read
- *    the cached embeddings of exactly those chunks;
+ * A. (short transactions) load the version (skip unless `indexing`), chunk it
+ *    (a page from its blocks; a file from its extracted text in object
+ *    storage, read with no transaction open), read the cached embeddings of
+ *    exactly those chunks;
  * B. (no transaction) embed the chunks the cache does not have;
  * C. (transaction, document row locked) re-check the version is still
  *    `indexing`, the document is not archived and no newer version is indexed,
@@ -49,32 +57,42 @@ function batches<T>(rows: T[], size: number): T[][] {
  */
 export async function indexVersion(
   params: { tenantId: string; versionId: string },
-  provider: EmbeddingProvider = defaultEmbeddingProvider
+  provider: EmbeddingProvider = defaultEmbeddingProvider,
+  deps: IndexDeps = {}
 ): Promise<IndexVersionResult> {
   const { tenantId, versionId } = params;
 
-  // Phase A: read-only snapshot of what to index.
-  const prepared = await withTenantTx(tenantId, async (tx) => {
-    const [ver] = await tx
+  // Phase A: read-only snapshot of what to index. A file version's text lives
+  // in object storage, so it is read between two short transactions.
+  const ver = await withTenantTx(tenantId, async (tx) => {
+    const [row] = await tx
       .select()
       .from(versions)
       .where(and(eq(versions.tenantId, tenantId), eq(versions.id, versionId)));
-
-    if (!ver) {
+    if (!row) {
       throw new AppError('version_not_found');
     }
-    if (ver.status !== 'indexing') return null;
+    return row;
+  });
+  if (ver.status !== 'indexing') return { outcome: 'skipped', reason: 'not_indexing' };
 
+  let rawChunks;
+  if (ver.objectKey !== null) {
+    if (!deps.storage) throw new NonRetryableError('file versions need object storage to be indexed');
+    rawChunks = (await loadFileChunks(deps.storage, tenantId, ver)).chunks;
+  } else {
     if (!Array.isArray(ver.blocks)) {
       throw new NonRetryableError('version has no blocks');
     }
-    const rawChunks = chunkPageBlocks(ver.title, ver.blocks as BlockLike[]);
-    if (rawChunks.length === 0) {
-      throw new NonRetryableError('version has no indexable content');
-    }
+    rawChunks = chunkPageBlocks(ver.title, ver.blocks as BlockLike[]);
+  }
+  if (rawChunks.length === 0) {
+    throw new NonRetryableError('version has no indexable content');
+  }
 
-    const hashes = Array.from(new Set(rawChunks.map((c) => c.contentHash)));
-    const cached = await tx
+  const hashes = Array.from(new Set(rawChunks.map((c) => c.contentHash)));
+  const cached = await withTenantTx(tenantId, (tx) =>
+    tx
       .select({ contentHash: embeddingCache.contentHash, embedding: embeddingCache.embedding })
       .from(embeddingCache)
       .where(
@@ -83,13 +101,8 @@ export async function indexVersion(
           eq(embeddingCache.model, provider.model),
           inArray(embeddingCache.contentHash, hashes)
         )
-      );
-
-    return { ver, rawChunks, cached };
-  });
-
-  if (!prepared) return { outcome: 'skipped', reason: 'not_indexing' };
-  const { ver, rawChunks, cached } = prepared;
+      )
+  );
 
   const embeddingByHash = new Map<string, number[]>(
     cached.map((r) => [r.contentHash, r.embedding])
@@ -201,6 +214,8 @@ export async function indexVersion(
       ordinal: rc.ordinal,
       headingPath: rc.headingPath,
       blockIds: rc.blockIds,
+      pageFrom: rc.pageFrom ?? null,
+      pageTo: rc.pageTo ?? null,
       text: rc.text,
       tokenCount: rc.tokenCount,
       contentHash: rc.contentHash,
