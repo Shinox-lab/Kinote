@@ -137,9 +137,11 @@ describe('review queue: GET /api/v1/reviews', () => {
     expect(item.document).toEqual({
       id: pageId,
       title: 'Onboarding',
+      kind: 'page',
       spaceId: w.handbook.id,
       spaceName: 'Handbook',
     });
+    expect(item.file).toBeNull();
     expect(item.contributors).toEqual([
       { type: 'user', id: w.author.userId, name: 'author', isAgent: false },
     ]);
@@ -152,7 +154,7 @@ describe('review queue: GET /api/v1/reviews', () => {
     await snapshotAs(w.author.headers, pageId);
 
     const [item] = await queue(w.reviewer.headers);
-    expect(Object.keys(item).sort()).toEqual(['canApprove', 'contributors', 'document', 'version']);
+    expect(Object.keys(item).sort()).toEqual(['canApprove', 'contributors', 'document', 'file', 'version']);
     expect(Object.keys(item.version).sort()).toEqual([
       'createdAt',
       'createdBy',
@@ -167,7 +169,7 @@ describe('review queue: GET /api/v1/reviews', () => {
       'reviewedBy',
       'status',
     ]);
-    expect(Object.keys(item.document).sort()).toEqual(['id', 'spaceId', 'spaceName', 'title']);
+    expect(Object.keys(item.document).sort()).toEqual(['id', 'kind', 'spaceId', 'spaceName', 'title']);
     expect(Object.keys(item.contributors[0]).sort()).toEqual(['id', 'isAgent', 'name', 'type']);
   });
 

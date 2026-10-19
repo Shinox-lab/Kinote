@@ -179,7 +179,7 @@ describe('workspace updates feed', () => {
     expect((await updates(w.viewer.headers, '?limit=1')).map((u) => u.document.title)).toEqual(['Shared page']);
   });
 
-  test('archived pages, pages in archived spaces and files are left out', async () => {
+  test('archived pages and pages in archived spaces are left out; a live file is listed with its kind', async () => {
     const live = await createPageAs(w.ownerHeaders, w.handbook.id, 'Live page');
     const gone = await createPageAs(w.ownerHeaders, w.handbook.id, 'Archived page');
     const inArchivedSpace = await createPageAs(w.ownerHeaders, w.secret.id, 'Page in archived space');
@@ -209,8 +209,12 @@ describe('workspace updates feed', () => {
         .where(and(eq(spaces.tenantId, w.tenant.id), eq(spaces.id, w.secret.id)))
     );
 
-    // Not even a tenant admin sees them.
-    expect((await updates(w.ownerHeaders)).map((u) => u.document.title)).toEqual(['Live page']);
+    // Not even a tenant admin sees the archived ones; the live file appears, marked as a file.
+    const feedNow = await updates(w.ownerHeaders);
+    expect(feedNow.map((u) => [u.document.title, u.document.kind])).toEqual([
+      ['Quarterly report.pdf', 'file'],
+      ['Live page', 'page'],
+    ]);
   });
 
   test("another tenant's versions never appear", async () => {
@@ -303,7 +307,7 @@ describe('workspace updates feed', () => {
     expect(Object.keys(item!).sort()).toEqual(
       ['actor', 'createdAt', 'document', 'number', 'reason', 'status', 'versionId']
     );
-    expect(Object.keys(item!.document).sort()).toEqual(['id', 'spaceId', 'spaceName', 'title']);
+    expect(Object.keys(item!.document).sort()).toEqual(['id', 'kind', 'spaceId', 'spaceName', 'title']);
     expect(Object.keys(item!.actor).sort()).toEqual(['id', 'name', 'type']);
     expect(item).toMatchObject({
       versionId,

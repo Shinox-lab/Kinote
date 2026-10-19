@@ -81,7 +81,11 @@ export async function listReviewQueue(actor: Actor, query: unknown): Promise<Rev
         ...versionSummaryColumns,
         documentId: documents.id,
         title: documents.title,
+        kind: documents.kind,
         spaceId: documents.spaceId,
+        fileName: versions.fileName,
+        mimeType: versions.mimeType,
+        sizeBytes: versions.sizeBytes,
         docCreatedByType: documents.createdByType,
         docCreatedBy: documents.createdBy,
       })
@@ -95,7 +99,6 @@ export async function listReviewQueue(actor: Actor, query: unknown): Promise<Rev
           eq(versions.tenantId, actor.tenantId),
           eq(documents.tenantId, actor.tenantId),
           eq(versions.status, 'pending_review'),
-          eq(documents.kind, 'page'),
           isNull(documents.archivedAt),
           inArray(documents.spaceId, [...reviewable.keys()])
         )
@@ -146,7 +149,21 @@ export async function listReviewQueue(actor: Actor, query: unknown): Promise<Rev
       const contributors = byVersion.get(r.id) ?? [];
       return {
         version: toVersionSummary(r),
-        document: { id: r.documentId, title: r.title, spaceId: r.spaceId, spaceName: space.name },
+        document: {
+          id: r.documentId,
+          title: r.title,
+          kind: r.kind,
+          spaceId: r.spaceId,
+          spaceName: space.name,
+        },
+        file:
+          r.kind === 'file'
+            ? {
+                fileName: r.fileName ?? r.title,
+                mimeType: r.mimeType ?? 'application/octet-stream',
+                sizeBytes: r.sizeBytes ?? 0,
+              }
+            : null,
         contributors: contributors
           .map((c) => ({
             type: c.type,

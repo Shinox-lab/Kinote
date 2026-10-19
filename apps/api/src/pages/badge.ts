@@ -118,3 +118,49 @@ export function pageAttention(
   }
   return null;
 }
+
+export interface FileBadgeInput {
+  latestVersion: { number: number; status: string; hasText: boolean } | null;
+  indexedVersion: { number: number } | null;
+  sourceDeleted: boolean;
+  placement: 'pinned' | 'synced';
+}
+
+/**
+ * The status line of a file, from its versions alone (a file has no live text).
+ * First match wins: removed at source (a synced file; a pinned one stays
+ * withdrawn), withdrawn, failed (in extraction or in indexing), reading its
+ * text, indexing, awaiting approval or rejected (naming the version still
+ * answering when there is one), stored without text, else the indexed version.
+ */
+export function computeFileBadge(input: FileBadgeInput): string {
+  const { latestVersion: latest, indexedVersion: indexed } = input;
+  if (input.sourceDeleted && input.placement === 'synced') return 'Removed at source';
+  const indexedLine = indexed ? `Indexed · v${indexed.number}` : null;
+  switch (latest?.status) {
+    case 'withdrawn':
+      return 'Withdrawn';
+    case 'failed':
+      return latest.hasText ? 'Index failed' : 'Extraction failed';
+    case 'extracting':
+      return 'Reading text…';
+    case 'indexing':
+      return 'Indexing…';
+    case 'pending_review':
+      return indexedLine ? `${indexedLine}, v${latest.number} awaiting approval` : 'Not indexed (awaiting approval)';
+    case 'rejected':
+      return indexedLine ? `${indexedLine}, v${latest.number} rejected` : `Not indexed · v${latest.number} rejected`;
+    case 'stored':
+      return 'Stored · no searchable text';
+    default:
+      return indexedLine ?? 'Not indexed';
+  }
+}
+
+/** The sidebar dot of a file: failed, or waiting for review. A file is never "being edited". */
+export function fileAttention(input: Pick<FileBadgeInput, 'latestVersion'>): 'failed' | 'review' | null {
+  const status = input.latestVersion?.status;
+  if (status === 'failed') return 'failed';
+  if (status === 'pending_review') return 'review';
+  return null;
+}

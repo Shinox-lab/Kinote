@@ -36,7 +36,7 @@ import {
   type AcceptInvitationResponse,
 } from '@living-wiki/contracts';
 import { sha256Hex } from '@living-wiki/shared';
-import { pageAttention } from '../pages/badge.js';
+import { fileAttention, pageAttention } from '../pages/badge.js';
 import {
   requireSpaceRole,
   getReadableSpaceIds,
@@ -335,24 +335,32 @@ async function listTreeNodes(
         kind: r.kind,
         title: r.title,
         slug: r.slug,
-        // Files and archived documents carry no dot.
-        attention:
-          archived || r.kind !== 'page' || r.liveUpdatedAt === null
-            ? null
-            : pageAttention(
-                {
-                  liveChangedSinceSnapshot: r.liveChangedSinceSnapshot ?? false,
-                  liveUpdatedAt: r.liveUpdatedAt,
-                  agentChangedAt: r.agentChangedAt,
-                  spaceReviewRequired: space.reviewRequired,
-                  latestVersion:
-                    r.latestNumber !== null && r.latestStatus !== null
-                      ? { number: r.latestNumber, status: r.latestStatus }
-                      : null,
-                  indexedVersion: r.indexedNumber !== null ? { number: r.indexedNumber } : null,
-                },
-                now
-              ),
+        // Archived documents carry no dot; a file's dot comes from its latest version alone.
+        attention: archived
+          ? null
+          : r.kind === 'file'
+            ? fileAttention({
+                latestVersion:
+                  r.latestNumber !== null && r.latestStatus !== null
+                    ? { number: r.latestNumber, status: r.latestStatus, hasText: true }
+                    : null,
+              })
+            : r.liveUpdatedAt === null
+              ? null
+              : pageAttention(
+                  {
+                    liveChangedSinceSnapshot: r.liveChangedSinceSnapshot ?? false,
+                    liveUpdatedAt: r.liveUpdatedAt,
+                    agentChangedAt: r.agentChangedAt,
+                    spaceReviewRequired: space.reviewRequired,
+                    latestVersion:
+                      r.latestNumber !== null && r.latestStatus !== null
+                        ? { number: r.latestNumber, status: r.latestStatus }
+                        : null,
+                    indexedVersion: r.indexedNumber !== null ? { number: r.indexedNumber } : null,
+                  },
+                  now
+                ),
       })),
     };
   });

@@ -412,9 +412,14 @@ export const ReviewItemSchema = z.object({
   document: z.object({
     id: z.string().uuid(),
     title: z.string(),
+    kind: z.enum(['page', 'file']),
     spaceId: z.string().uuid(),
     spaceName: z.string(),
   }),
+  /** What was uploaded, for a file; null for a page. */
+  file: z
+    .object({ fileName: z.string(), mimeType: z.string(), sizeBytes: z.number().int().nonnegative() })
+    .nullable(),
   contributors: z.array(VersionContributorSchema),
   canApprove: z.boolean(),
 });
@@ -444,6 +449,7 @@ export const UpdateItemSchema = z.object({
   document: z.object({
     id: z.string().uuid(),
     title: z.string(),
+    kind: z.enum(['page', 'file']),
     spaceId: z.string().uuid(),
     spaceName: z.string(),
   }),
@@ -537,8 +543,8 @@ export type Attention = z.infer<typeof AttentionSchema>;
 /**
  * One document in a space's tree (or archived list), as
  * GET /api/v1/spaces/:id/tree and /archived list them. `slug` is null for a
- * document that is not a page (files). `attention` is null for files and in
- * the archived list.
+ * document that is not a page (files). `attention` is null in the archived
+ * list; a file's dot is `failed` or `review`, never `editing`.
  */
 export const TreeNodeSchema = z.object({
   id: z.string().uuid(),

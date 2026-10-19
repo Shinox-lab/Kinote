@@ -188,6 +188,7 @@ describe('web api client', () => {
       document: {
         id: '8d1c2b0e-6d2c-4a52-9c83-8f1f7c2b1a55',
         title: 'Leave policy',
+        kind: 'page',
         spaceId: '8d1c2b0e-6d2c-4a52-9c83-8f1f7c2b1a66',
         spaceName: 'Handbook',
       },

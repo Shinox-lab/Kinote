@@ -29,9 +29,9 @@ async function readableSpaces(tx: DbTransaction, actor: Actor): Promise<Readable
 }
 
 /**
- * GET /api/v1/updates?limit=: the newest versions of pages across the spaces
- * the actor can read, for the sidebar's Updates section. Archived pages and
- * archived spaces never appear (not even for admins), nor do files; the
+ * GET /api/v1/updates?limit=: the newest versions of pages and files across
+ * the spaces the actor can read, for the sidebar's Updates section. Archived
+ * documents and archived spaces never appear (not even for admins); the
  * Inbox's per-item rule applies in the query itself (a document there is
  * visible to its creator and to tenant owners and admins), so hidden rows never
  * shorten the page of results. The actor is the version's creator: a member or
@@ -72,6 +72,7 @@ export async function listUpdates(actor: Actor, query: unknown): Promise<UpdateI
         actorId: versions.createdBy,
         documentId: documents.id,
         title: documents.title,
+        kind: documents.kind,
         spaceId: documents.spaceId,
       })
       .from(versions)
@@ -83,7 +84,6 @@ export async function listUpdates(actor: Actor, query: unknown): Promise<UpdateI
         and(
           eq(versions.tenantId, actor.tenantId),
           eq(documents.tenantId, actor.tenantId),
-          eq(documents.kind, 'page'),
           isNull(documents.archivedAt),
           inArray(versions.status, [...SHOWN_STATUSES]),
           or(...scopes)
@@ -109,6 +109,7 @@ export async function listUpdates(actor: Actor, query: unknown): Promise<UpdateI
       document: {
         id: r.documentId,
         title: r.title,
+        kind: r.kind,
         spaceId: r.spaceId,
         spaceName: byId.get(r.spaceId)!.name,
       },
