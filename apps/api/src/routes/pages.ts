@@ -926,11 +926,18 @@ export async function retryVersion(actor: Actor, versionId: string): Promise<Ret
     }
     await requireDocumentRole(tx, actor, doc, 'editor', { notFound: 'version_not_found' });
     if (doc.archivedAt) {
-      throw new AppError('page_archived', 'Page is archived.');
+      throw doc.kind === 'file'
+        ? new AppError('page_archived', 'This file is archived. Restore it before making changes.')
+        : new AppError('page_archived', 'Page is archived.');
     }
 
     const [ver] = await tx
-      .select({ id: versions.id, number: versions.number, status: versions.status })
+      .select({
+        id: versions.id,
+        number: versions.number,
+        status: versions.status,
+        extractedKey: versions.extractedKey,
+      })
       .from(versions)
       .where(and(eq(versions.tenantId, actor.tenantId), eq(versions.id, versionId)))
       .for('update');
@@ -941,9 +948,12 @@ export async function retryVersion(actor: Actor, versionId: string): Promise<Ret
       throw new AppError('version_not_failed');
     }
 
+    // A file whose text was never read goes back to extraction; everything else to indexing.
+    const reextract = doc.kind === 'file' && ver.extractedKey === null;
+
     const [updated] = await tx
       .update(versions)
-      .set({ status: 'indexing', error: null })
+      .set({ status: reextract ? 'extracting' : 'indexing', error: null })
       .where(
         and(
           eq(versions.tenantId, actor.tenantId),
@@ -955,8 +965,8 @@ export async function retryVersion(actor: Actor, versionId: string): Promise<Ret
 
     await enqueueJob(tx, {
       tenantId: actor.tenantId,
-      queue: 'version.index',
-      idempotencyKey: `index:${ver.id}`,
+      queue: reextract ? 'file.extract' : 'version.index',
+      idempotencyKey: `${reextract ? 'extract' : 'index'}:${ver.id}`,
       payload: { versionId: ver.id },
     });
 

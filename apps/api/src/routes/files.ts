@@ -6,6 +6,7 @@ import {
   documents,
   spaces,
   versions,
+  chunks,
   writeAuditEvent,
   lockDocument,
   type DbTransaction,
@@ -13,7 +14,9 @@ import {
 } from '@living-wiki/db';
 import {
   AppError,
+  MoveFileRequestSchema,
   UploadFileFieldsSchema,
+  type DocumentSummary,
   type FileVersion,
   type UploadFileResponse,
 } from '@living-wiki/contracts';
@@ -21,8 +24,10 @@ import {
   requireSpaceRole,
   requireDocumentRole,
   assertValidUuid,
+  chunkInboxOwner,
   cleanFileName,
   detectFileType,
+  isTenantAdmin,
   fileObjectPath,
   insertFileVersion,
   type Actor,
@@ -30,7 +35,12 @@ import {
   type VersionRow,
 } from '@living-wiki/core';
 import type { ObjectStorage } from '@living-wiki/shared';
-import { requireVisibleParent } from '../documents/lifecycle.js';
+import {
+  requireVisibleParent,
+  returnToReview,
+  withdrawLiveVersions,
+  wouldCreateCycle,
+} from '../documents/lifecycle.js';
 import { toDocumentSummary, toVersionSummary } from './pages.js';
 
 /** What the file routes need besides the database. */
@@ -372,4 +382,212 @@ export async function readMultipartUpload(
   }
   if (!file) throw new AppError('validation_failed');
   return { fields, file };
+}
+
+const fileArchived = () =>
+  new AppError('page_archived', 'This file is archived. Restore it before making changes.');
+
+/**
+ * Locks a file's document row (the first statement of every writer that
+ * changes what a file publishes). Unknown, other-tenant and non-file
+ * documents answer 404 `document_not_found`.
+ */
+async function lockFile(tx: DbTransaction, tenantId: string, fileId: string): Promise<DocumentRow> {
+  const doc = await lockDocument(tx, tenantId, fileId);
+  if (doc.kind !== 'file') throw new AppError('document_not_found');
+  return doc;
+}
+
+/**
+ * Moves a file (editor on both the source and the target space) the way
+ * `movePage` moves a page, without slugs. A move pins the file. A cross-space
+ * move into a review space by someone who does not review there sends the
+ * indexed version back to review; any other cross-space move updates
+ * `chunks.space_id` and `chunks.inbox_owner` in place. The target parent must
+ * be a live page of the target space the actor can see (404 `parent_not_found`);
+ * only the creator or a tenant admin may move a file into the Inbox.
+ */
+export async function moveFile(actor: Actor, fileId: string, input: unknown): Promise<DocumentSummary> {
+  assertValidUuid(fileId, 'document_not_found');
+  const parsed = MoveFileRequestSchema.parse(input);
+
+  return withTenantTx(actor.tenantId, async (tx) => {
+    const doc = await lockFile(tx, actor.tenantId, fileId);
+    await requireDocumentRole(tx, actor, doc, 'editor', { notFound: 'document_not_found' });
+    if (doc.archivedAt) throw fileArchived();
+    const { space: targetSpace, effectiveRole: targetRole } = await requireSpaceRole(
+      tx,
+      actor,
+      parsed.target_space_id,
+      'editor',
+      { lock: 'share' }
+    );
+    if (
+      targetSpace.kind === 'inbox' &&
+      !isTenantAdmin(actor) &&
+      !(doc.createdByType === actor.principalType && doc.createdBy === actor.principalId)
+    ) {
+      throw new AppError('forbidden', 'Only the creator of a file can move it into the Inbox.');
+    }
+    if (parsed.target_parent_id) {
+      await requireVisibleParent(tx, actor, parsed.target_parent_id, parsed.target_space_id);
+      if (await wouldCreateCycle(tx, actor.tenantId, fileId, parsed.target_parent_id)) {
+        throw new AppError('parent_cycle');
+      }
+    }
+
+    const crossSpace = doc.spaceId !== parsed.target_space_id;
+    const isTargetReviewer = targetRole === 'reviewer' || targetRole === 'admin';
+    let nextIndexedVersionId = doc.indexedVersionId;
+    if (crossSpace) {
+      if (targetSpace.reviewRequired && !isTargetReviewer) {
+        await returnToReview(tx, actor.tenantId, doc);
+        nextIndexedVersionId = null;
+      } else {
+        await tx
+          .update(chunks)
+          .set({
+            spaceId: parsed.target_space_id,
+            inboxOwner: chunkInboxOwner(targetSpace.kind, doc),
+          })
+          .where(and(eq(chunks.tenantId, actor.tenantId), eq(chunks.documentId, fileId)));
+      }
+    }
+
+    const [updated] = await tx
+      .update(documents)
+      .set({
+        spaceId: parsed.target_space_id,
+        parentId: parsed.target_parent_id,
+        position: parsed.position,
+        placement: 'pinned',
+        indexedVersionId: nextIndexedVersionId,
+      })
+      .where(and(eq(documents.tenantId, actor.tenantId), eq(documents.id, fileId)))
+      .returning();
+
+    await writeAuditEvent(tx, {
+      tenantId: actor.tenantId,
+      type: 'file.moved',
+      actorType: actor.principalType,
+      actorId: actor.principalId,
+      subjectType: 'file',
+      subjectId: fileId,
+      payload: {
+        fromSpaceId: doc.spaceId,
+        toSpaceId: parsed.target_space_id,
+        parentId: parsed.target_parent_id,
+      },
+    });
+    return toDocumentSummary(updated!);
+  });
+}
+
+/**
+ * Takes a file out of the index (reviewer; no approval needed): every extracting,
+ * indexed, indexing, failed or waiting version becomes `withdrawn`, the chunks
+ * are deleted and `indexed_version_id` cleared, in one transaction under the
+ * document lock, so search stops returning it at once.
+ */
+export async function withdrawFile(actor: Actor, fileId: string): Promise<DocumentSummary> {
+  assertValidUuid(fileId, 'document_not_found');
+  return withTenantTx(actor.tenantId, async (tx) => {
+    const doc = await lockFile(tx, actor.tenantId, fileId);
+    await requireDocumentRole(tx, actor, doc, 'reviewer', { notFound: 'document_not_found' });
+    await withdrawLiveVersions(tx, actor.tenantId, fileId);
+    const [updated] = await tx
+      .update(documents)
+      .set({ indexedVersionId: null })
+      .where(and(eq(documents.tenantId, actor.tenantId), eq(documents.id, fileId)))
+      .returning();
+    await writeAuditEvent(tx, {
+      tenantId: actor.tenantId,
+      type: 'file.withdrawn',
+      actorType: actor.principalType,
+      actorId: actor.principalId,
+      subjectType: 'file',
+      subjectId: fileId,
+    });
+    return toDocumentSummary(updated!);
+  });
+}
+
+/** Archives a file (space admin): withdrawn from the index, chunks deleted, `archived_at` set. */
+export async function archiveFile(actor: Actor, fileId: string): Promise<DocumentSummary> {
+  assertValidUuid(fileId, 'document_not_found');
+  return withTenantTx(actor.tenantId, async (tx) => {
+    const doc = await lockFile(tx, actor.tenantId, fileId);
+    await requireDocumentRole(tx, actor, doc, 'admin', { notFound: 'document_not_found' });
+    const [liveChild] = await tx
+      .select({ id: documents.id })
+      .from(documents)
+      .where(
+        and(
+          eq(documents.tenantId, actor.tenantId),
+          eq(documents.parentId, fileId),
+          isNull(documents.archivedAt)
+        )
+      )
+      .limit(1);
+    if (liveChild) throw new AppError('has_children', 'Cannot archive a file while active child documents exist.');
+    await withdrawLiveVersions(tx, actor.tenantId, fileId);
+    const [updated] = await tx
+      .update(documents)
+      .set({ archivedAt: new Date(), indexedVersionId: null })
+      .where(and(eq(documents.tenantId, actor.tenantId), eq(documents.id, fileId)))
+      .returning();
+    await writeAuditEvent(tx, {
+      tenantId: actor.tenantId,
+      type: 'file.archived',
+      actorType: actor.principalType,
+      actorId: actor.principalId,
+      subjectType: 'file',
+      subjectId: fileId,
+    });
+    return toDocumentSummary(updated!);
+  });
+}
+
+/**
+ * Restores an archived file (space admin). The file comes back withdrawn (its
+ * versions stay `withdrawn`; uploading it again goes through review and
+ * indexing). A parent that is archived or no longer a page of the same space
+ * is dropped: the file returns at the top of the space.
+ */
+export async function restoreFile(actor: Actor, fileId: string): Promise<DocumentSummary> {
+  assertValidUuid(fileId, 'document_not_found');
+  return withTenantTx(actor.tenantId, async (tx) => {
+    const doc = await lockFile(tx, actor.tenantId, fileId);
+    await requireDocumentRole(tx, actor, doc, 'admin', {
+      notFound: 'document_not_found',
+      lock: 'share',
+    });
+    if (!doc.archivedAt) return toDocumentSummary(doc);
+
+    let parentId = doc.parentId;
+    if (parentId) {
+      const [parent] = await tx
+        .select({ spaceId: documents.spaceId, kind: documents.kind, archivedAt: documents.archivedAt })
+        .from(documents)
+        .where(and(eq(documents.tenantId, actor.tenantId), eq(documents.id, parentId)));
+      if (!parent || parent.archivedAt !== null || parent.kind !== 'page' || parent.spaceId !== doc.spaceId) {
+        parentId = null;
+      }
+    }
+    const [updated] = await tx
+      .update(documents)
+      .set({ archivedAt: null, parentId })
+      .where(and(eq(documents.tenantId, actor.tenantId), eq(documents.id, fileId)))
+      .returning();
+    await writeAuditEvent(tx, {
+      tenantId: actor.tenantId,
+      type: 'file.restored',
+      actorType: actor.principalType,
+      actorId: actor.principalId,
+      subjectType: 'file',
+      subjectId: fileId,
+      payload: { parentId },
+    });
+    return toDocumentSummary(updated!);
+  });
 }

@@ -85,7 +85,15 @@ import {
   getVersionDiff,
 } from './routes/pages.js';
 import { listReviewQueue } from './routes/reviews.js';
-import { readMultipartUpload, replaceFile, uploadFile } from './routes/files.js';
+import {
+  archiveFile,
+  moveFile,
+  readMultipartUpload,
+  replaceFile,
+  restoreFile,
+  uploadFile,
+  withdrawFile,
+} from './routes/files.js';
 import { listUpdates } from './routes/updates.js';
 import { authRoutes, type AuthRateLimit } from './routes/auth.js';
 import { requireSession, resolveActor, type AuthSession } from './auth/actor.js';
@@ -443,6 +451,26 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
     return reply
       .status(out.status === 'created' ? 201 : 200)
       .send(parseReply(UploadFileResponseSchema, out.response));
+  });
+
+  app.post('/api/v1/files/:id/move', async (req, reply) => {
+    const res = await moveFile(actorOf(req), (req.params as any).id, req.body);
+    return reply.send(parseReply(DocumentSummarySchema, res));
+  });
+
+  app.post('/api/v1/files/:id/archive', async (req, reply) => {
+    const res = await archiveFile(actorOf(req), (req.params as any).id);
+    return reply.send(parseReply(DocumentSummarySchema, res));
+  });
+
+  app.post('/api/v1/files/:id/restore', async (req, reply) => {
+    const res = await restoreFile(actorOf(req), (req.params as any).id);
+    return reply.send(parseReply(DocumentSummarySchema, res));
+  });
+
+  app.post('/api/v1/files/:id/withdraw', async (req, reply) => {
+    const res = await withdrawFile(actorOf(req), (req.params as any).id);
+    return reply.send(parseReply(DocumentSummarySchema, res));
   });
 
   app.get('/api/v1/updates', async (req, reply) => {
