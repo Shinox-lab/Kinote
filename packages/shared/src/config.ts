@@ -52,6 +52,26 @@ export const ConfigSchema = z.object({
   S3_ACCESS_KEY: z.string().min(1).optional(),
   S3_SECRET_KEY: z.string().min(1).optional(),
   S3_REGION: z.string().min(1).default('us-east-1'),
+  /** Largest file the api accepts, in bytes (default 50 MB; at most 500 MB). */
+  MAX_UPLOAD_BYTES: z.coerce.number().int().positive().max(524_288_000).default(52_428_800),
+  /** Most text, in characters, one file may yield; more fails the file (never truncated). */
+  MAX_EXTRACTED_CHARS: z.coerce.number().int().positive().default(2_000_000),
+  /** `off`: only text files can be read; `fake`: tests and local e2e; `http`: the Docling service. */
+  EXTRACTOR_MODE: z.enum(['off', 'fake', 'http']).default('off'),
+  EXTRACTOR_URL: z.string().min(1).optional(),
+  /**
+   * How long the worker waits for the extractor. Kept under the worker's job
+   * lease (300 s), so a slow file is not claimed and run a second time.
+   */
+  EXTRACTOR_TIMEOUT_MS: z.coerce.number().int().positive().max(270_000).default(240_000),
+}).superRefine((value, ctx) => {
+  if (value.EXTRACTOR_MODE === 'http' && !value.EXTRACTOR_URL) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['EXTRACTOR_URL'],
+      message: 'is required when EXTRACTOR_MODE is http',
+    });
+  }
 });
 
 export type Config = z.infer<typeof ConfigSchema>;

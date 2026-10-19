@@ -122,6 +122,15 @@ Ports and timings come from the environment: `E2E_API_PORT` (18787),
 is left running after the run. The specs submit pages explicitly, so they do not
 wait for a space's quiet window (a space setting, 10 s at least).
 
+## Files
+
+Uploads are limited by `MAX_UPLOAD_BYTES` (default 50 MB). The worker reads TXT, MD and CSV itself; PDF, Office files and
+images go to the extractor service. `EXTRACTOR_MODE` is `off` by default: a file that needs the extractor then waits and
+fails with a plain sentence after its retries, and **Retry** recovers it once the extractor is up. `EXTRACTOR_MODE=http`
+with `EXTRACTOR_URL` points the worker at the Docling service (compose profile `extractor`). `EXTRACTOR_TIMEOUT_MS`
+(default 240 s, at most 270 s) stays below the worker's 300 s job lease. Extracted text above `MAX_EXTRACTED_CHARS`
+fails the file with a sentence; it is never truncated. The api and worker create the S3 bucket at start when it is missing.
+
 ## Database client
 
 `initDb({ url })` creates one pool per process. Calling it again replaces the

@@ -34,6 +34,12 @@ x-app-env: &app-env
   S3_ACCESS_KEY: ${S3_ACCESS_KEY:?set S3_ACCESS_KEY}
   S3_SECRET_KEY: ${S3_SECRET_KEY:?set S3_SECRET_KEY}
   S3_REGION: us-east-1
+  # Files: size limit, extractor mode (off | fake | http; http needs the `extractor` profile).
+  MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-52428800}
+  MAX_EXTRACTED_CHARS: ${MAX_EXTRACTED_CHARS:-2000000}
+  EXTRACTOR_MODE: ${EXTRACTOR_MODE:-off}
+  EXTRACTOR_URL: ${EXTRACTOR_URL:-}
+  EXTRACTOR_TIMEOUT_MS: ${EXTRACTOR_TIMEOUT_MS:-240000}
 
 services:
   postgres:

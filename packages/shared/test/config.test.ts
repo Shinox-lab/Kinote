@@ -67,3 +67,28 @@ describe('loadConfig: HOST', () => {
     expect(loadConfig({ ...base, HOST: '0.0.0.0' }).HOST).toBe('0.0.0.0');
   });
 });
+
+describe('loadConfig: files and the extractor', () => {
+  it('defaults the limits and keeps the extractor off', () => {
+    const config = loadConfig(base);
+    expect(config.MAX_UPLOAD_BYTES).toBe(52_428_800);
+    expect(config.MAX_EXTRACTED_CHARS).toBe(2_000_000);
+    expect(config.EXTRACTOR_MODE).toBe('off');
+    expect(config.EXTRACTOR_TIMEOUT_MS).toBe(240_000);
+  });
+
+  it('needs EXTRACTOR_URL when the extractor mode is http', () => {
+    expect(() => loadConfig({ ...base, EXTRACTOR_MODE: 'http' })).toThrow(/EXTRACTOR_URL/);
+    const config = loadConfig({ ...base, EXTRACTOR_MODE: 'http', EXTRACTOR_URL: 'http://extractor:8000' });
+    expect(config.EXTRACTOR_URL).toBe('http://extractor:8000');
+  });
+
+  it('keeps the extractor timeout under the worker lease', () => {
+    expect(() => loadConfig({ ...base, EXTRACTOR_TIMEOUT_MS: '300000' })).toThrow(/EXTRACTOR_TIMEOUT_MS/);
+    expect(loadConfig({ ...base, EXTRACTOR_TIMEOUT_MS: '270000' }).EXTRACTOR_TIMEOUT_MS).toBe(270_000);
+  });
+
+  it('refuses a zero upload limit', () => {
+    expect(() => loadConfig({ ...base, MAX_UPLOAD_BYTES: '0' })).toThrow(/MAX_UPLOAD_BYTES/);
+  });
+});

@@ -1,5 +1,7 @@
 import {
+  CreateBucketCommand,
   DeleteObjectCommand,
+  HeadBucketCommand,
   GetObjectCommand,
   PutObjectCommand,
   S3Client,
@@ -111,6 +113,18 @@ export class S3ObjectStorage implements ObjectStorage {
     });
   }
 
+  /** Creates the bucket when it does not exist yet (a fresh MinIO has none). Safe to call on every start. */
+  async ensureBucket(): Promise<void> {
+    try {
+      await this.client.send(new HeadBucketCommand({ Bucket: this.bucket }));
+    } catch (err) {
+      const status = (err as { $metadata?: { httpStatusCode?: number } }).$metadata?.httpStatusCode;
+      const name = (err as { name?: unknown }).name;
+      if (status !== 404 && name !== 'NotFound' && name !== 'NoSuchBucket') throw err;
+      await this.client.send(new CreateBucketCommand({ Bucket: this.bucket }));
+    }
+  }
+
   async put(tenantId: string, relativePath: string, bytes: Uint8Array, mimeType: string) {
     const objectKey = buildKey(tenantId, relativePath);
     await this.client.send(
@@ -149,4 +163,30 @@ export class S3ObjectStorage implements ObjectStorage {
     // S3 DeleteObject succeeds for a missing key, matching the no-op contract.
     await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: objectKey }));
   }
+}
+
+/**
+ * S3 storage from the service environment. Names every missing variable (never
+ * a value). The endpoint is optional: without it the AWS default is used.
+ */
+export function createObjectStorage(config: {
+  S3_ENDPOINT?: string;
+  S3_BUCKET?: string;
+  S3_ACCESS_KEY?: string;
+  S3_SECRET_KEY?: string;
+  S3_REGION?: string;
+}): S3ObjectStorage {
+  const missing = (['S3_BUCKET', 'S3_ACCESS_KEY', 'S3_SECRET_KEY'] as const).filter(
+    (name) => !config[name]
+  );
+  if (missing.length > 0) {
+    throw new Error(`Object storage is not configured: ${missing.join(', ')} (missing)`);
+  }
+  return new S3ObjectStorage({
+    endpoint: config.S3_ENDPOINT,
+    bucket: config.S3_BUCKET!,
+    accessKey: config.S3_ACCESS_KEY!,
+    secretKey: config.S3_SECRET_KEY!,
+    region: config.S3_REGION ?? 'us-east-1',
+  });
 }

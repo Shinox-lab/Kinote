@@ -153,7 +153,7 @@ swept in Slice 7).
     "Extraction failed after N attempts: …" (the same neutral-text rule as indexing failures). An encrypted or corrupt file
     is a non-retryable failure with its own sentence.
   - `POST /versions/:id/retry` re-runs whichever step failed (extraction if there is no `extracted_key`, else indexing).
-- Job lease and retry timing must outlast the extractor's configured timeout (default 10 minutes), so a slow PDF is not run
+- Job lease and retry timing must outlast the extractor's configured timeout (default 4 minutes, at most 4.5, under the worker's 5-minute lease), so a slow PDF is not run
   twice at once.
 
 ## Indexing and search

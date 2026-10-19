@@ -12,6 +12,7 @@ export { ConfigSchema, DEFAULT_AUTH_RATE_LIMIT_MAX, loadConfig, type Config } fr
 export {
   InMemoryObjectStorage,
   S3ObjectStorage,
+  createObjectStorage,
   assertTenantKey,
   type ObjectStorage,
   type S3ObjectStorageOptions,
