@@ -131,6 +131,7 @@ export function createCollabServer(
 
   const server = new Server<CollabContext>({
     port: 0,
+    ...(deps.address ? { address: deps.address } : {}),
     quiet: true,
     // main.ts owns signal handling (it also closes the database pool).
     stopOnSignals: false,

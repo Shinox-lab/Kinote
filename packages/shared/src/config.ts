@@ -16,16 +16,27 @@ export const ConfigSchema = z.object({
   COLLAB_INTERNAL_URL: z.string().min(1).default('http://127.0.0.1:1234'),
   API_PORT: z.coerce.number().int().min(0).max(65535).default(8787),
   COLLAB_PORT: z.coerce.number().int().min(0).max(65535).default(1234),
-  /** Bind address of the api. */
-  HOST: z.string().min(1).default('0.0.0.0'),
   /**
-   * `true` when the api sits behind a reverse proxy: Fastify then takes the
-   * client IP from X-Forwarded-For, so rate limits key on the real client.
+   * Bind address of the api and collab servers. Loopback by default, so a
+   * service run on the host is not reachable from the network by accident;
+   * docker-compose.yml sets 0.0.0.0 (inside the container) explicitly.
+   */
+  HOST: z.string().min(1).default('127.0.0.1'),
+  /**
+   * Whether the api trusts X-Forwarded-For (the client IP the auth rate limit
+   * keys on). `false` (default): no proxy in front, the header is ignored.
+   * A positive hop count N (recommended behind a proxy): the address N hops
+   * from the right of the header is the client; anything a client put to the
+   * left of it is ignored. `true` trusts every hop, so a client-supplied
+   * X-Forwarded-For picks its own rate-limit bucket. See docs/operations.md.
    */
   TRUST_PROXY: z
-    .enum(['true', 'false'])
+    .string()
     .default('false')
-    .transform((v) => v === 'true'),
+    .refine((v) => v === 'true' || v === 'false' || /^[1-9][0-9]{0,2}$/.test(v), {
+      message: 'must be true, false or a hop count from 1 to 999',
+    })
+    .transform((v): boolean | number => (v === 'true' ? true : v === 'false' ? false : Number(v))),
   /**
    * Per-IP sign-up and sign-in attempts per minute (each route counted
    * separately). Capped so a typo (an extra zero, a byte count) cannot turn the

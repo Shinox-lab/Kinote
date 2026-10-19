@@ -6,6 +6,8 @@ export interface CollabServerDeps {
   collabTokenSecret: string;
   /** Shared secret for the API-to-collab internal endpoints (`x-internal-secret`). */
   internalSecret: string;
+  /** Bind address of the HTTP server (HOST); defaults to every interface. */
+  address?: string;
   /** Store debounce; defaults to 1000 ms. */
   debounceMs?: number;
   /** Longest a busy document waits for a store; defaults to 5000 ms. */

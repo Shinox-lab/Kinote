@@ -40,3 +40,30 @@ describe('loadConfig: logging', () => {
     expect(() => loadConfig({ ...base, LOG_LEVEL: 'verbose' })).toThrow(/LOG_LEVEL/);
   });
 });
+
+describe('loadConfig: TRUST_PROXY', () => {
+  it('defaults to false and keeps true/false working', () => {
+    expect(loadConfig(base).TRUST_PROXY).toBe(false);
+    expect(loadConfig({ ...base, TRUST_PROXY: 'false' }).TRUST_PROXY).toBe(false);
+    expect(loadConfig({ ...base, TRUST_PROXY: 'true' }).TRUST_PROXY).toBe(true);
+  });
+
+  it('takes a positive hop count as a number', () => {
+    expect(loadConfig({ ...base, TRUST_PROXY: '1' }).TRUST_PROXY).toBe(1);
+    expect(loadConfig({ ...base, TRUST_PROXY: '2' }).TRUST_PROXY).toBe(2);
+    expect(loadConfig({ ...base, TRUST_PROXY: '12' }).TRUST_PROXY).toBe(12);
+  });
+
+  it('refuses 0, negative, fractional and garbage values', () => {
+    for (const value of ['0', '-1', '1.5', '01', '1e1', 'yes', 'TRUE', ' 1', '10.0.0.1', 'abc']) {
+      expect(() => loadConfig({ ...base, TRUST_PROXY: value }), value).toThrow(/TRUST_PROXY/);
+    }
+  });
+});
+
+describe('loadConfig: HOST', () => {
+  it('binds to loopback by default (compose sets 0.0.0.0 explicitly)', () => {
+    expect(loadConfig(base).HOST).toBe('127.0.0.1');
+    expect(loadConfig({ ...base, HOST: '0.0.0.0' }).HOST).toBe('0.0.0.0');
+  });
+});

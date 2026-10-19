@@ -97,9 +97,11 @@ export interface ApiServerOptions {
   /**
    * Trust X-Forwarded-For from a reverse proxy, so `req.ip` (and the per-IP
    * auth rate limit) is the real client address. Default false: without a
-   * proxy in front the header is client-controlled and must be ignored.
+   * proxy in front the header is client-controlled and must be ignored. A
+   * hop count trusts exactly that many proxies (the recommended form); `true`
+   * trusts every hop, including a forged leftmost entry. TRUST_PROXY in config.
    */
-  trustProxy?: boolean;
+  trustProxy?: boolean | number;
   /**
    * The collab server's internal endpoints. A manual snapshot flushes the
    * live document through it first. Production always passes one (main.ts);

@@ -27,9 +27,10 @@ async function main(): Promise<void> {
   const collab = createCollabServer({
     collabTokenSecret: config.COLLAB_TOKEN_SECRET,
     internalSecret: config.INTERNAL_SECRET,
+    address: config.HOST,
   });
   await collab.server.listen(config.COLLAB_PORT);
-  console.log(`collab listening on port ${config.COLLAB_PORT}`);
+  console.log(`collab listening on ${config.HOST}:${config.COLLAB_PORT}`);
 
   let stopping = false;
   const shutdown = async (): Promise<void> => {

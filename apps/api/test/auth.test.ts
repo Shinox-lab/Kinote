@@ -310,6 +310,25 @@ describe('sessions and the database-derived actor', () => {
     }
   });
 
+  test('a hop count trusts only that many proxies: a spoofed leftmost X-Forwarded-For is ignored', async () => {
+    // One trusted proxy appends the real client address; whatever the client
+    // put before it is not trusted, so it cannot pick a fresh rate-limit bucket.
+    const attempt = (spoofed: string) =>
+      oneHop.inject({
+        method: 'POST',
+        url: '/api/v1/auth/sign-in',
+        headers: { 'x-forwarded-for': `${spoofed}, 198.51.100.7` },
+        payload: { email: 'nobody@example.test', password: 'not-the-password' },
+      });
+    const oneHop = buildApiServer({ authRateLimit: { max: 1, timeWindow: '1 minute' }, trustProxy: 1 });
+    try {
+      assert.equal((await attempt('203.0.113.1')).statusCode, 401);
+      assert.equal((await attempt('203.0.113.2')).statusCode, 429);
+    } finally {
+      await oneHop.close();
+    }
+  });
+
   test('GET /api/v1/me lists every tenant the user belongs to, with roles, via my_tenants', async () => {
     const a = await bootstrapTenant(app, { name: 'Tenant A', slug: 'tenant-a' });
     const b = await bootstrapTenant(app, { name: 'Tenant B', slug: 'tenant-b' });

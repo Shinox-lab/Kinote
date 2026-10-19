@@ -52,6 +52,27 @@ pnpm stack:down                # docker compose down -v: containers and data are
 Database and object data live in anonymous volumes: they survive
 `docker compose restart` and `stop`/`start`, and `down -v` deletes them.
 
+## Behind a reverse proxy
+
+The api keys the sign-up and sign-in rate limit on the client IP. Behind a
+proxy that IP comes from `X-Forwarded-For`, and `TRUST_PROXY` says how much of
+that header to believe:
+
+| `TRUST_PROXY` | Client IP | Use |
+| --- | --- | --- |
+| `false` (default) | the TCP peer; the header is ignored | no proxy in front. Behind a proxy every user shares the proxy's bucket. |
+| `1`, `2`, ... (hop count) | the address that many hops from the right of the header | **recommended** behind a proxy: the number of proxies in front of the api. |
+| `true` | the leftmost address | avoid: a client-supplied `X-Forwarded-For` is trusted, so a client can pick a fresh rate-limit bucket per request and evade the limit. |
+
+The edge proxy must overwrite `X-Forwarded-For` or append the address it saw
+(nginx `proxy_add_x_forwarded_for`, Caddy and most load balancers do), never
+pass a client's header through unchanged as the last entry.
+
+The edge must also not expose the collab server's internal endpoints: block
+`/internal/*` on the public collab host (only the api calls them, over the
+internal network), and never hand `INTERNAL_SECRET` to anything outside the
+api and collab services. The secret is the only barrier on those paths.
+
 ## End-to-end specs
 
 `playwright.config.ts` runs the specs in `e2e/` (Chromium; install it once with
