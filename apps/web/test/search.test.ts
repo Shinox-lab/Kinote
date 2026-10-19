@@ -11,6 +11,9 @@ const cite = (n: number, citeAs: string): AskCitation => ({
   versionNumber: n,
   chunkId: uuid(200 + n),
   blockIds: [],
+  documentKind: 'page',
+  pageFrom: null,
+  pageTo: null,
   quote: 'q',
 });
 

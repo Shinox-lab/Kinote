@@ -106,6 +106,9 @@ export function searchSql(
       c.text,
       c.heading_path,
       c.block_ids,
+      c.page_from,
+      c.page_to,
+      d.kind AS document_kind,
       ver.title AS version_title,
       ver.number AS version_number,
       to_char(ver.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS updated_date,
@@ -113,6 +116,7 @@ export function searchSql(
     FROM top
     JOIN chunks c ON c.id = top.chunk_id AND c.tenant_id = NULLIF(${f.tenantId}, '')::uuid
     JOIN versions ver ON ver.id = c.version_id AND ver.tenant_id = c.tenant_id
+    JOIN documents d ON d.id = c.document_id AND d.tenant_id = c.tenant_id
     ORDER BY top.rrf_score DESC, c.id
   `;
 }
@@ -145,6 +149,9 @@ export async function searchWiki(
     text: r.text,
     headingPath: r.heading_path,
     blockIds: r.block_ids,
+    documentKind: r.document_kind,
+    pageFrom: r.page_from === null ? null : Number(r.page_from),
+    pageTo: r.page_to === null ? null : Number(r.page_to),
     citeAs: `${r.version_title} (v${r.version_number}, updated ${r.updated_date})`,
     rrfScore: Number(r.rrf_score),
   }));

@@ -591,6 +591,10 @@ export const SearchPassageSchema = z.object({
   text: z.string(),
   headingPath: z.array(z.string()),
   blockIds: z.array(z.string()),
+  /** Whether the passage is from a page or an uploaded file; for a file, the pages (or sheets or slides) it spans. */
+  documentKind: z.enum(['page', 'file']),
+  pageFrom: z.number().int().nullable(),
+  pageTo: z.number().int().nullable(),
   citeAs: z.string(),
   rrfScore: z.number(),
 });
@@ -609,6 +613,9 @@ export const AskCitationSchema = z.object({
   versionNumber: z.number().int(),
   chunkId: z.string().uuid(),
   blockIds: z.array(z.string()),
+  documentKind: z.enum(['page', 'file']),
+  pageFrom: z.number().int().nullable(),
+  pageTo: z.number().int().nullable(),
   quote: z.string(),
 });
 export type AskCitation = z.infer<typeof AskCitationSchema>;

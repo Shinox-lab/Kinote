@@ -38,6 +38,9 @@ export async function askWiki(
     versionNumber: p.versionNumber,
     chunkId: p.chunkId,
     blockIds: p.blockIds,
+    documentKind: p.documentKind,
+    pageFrom: p.pageFrom,
+    pageTo: p.pageTo,
     quote: p.text.slice(0, 300),
   }));
 
