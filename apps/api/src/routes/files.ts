@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import type { FastifyRequest } from 'fastify';
-import { and, eq, isNull, ne, sql } from 'drizzle-orm';
+import { and, desc, eq, isNull, ne, sql } from 'drizzle-orm';
 import {
   withTenantTx,
   documents,
@@ -16,8 +16,11 @@ import {
   AppError,
   MoveFileRequestSchema,
   UploadFileFieldsSchema,
+  type ChunkInspector,
   type DocumentSummary,
+  type FileDetails,
   type FileVersion,
+  type FileVersionList,
   type UploadFileResponse,
 } from '@living-wiki/contracts';
 import {
@@ -30,6 +33,7 @@ import {
   isTenantAdmin,
   fileObjectPath,
   insertFileVersion,
+  loadFileChunks,
   type Actor,
   type DetectedFile,
   type VersionRow,
@@ -41,6 +45,8 @@ import {
   withdrawLiveVersions,
   wouldCreateCycle,
 } from '../documents/lifecycle.js';
+import { computeFileBadge } from '../pages/badge.js';
+import { resolveActorNames } from '../people.js';
 import { toDocumentSummary, toVersionSummary } from './pages.js';
 
 /** What the file routes need besides the database. */
@@ -590,4 +596,165 @@ export async function restoreFile(actor: Actor, fileId: string): Promise<Documen
     });
     return toDocumentSummary(updated!);
   });
+}
+
+/** The file document, readable by the actor (404 `document_not_found` otherwise, a page included). */
+async function readableFile(tx: DbTransaction, actor: Actor, fileId: string): Promise<DocumentRow> {
+  assertValidUuid(fileId, 'document_not_found');
+  const [doc] = await tx
+    .select()
+    .from(documents)
+    .where(and(eq(documents.tenantId, actor.tenantId), eq(documents.id, fileId)));
+  if (!doc || doc.kind !== 'file') throw new AppError('document_not_found');
+  await requireDocumentRole(tx, actor, doc, 'viewer', { notFound: 'document_not_found' });
+  return doc;
+}
+
+const fileVersionsOf = (tx: DbTransaction, tenantId: string, fileId: string) =>
+  tx
+    .select()
+    .from(versions)
+    .where(and(eq(versions.tenantId, tenantId), eq(versions.documentId, fileId)))
+    .orderBy(desc(versions.number));
+
+/** GET /api/v1/files/:id: the file, its server-computed badge and its latest and indexed versions (viewer). */
+export async function getFileDetails(actor: Actor, fileId: string): Promise<FileDetails> {
+  return withTenantTx(actor.tenantId, async (tx) => {
+    const doc = await readableFile(tx, actor, fileId);
+    const all = await fileVersionsOf(tx, actor.tenantId, fileId);
+    const latest = all[0] ?? null;
+    const indexed = doc.indexedVersionId ? (all.find((v) => v.id === doc.indexedVersionId) ?? null) : null;
+    return {
+      id: doc.id,
+      spaceId: doc.spaceId,
+      parentId: doc.parentId,
+      title: doc.title,
+      archivedAt: doc.archivedAt?.toISOString() ?? null,
+      placement: doc.placement,
+      sourceDeletedAt: doc.sourceDeletedAt?.toISOString() ?? null,
+      badge: computeFileBadge({
+        latestVersion: latest
+          ? { number: latest.number, status: latest.status, hasText: latest.extractedKey !== null }
+          : null,
+        indexedVersion: indexed ? { number: indexed.number } : null,
+        sourceDeleted: doc.sourceDeletedAt !== null,
+        placement: doc.placement,
+      }),
+      latestVersion: latest ? toFileVersion(latest) : null,
+      indexedVersion: indexed ? toFileVersion(indexed) : null,
+    };
+  });
+}
+
+/** GET /api/v1/files/:id/versions: every version, newest first, with who made it (viewer). A script shows as "System". */
+export async function listFileVersions(actor: Actor, fileId: string): Promise<FileVersionList> {
+  return withTenantTx(actor.tenantId, async (tx) => {
+    await readableFile(tx, actor, fileId);
+    const all = await fileVersionsOf(tx, actor.tenantId, fileId);
+    const names = await resolveActorNames(
+      tx,
+      actor.tenantId,
+      all.flatMap((v) => (v.createdByType === 'connector' ? [] : [{ type: v.createdByType, id: v.createdBy }]))
+    );
+    return all.map((v) => ({
+      ...toFileVersion(v),
+      createdByName:
+        v.createdByType === 'connector' ? 'System' : (names.get(`${v.createdByType}:${v.createdBy}`) ?? 'Former member'),
+    }));
+  });
+}
+
+/**
+ * A file version and its document, readable by the actor. A version that is
+ * unknown, of a page, or of a hidden file is the same 404 `version_not_found`.
+ */
+async function readableFileVersion(
+  tx: DbTransaction,
+  actor: Actor,
+  versionId: string,
+  minimumRole: 'viewer' | 'editor'
+): Promise<{ ver: VersionRow; doc: DocumentRow }> {
+  assertValidUuid(versionId, 'version_not_found');
+  const [ver] = await tx
+    .select()
+    .from(versions)
+    .where(and(eq(versions.tenantId, actor.tenantId), eq(versions.id, versionId)));
+  if (!ver) throw new AppError('version_not_found');
+  const [doc] = await tx
+    .select()
+    .from(documents)
+    .where(and(eq(documents.tenantId, actor.tenantId), eq(documents.id, ver.documentId)));
+  if (!doc || doc.kind !== 'file' || ver.objectKey === null) throw new AppError('version_not_found');
+  await requireDocumentRole(tx, actor, doc, minimumRole, { notFound: 'version_not_found' });
+  return { ver, doc };
+}
+
+const INLINE_MIME = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif']);
+
+/** RFC 5987 value: everything outside the attribute characters is percent-encoded. */
+const encodeHeaderName = (name: string) =>
+  encodeURIComponent(name).replace(/['()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
+
+/**
+ * GET /api/v1/versions/:id/file (viewer): the original bytes with headers that
+ * can never make a browser run them. The Content-Type is the one the server
+ * decided at upload (text types go out as plain text), `nosniff`, a sandbox
+ * Content-Security-Policy and `no-store`; it is a download unless `inline` is
+ * asked for and the file is an image.
+ */
+export async function downloadVersionFile(
+  actor: Actor,
+  versionId: string,
+  opts: { inline: boolean },
+  deps: Pick<FileDeps, 'storage'>
+): Promise<{ bytes: Uint8Array; headers: Record<string, string> }> {
+  const { ver } = await withTenantTx(actor.tenantId, (tx) => readableFileVersion(tx, actor, versionId, 'viewer'));
+  const mime = ver.mimeType ?? 'application/octet-stream';
+  const { bytes } = await deps.storage.get(actor.tenantId, ver.objectKey!);
+  const inline = opts.inline && INLINE_MIME.has(mime);
+  return {
+    bytes,
+    headers: {
+      'content-type': mime.startsWith('text/') ? 'text/plain; charset=utf-8' : mime,
+      'x-content-type-options': 'nosniff',
+      'content-security-policy': 'sandbox',
+      'cache-control': 'no-store',
+      'content-disposition': `${inline ? 'inline' : 'attachment'}; filename*=UTF-8''${encodeHeaderName(ver.fileName ?? ver.title)}`,
+    },
+  };
+}
+
+/**
+ * GET /api/v1/versions/:id/chunks (editor): the extracted text and the chunks
+ * as they are, or would be, indexed. Chunks of a version that is not indexed
+ * are computed with the same function indexing uses, never stored: only
+ * indexed versions have rows in `chunks`.
+ */
+export async function getVersionChunks(
+  actor: Actor,
+  versionId: string,
+  deps: Pick<FileDeps, 'storage'>
+): Promise<ChunkInspector> {
+  const { ver, doc } = await withTenantTx(actor.tenantId, (tx) => readableFileVersion(tx, actor, versionId, 'editor'));
+  const indexed = doc.indexedVersionId === ver.id;
+  if (ver.extractedKey === null) {
+    return { versionId: ver.id, indexed, ready: false, pageCount: null, ocrUsed: false, sections: [], chunks: [] };
+  }
+  const { extracted, chunks: raw } = await loadFileChunks(deps.storage, actor.tenantId, ver);
+  return {
+    versionId: ver.id,
+    indexed,
+    ready: true,
+    pageCount: extracted.pageCount,
+    ocrUsed: extracted.ocrUsed,
+    sections: extracted.sections,
+    chunks: raw.map((c) => ({
+      ordinal: c.ordinal,
+      headingPath: c.headingPath,
+      pageFrom: c.pageFrom ?? null,
+      pageTo: c.pageTo ?? null,
+      text: c.text,
+      tokenCount: c.tokenCount,
+    })),
+  };
 }

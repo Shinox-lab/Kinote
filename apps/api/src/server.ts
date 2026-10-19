@@ -33,6 +33,9 @@ import {
   UpdatesResponseSchema,
   RetryVersionResponseSchema,
   UploadFileResponseSchema,
+  FileDetailsSchema,
+  FileVersionListSchema,
+  ChunkInspectorSchema,
   SearchResponseSchema,
   AskResponseSchema,
 } from '@living-wiki/contracts';
@@ -87,6 +90,10 @@ import {
 import { listReviewQueue } from './routes/reviews.js';
 import {
   archiveFile,
+  downloadVersionFile,
+  getFileDetails,
+  getVersionChunks,
+  listFileVersions,
   moveFile,
   readMultipartUpload,
   replaceFile,
@@ -451,6 +458,31 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
     return reply
       .status(out.status === 'created' ? 201 : 200)
       .send(parseReply(UploadFileResponseSchema, out.response));
+  });
+
+  app.get('/api/v1/files/:id', async (req, reply) => {
+    const res = await getFileDetails(actorOf(req), (req.params as any).id);
+    return reply.send(parseReply(FileDetailsSchema, res));
+  });
+
+  app.get('/api/v1/files/:id/versions', async (req, reply) => {
+    const res = await listFileVersions(actorOf(req), (req.params as any).id);
+    return reply.send(parseReply(FileVersionListSchema, res));
+  });
+
+  app.get('/api/v1/versions/:id/file', async (req, reply) => {
+    const out = await downloadVersionFile(
+      actorOf(req),
+      (req.params as any).id,
+      { inline: (req.query as any)?.inline === '1' },
+      fileDeps()
+    );
+    return reply.headers(out.headers).send(Buffer.from(out.bytes));
+  });
+
+  app.get('/api/v1/versions/:id/chunks', async (req, reply) => {
+    const res = await getVersionChunks(actorOf(req), (req.params as any).id, fileDeps());
+    return reply.send(parseReply(ChunkInspectorSchema, res));
   });
 
   app.post('/api/v1/files/:id/move', async (req, reply) => {
