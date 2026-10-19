@@ -1,4 +1,5 @@
 import { and, asc, eq, gt, isNotNull, isNull, sql } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 import { randomBytes, randomUUID } from 'node:crypto';
 import {
   getDb,
@@ -13,6 +14,7 @@ import {
   spaceGrants,
   documents,
   pages,
+  versions,
   writeAuditEvent,
   type DbTransaction,
 } from '@living-wiki/db';
@@ -34,6 +36,7 @@ import {
   type AcceptInvitationResponse,
 } from '@living-wiki/contracts';
 import { sha256Hex } from '@living-wiki/shared';
+import { pageAttention } from '../pages/badge.js';
 import {
   requireSpaceRole,
   getReadableSpaceIds,
@@ -261,6 +264,11 @@ async function listTreeNodes(
       allowArchived: true,
     });
 
+    // One query for the whole space: each page's latest version (highest
+    // number, as the page badge reads it), its indexed version and its live
+    // columns come along, so no page costs a query of its own.
+    const latest = alias(versions, 'latest_version');
+    const indexed = alias(versions, 'indexed_version');
     const rows = await tx
       .select({
         id: documents.id,
@@ -269,11 +277,35 @@ async function listTreeNodes(
         kind: documents.kind,
         title: documents.title,
         slug: pages.slug,
+        liveChangedSinceSnapshot: pages.liveChangedSinceSnapshot,
+        liveUpdatedAt: pages.liveUpdatedAt,
+        agentChangedAt: pages.agentChangedAt,
+        latestNumber: latest.number,
+        latestStatus: latest.status,
+        indexedNumber: indexed.number,
       })
       .from(documents)
       .leftJoin(
         pages,
         and(eq(pages.tenantId, documents.tenantId), eq(pages.documentId, documents.id))
+      )
+      .leftJoin(
+        latest,
+        and(
+          eq(latest.tenantId, documents.tenantId),
+          eq(latest.documentId, documents.id),
+          sql`${latest.number} = (
+            select max(v.number) from ${versions} v
+            where v.tenant_id = ${documents.tenantId} and v.document_id = ${documents.id}
+          )`
+        )
+      )
+      .leftJoin(
+        indexed,
+        and(
+          eq(indexed.tenantId, documents.tenantId),
+          eq(indexed.id, documents.indexedVersionId)
+        )
       )
       .where(
         and(
@@ -294,7 +326,35 @@ async function listTreeNodes(
           : [asc(documents.position), asc(documents.title), asc(documents.id)])
       );
 
-    return { nodes: rows };
+    const now = new Date();
+    return {
+      nodes: rows.map((r) => ({
+        id: r.id,
+        parentId: r.parentId,
+        position: r.position,
+        kind: r.kind,
+        title: r.title,
+        slug: r.slug,
+        // Files and archived documents carry no dot.
+        attention:
+          archived || r.kind !== 'page' || r.liveUpdatedAt === null
+            ? null
+            : pageAttention(
+                {
+                  liveChangedSinceSnapshot: r.liveChangedSinceSnapshot ?? false,
+                  liveUpdatedAt: r.liveUpdatedAt,
+                  agentChangedAt: r.agentChangedAt,
+                  spaceReviewRequired: space.reviewRequired,
+                  latestVersion:
+                    r.latestNumber !== null && r.latestStatus !== null
+                      ? { number: r.latestNumber, status: r.latestStatus }
+                      : null,
+                  indexedVersion: r.indexedNumber !== null ? { number: r.indexedNumber } : null,
+                },
+                now
+              ),
+      })),
+    };
   });
 }
 

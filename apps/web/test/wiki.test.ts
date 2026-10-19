@@ -24,6 +24,7 @@ function node(n: number, parent: number | null, title: string, position = 'a0', 
     kind,
     title,
     slug: kind === 'page' ? title.toLowerCase() : null,
+    attention: null,
   };
 }
 

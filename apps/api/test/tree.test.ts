@@ -2,7 +2,7 @@ import { describe, test, beforeEach } from 'vitest';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { and, eq, sql } from 'drizzle-orm';
-import { withTenantTx, rowsOf, versions, documents, auditEvents } from '@living-wiki/db';
+import { withTenantTx, rowsOf, versions, documents, pages, auditEvents } from '@living-wiki/db';
 import { requireSpaceRole, type Actor } from '@living-wiki/core';
 import { createPage as createPageAs } from '../src/routes/pages.js';
 import { getSpaceTree, getSpaceArchived } from '../src/routes/foundations.js';
@@ -22,6 +22,7 @@ type Node = {
   kind: string;
   title: string;
   slug: string | null;
+  attention: 'failed' | 'review' | 'editing' | null;
 };
 
 /** Tree, archived list, space archive and page restore. */
@@ -150,6 +151,7 @@ describe('tree, archived list, space archive, page restore', () => {
       assert.equal(byId.get(zed)!.slug, 'zed');
       assert.equal(byId.get(zed)!.position, 'a0');
       assert.deepEqual(Object.keys(byId.get(zed)!).sort(), [
+        'attention',
         'id',
         'kind',
         'parentId',
@@ -194,6 +196,133 @@ describe('tree, archived list, space archive, page restore', () => {
         (await tree(ctx.ownerHeaders, ctx.inbox.id)).map((n) => n.id).sort(),
         [mine, theirs].sort()
       );
+    });
+
+    describe('attention', () => {
+      async function addVersion(pageId: string, number: number, status: 'failed' | 'pending_review' | 'indexed') {
+        await withTenantTx(ctx.tenant.id, (tx) =>
+          tx.insert(versions).values({
+            tenantId: ctx.tenant.id,
+            documentId: pageId,
+            number,
+            title: 'T',
+            status,
+            contentHash: `hash-${pageId}-${number}`,
+            reason: 'quiet',
+            createdByType: 'user',
+            createdBy: ctx.editor.userId,
+            markdown: 'x',
+          })
+        );
+      }
+
+      async function setLive(pageId: string, changed: boolean, updatedAt: Date) {
+        await withTenantTx(ctx.tenant.id, (tx) =>
+          tx
+            .update(pages)
+            .set({ liveChangedSinceSnapshot: changed, liveUpdatedAt: updatedAt })
+            .where(and(eq(pages.tenantId, ctx.tenant.id), eq(pages.documentId, pageId)))
+        );
+      }
+
+      async function seed() {
+        const h = ctx.editor.headers;
+        const failed = await createPage(h, ctx.docs.id, 'failed', 'Failed page');
+        const review = await createPage(h, ctx.docs.id, 'review', 'Review page');
+        const editing = await createPage(h, ctx.docs.id, 'editing', 'Editing page');
+        const plain = await createPage(h, ctx.docs.id, 'plain', 'Plain page');
+        const stale = await createPage(h, ctx.docs.id, 'stale', 'Stale page');
+        const opened = await createPage(h, ctx.docs.id, 'opened', 'Opened page');
+        const file = randomUUID();
+        await withTenantTx(ctx.tenant.id, (tx) =>
+          tx.insert(documents).values({
+            id: file,
+            tenantId: ctx.tenant.id,
+            spaceId: ctx.docs.id,
+            kind: 'file',
+            title: 'A file',
+            createdByType: 'user',
+            createdBy: ctx.editor.userId,
+          })
+        );
+        const now = new Date();
+        await addVersion(failed, 1, 'failed');
+        await setLive(failed, false, now);
+        await addVersion(review, 1, 'pending_review');
+        await setLive(review, true, now);
+        await addVersion(editing, 1, 'indexed');
+        await setLive(editing, true, now);
+        await addVersion(plain, 1, 'indexed');
+        await setLive(plain, false, new Date(now.getTime() - 3600_000));
+        await addVersion(stale, 1, 'indexed');
+        await setLive(stale, true, new Date(now.getTime() - 3600_000));
+        await addVersion(opened, 1, 'indexed');
+        await setLive(opened, false, now);
+        // An indexed pointer for the plain page so its badge is "Indexed".
+        await withTenantTx(ctx.tenant.id, async (tx) => {
+          const [v] = await tx
+            .select({ id: versions.id })
+            .from(versions)
+            .where(and(eq(versions.tenantId, ctx.tenant.id), eq(versions.documentId, plain)));
+          await tx
+            .update(documents)
+            .set({ indexedVersionId: v.id })
+            .where(and(eq(documents.tenantId, ctx.tenant.id), eq(documents.id, plain)));
+        });
+        return { failed, review, editing, plain, stale, opened, file };
+      }
+
+      test('a failed, a pending-review, a live-edited and a plain page are failed/review/editing/null', async () => {
+        const ids = await seed();
+        const nodes = await tree(ctx.editor.headers, ctx.docs.id);
+        const dot = (id: string) => nodes.find((n) => n.id === id)!.attention;
+        assert.equal(dot(ids.failed), 'failed');
+        assert.equal(dot(ids.review), 'review');
+        assert.equal(dot(ids.editing), 'editing');
+        assert.equal(dot(ids.plain), null);
+        // Changed but quiet for an hour: no dot. Opened, not changed: no dot.
+        assert.equal(dot(ids.stale), null);
+        assert.equal(dot(ids.opened), null);
+        // A file node is null.
+        assert.equal(dot(ids.file), null);
+        assert.equal(nodes.find((n) => n.id === ids.file)!.kind, 'file');
+      });
+
+      test('a viewer sees the same values and nodes carry no other new keys', async () => {
+        const ids = await seed();
+        const asEditor = await tree(ctx.editor.headers, ctx.docs.id);
+        const asViewer = await tree(ctx.viewer.headers, ctx.docs.id);
+        assert.deepEqual(asViewer, asEditor);
+        assert.equal(asViewer.find((n) => n.id === ids.failed)!.attention, 'failed');
+        for (const n of asViewer) {
+          assert.deepEqual(Object.keys(n).sort(), [
+            'attention',
+            'id',
+            'kind',
+            'parentId',
+            'position',
+            'slug',
+            'title',
+          ]);
+        }
+      });
+
+      test('review_required spaces and agent changes put pages in review; archived nodes are null', async () => {
+        const gated = await createSpace(ctx.ownerHeaders, 'gated');
+        await withTenantTx(ctx.tenant.id, (tx) =>
+          tx.execute(sql`update spaces set review_required = true where id = ${gated.id}`)
+        );
+        const a = await createPage(ctx.ownerHeaders, gated.id, 'a', 'A');
+        assert.equal((await tree(ctx.ownerHeaders, gated.id))[0].attention, 'review');
+
+        const failed = await createPage(ctx.editor.headers, ctx.docs.id, 'f', 'F');
+        await addVersion(failed, 1, 'failed');
+        assert.equal((await archivePage(ctx.spaceAdmin.headers, failed)).statusCode, 200);
+        assert.equal((await tree(ctx.viewer.headers, ctx.docs.id)).length, 0);
+        const list = await archivedList(ctx.spaceAdmin.headers, ctx.docs.id);
+        assert.deepEqual(list.map((n) => n.attention), [null]);
+        void a;
+      });
     });
 
     test('a user with no access gets the same 404 as for an unknown space', async () => {

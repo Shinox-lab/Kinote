@@ -480,9 +480,18 @@ export const RetryVersionResponseSchema = VersionSummarySchema.extend({
 export type RetryVersionResponse = z.infer<typeof RetryVersionResponseSchema>;
 
 /**
+ * The status dot a page shows in the tree, computed by the server (the
+ * browser computes no status): `failed` (indexing failed), `review` (awaiting
+ * approval), `editing` (live text changed in the last minute), else null.
+ */
+export const AttentionSchema = z.enum(['failed', 'review', 'editing']).nullable();
+export type Attention = z.infer<typeof AttentionSchema>;
+
+/**
  * One document in a space's tree (or archived list), as
  * GET /api/v1/spaces/:id/tree and /archived list them. `slug` is null for a
- * document that is not a page (files).
+ * document that is not a page (files). `attention` is null for files and in
+ * the archived list.
  */
 export const TreeNodeSchema = z.object({
   id: z.string().uuid(),
@@ -491,6 +500,7 @@ export const TreeNodeSchema = z.object({
   kind: z.enum(['page', 'file']),
   title: z.string(),
   slug: z.string().nullable(),
+  attention: AttentionSchema,
 });
 export type TreeNode = z.infer<typeof TreeNodeSchema>;
 
