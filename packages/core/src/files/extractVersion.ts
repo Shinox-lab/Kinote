@@ -147,8 +147,10 @@ export async function extractVersion(
     return { outcome: 'extracted', status };
   });
 
-  if (result.outcome === 'skipped') {
-    // The text we stored belongs to a version that will not use it.
+  // Only a run that itself settled the version as superseded or withdrawn may drop the text it stored. A run
+  // that finds the version already extracted lost a race (a second worker reclaimed the job): the key is
+  // shared and now belongs to the winner.
+  if (result.outcome === 'skipped' && result.reason !== 'not_extracting') {
     await deps.storage.delete(tenantId, extractedKey).catch(() => undefined);
   }
   return result;

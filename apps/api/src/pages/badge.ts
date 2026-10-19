@@ -129,29 +129,36 @@ export interface FileBadgeInput {
 /**
  * The status line of a file, from its versions alone (a file has no live text).
  * First match wins: removed at source (a synced file; a pinned one stays
- * withdrawn), withdrawn, failed (in extraction or in indexing), reading its
- * text, indexing, awaiting approval or rejected (naming the version still
- * answering when there is one), stored without text, else the indexed version.
+ * withdrawn), withdrawn, then the state of the latest version. While an older
+ * version is still indexed (and so still answers search), the line names it and
+ * says what became of the newer one: "Indexed · v1, v2 awaiting approval".
  */
 export function computeFileBadge(input: FileBadgeInput): string {
   const { latestVersion: latest, indexedVersion: indexed } = input;
   if (input.sourceDeleted && input.placement === 'synced') return 'Removed at source';
   const indexedLine = indexed ? `Indexed · v${indexed.number}` : null;
+  /** The line for a newer version that is not (yet) the indexed one. */
+  const newer = (alone: string, suffix: string): string =>
+    indexedLine && latest && indexed && indexed.number !== latest.number
+      ? `${indexedLine}, v${latest.number} ${suffix}`
+      : alone;
   switch (latest?.status) {
     case 'withdrawn':
       return 'Withdrawn';
     case 'failed':
-      return latest.hasText ? 'Index failed' : 'Extraction failed';
+      return latest.hasText
+        ? newer('Index failed', 'failed to index')
+        : newer('Extraction failed', 'could not be read');
     case 'extracting':
-      return 'Reading text…';
+      return newer('Reading text…', 'being read');
     case 'indexing':
-      return 'Indexing…';
+      return newer('Indexing…', 'indexing');
     case 'pending_review':
-      return indexedLine ? `${indexedLine}, v${latest.number} awaiting approval` : 'Not indexed (awaiting approval)';
+      return newer('Not indexed (awaiting approval)', 'awaiting approval');
     case 'rejected':
-      return indexedLine ? `${indexedLine}, v${latest.number} rejected` : `Not indexed · v${latest.number} rejected`;
+      return newer(`Not indexed · v${latest.number} rejected`, 'rejected');
     case 'stored':
-      return 'Stored · no searchable text';
+      return newer('Stored · no searchable text', 'has no searchable text');
     default:
       return indexedLine ?? 'Not indexed';
   }

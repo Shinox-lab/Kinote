@@ -17,6 +17,19 @@ function withCause(error: AppError, cause: unknown): AppError {
   return error;
 }
 
+/**
+ * An `extractor_unavailable` whose cause is a fixed sentence. The cause ends up in
+ * `versions.error`, which every viewer of the file can read, so it never carries a
+ * network error, a response body or a validation dump; the real error goes to the
+ * worker's log for operators.
+ */
+function unavailable(neutralCause: string, real?: unknown): AppError {
+  if (real !== undefined) {
+    console.warn(`[extractor] ${neutralCause}:`, real instanceof Error ? real.message : real);
+  }
+  return withCause(new AppError('extractor_unavailable'), new Error(neutralCause));
+}
+
 /** The extractor of a stack that has none: every call fails as unavailable, so files wait and can be retried. */
 export class UnavailableExtractor implements Extractor {
   async extract(): Promise<ExtractedDocument> {
@@ -90,17 +103,18 @@ export class HttpExtractor implements Extractor {
         signal: AbortSignal.timeout(this.timeoutMs),
       });
     } catch (err) {
-      throw withCause(new AppError('extractor_unavailable'), err);
+      const timedOut = err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError');
+      throw unavailable(timedOut ? 'the extractor did not answer in time' : 'the extractor could not be reached', err);
     }
     if (response.status === 422) throw new AppError('file_unreadable');
     if (response.status === 413) throw new AppError('file_text_too_large');
     if (!response.ok) {
-      throw withCause(new AppError('extractor_unavailable'), new Error(`extractor answered ${response.status}`));
+      throw unavailable(`the extractor answered ${response.status}`);
     }
     try {
       return ExtractedDocumentSchema.parse(await response.json());
     } catch (err) {
-      throw withCause(new AppError('extractor_unavailable'), err);
+      throw unavailable('the extractor returned an unexpected answer', err);
     }
   }
 }

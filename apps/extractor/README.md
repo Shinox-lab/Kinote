@@ -9,6 +9,9 @@ storage, no database and no tenant knowledge, and in compose no network except t
   damaged or of a type this service does not read, `413 {"error":"too_large"}` when the text exceeds
   `MAX_EXTRACTED_CHARS`, `500 {"error":"internal"}` for anything else (never with file content).
 - `GET /health`.
+- Only a complete Docling success is returned: a partial result (pages that failed, or the per-document time limit
+  `EXTRACTOR_DOCUMENT_TIMEOUT_S`, default 200 s, kept under the worker's `EXTRACTOR_TIMEOUT_MS`) is `422 unreadable`,
+  never a silently incomplete index.
 - Pages: the page for a PDF, the sheet number for a spreadsheet, the slide number for a deck.
 - `ocrUsed` is true for image uploads; Docling does not say whether a scanned PDF page needed OCR.
 - TXT, MD and CSV never come here (the worker reads them); audio and video are only stored.

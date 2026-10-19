@@ -43,7 +43,7 @@ export async function requireVisibleParent(
 
 /**
  * Takes a document out of the index (Rule 9: removing is fast): every version
- * that is extracting, indexed, indexing, failed or waiting for review becomes `withdrawn`
+ * that is extracting, indexed, indexing, failed, stored or waiting for review becomes `withdrawn`
  * and the document's chunks are deleted. `failed` is included so a withdrawn
  * page can never be revived by Retry (which only accepts `failed`). The caller
  * holds the document lock and clears `indexed_version_id`.
@@ -56,7 +56,7 @@ export async function withdrawLiveVersions(tx: DbTransaction, tenantId: string, 
       and(
         eq(versions.tenantId, tenantId),
         eq(versions.documentId, documentId),
-        inArray(versions.status, ['extracting', 'indexed', 'indexing', 'failed', 'pending_review'])
+        inArray(versions.status, ['extracting', 'indexed', 'indexing', 'failed', 'pending_review', 'stored'])
       )
     );
   await tx

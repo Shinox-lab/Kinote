@@ -193,6 +193,27 @@ describe('files pipeline', () => {
     assert.equal(inspector.json().ready, false);
   });
 
+  test('a replacement with no text leaves the old version answering and the badge says so', async () => {
+    const c = await setup();
+    const up = await upload(c, c.open.id, 'rules.pdf', pdf('The old rule about quinces stays in force.'));
+    await settle(c.tenant.id);
+    const v2 = await replace(c, up.document.id, 'rules.pdf', '%PDF-1.7\nFAKE-EXTRACT-EMPTY\n');
+    await settle(c.tenant.id);
+    assert.equal(await badge(c, up.document.id), 'Indexed · v1, v2 has no searchable text');
+    assert.equal((await answering(c, 'old rule quinces', up.document.id)).length, 1);
+    assert.equal((await withTenantTx(c.tenant.id, (tx) => tx.select().from(versions).where(eq(versions.id, v2.version.id))))[0]!.status, 'stored');
+  });
+
+  test('withdrawing a stored file says Withdrawn', async () => {
+    const c = await setup();
+    const mp3 = new Uint8Array([0x49, 0x44, 0x33, 4, 0, 0, 0, 0, 0, 0, 1, 2, 3]);
+    const up = await upload(c, c.open.id, 'song.mp3', mp3);
+    assert.equal(await badge(c, up.document.id), 'Stored · no searchable text');
+    const res = await app.inject({ method: 'POST', url: `/api/v1/files/${up.document.id}/withdraw`, headers: c.ownerHeaders });
+    assert.equal(res.statusCode, 200, res.body);
+    assert.equal(await badge(c, up.document.id), 'Withdrawn');
+  });
+
   test('a file whose text cannot be read is stored with its reason, never indexed or queued', async () => {
     const c = await setup();
     const up = await upload(c, c.strict.id, 'blank.pdf', '%PDF-1.7\nFAKE-EXTRACT-EMPTY\n');

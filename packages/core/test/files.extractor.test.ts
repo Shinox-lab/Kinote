@@ -119,6 +119,27 @@ describe('HttpExtractor', () => {
     expect(await codeOf(extract('http://127.0.0.1:9'))).toBe('extractor_unavailable');
   });
 
+  it('attaches only fixed, neutral causes: what people may read in a failed version\'s error', async () => {
+    const causeOf = async (p: Promise<unknown>) => {
+      try {
+        await p;
+      } catch (err) {
+        return ((err as AppError).cause as Error).message;
+      }
+      return 'resolved';
+    };
+    const bad = await serve(() => ({ status: 200, body: '{"sections":"x","LEAK":"secret-value"}' }));
+    expect(await causeOf(extract(bad.url))).toBe('the extractor returned an unexpected answer');
+    await new Promise<void>((r) => server!.close(() => r()));
+    const boom = await serve(() => ({ status: 503, body: 'stack trace /srv/app.py' }));
+    expect(await causeOf(extract(boom.url))).toBe('the extractor answered 503');
+    await new Promise<void>((r) => server!.close(() => r()));
+    server = undefined;
+    expect(await causeOf(extract('http://127.0.0.1:9'))).toBe('the extractor could not be reached');
+    const slow = await serve(() => 'hang');
+    expect(await causeOf(extract(slow.url, 50))).toBe('the extractor did not answer in time');
+  });
+
   it('gives up after the timeout and keeps the cause', async () => {
     const { url } = await serve(() => 'hang');
     try {

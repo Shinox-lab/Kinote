@@ -198,6 +198,31 @@ describe('extractVersion', () => {
     expect((await reload(seed, v.id)).status).toBe('withdrawn');
   });
 
+  it('a run that lost the race leaves the winner\'s extracted text alone', async () => {
+    const seed = await seedFileDocument({ title: 'notes.txt' });
+    const v = await upload(seed, 'notes.txt', 'shared text');
+    // A slow run reads the bytes first, is overtaken by a complete run, then finishes.
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    const gated = Object.create(storage) as InMemoryObjectStorage;
+    gated.get = async (tenantId: string, key: string) => {
+      const out = await storage.get(tenantId, key);
+      await held;
+      return out;
+    };
+    const loser = extractVersion({ tenantId: seed.tenantId, versionId: v.id }, { ...deps(), storage: gated });
+    await new Promise((r) => setTimeout(r, 50));
+    expect(await extractVersion({ tenantId: seed.tenantId, versionId: v.id }, deps())).toEqual({
+      outcome: 'extracted',
+      status: 'indexing',
+    });
+    release();
+    expect(await loser).toEqual({ outcome: 'skipped', reason: 'not_extracting' });
+    const row = await reload(seed, v.id);
+    const stored = JSON.parse(new TextDecoder().decode((await storage.get(seed.tenantId, row.extractedKey!)).bytes));
+    expect(stored.sections[0].text).toBe('shared text');
+  });
+
   it('audits the extraction', async () => {
     const seed = await seedFileDocument({ title: 'notes.txt' });
     const v = await upload(seed, 'notes.txt', 'hello');
