@@ -31,7 +31,7 @@ import {
   getCollabTokenSecret,
   InMemoryObjectStorage,
 } from '@living-wiki/shared';
-import { formatApiError } from '../../web/src/App.js';
+import { errorSentence } from '../../web/src/lib/api.js';
 import {
   buildTestApp,
   bootstrapTenant,
@@ -234,7 +234,7 @@ describe('Living Wiki — Slice 0 (Foundations) & Slice 1 (Live Pages)', () => {
     assert.equal(forbiddenPatch.statusCode, 403);
     assert.equal(forbiddenPatch.json().error, 'forbidden');
     assert.equal(
-      formatApiError(forbiddenPatch.json().error),
+      errorSentence(forbiddenPatch.json().error),
       'You do not have permission to perform this action.'
     );
 

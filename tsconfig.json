@@ -2,7 +2,7 @@
   "extends": "./tsconfig.base.json",
   "compilerOptions": {
     "baseUrl": ".",
-    "jsx": "preserve",
+    "jsx": "react-jsx",
     "noEmit": true,
     "types": ["node"],
     "paths": {
@@ -13,8 +13,7 @@
       "@living-wiki/shared": ["packages/shared/src/index.ts"],
       "@living-wiki/api": ["apps/api/src/server.ts"],
       "@living-wiki/collab": ["apps/collab/src/server.ts"],
-      "@living-wiki/worker": ["apps/worker/src/runner.ts"],
-      "@living-wiki/web": ["apps/web/src/App.tsx"]
+      "@living-wiki/worker": ["apps/worker/src/runner.ts"]
     }
   },
   "include": [
@@ -24,8 +23,6 @@
     "apps/**/*.tsx"
   ],
   "exclude": [
-    "apps/web/app/**",
-    "apps/web/vite.config.ts",
     "dist/**",
     "node_modules/**"
   ]

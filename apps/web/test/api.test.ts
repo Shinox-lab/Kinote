@@ -1,9 +1,42 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { z } from 'zod';
 import { ERROR_SENTENCES, VersionSummarySchema } from '@living-wiki/contracts';
-import { ApiError, api, errorSentence, request, setApiBase, setSession } from '../src/lib/api.js';
+import {
+  ApiError,
+  api,
+  errorMessage,
+  errorSentence,
+  isUnauthenticated,
+  request,
+  setApiBase,
+} from '../src/lib/api.js';
+import { clearSession, saveSession } from '../src/lib/session.js';
 
 const TENANT = '3f1c2b0e-6d2c-4a52-9c83-8f1f7c2b1a11';
+
+/** localStorage stand-in: the api client reads the session from storage, as the console does. */
+function memoryStorage(): Storage {
+  const map = new Map<string, string>();
+  return {
+    get length() {
+      return map.size;
+    },
+    clear: () => map.clear(),
+    getItem: (key) => map.get(key) ?? null,
+    key: (index) => [...map.keys()][index] ?? null,
+    removeItem: (key) => void map.delete(key),
+    setItem: (key, value) => void map.set(key, value),
+  };
+}
+
+function signInAs(token: string, tenantId: string | null): void {
+  saveSession({
+    token,
+    user: { id: '8d1c2b0e-6d2c-4a52-9c83-8f1f7c2b1a33', name: 'Ada', email: 'ada@example.test' },
+    tenantId,
+    tenantSlug: tenantId ? 'acme' : null,
+  });
+}
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -18,11 +51,12 @@ describe('web api client', () => {
   beforeEach(() => {
     fetchMock.mockReset();
     vi.stubGlobal('fetch', fetchMock);
+    vi.stubGlobal('localStorage', memoryStorage());
     setApiBase('');
-    setSession({ token: 'tok-123', tenantId: TENANT });
+    signInAs('tok-123', TENANT);
   });
   afterEach(() => {
-    setSession(null);
+    clearSession();
     vi.unstubAllGlobals();
   });
 
@@ -50,7 +84,7 @@ describe('web api client', () => {
   });
 
   test('sends neither header without a session, and prefixes the API base', async () => {
-    setSession(null);
+    clearSession();
     setApiBase('https://api.example.test');
     fetchMock.mockResolvedValue(jsonResponse({ ok: true }));
     await request('/api/v1/ping', z.object({ ok: z.boolean() }));
@@ -79,6 +113,36 @@ describe('web api client', () => {
     const html = await request('/x', z.unknown()).catch((e: unknown) => e);
     expect(html).toBeInstanceOf(ApiError);
     expect((html as ApiError).message).not.toContain('<html>');
+  });
+
+  test('a rejected fetch becomes an ApiError with a plain sentence, never the raw error text', async () => {
+    fetchMock.mockRejectedValue(new TypeError('Failed to fetch http://127.0.0.1:8787/api/v1/x'));
+    const err = await request('/api/v1/x', z.unknown()).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    const message = (err as ApiError).message;
+    expect(message.length).toBeGreaterThan(0);
+    expect(message).not.toContain('Failed to fetch');
+    expect(message).not.toContain('127.0.0.1');
+    expect(message).not.toContain('network_error');
+    expect(errorMessage(err)).toBe(message);
+  });
+
+  test('the session is read from storage on every request, so a sign-out takes effect at once', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ ok: true }));
+    signInAs('tok-456', null);
+    await request('/api/v1/ping', z.object({ ok: z.boolean() }));
+    const headers = new Headers(fetchMock.mock.calls[0][1]?.headers);
+    expect(headers.get('authorization')).toBe('Bearer tok-456');
+    expect(headers.has('x-tenant-id')).toBe(false);
+  });
+
+  test('errorMessage and isUnauthenticated classify thrown values', () => {
+    expect(errorMessage(new ApiError('forbidden', 403))).toBe(ERROR_SENTENCES.forbidden);
+    const unknown = errorMessage(new Error('secret internals'));
+    expect(unknown).not.toContain('secret');
+    expect(isUnauthenticated(new ApiError('unauthenticated', 401))).toBe(true);
+    expect(isUnauthenticated(new ApiError('invalid_credentials', 401))).toBe(false);
+    expect(isUnauthenticated(new Error('x'))).toBe(false);
   });
 
   test('a reply that fails the schema throws and does not echo the value', async () => {

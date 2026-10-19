@@ -46,6 +46,7 @@ import {
   type UpdateSpaceSettings,
   type UpsertSpaceGrant,
 } from '@living-wiki/contracts';
+import { loadSession } from './session.js';
 
 // Typed client for the Living Wiki API: every reply is checked against its
 // contract schema. Request bodies are snake_case, replies camelCase. Framework
@@ -77,59 +78,33 @@ export class ApiError extends Error {
 
 const GENERIC_SENTENCE = 'Something went wrong. Please try again.';
 
+/** The code of an ApiError for a request that never got an answer (offline, refused, DNS). */
+export const NETWORK_ERROR = 'network_error';
+const NETWORK_SENTENCE = 'Could not reach the server. Check your connection and try again.';
+
 /** The contract sentence for an error code; a generic sentence (never the code itself) for an unknown one. */
 export function errorSentence(code: string): string {
+  if (code === NETWORK_ERROR) return NETWORK_SENTENCE;
   return Object.hasOwn(ERROR_SENTENCES, code)
     ? ERROR_SENTENCES[code as keyof typeof ERROR_SENTENCES]
     : GENERIC_SENTENCE;
 }
 
-// --- Session ------------------------------------------------------------------
-
-export interface Session {
-  token: string;
-  /** The tenant the requests act in (x-tenant-id); null until one is chosen. */
-  tenantId: string | null;
+/** What to show for any thrown value: the sentence of an ApiError's code, a generic sentence for anything else. */
+export function errorMessage(err: unknown): string {
+  return errorSentence(err instanceof ApiError ? err.code : '');
 }
 
-const SESSION_KEY = 'living-wiki.session';
+/** True when the API says the session is missing or no longer valid. */
+export function isUnauthenticated(err: unknown): boolean {
+  return err instanceof ApiError && err.code === 'unauthenticated';
+}
 
-let session: Session | null = null;
-let sessionLoaded = false;
 let apiBase = '';
 
 /** Where the API lives; the default is the page's own origin. */
 export function setApiBase(base: string): void {
   apiBase = base;
-}
-
-/** The current session, restored from localStorage the first time it is asked for. */
-export function getSession(): Session | null {
-  if (!sessionLoaded) {
-    sessionLoaded = true;
-    try {
-      const raw = localStorage.getItem(SESSION_KEY);
-      const stored = raw ? (JSON.parse(raw) as Partial<Session>) : null;
-      if (stored && typeof stored.token === 'string') {
-        session = { token: stored.token, tenantId: stored.tenantId ?? null };
-      }
-    } catch {
-      // No storage (private window, tests): the session lives in memory only.
-    }
-  }
-  return session;
-}
-
-/** Sets (or, with null, clears) the session and remembers it across reloads. */
-export function setSession(next: Session | null): void {
-  session = next;
-  sessionLoaded = true;
-  try {
-    if (next) localStorage.setItem(SESSION_KEY, JSON.stringify(next));
-    else localStorage.removeItem(SESSION_KEY);
-  } catch {
-    // Storage unavailable: in-memory only.
-  }
 }
 
 // --- Request ------------------------------------------------------------------
@@ -145,7 +120,7 @@ export async function request<T>(
   init: RequestInit = {}
 ): Promise<T> {
   const headers = new Headers(init.headers);
-  const current = getSession();
+  const current = loadSession();
   if (current) {
     headers.set('authorization', `Bearer ${current.token}`);
     if (current.tenantId) headers.set('x-tenant-id', current.tenantId);
@@ -154,7 +129,13 @@ export async function request<T>(
     headers.set('content-type', 'application/json');
   }
 
-  const res = await fetch(`${apiBase}${path}`, { ...init, headers });
+  let res: Response;
+  try {
+    res = await fetch(`${apiBase}${path}`, { ...init, headers });
+  } catch {
+    // fetch rejects with a TypeError whose text is browser-specific; show none of it.
+    throw new ApiError(NETWORK_ERROR);
+  }
   if (!res.ok) {
     const body: unknown = await res.json().catch(() => null);
     const code =
