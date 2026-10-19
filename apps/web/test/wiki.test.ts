@@ -6,6 +6,9 @@ import {
   badgeTone,
   badgeSettles,
   buildTree,
+  pagePoll,
+  PAGE_POLL_MS,
+  PAGE_POLL_MAX_MS,
   descendantIds,
   pageControls,
   type PageControlsInput,
@@ -133,6 +136,29 @@ describe('badgeSettles', () => {
     expect(badgeSettles('Withdrawn')).toBe(false);
     expect(badgeSettles('Saved · not indexed (awaiting approval)')).toBe(false);
     expect(badgeSettles('Not indexed · v2 rejected')).toBe(false);
+  });
+});
+
+describe('pagePoll', () => {
+  test('polls while the badge settles, and stops after PAGE_POLL_MAX_MS of continuous settling', () => {
+    let state = pagePoll(null, 'Saved · indexing soon', 1_000);
+    expect(state).toEqual({ since: 1_000, interval: PAGE_POLL_MS });
+    state = pagePoll(state.since, 'Indexing…', 1_000 + PAGE_POLL_MAX_MS - 1);
+    expect(state).toEqual({ since: 1_000, interval: PAGE_POLL_MS });
+    state = pagePoll(state.since, 'Indexing…', 1_000 + PAGE_POLL_MAX_MS);
+    expect(state).toEqual({ since: 1_000, interval: false });
+    expect(PAGE_POLL_MAX_MS).toBe(120_000);
+  });
+
+  test('a settled badge stops polling and restarts the clock', () => {
+    let state = pagePoll(1_000, 'Indexed · v2', 500_000);
+    expect(state).toEqual({ since: null, interval: false });
+    state = pagePoll(state.since, 'Indexing…', 600_000);
+    expect(state).toEqual({ since: 600_000, interval: PAGE_POLL_MS });
+  });
+
+  test('no page yet: no polling', () => {
+    expect(pagePoll(5, undefined, 10)).toEqual({ since: null, interval: false });
   });
 });
 

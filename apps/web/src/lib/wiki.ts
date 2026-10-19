@@ -127,6 +127,27 @@ export function badgeSettles(badge: string): boolean {
   return badge === 'Indexing…' || badge === 'Saved · indexing soon';
 }
 
+/** How often a page whose badge is still settling is fetched again. */
+export const PAGE_POLL_MS = 3000;
+/** Longest a page is polled while its badge keeps settling (a stopped worker never settles it). */
+export const PAGE_POLL_MAX_MS = 120_000;
+
+/**
+ * The page's next poll: every PAGE_POLL_MS while `badge` settles, for at most
+ * PAGE_POLL_MAX_MS of continuous settling counted from `since` (when settling
+ * was first seen; null when it was not). A badge that is not settling stops
+ * polling and clears `since`. Returns the new `since` with the interval.
+ */
+export function pagePoll(
+  since: number | null,
+  badge: string | undefined,
+  now: number
+): { since: number | null; interval: number | false } {
+  if (badge === undefined || !badgeSettles(badge)) return { since: null, interval: false };
+  const start = since ?? now;
+  return { since: start, interval: now - start < PAGE_POLL_MAX_MS ? PAGE_POLL_MS : false };
+}
+
 export interface PageControlsInput {
   /** The server's badge for the page. */
   badge: string;

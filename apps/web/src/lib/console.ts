@@ -50,6 +50,10 @@ export function inviteLink(origin: string, acceptToken: string): string {
 export function safeRedirect(target: unknown): string {
   if (typeof target !== 'string' || !target.startsWith('/')) return '/';
   if (target.startsWith('//') || target.includes('\\')) return '/';
+  // Control characters: a tab or newline after the first slash makes a
+  // browser read `/\t/evil.example` as `//evil.example`; history.pushState
+  // throws on some of them.
+  if (/[\u0000-\u001f\u007f]/.test(target)) return '/';
   return target;
 }
 

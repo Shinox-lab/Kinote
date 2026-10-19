@@ -1,17 +1,15 @@
+import { useRef } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouteContext } from '@tanstack/react-router';
 import { api } from './api.js';
 import { canAdminister } from './console.js';
 import { loadSession } from './session.js';
-import { badgeSettles } from './wiki.js';
+import { pagePoll } from './wiki.js';
 
 // Query keys and hooks. Every key of a workspace starts with its tenant id, so
 // switching workspaces never shows another workspace's cached answers.
 
 export const ME_KEY = ['me'] as const;
-
-/** How often a page whose badge is still settling is fetched again. */
-const PAGE_POLL_MS = 3000;
 
 /** The workspace the layout resolved from the URL, and the signed-in user's role in it. */
 export function useWorkspace() {
@@ -60,14 +58,23 @@ export function useArchivedTree(spaceId: string | undefined, enabled: boolean) {
 
 /** A page with its server-computed badge. Invalidated on every `synced` and after each action. */
 export function usePage(pageId: string | undefined) {
+  // When this page's badge was first seen settling (pagePoll caps the polling).
+  const settling = useRef<{ pageId: string | undefined; since: number | null }>({ pageId, since: null });
   return useQuery({
     queryKey: useTenantKey('page', pageId),
     queryFn: () => api.getPage(pageId!),
     enabled: pageId !== undefined,
     // The badge is server state that moves under the page (indexing, review): never trust a cached one.
     staleTime: 0,
-    // Nothing tells the browser when indexing finishes, so look again while the server is still on it.
-    refetchInterval: (query) => (query.state.data && badgeSettles(query.state.data.badge) ? PAGE_POLL_MS : false),
+    // Nothing tells the browser when indexing finishes, so look again while the
+    // server is still on it, for at most two minutes on end (a worker that is
+    // down never settles the badge).
+    refetchInterval: (query) => {
+      if (settling.current.pageId !== pageId) settling.current = { pageId, since: null };
+      const next = pagePoll(settling.current.since, query.state.data?.badge, Date.now());
+      settling.current.since = next.since;
+      return next.interval;
+    },
   });
 }
 
