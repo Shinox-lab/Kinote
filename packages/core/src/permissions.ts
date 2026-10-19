@@ -17,7 +17,7 @@ const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
 
 export function assertValidUuid(id: string, notFoundError: ErrorCode = 'document_not_found') {
   if (!UUID_REGEX.test(id)) {
-    throw new AppError(notFoundError, 'Resource not found.');
+    throw new AppError(notFoundError);
   }
 }
 
@@ -69,14 +69,14 @@ async function resolveSpaceAccess(
     .where(and(eq(spaces.tenantId, actor.tenantId), eq(spaces.id, spaceId)));
 
   if (!space) {
-    throw new AppError('space_not_found', 'Space not found.');
+    throw new AppError('space_not_found');
   }
 
   const tenantAdmin = isTenantAdmin(actor);
 
   // An archived space is invisible to everyone but tenant owners and admins.
   if (space.archivedAt && !tenantAdmin) {
-    throw new AppError('space_not_found', 'Space not found.');
+    throw new AppError('space_not_found');
   }
 
   let effectiveRole: SpaceRole | null = null;
@@ -123,7 +123,7 @@ async function resolveSpaceAccess(
 
   // Unreadable spaces return 404, never 403
   if (!effectiveRole) {
-    throw new AppError('space_not_found', 'Space not found.');
+    throw new AppError('space_not_found');
   }
 
   // A user whose tenant role is `viewer` is read-only in every space, the

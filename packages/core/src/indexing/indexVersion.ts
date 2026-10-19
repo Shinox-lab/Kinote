@@ -61,7 +61,7 @@ export async function indexVersion(
       .where(and(eq(versions.tenantId, tenantId), eq(versions.id, versionId)));
 
     if (!ver) {
-      throw new AppError('version_not_found', 'Version not found.');
+      throw new AppError('version_not_found');
     }
     if (ver.status !== 'indexing') return null;
 
@@ -140,7 +140,7 @@ export async function indexVersion(
       .where(and(eq(versions.tenantId, tenantId), eq(versions.id, ver.id)))
       .for('update');
     if (!current) {
-      throw new AppError('version_not_found', 'Version not found.');
+      throw new AppError('version_not_found');
     }
     if (current.status !== 'indexing') return { outcome: 'skipped', reason: 'not_indexing' };
 
@@ -188,7 +188,7 @@ export async function indexVersion(
       .from(spaces)
       .where(and(eq(spaces.tenantId, tenantId), eq(spaces.id, doc.spaceId)));
     if (!space) {
-      throw new AppError('space_not_found', 'Space not found.');
+      throw new AppError('space_not_found');
     }
     const inboxOwner = chunkInboxOwner(space.kind, doc);
 

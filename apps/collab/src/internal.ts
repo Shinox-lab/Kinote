@@ -82,7 +82,7 @@ async function trustedContext(
         )
       )
   );
-  if (!row || row.kind !== 'page') throw new AppError('page_not_found', 'Page not found.');
+  if (!row || row.kind !== 'page') throw new AppError('page_not_found');
   return {
     tenantId,
     pageId,

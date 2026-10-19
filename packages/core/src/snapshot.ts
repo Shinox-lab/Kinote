@@ -65,7 +65,8 @@ export interface TakePageSnapshotHooks {
  * space a concurrent move put the page in is the one that decides review,
  * and withdraw, approve and indexing run before or after it, never between.
  * The page is marked "not changed since snapshot" only if no live change
- * landed after its row was read.
+ * landed after its row was read. An archived page is refused: manual 409
+ * `page_archived`, otherwise null (no version).
  */
 export async function takePageSnapshot(
   params: {
@@ -86,9 +87,17 @@ export async function takePageSnapshot(
       docRow = await lockDocument(tx, tenantId, pageId);
     } catch (err) {
       if (err instanceof AppError && err.code === 'document_not_found') {
-        throw new AppError('page_not_found', 'Page not found.');
+        throw new AppError('page_not_found');
       }
       throw err;
+    }
+
+    // An archived page never gets a new version: checked under the document
+    // lock, so an archive that committed first always wins. A manual snapshot
+    // is told why (409 page_archived); a quiet snapshot just does nothing.
+    if (docRow.archivedAt !== null) {
+      if (manual) throw new AppError('page_archived');
+      return null;
     }
 
     const [spaceRow] = await tx
@@ -115,7 +124,7 @@ export async function takePageSnapshot(
       .where(and(eq(pages.tenantId, tenantId), eq(pages.documentId, pageId)));
 
     if (!pageRow || !spaceRow) {
-      throw new AppError('page_not_found', 'Page not found.');
+      throw new AppError('page_not_found');
     }
 
     if (hooks.afterRead) await hooks.afterRead(tx);

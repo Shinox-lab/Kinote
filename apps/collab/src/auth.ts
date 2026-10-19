@@ -39,7 +39,7 @@ export async function authenticateCollabConnection(
   secret: string = getCollabTokenSecret()
 ): Promise<CollabContext> {
   const doc = parseDocumentName(documentNameRaw);
-  if (!doc) throw new AppError('page_not_found', 'Page not found.');
+  if (!doc) throw new AppError('page_not_found');
 
   const claims = verifyCollabToken(token, secret);
   if (
@@ -66,7 +66,7 @@ export async function authenticateCollabConnection(
             isNull(tenants.deletedAt)
           )
         );
-      if (!membership) throw new AppError('page_not_found', 'Page not found.');
+      if (!membership) throw new AppError('page_not_found');
       tenantRole = membership.role;
     }
 
@@ -83,7 +83,7 @@ export async function authenticateCollabConnection(
       .where(and(eq(documents.tenantId, tenantId), eq(documents.id, pageId)));
 
     if (!row || row.kind !== 'page') {
-      throw new AppError('page_not_found', 'Page not found.');
+      throw new AppError('page_not_found');
     }
 
     const { space, effectiveRole } = await requireDocumentRole(tx, actor, row, 'viewer', {
@@ -96,7 +96,7 @@ export async function authenticateCollabConnection(
       .where(and(eq(pages.tenantId, tenantId), eq(pages.documentId, pageId)));
 
     if (!page) {
-      throw new AppError('page_not_found', 'Page not found.');
+      throw new AppError('page_not_found');
     }
 
     const canWrite = effectiveRole !== 'viewer';

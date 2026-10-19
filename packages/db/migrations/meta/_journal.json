@@ -71,6 +71,13 @@
       "when": 1792366087834,
       "tag": "0009_page_pending_contributors_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1792369396378,
+      "tag": "0010_pages_slug_scope",
+      "breakpoints": true
     }
   ]
 }

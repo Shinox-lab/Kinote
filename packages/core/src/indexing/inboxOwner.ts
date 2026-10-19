@@ -17,3 +17,16 @@ export function chunkInboxOwner(
 ): string | null {
   return spaceKind === 'inbox' ? principalKey(doc.createdByType, doc.createdBy) : null;
 }
+
+/**
+ * `pages.slug_scope` for a page: its creator's principal key while it sits in
+ * the Inbox (so each member's private slugs are unique only among their own
+ * items and never collide with, or reveal, another member's), otherwise ''
+ * (one slug per space).
+ */
+export function pageSlugScope(
+  spaceKind: 'normal' | 'inbox',
+  doc: { createdByType: string; createdBy: string }
+): string {
+  return spaceKind === 'inbox' ? principalKey(doc.createdByType, doc.createdBy) : '';
+}

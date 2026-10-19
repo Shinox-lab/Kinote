@@ -36,6 +36,7 @@ import {
   assertValidUuid,
   takePageSnapshot,
   chunkInboxOwner,
+  pageSlugScope,
   type Actor,
 } from '@living-wiki/core';
 import {
@@ -94,31 +95,42 @@ export async function encodePageYDoc(title: string, markdown: string): Promise<B
   return Buffer.from(Y.encodeStateAsUpdate(ydoc));
 }
 
+/**
+ * Checks that `parentId` is a live page in `spaceId` that the actor can see,
+ * or throws 404 `parent_not_found`. Visibility includes the Inbox rule, so
+ * another member's Inbox item behaves exactly like a nonexistent parent (same
+ * status, code and message) and can never get children it does not know of.
+ */
+async function requireVisibleParent(
+  tx: DbTransaction,
+  actor: Actor,
+  parentId: string,
+  spaceId: string
+): Promise<void> {
+  assertValidUuid(parentId, 'parent_not_found');
+  const [parentDoc] = await tx
+    .select()
+    .from(documents)
+    .where(and(eq(documents.tenantId, actor.tenantId), eq(documents.id, parentId)));
+  if (
+    !parentDoc ||
+    parentDoc.spaceId !== spaceId ||
+    parentDoc.kind !== 'page' ||
+    parentDoc.archivedAt !== null
+  ) {
+    throw new AppError('parent_not_found');
+  }
+  await requireDocumentRole(tx, actor, parentDoc, 'viewer', { notFound: 'parent_not_found' });
+}
+
 export async function createPage(actor: Actor, input: unknown) {
   const parsed = CreatePageRequestSchema.parse(input);
 
   return withTenantTx(actor.tenantId, async (tx) => {
-    await requireSpaceRole(tx, actor, parsed.space_id, 'editor');
+    const { space } = await requireSpaceRole(tx, actor, parsed.space_id, 'editor');
 
     if (parsed.parent_id) {
-      assertValidUuid(parsed.parent_id, 'parent_not_found');
-      const [parentDoc] = await tx
-        .select()
-        .from(documents)
-        .where(
-          and(
-            eq(documents.tenantId, actor.tenantId),
-            eq(documents.id, parsed.parent_id)
-          )
-        );
-      if (
-        !parentDoc ||
-        parentDoc.spaceId !== parsed.space_id ||
-        parentDoc.kind !== 'page' ||
-        parentDoc.archivedAt !== null
-      ) {
-        throw new AppError('parent_not_found', 'Parent is not a live page in the same space.');
-      }
+      await requireVisibleParent(tx, actor, parsed.parent_id, parsed.space_id);
     }
 
     const [doc] = await tx
@@ -144,6 +156,8 @@ export async function createPage(actor: Actor, input: unknown) {
         tenantId: actor.tenantId,
         spaceId: parsed.space_id,
         slug: parsed.slug,
+        // In the Inbox a slug is unique per creator (pages_space_slug_idx).
+        slugScope: pageSlugScope(space.kind, doc),
         ydocState: initialYdocState,
         liveChangedSinceSnapshot: parsed.markdown.trim().length > 0,
         agentChangedAt: actor.principalType === 'agent' ? new Date() : null,
@@ -184,7 +198,7 @@ export async function getPageDetails(actor: Actor, pageId: string) {
       .where(and(eq(documents.tenantId, actor.tenantId), eq(documents.id, pageId)));
 
     if (!doc || doc.kind !== 'page') {
-      throw new AppError('page_not_found', 'Page not found.');
+      throw new AppError('page_not_found');
     }
 
     const { space } = await requireDocumentRole(tx, actor, doc, 'viewer', {
@@ -269,7 +283,7 @@ export async function submitPageSnapshot(actor: Actor, pageId: string, collab?: 
       .from(documents)
       .where(and(eq(documents.tenantId, actor.tenantId), eq(documents.id, pageId)));
     if (!doc || doc.kind !== 'page') {
-      throw new AppError('page_not_found', 'Page not found.');
+      throw new AppError('page_not_found');
     }
     await requireDocumentRole(tx, actor, doc, 'editor', { notFound: 'page_not_found' });
   });
@@ -303,7 +317,7 @@ async function documentIdOfVersion(actor: Actor, versionId: string): Promise<str
       .where(and(eq(versions.tenantId, actor.tenantId), eq(versions.id, versionId)))
   );
   if (!found) {
-    throw new AppError('version_not_found', 'Version not found.');
+    throw new AppError('version_not_found');
   }
   return found.documentId;
 }
@@ -319,7 +333,7 @@ async function lockReviewTarget(tx: DbTransaction, actor: Actor, versionId: stri
     doc = await lockDocument(tx, actor.tenantId, documentId);
   } catch (err) {
     if (err instanceof AppError && err.code === 'document_not_found') {
-      throw new AppError('version_not_found', 'Version not found.');
+      throw new AppError('version_not_found');
     }
     throw err;
   }
@@ -335,7 +349,7 @@ async function lockReviewTarget(tx: DbTransaction, actor: Actor, versionId: stri
     )
     .for('update');
   if (!ver) {
-    throw new AppError('version_not_found', 'Version not found.');
+    throw new AppError('version_not_found');
   }
   return { doc, ver };
 }
@@ -368,14 +382,11 @@ export async function approveVersion(
 
     // Access first, before anything about the version is revealed: a document
     // the actor cannot see is 404 version_not_found, a role below reviewer is
-    // 403 forbidden. Agents are capped at editor, so they always stop here
-    // (Rule 3 & S4: agents never approve).
+    // 403 forbidden. Agents are capped at editor by the gate, so they always
+    // stop here (Rule 3 & S4: agents never approve).
     const { space } = await requireDocumentRole(tx, actor, doc, 'reviewer', {
       notFound: 'version_not_found',
     });
-    if (actor.principalType === 'agent') {
-      throw new AppError('forbidden', 'Agents cannot approve snapshots.');
-    }
 
     if (ver.status !== 'pending_review') {
       throw new AppError('version_not_pending', 'Version is not waiting for review.');
@@ -538,7 +549,7 @@ export async function retryVersion(actor: Actor, versionId: string): Promise<Ret
       .from(versions)
       .where(and(eq(versions.tenantId, actor.tenantId), eq(versions.id, versionId)));
     if (!found) {
-      throw new AppError('version_not_found', 'Version not found.');
+      throw new AppError('version_not_found');
     }
 
     let doc: DocumentRow;
@@ -546,7 +557,7 @@ export async function retryVersion(actor: Actor, versionId: string): Promise<Ret
       doc = await lockDocument(tx, actor.tenantId, found.documentId);
     } catch (err) {
       if (err instanceof AppError && err.code === 'document_not_found') {
-        throw new AppError('version_not_found', 'Version not found.');
+        throw new AppError('version_not_found');
       }
       throw err;
     }
@@ -561,7 +572,7 @@ export async function retryVersion(actor: Actor, versionId: string): Promise<Ret
       .where(and(eq(versions.tenantId, actor.tenantId), eq(versions.id, versionId)))
       .for('update');
     if (!ver) {
-      throw new AppError('version_not_found', 'Version not found.');
+      throw new AppError('version_not_found');
     }
     if (ver.status !== 'failed') {
       throw new AppError('version_not_failed');
@@ -615,12 +626,12 @@ async function lockPage(tx: DbTransaction, tenantId: string, pageId: string): Pr
     doc = await lockDocument(tx, tenantId, pageId);
   } catch (err) {
     if (err instanceof AppError && err.code === 'document_not_found') {
-      throw new AppError('page_not_found', 'Page not found.');
+      throw new AppError('page_not_found');
     }
     throw err;
   }
   if (doc.kind !== 'page') {
-    throw new AppError('page_not_found', 'Page not found.');
+    throw new AppError('page_not_found');
   }
   return doc;
 }
@@ -742,9 +753,11 @@ async function returnToReview(tx: DbTransaction, tenantId: string, doc: Document
  * moves change only parent and position. A cross-space move into a review
  * space by someone who is not a reviewer or admin there sends the page back to
  * review (see `returnToReview`); any other cross-space move updates
- * `chunks.space_id` and `chunks.inbox_owner` in place. Refuses a target parent that is not a live page
- * in the target space (404 `parent_not_found`), a cycle (409 `parent_cycle`)
- * and archived pages (409 `page_archived`).
+ * `chunks.space_id` and `chunks.inbox_owner` in place; `pages.slug_scope`
+ * follows the target space (409 `slug_taken` on a collision). Refuses a
+ * target parent that is not a live page in the target space the actor can see
+ * (404 `parent_not_found`), a cycle (409 `parent_cycle`) and archived pages
+ * (409 `page_archived`).
  */
 export async function movePage(actor: Actor, pageId: string, input: unknown) {
   assertValidUuid(pageId, 'page_not_found');
@@ -772,25 +785,7 @@ export async function movePage(actor: Actor, pageId: string, input: unknown) {
       if (parsed.target_parent_id === pageId) {
         throw new AppError('parent_cycle', 'Cannot move a page under itself.');
       }
-      const [targetParent] = await tx
-        .select({
-          id: documents.id,
-          spaceId: documents.spaceId,
-          kind: documents.kind,
-          archivedAt: documents.archivedAt,
-        })
-        .from(documents)
-        .where(
-          and(eq(documents.tenantId, actor.tenantId), eq(documents.id, parsed.target_parent_id))
-        );
-      if (
-        !targetParent ||
-        targetParent.spaceId !== parsed.target_space_id ||
-        targetParent.kind !== 'page' ||
-        targetParent.archivedAt !== null
-      ) {
-        throw new AppError('parent_not_found', 'Target parent page not found.');
-      }
+      await requireVisibleParent(tx, actor, parsed.target_parent_id, parsed.target_space_id);
       if (await wouldCreateCycle(tx, actor.tenantId, pageId, parsed.target_parent_id)) {
         throw new AppError('parent_cycle', 'Moving this page under one of its descendants would create a cycle.');
       }
@@ -830,9 +825,13 @@ export async function movePage(actor: Actor, pageId: string, input: unknown) {
       .returning();
 
     if (crossSpace) {
+      // The slug scope follows the space: the document's creator in the
+      // Inbox, '' elsewhere. A slug already used in the target scope violates
+      // pages_space_slug_idx -> 409 slug_taken (mapDbError); the mover can see
+      // the target space, so this reveals nothing.
       await tx
         .update(pages)
-        .set({ spaceId: parsed.target_space_id })
+        .set({ spaceId: parsed.target_space_id, slugScope: pageSlugScope(targetSpace.kind, doc) })
         .where(and(eq(pages.tenantId, actor.tenantId), eq(pages.documentId, pageId)));
     }
 
@@ -957,7 +956,7 @@ export async function issueCollabToken(actor: Actor, pageId: string) {
       .where(and(eq(documents.tenantId, actor.tenantId), eq(documents.id, pageId)));
 
     if (!doc || doc.kind !== 'page') {
-      throw new AppError('page_not_found', 'Page not found.');
+      throw new AppError('page_not_found');
     }
 
     const { space, effectiveRole } = await requireDocumentRole(tx, actor, doc, 'viewer', {

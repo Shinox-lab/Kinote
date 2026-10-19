@@ -89,12 +89,19 @@ export const pages = pgTable(
       .notNull()
       .references(() => spaces.id),
     slug: text('slug').notNull(),
+    /**
+     * Who the slug is unique for inside the space: '' in a normal space (one
+     * slug per space), the creator key "{createdByType}:{createdBy}" in the
+     * Inbox, so members' private items never collide (a collision would
+     * reveal another member's item). See `pageSlugScope` in @living-wiki/core.
+     */
+    slugScope: text('slug_scope').notNull().default(''),
     ydocState: bytea('ydoc_state').notNull(),
     liveUpdatedAt: timestamp('live_updated_at', { withTimezone: true }).notNull().defaultNow(),
     liveChangedSinceSnapshot: boolean('live_changed_since_snapshot').notNull().default(false),
     agentChangedAt: timestamp('agent_changed_at', { withTimezone: true }),
   },
-  (t) => [uniqueIndex('pages_space_slug_idx').on(t.tenantId, t.spaceId, t.slug)]
+  (t) => [uniqueIndex('pages_space_slug_idx').on(t.tenantId, t.spaceId, t.slugScope, t.slug)]
 );
 
 export const versions = pgTable(

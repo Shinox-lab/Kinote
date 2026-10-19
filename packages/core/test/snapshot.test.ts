@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import * as Y from 'yjs';
 import { ServerBlockNoteEditor } from '@blocknote/server-util';
 import { and, eq } from 'drizzle-orm';
-import { withTenantTx, pages, links } from '@living-wiki/db';
+import { withTenantTx, pages, links, versions } from '@living-wiki/db';
 import { flattenBlocks, type BlockLike } from '@living-wiki/shared';
 import { takePageSnapshot } from '../src/index.js';
 import { encodePageYDoc } from '../../../apps/api/src/routes/pages.js';
@@ -172,6 +172,53 @@ describe('takePageSnapshot', () => {
       assert.equal(v1!.status, 'pending_review');
       assert.equal((await pageRow(pageId)).liveChangedSinceSnapshot, true);
       assert.equal(await badge(pageId), 'Saved · changed since v1, awaiting approval');
+    });
+  });
+
+  describe('archived pages', () => {
+    async function versionCount(pageId: string) {
+      const rows = await withTenantTx(ctx.tenant.id, (tx) =>
+        tx
+          .select({ id: versions.id })
+          .from(versions)
+          .where(and(eq(versions.tenantId, ctx.tenant.id), eq(versions.documentId, pageId)))
+      );
+      return rows.length;
+    }
+
+    async function archive(pageId: string) {
+      const res = await app.inject({
+        method: 'POST',
+        url: `/api/v1/pages/${pageId}/archive`,
+        headers: ctx.headers,
+      });
+      assert.equal(res.statusCode, 200, res.body);
+    }
+
+    test('a manual snapshot of an archived page is 409 page_archived and creates no version', async () => {
+      const pageId = await createPage(ctx.headers, ctx.open.id, 'archived-manual', 'Quokkas are welcome.');
+      await archive(pageId);
+      await editLive(pageId, 'Typed after the archive.');
+
+      await assert.rejects(snap(pageId), (err: any) => err.code === 'page_archived');
+      assert.equal(await versionCount(pageId), 0);
+    });
+
+    test('a quiet (non-manual) snapshot of an archived page returns null and creates no version', async () => {
+      const pageId = await createPage(ctx.headers, ctx.open.id, 'archived-quiet', 'Quokkas are welcome.');
+      await archive(pageId);
+      await editLive(pageId, 'Typed after the archive.');
+
+      const result = await takePageSnapshot({
+        tenantId: ctx.tenant.id,
+        pageId,
+        reason: 'quiet',
+        actorType: 'user',
+        actorId: ctx.owner.userId,
+        manual: false,
+      });
+      assert.equal(result, null);
+      assert.equal(await versionCount(pageId), 0);
     });
   });
 
