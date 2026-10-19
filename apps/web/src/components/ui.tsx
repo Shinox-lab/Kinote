@@ -1,4 +1,4 @@
-import { useId, type ButtonHTMLAttributes, type ReactNode } from 'react';
+import { useId, type ComponentProps, type ReactNode } from 'react';
 import { errorMessage } from '../lib/api.js';
 
 // Small shared pieces of the console: labelled fields, buttons and the one place
@@ -114,7 +114,7 @@ export function Button({
   className = '',
   type = 'button',
   ...rest
-}: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: keyof typeof BUTTON }) {
+}: ComponentProps<'button'> & { variant?: keyof typeof BUTTON }) {
   return (
     <button
       type={type}

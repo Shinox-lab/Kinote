@@ -2,7 +2,7 @@ import { useId, useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import { useMutation } from '@tanstack/react-query';
 import type { ReviewItem } from '@living-wiki/contracts';
-import { api } from '../lib/api.js';
+import { api, errorMessage } from '../lib/api.js';
 import { versionReasonLabel, versionStatusLabel, whenLabel } from '../lib/history.js';
 import { useRefresh, useReviews, useSpaces, useVersionDiff, useWorkspace } from '../lib/queries.js';
 import { REJECT_NOTE_MAX, approveBlockedReason, rejectNoteState } from '../lib/review.js';
@@ -88,25 +88,31 @@ function RejectForm({
   );
 }
 
-function Item({ item }: { item: ReviewItem }) {
+/** `onOutcome` hears the error of a failed approve or reject, and null when one succeeds. */
+function Item({ item, onOutcome }: { item: ReviewItem; onOutcome: (error: unknown) => void }) {
   const { tenant } = useWorkspace();
   const refresh = useRefresh();
   const [rejecting, setRejecting] = useState(false);
   const blocked = approveBlockedReason(item);
   const blockedId = useId();
 
-  // The version leaves the queue, and the page (badge), its history and the trees follow it.
+  // Whatever the outcome, look at the server again: after success the version has left the queue and the
+  // page (badge), its history, diffs and trees moved; after a failure (say, someone else reviewed it first)
+  // the item is stale.
   const settled = () => {
     void refresh('reviews');
     void refresh('page');
     void refresh('versions');
+    void refresh('versionDiff');
     void refresh('tree');
     void refresh('archived');
   };
-  const approve = useMutation({ mutationFn: () => api.approveVersion(item.version.id), onSuccess: settled });
+  const approve = useMutation({ mutationFn: () => api.approveVersion(item.version.id), onSuccess: () => onOutcome(null), onError: onOutcome, onSettled: settled });
   const reject = useMutation({
     mutationFn: (note: string) => api.rejectVersion(item.version.id, { review_note: note }),
-    onSuccess: settled,
+    onSuccess: () => onOutcome(null),
+    onError: onOutcome,
+    onSettled: settled,
   });
   const busy = approve.isPending || reject.isPending;
   const { version } = item;
@@ -154,7 +160,12 @@ function Item({ item }: { item: ReviewItem }) {
           )}
           <ErrorNote error={approve.error} />
           {rejecting && (
-            <RejectForm onSubmit={(note) => reject.mutate(note)} onCancel={() => setRejecting(false)} pending={busy} error={reject.error} />
+            <RejectForm
+              onSubmit={(note) => reject.mutate(note)}
+              onCancel={() => {
+                reject.reset();
+                setRejecting(false);
+              }} pending={busy} error={reject.error} />
           )}
         </div>
       </Card>
@@ -167,6 +178,9 @@ export function ReviewsPage() {
   const { data: spaces = [] } = useSpaces();
   const [spaceId, setSpaceId] = useState(ALL_SPACES);
   const { data: items, error, isPending } = useReviews(spaceId === ALL_SPACES ? undefined : spaceId);
+  // A failed approve or reject, kept here so it stays readable after the refreshed queue drops the item.
+  const [failures, setFailures] = useState<{ id: string; title: string; error: unknown }[]>([]);
+  const gone = failures.filter((f) => !items?.some((i) => i.version.id === f.id));
 
   const options = [
     { value: ALL_SPACES, label: 'All spaces' },
@@ -182,6 +196,16 @@ export function ReviewsPage() {
         </div>
       </div>
       <ErrorNote error={error} />
+      {gone.map((f) => (
+        <div key={f.id} role="alert" className="flex items-start justify-between gap-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+          <p>
+            {f.title}: {errorMessage(f.error)}
+          </p>
+          <button type="button" className="shrink-0 underline" onClick={() => setFailures((all) => all.filter((x) => x.id !== f.id))}>
+            Dismiss
+          </button>
+        </div>
+      ))}
       {isPending ? (
         <Loading what="reviews" />
       ) : items && items.length === 0 ? (
@@ -190,7 +214,16 @@ export function ReviewsPage() {
         items && (
           <ul aria-label="Changes waiting for review" className="flex flex-col gap-4">
             {items.map((item) => (
-              <Item key={item.version.id} item={item} />
+              <Item
+                key={item.version.id}
+                item={item}
+                onOutcome={(err) =>
+                  setFailures((all) => [
+                    ...all.filter((f) => f.id !== item.version.id),
+                    ...(err === null ? [] : [{ id: item.version.id, title: item.document.title, error: err }]),
+                  ])
+                }
+              />
             ))}
           </ul>
         )
