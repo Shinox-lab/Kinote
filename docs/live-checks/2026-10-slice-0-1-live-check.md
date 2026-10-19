@@ -319,38 +319,43 @@ disk unreferenced, `down -v` deletes them.
 
 What changed: the console's top bar became one sidebar (workspace, search and reviews, an Updates feed, the spaces as a page tree with status dots, and an "On this page" section), in a light and a dark theme. Design: `docs/superpowers/specs/2026-10-19-notion-sidebar-ui-design.md`. Plan: `docs/superpowers/plans/2026-10-19-notion-sidebar-ui.md`.
 
-Environment: the PGlite harness (`pnpm e2e:local`; no Docker), v22.23.2, tree at `eecc365` plus this section. Nothing in this section ran against real Postgres or the compose stack: the three API additions (tree `attention`, author `name` on changes, `GET /api/v1/updates`) are covered by PGlite route tests only; `pnpm test:pg` was not re-run for this work.
+Environment: the PGlite harness (`pnpm e2e:local`; no Docker), v22.23.2, tree at `83accee` plus this section. Nothing in this section ran against real Postgres or the compose stack: the three API additions (tree `attention`, author `name` on changes, `GET /api/v1/updates`) are covered by PGlite route tests only; `pnpm test:pg` was not re-run for this work.
 
 ### Checks run (real output)
 
 ```
 $ pnpm vitest run     → exit 0
- Test Files  64 passed (64)
-      Tests  704 passed | 30 skipped (734)
+ Test Files  65 passed (65)
+      Tests  711 passed | 30 skipped (741)
 $ pnpm typecheck      → exit 0
 $ pnpm --filter @living-wiki/web build → exit 0
 ```
 
-### `pnpm e2e:local`, three runs in a row (all 12 specs: 5 earlier ones and the 7 new sidebar ones)
+### `pnpm e2e:local`, three runs in a row (all 17 specs, after the final-review fixes)
 
 ```
-run 1:  12 passed (21.2s)
-run 2:  12 passed (18.3s)
-run 3:  12 passed (20.5s)
+run 1: 17 passed (22.1s)
+run 2: 17 passed (23.6s)
+run 3: 17 passed (21.9s)
 
 run 3, every spec:
-  ✓   1 [chromium] › e2e/co-edit.spec.ts:53:1 › two editors and a reviewer: co-edit, hold until approval, index, cite v1 (6.1s)
+  ✓   1 [chromium] › e2e/co-edit.spec.ts:53:1 › two editors and a reviewer: co-edit, hold until approval, index, cite v1 (6.4s)
   ✓   2 [chromium] › e2e/console.spec.ts:51:1 › review queue: Approve and Reject states, lazy diff (1.2s)
-  ✓   3 [chromium] › e2e/console.spec.ts:118:1 › history drawer: compare two versions, restore with confirmation, Escape returns focus (885ms)
-  ✓   4 [chromium] › e2e/console.spec.ts:179:1 › citations link to the cited page (515ms)
-  ✓   5 [chromium] › e2e/sidebar.spec.ts:44:1 › the tree: open a space, open a page from it, see its status dot and the review count (611ms)
-  ✓   6 [chromium] › e2e/sidebar.spec.ts:83:1 › adding a page from the sidebar opens it (399ms)
-  ✓   7 [chromium] › e2e/sidebar.spec.ts:98:1 › updates show what others did, and your own changes read "You"; typing shows the edited dot (3.0s)
-  ✓   8 [chromium] › e2e/sidebar.spec.ts:142:1 › someone else's Inbox page is in neither the tree nor Updates, but the creator and an admin see it (611ms)
-  ✓   9 [chromium] › e2e/sidebar.spec.ts:184:1 › the theme: choose dark, it survives a reload, and System follows the operating system (424ms)
-  ✓  10 [chromium] › e2e/sidebar.spec.ts:207:1 › a phone: the sidebar is a slide-over that closes on navigation and on Escape (225ms)
-  ✓  11 [chromium] › e2e/sidebar.spec.ts:229:1 › on a wide screen Ctrl+\ hides and shows the sidebar (200ms)
-  ✓  12 [chromium] › e2e/viewer.spec.ts:4:1 › a viewer sees the page read-only, without Submit (758ms)
+  ✓   3 [chromium] › e2e/console.spec.ts:118:1 › history drawer: compare two versions, restore with confirmation, Escape returns focus (845ms)
+  ✓   4 [chromium] › e2e/console.spec.ts:179:1 › citations link to the cited page (498ms)
+  ✓   5 [chromium] › e2e/sidebar.spec.ts:44:1 › the tree: open a space, open a page from it, see its status dot and the review count (546ms)
+  ✓   6 [chromium] › e2e/sidebar.spec.ts:83:1 › adding a page from the sidebar opens it (419ms)
+  ✓   7 [chromium] › e2e/sidebar.spec.ts:98:1 › updates show what others did, and your own changes read "You"; typing shows the edited dot (2.9s)
+  ✓   8 [chromium] › e2e/sidebar.spec.ts:142:1 › someone else's Inbox page is in neither the tree nor Updates, but the creator and an admin see it (617ms)
+  ✓   9 [chromium] › e2e/sidebar.spec.ts:184:1 › the theme: choose dark, it survives a reload, and System follows the operating system (417ms)
+  ✓  10 [chromium] › e2e/sidebar.spec.ts:207:1 › a phone: the sidebar is a slide-over that closes on navigation and on Escape (223ms)
+  ✓  11 [chromium] › e2e/sidebar.spec.ts:229:1 › on a wide screen Ctrl+\ hides and shows the sidebar (164ms)
+  ✓  12 [chromium] › e2e/sidebar.spec.ts:244:1 › switching workspace does not carry the sidebar's open spaces over to the other workspace (267ms)
+  ✓  13 [chromium] › e2e/sidebar.spec.ts:273:1 › the page being read stays visible when its space was closed and the person moves to another page of it (378ms)
+  ✓  14 [chromium] › e2e/sidebar.spec.ts:299:1 › on a touch screen the add-page button is visible without hovering (195ms)
+  ✓  15 [chromium] › e2e/sidebar.spec.ts:314:1 › at a tablet width the page does not scroll sideways and the editor stays clear of the sidebar (255ms)
+  ✓  16 [chromium] › e2e/sidebar.spec.ts:332:1 › the sidebar's review count follows what others submit, without a reload (180ms)
+  ✓  17 [chromium] › e2e/viewer.spec.ts:4:1 › a viewer sees the page read-only, without Submit (822ms)
 ```
 
 ### What the sidebar specs prove
