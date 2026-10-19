@@ -49,6 +49,7 @@ import {
   comparePageVersions,
   getVersionDiff,
 } from './routes/pages.js';
+import { listReviewQueue } from './routes/reviews.js';
 import { authRoutes, type AuthRateLimit } from './routes/auth.js';
 import { requireSession, resolveActor, type AuthSession } from './auth/actor.js';
 import { registerErrorHandler } from './errors.js';
@@ -279,6 +280,10 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
     const actor = actorOf(req);
     const res = await withdrawPage(actor, (req.params as any).id);
     return reply.send(res);
+  });
+
+  app.get('/api/v1/reviews', async (req, reply) => {
+    return reply.send(await listReviewQueue(actorOf(req), req.query));
   });
 
   app.post('/api/v1/versions/:id/approve', async (req, reply) => {

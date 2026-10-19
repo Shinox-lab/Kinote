@@ -285,6 +285,32 @@ export const VersionContributorSchema = z.object({
 });
 export type VersionContributor = z.infer<typeof VersionContributorSchema>;
 
+/** Query of GET /api/v1/reviews: an optional space to narrow the queue to (validated by the handler: a bad id is 404 `space_not_found`). */
+export const ReviewQuerySchema = z.object({
+  space_id: z.string().optional(),
+});
+
+/**
+ * One entry of the review queue: a `pending_review` version (summary only: no
+ * markdown, blocks or Yjs bytes), its document and space, who contributed, and
+ * whether the asking actor may approve it (the same rule approve enforces).
+ */
+export const ReviewItemSchema = z.object({
+  version: VersionSummarySchema,
+  document: z.object({
+    id: z.string().uuid(),
+    title: z.string(),
+    spaceId: z.string().uuid(),
+    spaceName: z.string(),
+  }),
+  contributors: z.array(VersionContributorSchema),
+  canApprove: z.boolean(),
+});
+export type ReviewItem = z.infer<typeof ReviewItemSchema>;
+
+/** Reply of GET /api/v1/reviews (oldest version first). */
+export const ReviewListSchema = z.array(ReviewItemSchema);
+
 /**
  * Reply of GET /api/v1/versions/:id: the summary plus the stored markdown (the
  * reviewed form), the stored BlockNote blocks and who contributed. Never

@@ -57,12 +57,13 @@ import {
 import type { BlockLike } from '@living-wiki/shared';
 import { computePageBadge } from '../pages/badge.js';
 import { diffBlocks } from '../pages/diff.js';
+import { canApprove } from '../pages/approval.js';
 import type { CollabClient } from '../collab/client.js';
 
 const blockNote = ServerBlockNoteEditor.create();
 
 /** The `versions` columns a VersionSummary is built from (no markdown, blocks or Yjs bytes). */
-const versionSummaryColumns = {
+export const versionSummaryColumns = {
   id: versions.id,
   number: versions.number,
   status: versions.status,
@@ -77,12 +78,12 @@ const versionSummaryColumns = {
   error: versions.error,
 };
 
-type VersionSummaryRow = {
+export type VersionSummaryRow = {
   [K in keyof typeof versionSummaryColumns]: (typeof versions.$inferSelect)[K];
 };
 
 /** A version row (or its summary columns) as the published VersionSummary. */
-function toVersionSummary(row: VersionSummaryRow): VersionSummary {
+export function toVersionSummary(row: VersionSummaryRow): VersionSummary {
   return VersionSummarySchema.parse({
     id: row.id,
     number: row.number,
@@ -637,13 +638,7 @@ export async function approveVersion(
         )
       );
 
-    const isCreator =
-      ver.createdByType === actor.principalType && ver.createdBy === actor.principalId;
-    const isHumanContributor = contributors.some(
-      (c) => c.principalType === 'user' && c.principalId === actor.principalId
-    );
-
-    if (!space.allowSelfApproval && (isCreator || isHumanContributor)) {
+    if (!canApprove(actor, ver, contributors, space)) {
       throw new AppError('self_approval', 'Authors cannot approve their own snapshots unless self-approval is enabled on the space.');
     }
 
