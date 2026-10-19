@@ -108,7 +108,7 @@ describe('page lifecycle: withdraw, archive, move', () => {
       payload: { space_id: spaceId, title: `Page ${slug}`, slug, markdown, parent_id: parentId },
     });
     assert.equal(res.statusCode, 201, res.body);
-    return res.json().document.id;
+    return res.json().id;
   }
 
   async function snapshot(headers: Headers, pageId: string) {

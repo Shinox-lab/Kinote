@@ -6,6 +6,8 @@ import {
   SignInRequestSchema,
   SignUpRequestSchema,
   TenantRoleSchema,
+  AuthResponseSchema,
+  MeResponseSchema,
   type AuthResponse,
   type AuthUser,
   type MeResponse,
@@ -13,6 +15,7 @@ import {
 import { getDummyHash, hashPassword, isUsableHash, verifyPassword } from '../auth/password.js';
 import { createSession, revokeSession } from '../auth/sessions.js';
 import type { AuthSession } from '../auth/actor.js';
+import { parseReply } from '../reply.js';
 
 export interface AuthRateLimit {
   max: number;
@@ -25,10 +28,10 @@ function toAuthUser(user: { id: string; email: string; name: string }): AuthUser
 
 async function authResponse(user: AuthUser): Promise<AuthResponse> {
   const session = await createSession(user.id);
-  return {
+  return parseReply(AuthResponseSchema, {
     user,
     session: { token: session.token, expiresAt: session.expiresAt.toISOString() },
-  };
+  });
 }
 
 function sessionOf(req: FastifyRequest): AuthSession {
@@ -98,6 +101,6 @@ export async function authRoutes(
         role: TenantRoleSchema.parse(r.role),
       })),
     };
-    return reply.send(body);
+    return reply.send(parseReply(MeResponseSchema, body));
   });
 }

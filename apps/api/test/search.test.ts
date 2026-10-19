@@ -72,7 +72,7 @@ describe('search: Inbox ownership on the chunk row', () => {
       payload: { space_id: spaceId, title: `Page ${slug}`, slug, markdown: BODY, parent_id: null },
     });
     assert.equal(created.statusCode, 201, created.body);
-    const pageId = created.json().document.id as string;
+    const pageId = created.json().id as string;
     const snap = await app.inject({ method: 'POST', url: `/api/v1/pages/${pageId}/snapshot`, headers });
     assert.equal(snap.statusCode, 201, snap.body);
     assert.equal(snap.json().status, 'indexing');

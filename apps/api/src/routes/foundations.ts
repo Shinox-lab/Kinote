@@ -23,9 +23,13 @@ import {
   UpsertSpaceGrantSchema,
   InviteMemberRequestSchema,
   AcceptInvitationRequestSchema,
-  TreeResponseSchema,
   AppError,
+  type Space,
+  type SpaceResponse,
   type TreeResponse,
+  type SpaceRole,
+  type CreateTenantResponse,
+  type UpsertGrantResponse,
   type InviteMemberResponse,
   type AcceptInvitationResponse,
 } from '@living-wiki/contracts';
@@ -37,13 +41,38 @@ import {
   type Actor,
 } from '@living-wiki/core';
 
+/** A space row as the published Space (timestamps as ISO strings). */
+export function toSpace(row: typeof spaces.$inferSelect): Space {
+  return {
+    id: row.id,
+    tenantId: row.tenantId,
+    name: row.name,
+    slug: row.slug,
+    kind: row.kind,
+    reviewRequired: row.reviewRequired,
+    quietSeconds: row.quietSeconds,
+    humanProtectionSeconds: row.humanProtectionSeconds,
+    allowSelfApproval: row.allowSelfApproval,
+    createdBy: row.createdBy,
+    createdAt: row.createdAt.toISOString(),
+    archivedAt: row.archivedAt?.toISOString() ?? null,
+  };
+}
+
+function toSpaceResponse(row: typeof spaces.$inferSelect, myRole: SpaceRole): SpaceResponse {
+  return { ...toSpace(row), myRole };
+}
+
 /**
  * Creates a tenant owned by `userId` (the signed-in session user) together
  * with its Inbox space. Never reads or writes `users`: the session already
  * proves the user exists. A taken slug violates tenants_slug_unique and
  * answers 409 slug_taken.
  */
-export async function createTenantWithInbox(userId: string, input: unknown) {
+export async function createTenantWithInbox(
+  userId: string,
+  input: unknown
+): Promise<CreateTenantResponse> {
   const parsed = CreateTenantRequestSchema.parse(input);
 
   return getDb().transaction(async (tx) => {
@@ -107,11 +136,15 @@ export async function createTenantWithInbox(userId: string, input: unknown) {
       tx
     );
 
-    return { tenant, membership: { role: 'owner' as const }, inboxSpace };
+    return {
+      tenant: { id: tenant.id, name: tenant.name, slug: tenant.slug },
+      membership: { role: 'owner' },
+      inboxSpace: toSpace(inboxSpace),
+    };
   });
 }
 
-export async function createSpace(actor: Actor, input: unknown) {
+export async function createSpace(actor: Actor, input: unknown): Promise<SpaceResponse> {
   const parsed = CreateSpaceRequestSchema.parse(input);
 
   return withTenantTx(actor.tenantId, async (tx) => {
@@ -147,30 +180,34 @@ export async function createSpace(actor: Actor, input: unknown) {
       payload: { name: space.name, slug: space.slug, reviewRequired: space.reviewRequired },
     });
 
-    return { ...space, myRole: 'admin' as const };
+    return toSpaceResponse(space, 'admin');
   });
 }
 
-export async function getSpaceForActor(actor: Actor, spaceId: string) {
+export async function getSpaceForActor(actor: Actor, spaceId: string): Promise<SpaceResponse> {
   return withTenantTx(actor.tenantId, async (tx) => {
     const { space, effectiveRole } = await requireSpaceRole(tx, actor, spaceId, 'viewer');
-    return { ...space, myRole: effectiveRole };
+    return toSpaceResponse(space, effectiveRole);
   });
 }
 
-export async function listSpacesForActor(actor: Actor) {
+export async function listSpacesForActor(actor: Actor): Promise<SpaceResponse[]> {
   return withTenantTx(actor.tenantId, async (tx) => {
     const { readableSpaceIds } = await getReadableSpaceIds(tx, actor);
-    const results = [];
+    const results: SpaceResponse[] = [];
     for (const spaceId of readableSpaceIds) {
       const { space, effectiveRole } = await requireSpaceRole(tx, actor, spaceId, 'viewer');
-      results.push({ ...space, myRole: effectiveRole });
+      results.push(toSpaceResponse(space, effectiveRole));
     }
     return results;
   });
 }
 
-export async function updateSpaceSettings(actor: Actor, spaceId: string, input: unknown) {
+export async function updateSpaceSettings(
+  actor: Actor,
+  spaceId: string,
+  input: unknown
+): Promise<Space> {
   const parsed = UpdateSpaceSettingsSchema.parse(input);
   return withTenantTx(actor.tenantId, async (tx) => {
     await requireSpaceRole(tx, actor, spaceId, 'admin');
@@ -201,7 +238,7 @@ export async function updateSpaceSettings(actor: Actor, spaceId: string, input: 
       payload: parsed,
     });
 
-    return updated;
+    return toSpace(updated);
   });
 }
 
@@ -257,7 +294,7 @@ async function listTreeNodes(
           : [asc(documents.position), asc(documents.title), asc(documents.id)])
       );
 
-    return TreeResponseSchema.parse({ nodes: rows });
+    return { nodes: rows };
   });
 }
 
@@ -279,7 +316,7 @@ export function getSpaceArchived(actor: Actor, spaceId: string): Promise<TreeRes
  * non-archived document left 409 `has_children`. The space row is locked
  * first, so two archives run one after another.
  */
-export async function archiveSpace(actor: Actor, spaceId: string) {
+export async function archiveSpace(actor: Actor, spaceId: string): Promise<SpaceResponse> {
   return withTenantTx(actor.tenantId, async (tx) => {
     const { effectiveRole } = await requireSpaceRole(tx, actor, spaceId, 'admin');
 
@@ -332,7 +369,7 @@ export async function archiveSpace(actor: Actor, spaceId: string) {
 
     // The role was resolved before the archive: afterwards the space is
     // invisible to anyone but tenant admins, a space admin included.
-    return { ...updated, myRole: effectiveRole };
+    return toSpaceResponse(updated, effectiveRole);
   });
 }
 
@@ -376,7 +413,11 @@ export async function principalExists(
  * as given: `requireSpaceRole` caps that user at viewer when it is read, so
  * the grant takes effect if the tenant role is later raised.
  */
-export async function upsertSpaceGrant(actor: Actor, spaceId: string, input: unknown) {
+export async function upsertSpaceGrant(
+  actor: Actor,
+  spaceId: string,
+  input: unknown
+): Promise<UpsertGrantResponse> {
   const parsed = UpsertSpaceGrantSchema.parse(input);
   return withTenantTx(actor.tenantId, async (tx) => {
     await requireSpaceRole(tx, actor, spaceId, 'admin');
@@ -422,7 +463,12 @@ export async function upsertSpaceGrant(actor: Actor, spaceId: string, input: unk
       payload: parsed,
     });
 
-    return grant;
+    return {
+      spaceId: grant.spaceId,
+      principalType: grant.principalType,
+      principalId: grant.principalId,
+      role: grant.role,
+    };
   });
 }
 

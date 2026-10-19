@@ -404,7 +404,7 @@ describe('version history, changes and compare routes', () => {
       payload: { space_id: owner.inboxSpace.id, title: 'Mine', slug: 'mine', markdown: 'Private text.' },
     });
     expect(created.statusCode, created.body).toBe(201);
-    const pageId = created.json().document.id as string;
+    const pageId = created.json().id as string;
     const snap = await h.app.inject({ method: 'POST', url: `/api/v1/pages/${pageId}/snapshot`, headers: m1.headers });
     expect(snap.statusCode, snap.body).toBe(201);
     const versionId = snap.json().id as string;

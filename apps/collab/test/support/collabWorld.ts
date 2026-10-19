@@ -40,22 +40,18 @@ export async function buildCollabWorld(app: FastifyInstance) {
     slug: 'origin-co',
   });
   const space = await post(app, headers, '/api/v1/spaces', { name: 'Docs', slug: 'docs' });
-  const pageA = (
-    await post(app, headers, '/api/v1/pages', {
-      space_id: space.id,
-      title: 'Page A',
-      slug: 'page-a',
-      markdown: '# A',
-    })
-  ).document;
-  const pageB = (
-    await post(app, headers, '/api/v1/pages', {
-      space_id: space.id,
-      title: 'Page B',
-      slug: 'page-b',
-      markdown: '# B',
-    })
-  ).document;
+  const pageA = await post(app, headers, '/api/v1/pages', {
+    space_id: space.id,
+    title: 'Page A',
+    slug: 'page-a',
+    markdown: '# A',
+  });
+  const pageB = await post(app, headers, '/api/v1/pages', {
+    space_id: space.id,
+    title: 'Page B',
+    slug: 'page-b',
+    markdown: '# B',
+  });
   const editor = await signUpMember(app, tenant.id, 'member');
   await post(app, headers, `/api/v1/spaces/${space.id}/grants`, {
     principal_type: 'user',
@@ -136,14 +132,12 @@ export async function buildReviewWorld(app: FastifyInstance) {
     review_required: true,
     allow_self_approval: false,
   });
-  const page = (
-    await post(app, headers, '/api/v1/pages', {
-      space_id: space.id,
-      title: 'Handbook',
-      slug: 'handbook',
-      markdown: 'First paragraph.\n\nSecond paragraph.\n\nThird paragraph.',
-    })
-  ).document;
+  const page = await post(app, headers, '/api/v1/pages', {
+    space_id: space.id,
+    title: 'Handbook',
+    slug: 'handbook',
+    markdown: 'First paragraph.\n\nSecond paragraph.\n\nThird paragraph.',
+  });
   const grant = (principal_type: 'user' | 'agent', principal_id: string, role: string) =>
     post(app, headers, `/api/v1/spaces/${space.id}/grants`, { principal_type, principal_id, role });
 

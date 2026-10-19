@@ -79,7 +79,7 @@ describe('version writers take the document lock', () => {
       payload: { space_id: spaceId, title: `Page ${slug}`, slug, markdown },
     });
     assert.equal(res.statusCode, 201, res.body);
-    return res.json().document.id as string;
+    return res.json().id as string;
   }
 
   async function snapshot(headers: Headers, pageId: string) {

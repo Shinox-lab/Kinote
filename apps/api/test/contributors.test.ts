@@ -118,6 +118,13 @@ describe('snapshot contributors and self-approval', () => {
     return res.json();
   }
 
+  /** The stored markdown of a version (the snapshot reply is a summary only). */
+  async function markdownOf(versionId: string, headers: Record<string, string>): Promise<string> {
+    const res = await h.app.inject({ method: 'GET', url: `/api/v1/versions/${versionId}`, headers });
+    expect(res.statusCode, res.body).toBe(200);
+    return res.json().markdown;
+  }
+
   async function review(versionId: string, headers: Record<string, string>, action: 'approve' | 'reject') {
     return h.app.inject({
       method: 'POST',
@@ -143,7 +150,7 @@ describe('snapshot contributors and self-approval', () => {
     // as did the owner who created the page with its initial text.
     const v1 = await snapshot(w, w.b.headers);
     expect(v1.status).toBe('pending_review');
-    expect(v1.markdown).toContain('A was here and B too');
+    expect(await markdownOf(v1.id, w.b.headers)).toContain('A was here and B too');
     expect(await contributorsOf(w.tenant.id, v1.id)).toEqual(users(w.owner.userId, w.a.userId, w.b.userId));
     expect(await pendingOf(w.tenant.id, w.page.id)).toEqual([]);
 
@@ -170,7 +177,7 @@ describe('snapshot contributors and self-approval', () => {
 
     await edit(w, w.b.userId, 1, ' typo fixed by B');
     const v2 = await snapshot(w, w.b.headers);
-    expect(v2.markdown).toContain('A wrote this');
+    expect(await markdownOf(v2.id, w.b.headers)).toContain('A wrote this');
     expect(await contributorsOf(w.tenant.id, v2.id)).toEqual(
       users(w.owner.userId, w.a.userId, w.b.userId)
     );
@@ -262,7 +269,12 @@ describe('a manual snapshot waits for the bookkeeping of what it flushed', () =>
       headers: w.b.headers,
     });
     expect(res.statusCode, res.body).toBe(201);
-    expect(res.json().markdown).toContain('typed just now by A');
+    const detail = await h.app.inject({
+      method: 'GET',
+      url: `/api/v1/versions/${res.json().id}`,
+      headers: w.b.headers,
+    });
+    expect(detail.json().markdown).toContain('typed just now by A');
     expect(await contributorsOf(w.tenant.id, res.json().id)).toContain(`user:${w.a.userId}`);
   });
 });

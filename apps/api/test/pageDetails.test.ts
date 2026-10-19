@@ -48,7 +48,7 @@ describe('GET /api/v1/pages/:id version payload', () => {
       payload: { space_id: spaceId, title: 'Details', slug: 'details', markdown: 'Version one body.' },
     });
     assert.equal(pageRes.statusCode, 201, pageRes.body);
-    const pageId = pageRes.json().document.id as string;
+    const pageId = pageRes.json().id as string;
 
     const s1 = await app.inject({ method: 'POST', url: `/api/v1/pages/${pageId}/snapshot`, headers });
     assert.equal(s1.statusCode, 201, s1.body);

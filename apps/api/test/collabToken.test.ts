@@ -21,14 +21,12 @@ describe('POST /api/v1/pages/:id/collab-token', () => {
       slug: 'token-co',
     });
     const space = await post(headers, '/api/v1/spaces', { name: 'Docs', slug: 'docs' });
-    const page = (
-      await post(headers, '/api/v1/pages', {
-        space_id: space.id,
-        title: 'P',
-        slug: 'p',
-        markdown: '# P',
-      })
-    ).document;
+    const page = await post(headers, '/api/v1/pages', {
+      space_id: space.id,
+      title: 'P',
+      slug: 'p',
+      markdown: '# P',
+    });
     const editor = await signUpMember(app, tenant.id, 'member');
     const viewer = await signUpMember(app, tenant.id, 'member');
     await post(headers, `/api/v1/spaces/${space.id}/grants`, {

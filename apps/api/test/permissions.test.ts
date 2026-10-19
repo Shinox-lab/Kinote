@@ -58,8 +58,10 @@ describe('permission gate', () => {
   }
 
   async function createPage(headers: Headers, spaceId: string, slug: string, markdown = '# Hello') {
-    return (await ok('POST', '/api/v1/pages', headers, { space_id: spaceId, title: slug, slug, markdown }))
-      .document as { id: string; spaceId: string };
+    return (await ok('POST', '/api/v1/pages', headers, { space_id: spaceId, title: slug, slug, markdown })) as {
+      id: string;
+      spaceId: string;
+    };
   }
 
   async function grant(headers: Headers, spaceId: string, principal_type: string, principal_id: string, role: string) {
@@ -495,7 +497,7 @@ describe('permission gate', () => {
         title: 'Child',
         slug: 'child',
       });
-      expect(child.document.parentId).toBe(parent.id);
+      expect(child.parentId).toBe(parent.id);
     });
   });
 

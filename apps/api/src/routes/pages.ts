@@ -26,15 +26,13 @@ import {
   MovePageRequestSchema,
   ApproveVersionRequestSchema,
   RejectVersionRequestSchema,
-  CollabTokenResponseSchema,
-  RetryVersionResponseSchema,
-  VersionSummarySchema,
-  VersionListSchema,
-  VersionDetailSchema,
-  BlockDiffSchema,
   CompareQuerySchema,
   RestoreVersionParamsSchema,
   AppError,
+  type CollabTokenResponse,
+  type DocumentSummary,
+  type PageDetails,
+  type PageSummary,
   type RetryVersionResponse,
   type VersionSummary,
   type VersionDetail,
@@ -86,7 +84,7 @@ export type VersionSummaryRow = {
 
 /** A version row (or its summary columns) as the published VersionSummary. */
 export function toVersionSummary(row: VersionSummaryRow): VersionSummary {
-  return VersionSummarySchema.parse({
+  return {
     id: row.id,
     number: row.number,
     status: row.status,
@@ -99,7 +97,20 @@ export function toVersionSummary(row: VersionSummaryRow): VersionSummary {
     reviewNote: row.reviewNote,
     indexedAt: row.indexedAt?.toISOString() ?? null,
     error: row.error,
-  });
+  };
+}
+
+/** A document row as the published DocumentSummary (timestamps as ISO strings). */
+export function toDocumentSummary(row: DocumentRow): DocumentSummary {
+  return {
+    id: row.id,
+    spaceId: row.spaceId,
+    parentId: row.parentId,
+    position: row.position,
+    title: row.title,
+    archivedAt: row.archivedAt?.toISOString() ?? null,
+    indexedVersionId: row.indexedVersionId,
+  };
 }
 
 export async function encodePageYDoc(title: string, markdown: string): Promise<Buffer> {
@@ -137,7 +148,7 @@ async function requireVisibleParent(
   await requireDocumentRole(tx, actor, parentDoc, 'viewer', { notFound: 'parent_not_found' });
 }
 
-export async function createPage(actor: Actor, input: unknown) {
+export async function createPage(actor: Actor, input: unknown): Promise<PageSummary> {
   const parsed = CreatePageRequestSchema.parse(input);
 
   return withTenantTx(actor.tenantId, async (tx) => {
@@ -200,11 +211,17 @@ export async function createPage(actor: Actor, input: unknown) {
       payload: { spaceId: parsed.space_id, slug: parsed.slug, title: parsed.title },
     });
 
-    return { document: doc, page };
+    return {
+      id: doc.id,
+      spaceId: doc.spaceId,
+      parentId: doc.parentId,
+      title: doc.title,
+      slug: page.slug,
+    };
   });
 }
 
-export async function getPageDetails(actor: Actor, pageId: string) {
+export async function getPageDetails(actor: Actor, pageId: string): Promise<PageDetails> {
   assertValidUuid(pageId, 'page_not_found');
 
   return withTenantTx(actor.tenantId, async (tx) => {
@@ -270,12 +287,17 @@ export async function getPageDetails(actor: Actor, pageId: string) {
       liveMarkdown,
       liveBlocks,
       liveChangedSinceSnapshot: page.liveChangedSinceSnapshot,
-      agentChangedAt: page.agentChangedAt,
-      archivedAt: doc.archivedAt,
+      agentChangedAt: page.agentChangedAt?.toISOString() ?? null,
+      archivedAt: doc.archivedAt?.toISOString() ?? null,
       latestVersion,
       indexedVersion,
       versions: pageVersions,
-      blockActivity: activity,
+      blockActivity: activity.map((a) => ({
+        blockId: a.blockId,
+        actorType: a.actorType,
+        actorId: a.actorId,
+        changedAt: a.changedAt.toISOString(),
+      })),
     };
   });
 }
@@ -337,7 +359,7 @@ export async function listPageVersions(actor: Actor, pageId: string): Promise<Ve
       .from(versions)
       .where(and(eq(versions.tenantId, actor.tenantId), eq(versions.documentId, pageId)))
       .orderBy(desc(versions.number));
-    return VersionListSchema.parse(rows.map(toVersionSummary));
+    return rows.map(toVersionSummary);
   });
 }
 
@@ -406,12 +428,12 @@ export async function getVersionDetail(actor: Actor, versionId: string): Promise
       }))
       .sort((a, b) => a.type.localeCompare(b.type) || a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
 
-    return VersionDetailSchema.parse({
+    return {
       ...toVersionSummary(ver),
       markdown: ver.markdown,
       blocks: storedBlocks(ver.blocks),
       contributors,
-    });
+    };
   });
 }
 
@@ -440,7 +462,7 @@ export async function getPageChanges(actor: Actor, pageId: string): Promise<Bloc
     const live = blockNote.yDocToBlocks(ydoc, 'document-store') as BlockLike[];
 
     const activity = await pageActivity(tx, actor.tenantId, pageId);
-    return BlockDiffSchema.parse(diffBlocks(before, live, activity));
+    return diffBlocks(before, live, activity);
   });
 }
 
@@ -477,7 +499,7 @@ export async function comparePageVersions(
     if (!fromRow || !toRow) {
       throw new AppError('version_not_found');
     }
-    return BlockDiffSchema.parse(diffBlocks(storedBlocks(fromRow.blocks), storedBlocks(toRow.blocks), []));
+    return diffBlocks(storedBlocks(fromRow.blocks), storedBlocks(toRow.blocks), []);
   });
 }
 
@@ -498,7 +520,7 @@ export async function getVersionDiff(actor: Actor, versionId: string): Promise<B
     const base =
       doc.indexedVersionId === ver.id ? after : ((await indexedBlocks(tx, actor.tenantId, doc)) ?? []);
     // No authors, for the reason given at comparePageVersions.
-    return BlockDiffSchema.parse(diffBlocks(base, after, []));
+    return diffBlocks(base, after, []);
   });
 }
 
@@ -513,7 +535,11 @@ export async function getVersionDiff(actor: Actor, versionId: string): Promise<B
  * what was typed a moment ago rather than the last debounced store. A failed
  * flush fails the snapshot (`internal_error`): it never snapshots stale state.
  */
-export async function submitPageSnapshot(actor: Actor, pageId: string, collab?: CollabClient) {
+export async function submitPageSnapshot(
+  actor: Actor,
+  pageId: string,
+  collab?: CollabClient
+): Promise<VersionSummary> {
   assertValidUuid(pageId, 'page_not_found');
   await withTenantTx(actor.tenantId, async (tx) => {
     const [doc] = await tx
@@ -528,7 +554,7 @@ export async function submitPageSnapshot(actor: Actor, pageId: string, collab?: 
   if (collab) {
     await collab.flush(documentName(actor.tenantId, pageId));
   }
-  return takePageSnapshot({
+  const created = await takePageSnapshot({
     tenantId: actor.tenantId,
     pageId,
     reason: actor.principalType === 'agent' ? 'agent' : 'submit',
@@ -536,6 +562,11 @@ export async function submitPageSnapshot(actor: Actor, pageId: string, collab?: 
     actorId: actor.principalId,
     manual: true,
   });
+  // A manual snapshot either makes a version or throws; null is the quiet path.
+  if (!created) {
+    throw new AppError('internal_error');
+  }
+  return toVersionSummary(created);
 }
 
 /**
@@ -702,7 +733,7 @@ export async function approveVersion(
   versionId: string,
   input: unknown = {},
   hooks: ReviewHooks = {}
-) {
+): Promise<VersionSummary> {
   assertValidUuid(versionId, 'version_not_found');
   const parsed = ApproveVersionRequestSchema.parse(input);
 
@@ -792,7 +823,7 @@ export async function approveVersion(
       payload: { documentId: doc.id, number: ver.number },
     });
 
-    return updatedVer;
+    return toVersionSummary(updatedVer);
   });
 }
 
@@ -805,7 +836,7 @@ export async function rejectVersion(
   versionId: string,
   input: unknown,
   hooks: ReviewHooks = {}
-) {
+): Promise<VersionSummary> {
   assertValidUuid(versionId, 'version_not_found');
   const parsed = RejectVersionRequestSchema.parse(input);
 
@@ -854,7 +885,7 @@ export async function rejectVersion(
       payload: { documentId: doc.id, number: ver.number, reviewNote: parsed.review_note },
     });
 
-    return updated;
+    return toVersionSummary(updated);
   });
 }
 
@@ -933,10 +964,7 @@ export async function retryVersion(actor: Actor, versionId: string): Promise<Ret
       payload: { documentId: doc.id, number: ver.number },
     });
 
-    return RetryVersionResponseSchema.parse({
-      ...toVersionSummary(updated),
-      documentId: updated.documentId,
-    });
+    return { ...toVersionSummary(updated), documentId: updated.documentId };
   });
 }
 
@@ -1085,7 +1113,11 @@ async function returnToReview(tx: DbTransaction, tenantId: string, doc: Document
  * (404 `parent_not_found`), a cycle (409 `parent_cycle`) and archived pages
  * (409 `page_archived`).
  */
-export async function movePage(actor: Actor, pageId: string, input: unknown) {
+export async function movePage(
+  actor: Actor,
+  pageId: string,
+  input: unknown
+): Promise<DocumentSummary> {
   assertValidUuid(pageId, 'page_not_found');
   const parsed = MovePageRequestSchema.parse(input);
 
@@ -1189,7 +1221,7 @@ export async function movePage(actor: Actor, pageId: string, input: unknown) {
       },
     });
 
-    return updatedDoc;
+    return toDocumentSummary(updatedDoc);
   });
 }
 
@@ -1199,7 +1231,7 @@ export async function movePage(actor: Actor, pageId: string, input: unknown) {
  * pending version is withdrawn, the chunks are deleted and `archived_at` set,
  * all in one transaction under the document lock.
  */
-export async function archivePage(actor: Actor, pageId: string) {
+export async function archivePage(actor: Actor, pageId: string): Promise<DocumentSummary> {
   assertValidUuid(pageId, 'page_not_found');
 
   return withTenantTx(actor.tenantId, async (tx) => {
@@ -1240,7 +1272,7 @@ export async function archivePage(actor: Actor, pageId: string) {
       subjectId: pageId,
     });
 
-    return updated;
+    return toDocumentSummary(updated);
   });
 }
 
@@ -1253,7 +1285,7 @@ export async function archivePage(actor: Actor, pageId: string) {
  * nothing and answers the page. Same lock as the other lifecycle writers; an
  * archived space is 409 `space_archived` (checked by the gate).
  */
-export async function restorePage(actor: Actor, pageId: string) {
+export async function restorePage(actor: Actor, pageId: string): Promise<DocumentSummary> {
   assertValidUuid(pageId, 'page_not_found');
 
   return withTenantTx(actor.tenantId, async (tx) => {
@@ -1266,7 +1298,7 @@ export async function restorePage(actor: Actor, pageId: string) {
     });
 
     if (!doc.archivedAt) {
-      return doc;
+      return toDocumentSummary(doc);
     }
 
     let parentId = doc.parentId;
@@ -1305,7 +1337,7 @@ export async function restorePage(actor: Actor, pageId: string) {
       payload: { parentId },
     });
 
-    return updated;
+    return toDocumentSummary(updated);
   });
 }
 
@@ -1315,7 +1347,7 @@ export async function restorePage(actor: Actor, pageId: string) {
  * deleted and `indexed_version_id` cleared, in one transaction under the
  * document lock, so search stops returning it immediately.
  */
-export async function withdrawPage(actor: Actor, pageId: string) {
+export async function withdrawPage(actor: Actor, pageId: string): Promise<DocumentSummary> {
   assertValidUuid(pageId, 'page_not_found');
 
   return withTenantTx(actor.tenantId, async (tx) => {
@@ -1340,7 +1372,7 @@ export async function withdrawPage(actor: Actor, pageId: string) {
       subjectId: pageId,
     });
 
-    return updated;
+    return toDocumentSummary(updated);
   });
 }
 
@@ -1351,7 +1383,7 @@ export async function withdrawPage(actor: Actor, pageId: string) {
  * space that is not archived. The
  * collab server re-reads the role from the database on connect.
  */
-export async function issueCollabToken(actor: Actor, pageId: string) {
+export async function issueCollabToken(actor: Actor, pageId: string): Promise<CollabTokenResponse> {
   assertValidUuid(pageId, 'page_not_found');
 
   const { access, documentId } = await withTenantTx(actor.tenantId, async (tx) => {
@@ -1387,10 +1419,10 @@ export async function issueCollabToken(actor: Actor, pageId: string) {
     getCollabTokenSecret(),
     now
   );
-  return CollabTokenResponseSchema.parse({
+  return {
     token,
     // Same second-resolution expiry the token itself carries.
     expiresAt: new Date((Math.floor(now.getTime() / 1000) + COLLAB_TOKEN_TTL_SECONDS) * 1000).toISOString(),
     access,
-  });
+  };
 }

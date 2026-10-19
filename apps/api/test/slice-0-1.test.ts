@@ -342,7 +342,7 @@ describe('Living Wiki — Slice 0 (Foundations) & Slice 1 (Live Pages)', () => {
       },
     });
     assert.equal(createdPageRes.statusCode, 201);
-    const pageId = createdPageRes.json().document.id;
+    const pageId = createdPageRes.json().id;
 
     const snap1Res = await app.inject({
       method: 'POST',
@@ -567,7 +567,7 @@ describe('Living Wiki — Slice 0 (Foundations) & Slice 1 (Live Pages)', () => {
           markdown: 'Human authored architecture v1.',
         },
       })
-    ).json().document;
+    ).json();
 
     const v1 = (
       await app.inject({
@@ -628,7 +628,7 @@ describe('Living Wiki — Slice 0 (Foundations) & Slice 1 (Live Pages)', () => {
           markdown: 'Postgres 17 + pgvector 0.8.',
         },
       })
-    ).json().document;
+    ).json();
 
     // Moving parentPage under childPage must fail with 409 parent_cycle
     const cycleRes = await app.inject({

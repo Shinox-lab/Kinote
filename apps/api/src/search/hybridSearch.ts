@@ -1,19 +1,7 @@
 import { sql, type SQL } from 'drizzle-orm';
 import { rowsOf, type DbTransaction } from '@living-wiki/db';
 import { principalKey, type Actor } from '@living-wiki/core';
-
-export interface SearchPassage {
-  chunkId: string;
-  documentId: string;
-  versionId: string;
-  versionNumber: number;
-  versionTitle: string;
-  text: string;
-  headingPath: string[];
-  blockIds: string[];
-  citeAs: string;
-  rrfScore: number;
-}
+import type { SearchPassage } from '@living-wiki/contracts';
 
 /** Candidates each branch contributes to reciprocal rank fusion. */
 export const BRANCH_LIMIT = 40;

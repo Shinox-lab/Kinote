@@ -1,7 +1,37 @@
 import Fastify, { type FastifyRequest } from 'fastify';
 import rateLimit from '@fastify/rate-limit';
 import { withTenantTx } from '@living-wiki/db';
-import { SearchRequestSchema, AskRequestSchema, AppError } from '@living-wiki/contracts';
+import {
+  SearchRequestSchema,
+  AskRequestSchema,
+  AppError,
+  CreateTenantResponseSchema,
+  InviteMemberResponseSchema,
+  AcceptInvitationResponseSchema,
+  SpaceSchema,
+  SpaceResponseSchema,
+  SpaceListSchema,
+  TreeResponseSchema,
+  UpsertGrantResponseSchema,
+  GrantListSchema,
+  MemberSchema,
+  MemberListSchema,
+  GroupSchema,
+  GroupListSchema,
+  GroupMemberResponseSchema,
+  PageSummarySchema,
+  PageDetailsSchema,
+  DocumentSummarySchema,
+  VersionSummarySchema,
+  VersionListSchema,
+  VersionDetailSchema,
+  BlockDiffSchema,
+  CollabTokenResponseSchema,
+  ReviewListSchema,
+  RetryVersionResponseSchema,
+  SearchResponseSchema,
+  AskResponseSchema,
+} from '@living-wiki/contracts';
 import {
   getReadableSpaceIds,
   defaultEmbeddingProvider,
@@ -54,6 +84,7 @@ import { listReviewQueue } from './routes/reviews.js';
 import { authRoutes, type AuthRateLimit } from './routes/auth.js';
 import { requireSession, resolveActor, type AuthSession } from './auth/actor.js';
 import { registerErrorHandler } from './errors.js';
+import { parseReply } from './reply.js';
 import { searchWiki } from './search/hybridSearch.js';
 import { askWiki } from './search/ask.js';
 import type { CollabClient } from './collab/client.js';
@@ -115,67 +146,67 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
 
   app.post('/api/v1/tenants', { config: { auth: 'session' } }, async (req, reply) => {
     const res = await createTenantWithInbox(sessionOf(req).userId, req.body);
-    return reply.status(201).send(res);
+    return reply.status(201).send(parseReply(CreateTenantResponseSchema, res));
   });
 
   app.post('/api/v1/invitations', async (req, reply) => {
     const res = await inviteMember(actorOf(req), req.body);
-    return reply.status(201).send(res);
+    return reply.status(201).send(parseReply(InviteMemberResponseSchema, res));
   });
 
   app.post('/api/v1/invitations/accept', { config: { auth: 'session' } }, async (req, reply) => {
     const res = await acceptInvitation(sessionOf(req).userId, req.body);
-    return reply.status(200).send(res);
+    return reply.status(200).send(parseReply(AcceptInvitationResponseSchema, res));
   });
 
   app.get('/api/v1/spaces', async (req, reply) => {
     const actor = actorOf(req);
     const res = await listSpacesForActor(actor);
-    return reply.send(res);
+    return reply.send(parseReply(SpaceListSchema, res));
   });
 
   app.post('/api/v1/spaces', async (req, reply) => {
     const actor = actorOf(req);
     const res = await createSpace(actor, req.body);
-    return reply.status(201).send(res);
+    return reply.status(201).send(parseReply(SpaceResponseSchema, res));
   });
 
   app.get('/api/v1/spaces/:id', async (req, reply) => {
     const actor = actorOf(req);
     const res = await getSpaceForActor(actor, (req.params as any).id);
-    return reply.send(res);
+    return reply.send(parseReply(SpaceResponseSchema, res));
   });
 
   app.patch('/api/v1/spaces/:id', async (req, reply) => {
     const actor = actorOf(req);
     const res = await updateSpaceSettings(actor, (req.params as any).id, req.body);
-    return reply.send(res);
+    return reply.send(parseReply(SpaceSchema, res));
   });
 
   app.get('/api/v1/spaces/:id/tree', async (req, reply) => {
     const res = await getSpaceTree(actorOf(req), (req.params as any).id);
-    return reply.send(res);
+    return reply.send(parseReply(TreeResponseSchema, res));
   });
 
   app.get('/api/v1/spaces/:id/archived', async (req, reply) => {
     const res = await getSpaceArchived(actorOf(req), (req.params as any).id);
-    return reply.send(res);
+    return reply.send(parseReply(TreeResponseSchema, res));
   });
 
   app.post('/api/v1/spaces/:id/archive', async (req, reply) => {
     const res = await archiveSpace(actorOf(req), (req.params as any).id);
-    return reply.send(res);
+    return reply.send(parseReply(SpaceResponseSchema, res));
   });
 
   app.post('/api/v1/spaces/:id/grants', async (req, reply) => {
     const actor = actorOf(req);
     const res = await upsertSpaceGrant(actor, (req.params as any).id, req.body);
-    return reply.status(201).send(res);
+    return reply.status(201).send(parseReply(UpsertGrantResponseSchema, res));
   });
 
   app.get('/api/v1/spaces/:id/grants', async (req, reply) => {
     const res = await listSpaceGrants(actorOf(req), (req.params as any).id);
-    return reply.send(res);
+    return reply.send(parseReply(GrantListSchema, res));
   });
 
   app.delete('/api/v1/spaces/:id/grants/:principalType/:principalId', async (req, reply) => {
@@ -185,12 +216,12 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
   });
 
   app.get('/api/v1/members', async (req, reply) => {
-    return reply.send(await listMembers(actorOf(req)));
+    return reply.send(parseReply(MemberListSchema, await listMembers(actorOf(req))));
   });
 
   app.patch('/api/v1/members/:userId', async (req, reply) => {
     const res = await changeMemberRole(actorOf(req), (req.params as any).userId, req.body);
-    return reply.send(res);
+    return reply.send(parseReply(MemberSchema, res));
   });
 
   app.delete('/api/v1/members/:userId', async (req, reply) => {
@@ -199,17 +230,17 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
   });
 
   app.get('/api/v1/groups', async (req, reply) => {
-    return reply.send(await listGroups(actorOf(req)));
+    return reply.send(parseReply(GroupListSchema, await listGroups(actorOf(req))));
   });
 
   app.post('/api/v1/groups', async (req, reply) => {
     const res = await createGroup(actorOf(req), req.body);
-    return reply.status(201).send(res);
+    return reply.status(201).send(parseReply(GroupSchema, res));
   });
 
   app.post('/api/v1/groups/:id/members', async (req, reply) => {
     const res = await addGroupMember(actorOf(req), (req.params as any).id, req.body);
-    return reply.send(res);
+    return reply.send(parseReply(GroupMemberResponseSchema, res));
   });
 
   app.delete('/api/v1/groups/:id/members/:principalType/:principalId', async (req, reply) => {
@@ -221,93 +252,106 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
   app.post('/api/v1/pages', async (req, reply) => {
     const actor = actorOf(req);
     const res = await createPage(actor, req.body);
-    return reply.status(201).send(res);
+    return reply.status(201).send(parseReply(PageSummarySchema, res));
   });
 
   app.get('/api/v1/pages/:id', async (req, reply) => {
     const actor = actorOf(req);
     const res = await getPageDetails(actor, (req.params as any).id);
-    return reply.send(res);
+    return reply.send(parseReply(PageDetailsSchema, res));
   });
 
   app.get('/api/v1/pages/:id/versions', async (req, reply) => {
-    return reply.send(await listPageVersions(actorOf(req), (req.params as any).id));
+    return reply.send(
+      parseReply(VersionListSchema, await listPageVersions(actorOf(req), (req.params as any).id))
+    );
   });
 
   app.get('/api/v1/pages/:id/changes', async (req, reply) => {
-    return reply.send(await getPageChanges(actorOf(req), (req.params as any).id));
+    return reply.send(
+      parseReply(BlockDiffSchema, await getPageChanges(actorOf(req), (req.params as any).id))
+    );
   });
 
   app.get('/api/v1/pages/:id/compare', async (req, reply) => {
-    return reply.send(await comparePageVersions(actorOf(req), (req.params as any).id, req.query));
+    return reply.send(
+      parseReply(
+        BlockDiffSchema,
+        await comparePageVersions(actorOf(req), (req.params as any).id, req.query)
+      )
+    );
   });
 
   app.get('/api/v1/versions/:id', async (req, reply) => {
-    return reply.send(await getVersionDetail(actorOf(req), (req.params as any).id));
+    return reply.send(
+      parseReply(VersionDetailSchema, await getVersionDetail(actorOf(req), (req.params as any).id))
+    );
   });
 
   app.get('/api/v1/versions/:id/diff', async (req, reply) => {
-    return reply.send(await getVersionDiff(actorOf(req), (req.params as any).id));
+    return reply.send(
+      parseReply(BlockDiffSchema, await getVersionDiff(actorOf(req), (req.params as any).id))
+    );
   });
 
   app.post('/api/v1/pages/:id/collab-token', async (req, reply) => {
     const res = await issueCollabToken(actorOf(req), (req.params as any).id);
-    return reply.send(res);
+    return reply.send(parseReply(CollabTokenResponseSchema, res));
   });
 
   app.post('/api/v1/pages/:id/snapshot', async (req, reply) => {
     const res = await submitPageSnapshot(actorOf(req), (req.params as any).id, opts.collab);
-    return reply.status(201).send(res);
+    return reply.status(201).send(parseReply(VersionSummarySchema, res));
   });
 
   app.post('/api/v1/pages/:id/versions/:n/restore', async (req, reply) => {
     const { id, ...params } = req.params as any;
     const res = await restorePageVersion(actorOf(req), id, params, opts.collab);
-    return reply.status(201).send(res);
+    return reply.status(201).send(parseReply(VersionSummarySchema, res));
   });
 
   app.post('/api/v1/pages/:id/move', async (req, reply) => {
     const actor = actorOf(req);
     const res = await movePage(actor, (req.params as any).id, req.body);
-    return reply.send(res);
+    return reply.send(parseReply(DocumentSummarySchema, res));
   });
 
   app.post('/api/v1/pages/:id/archive', async (req, reply) => {
     const actor = actorOf(req);
     const res = await archivePage(actor, (req.params as any).id);
-    return reply.send(res);
+    return reply.send(parseReply(DocumentSummarySchema, res));
   });
 
   app.post('/api/v1/pages/:id/restore', async (req, reply) => {
     const res = await restorePage(actorOf(req), (req.params as any).id);
-    return reply.send(res);
+    return reply.send(parseReply(DocumentSummarySchema, res));
   });
 
   app.post('/api/v1/pages/:id/withdraw', async (req, reply) => {
     const actor = actorOf(req);
     const res = await withdrawPage(actor, (req.params as any).id);
-    return reply.send(res);
+    return reply.send(parseReply(DocumentSummarySchema, res));
   });
 
   app.get('/api/v1/reviews', async (req, reply) => {
-    return reply.send(await listReviewQueue(actorOf(req), req.query));
+    return reply.send(parseReply(ReviewListSchema, await listReviewQueue(actorOf(req), req.query)));
   });
 
   app.post('/api/v1/versions/:id/approve', async (req, reply) => {
     const actor = actorOf(req);
     const res = await approveVersion(actor, (req.params as any).id, req.body ?? {});
-    return reply.send(res);
+    return reply.send(parseReply(VersionSummarySchema, res));
   });
 
   app.post('/api/v1/versions/:id/reject', async (req, reply) => {
     const actor = actorOf(req);
     const res = await rejectVersion(actor, (req.params as any).id, req.body);
-    return reply.send(res);
+    return reply.send(parseReply(VersionSummarySchema, res));
   });
 
   app.post('/api/v1/versions/:id/retry', async (req, reply) => {
     const res = await retryVersion(actorOf(req), (req.params as any).id);
-    return reply.send(res);
+    return reply.send(parseReply(RetryVersionResponseSchema, res));
   });
 
   app.post('/api/v1/search', async (req, reply) => {
@@ -330,7 +374,7 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
         parsed.limit
       );
     });
-    return reply.send({ passages: res });
+    return reply.send(parseReply(SearchResponseSchema, { passages: res }));
   });
 
   app.post('/api/v1/ask', async (req, reply) => {
@@ -345,7 +389,7 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
         : readableSpaceIds;
       return askWiki(tx, actor, effectiveSpaces, inboxSpaceId, parsed.question, queryEmbedding);
     });
-    return reply.send(res);
+    return reply.send(parseReply(AskResponseSchema, res));
   });
 
   return app;

@@ -87,7 +87,7 @@ describe('tree, archived list, space archive, page restore', () => {
       payload: { space_id: spaceId, title, slug, markdown: 'Some text.', parent_id: parentId },
     });
     assert.equal(res.statusCode, 201, res.body);
-    return res.json().document.id;
+    return res.json().id;
   }
 
   function post(headers: Headers, url: string) {
@@ -256,20 +256,18 @@ describe('tree, archived list, space archive, page restore', () => {
       const agentId = await createAgent(ctx.tenant.id, ctx.owner.userId, { name: 'Scribe' });
       const agent: Actor = { tenantId: ctx.tenant.id, principalType: 'agent', principalId: agentId };
       const theirs = await createPage(ctx.editor.headers, ctx.inbox.id, 'theirs', 'Theirs');
-      const { document } = await createPageAs(agent, {
+      const document = await createPageAs(agent, {
         space_id: ctx.inbox.id,
         title: 'Agent note',
         slug: 'agent-note',
         markdown: 'x',
       });
-      const own2 = (
-        await createPageAs(agent, {
-          space_id: ctx.inbox.id,
-          title: 'Agent old',
-          slug: 'agent-old',
-          markdown: 'x',
-        })
-      ).document;
+      const own2 = await createPageAs(agent, {
+        space_id: ctx.inbox.id,
+        title: 'Agent old',
+        slug: 'agent-old',
+        markdown: 'x',
+      });
       await withTenantTx(ctx.tenant.id, (tx) =>
         tx
           .update(documents)

@@ -61,22 +61,18 @@ describe('collab connection authentication', () => {
       slug: 'collab-co',
     });
     const space = await post(headers, '/api/v1/spaces', { name: 'Docs', slug: 'docs' });
-    const pageA = (
-      await post(headers, '/api/v1/pages', {
-        space_id: space.id,
-        title: 'Page A',
-        slug: 'page-a',
-        markdown: '# A',
-      })
-    ).document;
-    const pageB = (
-      await post(headers, '/api/v1/pages', {
-        space_id: space.id,
-        title: 'Page B',
-        slug: 'page-b',
-        markdown: '# B',
-      })
-    ).document;
+    const pageA = await post(headers, '/api/v1/pages', {
+      space_id: space.id,
+      title: 'Page A',
+      slug: 'page-a',
+      markdown: '# A',
+    });
+    const pageB = await post(headers, '/api/v1/pages', {
+      space_id: space.id,
+      title: 'Page B',
+      slug: 'page-b',
+      markdown: '# B',
+    });
     const editor = await signUpMember(app, tenant.id, 'member');
     const viewer = await signUpMember(app, tenant.id, 'member');
     await post(headers, `/api/v1/spaces/${space.id}/grants`, {
@@ -321,14 +317,12 @@ describe('collab connection authentication', () => {
     const spaceList = await app.inject({ method: 'GET', url: '/api/v1/spaces', headers: creator.headers });
     const inbox = (spaceList.json() as Array<{ id: string; kind: string }>).find((s) => s.kind === 'inbox');
     assert.ok(inbox);
-    const item = (
-      await post(creator.headers, '/api/v1/pages', {
-        space_id: inbox.id,
-        title: 'Private note',
-        slug: 'private-note',
-        markdown: '# mine',
-      })
-    ).document;
+    const item = await post(creator.headers, '/api/v1/pages', {
+      space_id: inbox.id,
+      title: 'Private note',
+      slug: 'private-note',
+      markdown: '# mine',
+    });
     const name = documentName(w.tenant.id, item.id);
 
     const refused = tokenFor(w, item.id, other.userId, 'write');

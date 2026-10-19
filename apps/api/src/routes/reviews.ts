@@ -11,7 +11,6 @@ import {
 } from '@living-wiki/db';
 import {
   ReviewQuerySchema,
-  ReviewListSchema,
   AppError,
   type ReviewItem,
 } from '@living-wiki/contracts';
@@ -167,6 +166,6 @@ export async function listReviewQueue(actor: Actor, query: unknown): Promise<Rev
         ),
       };
     });
-    return ReviewListSchema.parse(items);
+    return items;
   });
 }

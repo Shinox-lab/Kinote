@@ -71,14 +71,12 @@ describe('restore a version', () => {
     const viewer = await signUpMember(app, tenant.id, 'member');
     await grant(viewer.userId, 'viewer');
     const stranger = await signUpMember(app, tenant.id, 'member');
-    const page = (
-      await post(headers, '/api/v1/pages', {
-        space_id: space.id,
-        title: 'Original',
-        slug: 'restore-me',
-        markdown: 'alpha',
-      })
-    ).document;
+    const page = await post(headers, '/api/v1/pages', {
+      space_id: space.id,
+      title: 'Original',
+      slug: 'restore-me',
+      markdown: 'alpha',
+    });
     return { owner, tenant, headers, space, editor, viewer, stranger, page };
   }
   type World = Awaited<ReturnType<typeof setup>>;

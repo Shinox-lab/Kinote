@@ -72,7 +72,7 @@ describe('review queue: GET /api/v1/reviews', () => {
       slug: `page-${slugCounter}`,
       markdown,
     });
-    return res.document.id;
+    return res.id;
   }
 
   async function snapshotAs(headers: Headers, pageId: string) {

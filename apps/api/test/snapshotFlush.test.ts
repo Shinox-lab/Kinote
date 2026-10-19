@@ -78,7 +78,13 @@ describe('manual snapshots flush the live document first', () => {
       headers: w.editor.headers,
     });
     expect(res.statusCode, res.body).toBe(201);
-    expect(res.json().markdown).toContain(TEXT);
+    const detail = await app.inject({
+      method: 'GET',
+      url: `/api/v1/versions/${res.json().id}`,
+      headers: w.editor.headers,
+    });
+    expect(detail.statusCode, detail.body).toBe(200);
+    expect(detail.json().markdown).toContain(TEXT);
     expect(Date.now() - started).toBeLessThan(5000);
   });
 

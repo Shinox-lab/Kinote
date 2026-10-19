@@ -123,6 +123,10 @@ export const MeResponseSchema = z.object({
 });
 export type MeResponse = z.infer<typeof MeResponseSchema>;
 
+/** Reply of sign-up and sign-in. */
+export const SessionResponseSchema = AuthResponseSchema;
+export type SessionResponse = AuthResponse;
+
 // The owner is the signed-in user; it is never taken from the request body.
 export const CreateTenantRequestSchema = z.object({
   name: z.string().trim().min(1).max(120),
@@ -219,20 +223,65 @@ export const GrantSchema = z.object({
 });
 export type Grant = z.infer<typeof GrantSchema>;
 
-export const SpaceResponseSchema = z.object({
+/** A space as the API publishes it (`createdBy` is the user who made it). Timestamps are ISO 8601 strings. */
+export const SpaceSchema = z.object({
   id: z.string().uuid(),
-  tenant_id: z.string().uuid(),
+  tenantId: z.string().uuid(),
   name: z.string(),
   slug: z.string(),
   kind: SpaceKindSchema,
-  review_required: z.boolean(),
-  quiet_seconds: z.number(),
-  human_protection_seconds: z.number(),
-  allow_self_approval: z.boolean(),
-  my_role: SpaceRoleSchema,
-  created_at: z.string().datetime(),
-  archived_at: z.string().datetime().nullable(),
+  reviewRequired: z.boolean(),
+  quietSeconds: z.number().int(),
+  humanProtectionSeconds: z.number().int(),
+  allowSelfApproval: z.boolean(),
+  createdBy: z.string().uuid(),
+  createdAt: z.string().datetime(),
+  archivedAt: z.string().datetime().nullable(),
 });
+export type Space = z.infer<typeof SpaceSchema>;
+
+/** Reply of GET and POST /api/v1/spaces, GET /api/v1/spaces/:id and POST .../archive: the space plus the asking actor's role in it. */
+export const SpaceResponseSchema = SpaceSchema.extend({
+  myRole: SpaceRoleSchema,
+});
+export type SpaceResponse = z.infer<typeof SpaceResponseSchema>;
+
+/** Reply of GET /api/v1/spaces. */
+export const SpaceListSchema = z.array(SpaceResponseSchema);
+
+/** Reply of POST /api/v1/tenants: the new tenant, the creator's membership and the tenant's Inbox space. */
+export const CreateTenantResponseSchema = z.object({
+  tenant: z.object({ id: z.string().uuid(), name: z.string(), slug: z.string() }),
+  membership: z.object({ role: TenantRoleSchema }),
+  inboxSpace: SpaceSchema,
+});
+export type CreateTenantResponse = z.infer<typeof CreateTenantResponseSchema>;
+
+/** Reply of GET /api/v1/members. */
+export const MemberListSchema = z.array(MemberSchema);
+
+/** Reply of GET /api/v1/groups. */
+export const GroupListSchema = z.array(GroupSchema);
+
+/** Reply of POST /api/v1/groups/:id/members. */
+export const GroupMemberResponseSchema = z.object({
+  groupId: z.string().uuid(),
+  principalType: z.enum(['user', 'agent']),
+  principalId: z.string().uuid(),
+});
+export type GroupMemberResponse = z.infer<typeof GroupMemberResponseSchema>;
+
+/** Reply of GET /api/v1/spaces/:id/grants. */
+export const GrantListSchema = z.array(GrantSchema);
+
+/** Reply of POST /api/v1/spaces/:id/grants: the grant as stored (no principal name). */
+export const UpsertGrantResponseSchema = z.object({
+  spaceId: z.string().uuid(),
+  principalType: z.enum(['user', 'agent', 'group']),
+  principalId: z.string().uuid(),
+  role: SpaceRoleSchema,
+});
+export type UpsertGrantResponse = z.infer<typeof UpsertGrantResponseSchema>;
 
 export const CreatePageRequestSchema = z.object({
   space_id: z.string().uuid(),
@@ -284,6 +333,64 @@ export const VersionContributorSchema = z.object({
   isAgent: z.boolean(),
 });
 export type VersionContributor = z.infer<typeof VersionContributorSchema>;
+
+/** Reply of POST /api/v1/pages: the new page, without its content or any heavy column. */
+export const PageSummarySchema = z.object({
+  id: z.string().uuid(),
+  spaceId: z.string().uuid(),
+  parentId: z.string().uuid().nullable(),
+  title: z.string(),
+  slug: z.string(),
+});
+export type PageSummary = z.infer<typeof PageSummarySchema>;
+
+/**
+ * The document row of a page after a lifecycle change (move, archive,
+ * restore, withdraw). `indexedVersionId` is null once nothing is indexed.
+ */
+export const DocumentSummarySchema = z.object({
+  id: z.string().uuid(),
+  spaceId: z.string().uuid(),
+  parentId: z.string().uuid().nullable(),
+  position: z.string(),
+  title: z.string(),
+  archivedAt: z.string().datetime().nullable(),
+  indexedVersionId: z.string().uuid().nullable(),
+});
+export type DocumentSummary = z.infer<typeof DocumentSummarySchema>;
+
+/** The last actor recorded for a block (`block_activity`). */
+export const BlockActivitySchema = z.object({
+  blockId: z.string(),
+  actorType: z.enum(['user', 'agent']),
+  actorId: z.string().uuid(),
+  changedAt: z.string().datetime(),
+});
+export type BlockActivity = z.infer<typeof BlockActivitySchema>;
+
+/**
+ * Reply of GET /api/v1/pages/:id: the page as last stored by collab (title,
+ * live markdown and BlockNote blocks), its badge and its versions (newest
+ * first, as summaries).
+ */
+export const PageDetailsSchema = z.object({
+  id: z.string().uuid(),
+  spaceId: z.string().uuid(),
+  parentId: z.string().uuid().nullable(),
+  title: z.string(),
+  slug: z.string(),
+  badge: z.string(),
+  liveMarkdown: z.string(),
+  liveBlocks: z.array(z.unknown()),
+  liveChangedSinceSnapshot: z.boolean(),
+  agentChangedAt: z.string().datetime().nullable(),
+  archivedAt: z.string().datetime().nullable(),
+  latestVersion: VersionSummarySchema.nullable(),
+  indexedVersion: VersionSummarySchema.nullable(),
+  versions: z.array(VersionSummarySchema),
+  blockActivity: z.array(BlockActivitySchema),
+});
+export type PageDetails = z.infer<typeof PageDetailsSchema>;
 
 /** Query of GET /api/v1/reviews: an optional space to narrow the queue to (validated by the handler: a bad id is 404 `space_not_found`). */
 export const ReviewQuerySchema = z.object({
@@ -409,6 +516,65 @@ export const AskRequestSchema = z.object({
   question: z.string().trim().min(1).max(1000),
   space_ids: z.array(z.string().uuid()).optional(),
 });
+
+/** One ranked passage of a search: a chunk of an indexed version, with how to cite it. */
+export const SearchPassageSchema = z.object({
+  chunkId: z.string().uuid(),
+  documentId: z.string().uuid(),
+  versionId: z.string().uuid(),
+  versionNumber: z.number().int(),
+  versionTitle: z.string(),
+  text: z.string(),
+  headingPath: z.array(z.string()),
+  blockIds: z.array(z.string()),
+  citeAs: z.string(),
+  rrfScore: z.number(),
+});
+export type SearchPassage = z.infer<typeof SearchPassageSchema>;
+
+/** Reply of POST /api/v1/search. */
+export const SearchResponseSchema = z.object({
+  passages: z.array(SearchPassageSchema),
+});
+export type SearchResponse = z.infer<typeof SearchResponseSchema>;
+
+export const AskCitationSchema = z.object({
+  citeAs: z.string(),
+  documentId: z.string().uuid(),
+  versionId: z.string().uuid(),
+  versionNumber: z.number().int(),
+  chunkId: z.string().uuid(),
+  blockIds: z.array(z.string()),
+  quote: z.string(),
+});
+export type AskCitation = z.infer<typeof AskCitationSchema>;
+
+/** Reply of POST /api/v1/ask. */
+export const AskResponseSchema = z.object({
+  answer: z.string(),
+  foundRelevant: z.boolean(),
+  citations: z.array(AskCitationSchema),
+});
+export type AskResponse = z.infer<typeof AskResponseSchema>;
+
+// Request bodies as a caller writes them (before defaults and transforms apply).
+export type SignUpRequest = z.input<typeof SignUpRequestSchema>;
+export type SignInRequest = z.input<typeof SignInRequestSchema>;
+export type CreateTenantRequest = z.input<typeof CreateTenantRequestSchema>;
+export type InviteMemberRequest = z.input<typeof InviteMemberRequestSchema>;
+export type AcceptInvitationRequest = z.input<typeof AcceptInvitationRequestSchema>;
+export type CreateSpaceRequest = z.input<typeof CreateSpaceRequestSchema>;
+export type UpdateSpaceSettings = z.input<typeof UpdateSpaceSettingsSchema>;
+export type UpsertSpaceGrant = z.input<typeof UpsertSpaceGrantSchema>;
+export type UpdateMemberRoleRequest = z.input<typeof UpdateMemberRoleRequestSchema>;
+export type CreateGroupRequest = z.input<typeof CreateGroupRequestSchema>;
+export type AddGroupMemberRequest = z.input<typeof AddGroupMemberRequestSchema>;
+export type CreatePageRequest = z.input<typeof CreatePageRequestSchema>;
+export type MovePageRequest = z.input<typeof MovePageRequestSchema>;
+export type ApproveVersionRequest = z.input<typeof ApproveVersionRequestSchema>;
+export type RejectVersionRequest = z.input<typeof RejectVersionRequestSchema>;
+export type SearchRequest = z.input<typeof SearchRequestSchema>;
+export type AskRequest = z.input<typeof AskRequestSchema>;
 
 /**
  * Internal (API-to-collab) endpoints. Authenticated by the shared

@@ -1,20 +1,7 @@
 import type { DbTransaction } from '@living-wiki/db';
 import type { Actor } from '@living-wiki/core';
-import { searchWiki, type SearchPassage } from './hybridSearch.js';
-
-export interface AskResponse {
-  answer: string;
-  foundRelevant: boolean;
-  citations: Array<{
-    citeAs: string;
-    documentId: string;
-    versionId: string;
-    versionNumber: number;
-    chunkId: string;
-    blockIds: string[];
-    quote: string;
-  }>;
-}
+import type { AskResponse, SearchPassage } from '@living-wiki/contracts';
+import { searchWiki } from './hybridSearch.js';
 
 export async function askWiki(
   tx: DbTransaction,

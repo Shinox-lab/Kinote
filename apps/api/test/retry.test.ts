@@ -121,7 +121,7 @@ describe('failed versions and retry', () => {
       },
     });
     assert.equal(pageRes.statusCode, 201, pageRes.body);
-    const pageId: string = pageRes.json().document.id;
+    const pageId: string = pageRes.json().id;
 
     const snapRes = await app.inject({
       method: 'POST',
