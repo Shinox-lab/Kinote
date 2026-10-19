@@ -239,6 +239,20 @@ describe('restore a version', () => {
     expect((await history(w)).map((v) => v.number)).toEqual([3, 2, 1]);
   });
 
+  test('after a withdraw, restoring the latest (withdrawn) version adds a new version and indexes it again', async () => {
+    const w = await setup();
+    await twoIndexedVersions(w);
+    await post(w.headers, `/api/v1/pages/${w.page.id}/withdraw`, undefined, 200);
+    expect((await versionRows(w)).map((v) => v.status)).toEqual(['superseded', 'withdrawn']);
+
+    const res = await restore(w, w.editor.headers, 2);
+    expect(res.statusCode, res.body).toBe(201);
+    expect(res.json()).toMatchObject({ number: 3, status: 'indexing', reason: 'restore' });
+
+    await runPendingJobsForTenant(w.tenant.id);
+    expect((await versionRows(w)).map((v) => v.status)).toEqual(['superseded', 'withdrawn', 'indexed']);
+  });
+
   test('a viewer is 403; a user who cannot read it, an unknown page and a malformed id are the same 404', async () => {
     const w = await setup();
     await twoIndexedVersions(w);

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { and, asc, eq } from 'drizzle-orm';
 import { withTenantTx, versions, documents, pages, chunks, auditEvents } from '@living-wiki/db';
+import { takePageSnapshot } from '@living-wiki/core';
 import { runPendingJobsForTenant } from '../../worker/src/runner.js';
 import { encodePageYDoc } from '../src/routes/pages.js';
 import {
@@ -286,6 +287,106 @@ describe('page lifecycle: withdraw, archive, move', () => {
     });
     assert.equal(res.statusCode, 404, res.body);
     assert.equal(res.json().error, 'page_not_found');
+  });
+
+  describe('submitting a withdrawn page again', () => {
+    function withdraw(pageId: string) {
+      return app.inject({
+        method: 'POST',
+        url: `/api/v1/pages/${pageId}/withdraw`,
+        headers: ctx.reviewer.headers,
+      });
+    }
+
+    test('unchanged content after a withdraw makes a new version, indexed again', async () => {
+      const { pageId, v1 } = await indexedV1InOpenSpace('withdraw-resubmit');
+      assert.equal((await withdraw(pageId)).statusCode, 200);
+      assert.equal(await versionStatus(v1.id), 'withdrawn');
+
+      const v2 = await snapshot(ctx.editor.headers, pageId);
+      assert.equal(v2.number, 2);
+      assert.equal(v2.status, 'indexing');
+      await runPendingJobsForTenant(ctx.tenant.id);
+
+      assert.equal(await versionStatus(v2.id), 'indexed');
+      assert.equal(await versionStatus(v1.id), 'withdrawn');
+      assert.equal((await documentRow(pageId)).indexedVersionId, v2.id);
+      assert.ok((await chunkRows(pageId)).length > 0);
+      assert.notEqual((await searchHits(ctx.ownerHeaders, pageId)).length, 0);
+      assert.equal(await badge(ctx.editor.headers, pageId), 'Indexed · v2');
+
+      // Submitting the same content again is no_changes once more.
+      const again = await app.inject({
+        method: 'POST',
+        url: `/api/v1/pages/${pageId}/snapshot`,
+        headers: ctx.editor.headers,
+      });
+      assert.equal(again.statusCode, 409, again.body);
+      assert.equal(again.json().error, 'no_changes');
+    });
+
+    test('in a review space it waits for review and is indexed after approval', async () => {
+      const { pageId, v1, v2 } = await indexedV1PendingV2(ctx.review.id, 'withdraw-resubmit-review');
+      assert.equal((await withdraw(pageId)).statusCode, 200);
+
+      const v3 = await snapshot(ctx.editor.headers, pageId);
+      assert.equal(v3.number, 3);
+      assert.equal(v3.status, 'pending_review');
+      assert.equal(await versionStatus(v2.id), 'withdrawn');
+      assert.equal((await chunkRows(pageId)).length, 0);
+
+      await approve(ctx.reviewer.headers, v3.id);
+      await runPendingJobsForTenant(ctx.tenant.id);
+      assert.equal(await versionStatus(v3.id), 'indexed');
+      assert.equal(await versionStatus(v1.id), 'withdrawn');
+      assert.equal((await documentRow(pageId)).indexedVersionId, v3.id);
+      assert.notEqual((await searchHits(ctx.ownerHeaders, pageId)).length, 0);
+    });
+
+    test('an archived page restored and submitted unchanged is indexed again', async () => {
+      const { pageId, v1 } = await indexedV1InOpenSpace('archive-restore-resubmit');
+      for (const action of ['archive', 'restore']) {
+        const res = await app.inject({
+          method: 'POST',
+          url: `/api/v1/pages/${pageId}/${action}`,
+          headers: ctx.ownerHeaders,
+        });
+        assert.equal(res.statusCode, 200, res.body);
+      }
+      assert.equal(await badge(ctx.editor.headers, pageId), 'Withdrawn');
+
+      const v2 = await snapshot(ctx.editor.headers, pageId);
+      assert.equal(v2.status, 'indexing');
+      await runPendingJobsForTenant(ctx.tenant.id);
+      assert.equal(await versionStatus(v2.id), 'indexed');
+      assert.equal(await versionStatus(v1.id), 'withdrawn');
+      assert.notEqual((await searchHits(ctx.ownerHeaders, pageId)).length, 0);
+    });
+
+    test('a quiet snapshot of a withdrawn page with unchanged content adds no version', async () => {
+      // Only an explicit submit puts a withdrawn page back: the quiet timer
+      // never undoes a withdraw on its own.
+      const { pageId, v1 } = await indexedV1InOpenSpace('withdraw-quiet');
+      assert.equal((await withdraw(pageId)).statusCode, 200);
+
+      const result = await takePageSnapshot({
+        tenantId: ctx.tenant.id,
+        pageId,
+        reason: 'quiet',
+        actorType: 'user',
+        actorId: ctx.editor.userId,
+        manual: false,
+      });
+      assert.equal(result?.id, v1.id);
+      const rows = await withTenantTx(ctx.tenant.id, (tx) =>
+        tx
+          .select({ status: versions.status })
+          .from(versions)
+          .where(and(eq(versions.tenantId, ctx.tenant.id), eq(versions.documentId, pageId)))
+      );
+      assert.deepEqual(rows, [{ status: 'withdrawn' }]);
+      assert.equal((await chunkRows(pageId)).length, 0);
+    });
   });
 
   test('archive with a version in indexing withdraws it and removes the chunks', async () => {

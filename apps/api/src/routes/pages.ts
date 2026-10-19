@@ -575,7 +575,8 @@ export async function submitPageSnapshot(
  * (reason `restore`; older versions are never touched). The actor must be
  * editor or higher (`requireDocumentRole`, as for a manual snapshot).
  * 404 `version_not_found` for a number the page lacks or that is not one;
- * 409 `no_changes` when the latest version already has that content.
+ * 409 `no_changes` when the latest version already has that content (unless
+ * it is withdrawn: restoring then puts the page back).
  *
  * No lock is held across the collab calls: collab's own bookkeeping takes
  * FOR KEY SHARE on the document row, so a held `lockDocument` would deadlock
@@ -620,13 +621,16 @@ export async function restorePageVersion(
       throw new AppError('version_not_found');
     }
     const [latest] = await tx
-      .select({ title: versions.title, blocks: versions.blocks })
+      .select({ title: versions.title, blocks: versions.blocks, status: versions.status })
       .from(versions)
       .where(and(eq(versions.tenantId, actor.tenantId), eq(versions.documentId, pageId)))
       .orderBy(desc(versions.number))
       .limit(1);
+    // A withdrawn latest version does not count: restoring it puts the page
+    // back (as a manual snapshot of a withdrawn page does).
     if (
       latest &&
+      latest.status !== 'withdrawn' &&
       latest.title === wanted.title &&
       isDeepStrictEqual(storedBlocks(latest.blocks), storedBlocks(wanted.blocks))
     ) {

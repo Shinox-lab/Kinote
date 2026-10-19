@@ -147,7 +147,15 @@ export async function takePageSnapshot(
     const indexedPayload = `# ${title}\n\n${markdown}`;
     const contentHash = createHash('sha256').update(indexedPayload, 'utf8').digest('hex');
 
-    if (latestVersion && latestVersion.contentHash === contentHash) {
+    // Same content as the latest version: nothing to snapshot. Except that a
+    // manual snapshot of a WITHDRAWN latest version is how a withdrawn (or
+    // archived and restored) page goes back in unchanged, so it makes a new
+    // version. A quiet snapshot never undoes a withdraw on its own.
+    const sameAsLatest =
+      latestVersion !== null &&
+      latestVersion.contentHash === contentHash &&
+      !(manual && latestVersion.status === 'withdrawn');
+    if (latestVersion && sameAsLatest) {
       if (manual) {
         throw new AppError('no_changes', 'No changes since the latest snapshot.');
       }
