@@ -18,6 +18,17 @@ import {
   acceptInvitation,
 } from './routes/foundations.js';
 import {
+  listMembers,
+  changeMemberRole,
+  removeMember,
+  listGroups,
+  createGroup,
+  addGroupMember,
+  removeGroupMember,
+  listSpaceGrants,
+  deleteSpaceGrant,
+} from './routes/admin.js';
+import {
   createPage,
   getPageDetails,
   issueCollabToken,
@@ -134,6 +145,51 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
     const actor = actorOf(req);
     const res = await upsertSpaceGrant(actor, (req.params as any).id, req.body);
     return reply.status(201).send(res);
+  });
+
+  app.get('/api/v1/spaces/:id/grants', async (req, reply) => {
+    const res = await listSpaceGrants(actorOf(req), (req.params as any).id);
+    return reply.send(res);
+  });
+
+  app.delete('/api/v1/spaces/:id/grants/:principalType/:principalId', async (req, reply) => {
+    const p = req.params as any;
+    await deleteSpaceGrant(actorOf(req), p.id, p.principalType, p.principalId);
+    return reply.status(204).send();
+  });
+
+  app.get('/api/v1/members', async (req, reply) => {
+    return reply.send(await listMembers(actorOf(req)));
+  });
+
+  app.patch('/api/v1/members/:userId', async (req, reply) => {
+    const res = await changeMemberRole(actorOf(req), (req.params as any).userId, req.body);
+    return reply.send(res);
+  });
+
+  app.delete('/api/v1/members/:userId', async (req, reply) => {
+    await removeMember(actorOf(req), (req.params as any).userId);
+    return reply.status(204).send();
+  });
+
+  app.get('/api/v1/groups', async (req, reply) => {
+    return reply.send(await listGroups(actorOf(req)));
+  });
+
+  app.post('/api/v1/groups', async (req, reply) => {
+    const res = await createGroup(actorOf(req), req.body);
+    return reply.status(201).send(res);
+  });
+
+  app.post('/api/v1/groups/:id/members', async (req, reply) => {
+    const res = await addGroupMember(actorOf(req), (req.params as any).id, req.body);
+    return reply.send(res);
+  });
+
+  app.delete('/api/v1/groups/:id/members/:principalType/:principalId', async (req, reply) => {
+    const p = req.params as any;
+    await removeGroupMember(actorOf(req), p.id, p.principalType, p.principalId);
+    return reply.status(204).send();
   });
 
   app.post('/api/v1/pages', async (req, reply) => {

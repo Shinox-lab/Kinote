@@ -2,11 +2,10 @@ import { describe, test, expect } from 'vitest';
 import assert from 'node:assert/strict';
 import { and, eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
-import { withTenantTx, spaces, pages, documents } from '@living-wiki/db';
+import { withTenantTx, spaces, pages, documents, groups, groupMembers } from '@living-wiki/db';
 import { ERROR_SENTENCES } from '@living-wiki/contracts';
 import type { Actor } from '@living-wiki/core';
 import { approveVersion, rejectVersion } from '../src/routes/pages.js';
-import { createGroupAndAddMembers } from '../src/routes/foundations.js';
 import {
   buildTestApp,
   bootstrapTenant,
@@ -17,6 +16,23 @@ import {
 } from './support/testkit.js';
 
 type Headers = Record<string, string>;
+
+/** Inserts a group (and its user members) directly; the admin routes have their own tests. */
+async function createGroupWithUsers(
+  tenantId: string,
+  name: string,
+  userIds: string[]
+): Promise<{ id: string }> {
+  return withTenantTx(tenantId, async (tx) => {
+    const [group] = await tx.insert(groups).values({ tenantId, name }).returning();
+    for (const principalId of userIds) {
+      await tx
+        .insert(groupMembers)
+        .values({ tenantId, groupId: group.id, principalType: 'user', principalId });
+    }
+    return group;
+  });
+}
 
 /**
  * The single permission gate: the tenant `viewer` cap, the Inbox per-item
@@ -272,11 +288,7 @@ describe('permission gate', () => {
       const other = await bootstrapTenant(app, { name: 'Other Co', slug: 'other-co' });
       const otherMember = await signUpMember(app, other.tenant.id, 'member');
       const nonMember = await signUp(app);
-      const otherGroup = await createGroupAndAddMembers(
-        { tenantId: other.tenant.id, principalType: 'user', principalId: other.owner.userId, tenantRole: 'owner' },
-        'Other group',
-        []
-      );
+      const otherGroup = await createGroupWithUsers(other.tenant.id, 'Other group', []);
       const otherAgent = await createAgent(other.tenant.id, other.owner.userId);
       const disabledAgent = await createAgent(w.tenant.id, w.owner.userId, { disabled: true });
 
@@ -297,11 +309,7 @@ describe('permission gate', () => {
 
     test('a member, a group of this tenant and an enabled agent can be granted', async () => {
       const w = await world();
-      const group = await createGroupAndAddMembers(
-        { tenantId: w.tenant.id, principalType: 'user', principalId: w.owner.userId, tenantRole: 'owner' },
-        'Writers',
-        [{ principalType: 'user', principalId: w.outsider.userId }]
-      );
+      const group = await createGroupWithUsers(w.tenant.id, 'Writers', [w.outsider.userId]);
       const agent = await createAgent(w.tenant.id, w.owner.userId);
       expect((await grant(w.headers, w.docs.id, 'user', w.outsider.userId, 'viewer')).statusCode).toBe(201);
       expect((await grant(w.headers, w.docs.id, 'group', group.id, 'editor')).statusCode).toBe(201);

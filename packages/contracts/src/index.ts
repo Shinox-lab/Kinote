@@ -180,6 +180,45 @@ export const UpsertSpaceGrantSchema = z.object({
   role: SpaceRoleSchema,
 });
 
+// --- Members, groups and grants administration -----------------------------------
+// Request bodies are snake_case; reply bodies are camelCase.
+
+export const UpdateMemberRoleRequestSchema = z.object({
+  role: TenantRoleSchema,
+});
+
+export const CreateGroupRequestSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+});
+
+export const AddGroupMemberRequestSchema = z.object({
+  principal_type: z.enum(['user', 'agent']),
+  principal_id: z.string().uuid(),
+});
+
+export const MemberSchema = z.object({
+  userId: z.string().uuid(),
+  email: z.string(),
+  name: z.string(),
+  role: TenantRoleSchema,
+});
+export type Member = z.infer<typeof MemberSchema>;
+
+export const GroupSchema = z.object({
+  id: z.string().uuid(),
+  name: z.string(),
+  memberCount: z.number().int().min(0),
+});
+export type Group = z.infer<typeof GroupSchema>;
+
+export const GrantSchema = z.object({
+  principalType: z.enum(['user', 'agent', 'group']),
+  principalId: z.string().uuid(),
+  principalName: z.string(),
+  role: SpaceRoleSchema,
+});
+export type Grant = z.infer<typeof GrantSchema>;
+
 export const SpaceResponseSchema = z.object({
   id: z.string().uuid(),
   tenant_id: z.string().uuid(),

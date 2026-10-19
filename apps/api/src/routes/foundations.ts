@@ -9,7 +9,6 @@ import {
   invitations,
   agents,
   groups,
-  groupMembers,
   spaces,
   spaceGrants,
   writeAuditEvent,
@@ -202,7 +201,7 @@ export async function updateSpaceSettings(actor: Actor, spaceId: string, input: 
  * membership row, a group of the tenant, or an agent of the tenant that is not
  * disabled. Every lookup filters on tenant_id explicitly (RLS is a second wall).
  */
-async function principalExists(
+export async function principalExists(
   tx: DbTransaction,
   tenantId: string,
   principalType: 'user' | 'group' | 'agent',
@@ -432,28 +431,5 @@ export async function acceptInvitation(
     });
 
     return { tenant, role: membership.role };
-  });
-}
-
-export async function createGroupAndAddMembers(
-  actor: Actor,
-  name: string,
-  members: Array<{ principalType: 'user' | 'agent'; principalId: string }>
-) {
-  return withTenantTx(actor.tenantId, async (tx) => {
-    const [group] = await tx
-      .insert(groups)
-      .values({ tenantId: actor.tenantId, name })
-      .returning();
-
-    for (const m of members) {
-      await tx.insert(groupMembers).values({
-        tenantId: actor.tenantId,
-        groupId: group.id,
-        principalType: m.principalType,
-        principalId: m.principalId,
-      });
-    }
-    return group;
   });
 }
