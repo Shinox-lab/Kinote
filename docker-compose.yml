@@ -8,10 +8,11 @@
 #
 #   pnpm stack:up                 # postgres + minio, then pnpm db:migrate
 #   docker compose up -d --build  # the whole stack
-#   pnpm stack:down               # stop and delete containers and data
+#   pnpm stack:down               # stop and delete containers and data (down -v)
 #
-# Data lives in the images' anonymous volumes: it survives `restart` and
-# `stop`/`start`, and `down -v` deletes it.
+# Data lives in the named volumes `pgdata` and `miniodata` (living-wiki_pgdata,
+# living-wiki_miniodata): it survives `restart`, `stop`/`start` and a plain
+# `docker compose down`; only `down -v` (pnpm stack:down) deletes it.
 name: living-wiki
 
 x-app-env: &app-env
@@ -46,6 +47,8 @@ services:
       POSTGRES_DB: living_wiki
       # Read by infra/postgres/01-roles.sh to create the living_wiki_app login.
       APP_DB_PASSWORD: ${APP_DB_PASSWORD:?set APP_DB_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
     ports:
       - "127.0.0.1:55543:5432"
     healthcheck:
@@ -58,12 +61,15 @@ services:
 
   minio:
     # minio/minio is no longer published on Docker Hub; pgsty/minio is a
-    # community build of the same server (same CLI, ports and env).
-    image: pgsty/minio:RELEASE.2026-08-04T00-00-00Z
+    # community build of the same server (same CLI, ports and env), for the
+    # local stack only. Pinned by digest (the tag alone could be re-pushed).
+    image: pgsty/minio:RELEASE.2026-08-04T00-00-00Z@sha256:b6bfe7239bfc83fb90d31612d9704d86039dd714f7904b3f1ad68f211e602372
     command: ["server", "/data", "--console-address", ":9001"]
     environment:
       MINIO_ROOT_USER: ${S3_ACCESS_KEY:?set S3_ACCESS_KEY}
       MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:?set S3_SECRET_KEY}
+    volumes:
+      - miniodata:/data
     ports:
       - "127.0.0.1:59000:9000"
       - "127.0.0.1:59001:9001"
@@ -119,3 +125,7 @@ services:
       migrate:
         condition: service_completed_successfully
     restart: unless-stopped
+
+volumes:
+  pgdata:
+  miniodata:

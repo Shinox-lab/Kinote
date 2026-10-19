@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # pnpm stack:down: stops the living-wiki compose project and deletes its
-# containers, network and anonymous volumes (all local data). Compose parses
+# containers, network and volumes (named pgdata/miniodata: all local data). Compose parses
 # the whole file even to tear down, so unset required variables get inert
 # placeholders here; nothing is started with them.
 set -euo pipefail

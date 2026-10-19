@@ -35,6 +35,10 @@ services built from the root `Dockerfile` (one build; each service runs its
 TypeScript entry point with tsx). Host ports, all on 127.0.0.1: postgres
 55543, MinIO 59000 (S3) and 59001 (console), api 8787, collab 1234.
 
+MinIO comes from `pgsty/minio`, a community build (the official `minio/minio`
+image is no longer published on Docker Hub), pinned by tag and digest. It is
+for this development stack only: use a vetted object store in production.
+
 Secrets have no defaults. Copy `.env.example` to `.env` (untracked) and fill
 in `POSTGRES_PASSWORD`, `APP_DB_PASSWORD`, `COLLAB_TOKEN_SECRET`,
 `INTERNAL_SECRET`, `S3_ACCESS_KEY` and `S3_SECRET_KEY`, or export them.
@@ -46,15 +50,17 @@ TEST_DATABASE_MIGRATE_URL=postgres://postgres:$POSTGRES_PASSWORD@127.0.0.1:55543
   pnpm test:pg                 # real-Postgres RLS and job-claim tests
 S3_ENDPOINT=http://127.0.0.1:59000 pnpm vitest run packages/shared/test/objectStorage.test.ts
 docker compose up -d --build   # the whole stack (migrate runs before the services)
-pnpm stack:down                # docker compose down -v: containers and data are deleted
+pnpm stack:down                # docker compose down -v: containers and data volumes are deleted
 ```
 
 `pnpm test:pg` fails with a message naming `TEST_DATABASE_URL` and
 `TEST_DATABASE_MIGRATE_URL` when either is unset, so a run that would have
 skipped every real-Postgres test never reports success.
 
-Database and object data live in anonymous volumes: they survive
-`docker compose restart` and `stop`/`start`, and `down -v` deletes them.
+Database and object data live in the named volumes `living-wiki_pgdata` and
+`living-wiki_miniodata`: they survive `docker compose restart`, `stop`/`start`
+and a plain `docker compose down`; `docker compose down -v` (`pnpm stack:down`)
+deletes them.
 
 ## Behind a reverse proxy
 
