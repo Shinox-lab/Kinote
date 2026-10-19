@@ -186,8 +186,10 @@ export function Editor({ pageId, archived, onSynced }: { pageId: string; archive
         )}
         {!editable && live && <span className="rounded-full bg-hover px-2 py-0.5 text-fg">Read only</span>}
       </div>
-      {/* BlockNote indents its blocks to leave room for the side handles; on a wide screen the indent hangs in the margin so the text lines up with the title. */}
-      <div className="min-h-[16rem] md:-mx-[54px]">
+      {/* BlockNote indents its blocks to leave room for the side handles. Where the column has margin to spare
+          (a screen wide enough for the sidebar and a 720px page plus the indent) the indent hangs in the margin,
+          so the text lines up with the title; narrower, it stays inside and nothing scrolls sideways. */}
+      <div className="min-h-[16rem] min-[1100px]:-mx-[54px]">
         {live ? <BoundEditor live={live} editable={editable} /> : <Loading what="editor" />}
       </div>
     </div>

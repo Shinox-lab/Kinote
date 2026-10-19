@@ -487,7 +487,10 @@ export const BlockDiffEntrySchema = z.object({
 export type BlockDiffEntry = z.infer<typeof BlockDiffEntrySchema>;
 
 /** Reply of GET /api/v1/pages/:id/versions (newest first). */
-export const VersionListSchema = z.array(VersionSummarySchema);
+/** A version in the page's history: the summary plus its author's display name (a member's name, an agent's name, "System" for a connector, "Former member" for someone who left). */
+export const VersionListItemSchema = VersionSummarySchema.extend({ createdByName: z.string() });
+export type VersionListItem = z.infer<typeof VersionListItemSchema>;
+export const VersionListSchema = z.array(VersionListItemSchema);
 
 /** Reply of GET /api/v1/pages/:id/changes, /compare and GET /api/v1/versions/:id/diff. */
 export const BlockDiffSchema = z.array(BlockDiffEntrySchema);

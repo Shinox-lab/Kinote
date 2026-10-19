@@ -238,3 +238,111 @@ test('on a wide screen Ctrl+\\ hides and shows the sidebar', async ({ browser, r
   await page.getByRole('button', { name: 'Open sidebar' }).click();
   await expect(sidebar(page)).toBeVisible();
 });
+
+// --- Found by the final review ------------------------------------------------------
+
+test("switching workspace does not carry the sidebar's open spaces over to the other workspace", async ({
+  browser,
+  request,
+}) => {
+  const world = await seedWorld(request, { reviewRequired: false });
+  const other = await call<{ tenant: { id: string; name: string; slug: string } }>(request, '/tenants', {
+    account: world.owner,
+    method: 'POST',
+    data: { name: `Beta ${world.suffix}`, slug: `beta-${world.suffix}` },
+  });
+  const page = await openAs(browser, world, world.owner);
+  await page.goto(`/w/${world.slug}`);
+  await sidebar(page).getByRole('button', { name: 'Expand Docs' }).click();
+  await expect(sidebar(page).getByRole('button', { name: 'Collapse Docs' })).toBeVisible();
+
+  await sidebar(page).getByRole('button', { name: new RegExp(`^Acme ${world.suffix}`) }).click();
+  await sidebar(page).getByRole('link', { name: `Beta ${world.suffix}` }).click();
+  await page.waitForURL(new RegExp(`/w/beta-${world.suffix}$`));
+  await expect(sidebar(page).getByRole('button', { name: 'Expand Inbox' })).toBeVisible();
+
+  // Each workspace keeps its own remembered state: the first one's ids are not saved under the second.
+  const saved = await page.evaluate(
+    ([a, b]) => ({ a: localStorage.getItem(`lw-sidebar-expanded-${a}`), b: localStorage.getItem(`lw-sidebar-expanded-${b}`) }),
+    [world.tenantId, other.tenant.id] as const
+  );
+  expect(saved.a).toContain(world.spaceId);
+  expect(saved.b ?? '').not.toContain(world.spaceId);
+});
+
+test('the page being read stays visible when its space was closed and the person moves to another page of it', async ({
+  browser,
+  request,
+}) => {
+  const world = await seedWorld(request, { reviewRequired: false });
+  const first = await makePage(request, world, world.owner, 'First page', 'first-page');
+  const second = await makePage(request, world, world.owner, 'Second page', 'second-page');
+  await snapshot(request, world, world.owner, second);
+
+  const page = await openAs(browser, world, world.owner);
+  await page.goto(`/w/${world.slug}/p/${first}`);
+  const side = sidebar(page);
+  const updates = side.getByRole('region', { name: 'Updates' });
+  await expect(async () => {
+    await page.reload();
+    await expect(updates).toContainText('published v1 of Second page', { timeout: 2_000 });
+  }).toPass({ timeout: 30_000 });
+
+  // Close the space, then follow an Updates link to another page in it (no reload).
+  await side.getByRole('button', { name: 'Collapse Docs' }).click();
+  await expect(side.getByRole('link', { name: /^First page/ })).toHaveCount(0);
+  await updates.getByRole('link', { name: /Second page/ }).click();
+  await page.waitForURL(new RegExp(`/p/${second}$`));
+  await expect(side.getByRole('link', { name: /^Second page/ })).toHaveAttribute('aria-current', 'page');
+});
+
+test('on a touch screen the add-page button is visible without hovering', async ({ browser, request }) => {
+  const world = await seedWorld(request, { reviewRequired: false });
+  const context = await browser.newContext({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 800 } });
+  await context.addInitScript(
+    (s) => localStorage.setItem('living-wiki.session', JSON.stringify(s)),
+    { token: world.owner.token, user: world.owner.user, tenantId: world.tenantId, tenantSlug: world.slug }
+  );
+  const page = await context.newPage();
+  await page.goto(`/w/${world.slug}`);
+  await page.getByRole('button', { name: 'Open sidebar' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Sidebar' });
+  await expect(dialog.getByRole('button', { name: 'Add a page to Docs' })).toHaveCSS('opacity', '1');
+  await context.close();
+});
+
+test('at a tablet width the page does not scroll sideways and the editor stays clear of the sidebar', async ({
+  browser,
+  request,
+}) => {
+  const world = await seedWorld(request, { reviewRequired: false });
+  const notes = await makePage(request, world, world.owner, 'Notes', 'notes');
+  const page = await openAs(browser, world, world.owner);
+  await page.setViewportSize({ width: 1024, height: 768 });
+  await page.goto(`/w/${world.slug}/p/${notes}`);
+  await expectConnected(page);
+  await expect
+    .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth))
+    .toBe(true);
+  const box = await editorOf(page).boundingBox();
+  const side = await sidebar(page).boundingBox();
+  expect(box!.x).toBeGreaterThanOrEqual(side!.x + side!.width);
+});
+
+test("the sidebar's review count follows what others submit, without a reload", async ({ browser, request }) => {
+  const world = await seedWorld(request, { reviewRequired: true });
+  const rae = await addMember(request, world, 'Rae Reviewer', 'reviewer');
+  const draft = await makePage(request, world, world.owner, 'Draft', 'draft');
+
+  const page = await openAs(browser, world, rae);
+  await page.goto(`/w/${world.slug}`);
+  const reviews = sidebar(page).getByRole('link', { name: /^Reviews/ });
+  await expect(reviews).not.toContainText('waiting');
+
+  await snapshot(request, world, world.owner, draft);
+  // Coming back to the tab asks again.
+  await expect(async () => {
+    await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange', { bubbles: true })));
+    await expect(reviews).toContainText('1 waiting', { timeout: 1_500 });
+  }).toPass({ timeout: 20_000 });
+});

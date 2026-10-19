@@ -123,12 +123,18 @@ export function useUpdates(limit: number) {
   });
 }
 
+/** How often the review queue (and so the sidebar's count) asks again while the tab is visible. */
+export const REVIEWS_POLL_MS = 60_000;
+
 /** The review queue (optionally one space's): what the actor can review, empty for anyone who cannot. */
 export function useReviews(spaceId?: string) {
   return useQuery({
     queryKey: useTenantKey('reviews', spaceId ?? 'all'),
     queryFn: () => api.reviewQueue(spaceId),
     staleTime: 0,
+    // The sidebar shows this count all day: look again on focus and every minute, not only after one's own actions.
+    refetchOnWindowFocus: true,
+    refetchInterval: REVIEWS_POLL_MS,
   });
 }
 

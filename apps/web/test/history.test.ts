@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import type { VersionSummary } from '@living-wiki/contracts';
+import type { VersionListItem, VersionSummary } from '@living-wiki/contracts';
 import {
   defaultComparison,
   versionReasonLabel,
@@ -40,26 +40,35 @@ describe('labels', () => {
 });
 
 describe('versionWho', () => {
-  const names = new Map([[uuid(900), 'Dana']]);
+  /** A version row as the list route sends it: the author's name comes with it. */
+  const listed = (over: Partial<VersionListItem> = {}): VersionListItem => ({
+    ...version(1),
+    createdByName: 'Dana',
+    ...over,
+  });
 
-  test('the signed-in user is You, a known name is used, others get a short id', () => {
-    expect(versionWho(version(1), names, uuid(900))).toEqual({ name: 'You', isAgent: false });
-    expect(versionWho(version(1), names, null)).toEqual({ name: 'Dana', isAgent: false });
-    expect(versionWho(version(1, { createdBy: uuid(77) }), names, null)).toEqual({
-      name: 'Collaborator 0077',
+  test('the signed-in user is You; anyone else is named by the server, never by an id fragment', () => {
+    expect(versionWho(listed(), uuid(900))).toEqual({ name: 'You', isAgent: false });
+    expect(versionWho(listed(), null)).toEqual({ name: 'Dana', isAgent: false });
+    expect(versionWho(listed({ createdBy: uuid(77), createdByName: 'Former member' }), null)).toEqual({
+      name: 'Former member',
       isAgent: false,
     });
   });
 
-  test('an agent is marked as an agent, a connector is named as one', () => {
-    expect(versionWho(version(1, { createdByType: 'agent', createdBy: uuid(5) }), names, null)).toEqual({
-      name: 'Agent 0005',
+  test('an agent keeps its name and is marked; a connector is named by the server and is not an agent', () => {
+    expect(versionWho(listed({ createdByType: 'agent', createdBy: uuid(5), createdByName: 'Support bot' }), null)).toEqual({
+      name: 'Support bot',
       isAgent: true,
     });
-    expect(versionWho(version(1, { createdByType: 'connector' }), names, null)).toEqual({
-      name: 'Connector',
+    expect(versionWho(listed({ createdByType: 'connector', createdByName: 'System' }), null)).toEqual({
+      name: 'System',
       isAgent: false,
     });
+  });
+
+  test('a user who is not the signed-in user is not You even when the ids look alike elsewhere', () => {
+    expect(versionWho(listed({ createdByType: 'agent', createdBy: uuid(900), createdByName: 'Bot' }), uuid(900)).name).toBe('Bot');
   });
 });
 

@@ -78,6 +78,24 @@ describe('contrastRatio', () => {
   });
 });
 
+/** The first block's `--name: rgba(r, g, b, a)` declarations. */
+function rgbaTokens(selector: string): Record<string, [number, number, number, number]> {
+  const start = css.indexOf(`${selector} {`);
+  const block = css.slice(css.indexOf('{', start) + 1, css.indexOf('}', start));
+  const out: Record<string, [number, number, number, number]> = {};
+  for (const m of block.matchAll(/--([\w-]+):\s*rgba\((\d+),\s*(\d+),\s*(\d+),\s*([\d.]+)\)\s*;/g)) {
+    out[m[1]!] = [Number(m[2]), Number(m[3]), Number(m[4]), Number(m[5])];
+  }
+  return out;
+}
+
+/** A translucent tint laid over an opaque background, as `#rrggbb`. */
+function over([r, g, b, a]: [number, number, number, number], bg: string): string {
+  const base = [1, 3, 5].map((i) => parseInt(bg.slice(i, i + 2), 16));
+  const mixed = [r, g, b].map((c, i) => Math.round(c * a + base[i]! * (1 - a)));
+  return `#${mixed.map((c) => c.toString(16).padStart(2, '0')).join('')}`;
+}
+
 describe.each([
   ['light', ':root'],
   ['dark', "[data-theme='dark']"],
@@ -116,6 +134,21 @@ describe.each([
         expect(contrastRatio(t[dot]!, t[bg]!), `${dot} on ${bg}`).toBeGreaterThanOrEqual(3);
       }
     }
+  });
+
+  test('text on the author tints (changes list, highlighted blocks) reads too (4.5:1)', () => {
+    const tints = rgbaTokens(selector);
+    for (const i of AUTHORS) {
+      for (const bg of ['page', 'sidebar', 'surface']) {
+        const tint = over(tints[`author-${i}-tint`]!, t[bg]!);
+        expect(contrastRatio(t.fg!, tint), `fg on author-${i} over ${bg}`).toBeGreaterThanOrEqual(4.5);
+        expect(contrastRatio(t.muted!, tint), `muted on author-${i} over ${bg}`).toBeGreaterThanOrEqual(4.5);
+      }
+    }
+  });
+
+  test('muted text reads on the hover and active row backgrounds (4.5:1)', () => {
+    for (const bg of ['hover', 'active']) expect(contrastRatio(t.muted!, t[bg]!), `muted on ${bg}`).toBeGreaterThanOrEqual(4.5);
   });
 
   test('the sidebar row states are distinguishable from the sidebar', () => {

@@ -1,9 +1,10 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { useMutation } from '@tanstack/react-query';
-import type { VersionSummary } from '@living-wiki/contracts';
+import type { VersionListItem } from '@living-wiki/contracts';
 import { api } from '../lib/api.js';
 import { defaultComparison, versionReasonLabel, versionStatusLabel, versionWho, whenLabel } from '../lib/history.js';
-import { useAuthorNames, useComparison, usePageVersions, useRefresh } from '../lib/queries.js';
+import { useComparison, usePageVersions, useRefresh } from '../lib/queries.js';
+import { loadSession } from '../lib/session.js';
 import { DiffView } from './DiffView.js';
 import { Button, ErrorNote, Loading, SelectField } from './ui.js';
 
@@ -16,7 +17,7 @@ function VersionRow({
   restoreRef,
   children,
 }: {
-  version: VersionSummary;
+  version: VersionListItem;
   canRestore: boolean;
   onRestore: () => void;
   /** Hands the Restore button to the drawer, which puts focus back on it when the confirm closes. */
@@ -24,8 +25,7 @@ function VersionRow({
   /** The restore confirm, shown under the row it belongs to. */
   children?: ReactNode;
 }) {
-  const { names, selfId } = useAuthorNames();
-  const who = versionWho(version, names, selfId);
+  const who = versionWho(version, loadSession()?.user.id ?? null);
   return (
     <li className="flex flex-col gap-1 py-3 first:pt-0 last:pb-0">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
@@ -53,7 +53,7 @@ function VersionRow({
 type Pair = { from: number; to: number };
 
 /** Pick any two versions and show the block diff between them. */
-function Compare({ pageId, versions }: { pageId: string; versions: VersionSummary[] }) {
+function Compare({ pageId, versions }: { pageId: string; versions: VersionListItem[] }) {
   // Until the user picks, the pair follows the list (a restore adds a new latest version); a pick sticks.
   const [picked, setPicked] = useState<Pair | null>(null);
   const [submitted, setSubmitted] = useState<Pair | null>(null);

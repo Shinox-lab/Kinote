@@ -17,7 +17,8 @@ const INDENT_PX = 12;
 const ICON_BUTTON =
   'flex size-5 shrink-0 items-center justify-center rounded text-sm text-muted hover:bg-active';
 /** Shown on row hover or when focus is inside the row, so it stays reachable by keyboard. */
-const REVEAL = 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100';
+const REVEAL =
+  'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100';
 
 function Chevron({ open, label, onToggle }: { open: boolean; label: string; onToggle: () => void }) {
   return (
@@ -250,13 +251,15 @@ export function SpacesSection() {
   // The space being read: the page's, or the one named in the address.
   const currentSpaceId = pageId !== undefined ? page?.spaceId : open.find((s) => s.slug === spaceSlug)?.id;
 
-  // Opening a page (or a space) opens its space once, so the page is not hidden in a closed one.
+  // Going to a page (or a space) opens its space once per visit, so the page is never hidden in a closed one;
+  // the person can close it again, and the next page they go to opens it once more.
   const openedFor = useRef<string | undefined>(undefined);
   useEffect(() => {
-    if (currentSpaceId === undefined || openedFor.current === currentSpaceId) return;
-    openedFor.current = currentSpaceId;
+    const visit = currentSpaceId === undefined ? undefined : `${currentSpaceId}:${pageId ?? ''}`;
+    if (currentSpaceId === undefined || openedFor.current === visit) return;
+    openedFor.current = visit;
     setExpanded((prev) => (prev.has(currentSpaceId) ? prev : new Set(prev).add(currentSpaceId)));
-  }, [currentSpaceId]);
+  }, [currentSpaceId, pageId]);
 
   function toggle(id: string) {
     setExpanded((prev) => {

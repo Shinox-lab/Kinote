@@ -319,7 +319,7 @@ disk unreferenced, `down -v` deletes them.
 
 What changed: the console's top bar became one sidebar (workspace, search and reviews, an Updates feed, the spaces as a page tree with status dots, and an "On this page" section), in a light and a dark theme. Design: `docs/superpowers/specs/2026-10-19-notion-sidebar-ui-design.md`. Plan: `docs/superpowers/plans/2026-10-19-notion-sidebar-ui.md`.
 
-Environment: the PGlite harness (`pnpm e2e:local`; no Docker), v22.23.2, tree at `5ea86ac` plus this section. Nothing in this section ran against real Postgres or the compose stack: the three API additions (tree `attention`, author `name` on changes, `GET /api/v1/updates`) are covered by PGlite route tests only; `pnpm test:pg` was not re-run for this work.
+Environment: the PGlite harness (`pnpm e2e:local`; no Docker), v22.23.2, tree at `eecc365` plus this section. Nothing in this section ran against real Postgres or the compose stack: the three API additions (tree `attention`, author `name` on changes, `GET /api/v1/updates`) are covered by PGlite route tests only; `pnpm test:pg` was not re-run for this work.
 
 ### Checks run (real output)
 

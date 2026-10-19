@@ -336,7 +336,7 @@ describe('version history, changes and compare routes', () => {
     expect(unknown.json().error).toBe('version_not_found');
   });
 
-  test('versions: newest first with exactly the VersionSummary keys', async () => {
+  test('versions: newest first with exactly the VersionSummary keys plus the author name', async () => {
     const w = await buildReviewWorld(h.app);
     await indexedV1(w);
     await editAs(w, w.a.userId, 0, ' more');
@@ -346,8 +346,9 @@ describe('version history, changes and compare routes', () => {
     const list = res.json() as any[];
     expect(list.map((v) => v.number)).toEqual([2, 1]);
     for (const v of list) {
-      expect(Object.keys(v).sort()).toEqual(Object.keys(VersionSummarySchema.shape).sort());
-      expect(Object.keys(v)).toHaveLength(12);
+      // The VersionSummary keys (12, as everywhere else) plus the author's name, which only the history list adds.
+      expect(Object.keys(v).sort()).toEqual([...Object.keys(VersionSummarySchema.shape), 'createdByName'].sort());
+      expect(Object.keys(v)).toHaveLength(13);
     }
   });
 

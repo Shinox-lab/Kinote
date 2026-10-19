@@ -1,4 +1,4 @@
-import type { VersionReason, VersionStatus, VersionSummary } from '@living-wiki/contracts';
+import type { VersionListItem, VersionReason, VersionStatus, VersionSummary } from '@living-wiki/contracts';
 import { authorLabel, type AuthorLabel } from './wiki.js';
 
 // Pure helpers behind the history drawer: labels for the contract's version
@@ -34,14 +34,17 @@ export function versionReasonLabel(reason: VersionReason): string {
   return REASON[reason];
 }
 
-/** Who made a version: "You", a known name, or a neutral name with a short id (the API only publishes names to admins). */
+/** Who made a version: "You", or the name the server sent with it (a member, an agent, "System", "Former member"). */
 export function versionWho(
-  version: Pick<VersionSummary, 'createdByType' | 'createdBy'>,
-  names: ReadonlyMap<string, string>,
+  version: Pick<VersionListItem, 'createdByType' | 'createdBy' | 'createdByName'>,
   selfId: string | null
 ): AuthorLabel {
-  if (version.createdByType === 'connector') return { name: 'Connector', isAgent: false };
-  return authorLabel({ type: version.createdByType, id: version.createdBy }, names, selfId);
+  if (version.createdByType === 'connector') return { name: version.createdByName, isAgent: false };
+  return authorLabel(
+    { type: version.createdByType, id: version.createdBy, name: version.createdByName },
+    new Map(),
+    selfId
+  );
 }
 
 /** A timestamp for the reader's locale; text that is not a date is shown as it came. */

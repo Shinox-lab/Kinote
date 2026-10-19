@@ -74,7 +74,8 @@ export function Sidebar({ onCollapse }: { onCollapse?: () => void }) {
           )}
         </ul>
         <UpdatesSection />
-        <SpacesSection />
+        {/* Keyed by workspace: another workspace starts from its own remembered state, not this one's. */}
+        <SpacesSection key={tenant.id} />
       </nav>
 
       <OnThisPage />

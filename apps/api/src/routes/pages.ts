@@ -35,6 +35,7 @@ import {
   type PageSummary,
   type RetryVersionResponse,
   type VersionSummary,
+  type VersionListItem,
   type VersionDetail,
   type BlockDiffEntry,
 } from '@living-wiki/contracts';
@@ -351,7 +352,7 @@ async function indexedBlocks(tx: DbTransaction, tenantId: string, doc: DocumentR
 }
 
 /** GET /api/v1/pages/:id/versions: the page's versions as summaries, newest first. */
-export async function listPageVersions(actor: Actor, pageId: string): Promise<VersionSummary[]> {
+export async function listPageVersions(actor: Actor, pageId: string): Promise<VersionListItem[]> {
   assertValidUuid(pageId, 'page_not_found');
   return withTenantTx(actor.tenantId, async (tx) => {
     await readablePage(tx, actor, pageId);
@@ -360,7 +361,17 @@ export async function listPageVersions(actor: Actor, pageId: string): Promise<Ve
       .from(versions)
       .where(and(eq(versions.tenantId, actor.tenantId), eq(versions.documentId, pageId)))
       .orderBy(desc(versions.number));
-    return rows.map(toVersionSummary);
+    // Names for every role that can read the page, the way /changes names its authors.
+    const names = await resolveActorNames(
+      tx,
+      actor.tenantId,
+      rows.flatMap((r) => (r.createdByType === 'connector' ? [] : [{ type: r.createdByType, id: r.createdBy }]))
+    );
+    return rows.map((r) => ({
+      ...toVersionSummary(r),
+      createdByName:
+        r.createdByType === 'connector' ? 'System' : names.get(`${r.createdByType}:${r.createdBy}`) ?? 'Former member',
+    }));
   });
 }
 
