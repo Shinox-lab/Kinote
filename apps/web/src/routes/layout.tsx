@@ -1,123 +1,98 @@
-import { Link, Outlet, useNavigate, useParams, useRouter } from '@tanstack/react-router';
-import { useMutation } from '@tanstack/react-query';
-import { api } from '../lib/api.js';
-import { adminScreens } from '../lib/console.js';
-import { usePage, useReviews, useSpaces, useWorkspace } from '../lib/queries.js';
-import { endSession } from '../lib/queryClient.js';
-import { loadSession } from '../lib/session.js';
-import { Button, SelectField } from '../components/ui.js';
+import { useEffect, useRef, useState } from 'react';
+import { Outlet, useRouterState } from '@tanstack/react-router';
+import { MenuIcon, SidebarIcon } from '../components/icons.js';
+import { Sidebar } from '../components/sidebar/Sidebar.js';
+import {
+  SIDEBAR_BREAKPOINT_PX,
+  isCollapseShortcut,
+  loadCollapsed,
+  saveCollapsed,
+} from '../lib/sidebar.js';
+import { useFocusTrap } from '../lib/useFocusTrap.js';
+import { useMediaQuery } from '../lib/useMediaQuery.js';
 
-const NAV_LINK = 'rounded-md px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-100';
-
-/** Picks a space and opens its page tree; on a space or page screen it shows that screen's space. */
-function SpaceSwitcher() {
-  const { tenant } = useWorkspace();
-  const { spaceSlug, pageId } = useParams({ strict: false });
-  const navigate = useNavigate();
-  const { data: spaces = [] } = useSpaces();
-  // On a page screen the space is the page's (same cached query the screen itself uses).
-  const { data: page } = usePage(pageId);
-  const open = spaces.filter((s) => s.archivedAt === null);
-  if (open.length === 0) return null;
-
-  const current = spaceSlug ?? spaces.find((s) => s.id === page?.spaceId)?.slug ?? '';
-  const options = open.some((s) => s.slug === current)
-    ? []
-    : [{ value: current, label: current === '' ? 'Choose a space…' : (spaces.find((s) => s.slug === current)?.name ?? current) }];
-
-  return (
-    <div className="w-48">
-      <SelectField
-        compact
-        label="Space"
-        value={current}
-        options={[...options, ...open.map((s) => ({ value: s.slug, label: s.name }))]}
-        onChange={(slug) => {
-          if (slug === '') return;
-          void navigate({ to: '/w/$tenantSlug/s/$spaceSlug', params: { tenantSlug: tenant.slug, spaceSlug: slug } });
-        }}
-      />
-    </div>
-  );
-}
-
-/** The Reviews link; a count of what waits for the user (the same query the screen uses) when there is any. */
-function ReviewsLink() {
-  const { tenant } = useWorkspace();
-  const { data: items } = useReviews();
-  const waiting = items?.length ?? 0;
-  return (
-    <Link
-      to="/w/$tenantSlug/reviews"
-      params={{ tenantSlug: tenant.slug }}
-      className={NAV_LINK}
-      activeProps={{ className: `${NAV_LINK} bg-slate-100` }}
-    >
-      Reviews
-      {waiting > 0 && (
-        <span className="ml-1.5 rounded-full bg-indigo-600 px-1.5 py-0.5 text-xs text-white">
-          {waiting}
-          <span className="sr-only"> waiting</span>
-        </span>
-      )}
-    </Link>
-  );
-}
-
-/** The shell of `/w/$tenantSlug`: workspace name, space switcher, reviews, search and admin links, sign-out. */
+/**
+ * The shell of `/w/$tenantSlug`: one sidebar on the left (a column on a wide
+ * screen, a slide-over on a narrow one) and the screen beside it.
+ */
 export function WorkspaceLayout() {
-  const { tenant, role } = useWorkspace();
-  const router = useRouter();
-  const user = loadSession()?.user;
-  const screens = adminScreens(role);
+  const isDesktop = useMediaQuery(`(min-width: ${SIDEBAR_BREAKPOINT_PX}px)`);
+  const [collapsed, setCollapsed] = useState(() => loadCollapsed());
+  const [slideOver, setSlideOver] = useState(false);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
 
-  const signOut = useMutation({
-    mutationFn: () => api.signOut(),
-    // Signed out here even when the server could not be told: the token is dropped either way.
-    onSettled: () => {
-      endSession();
-      router.history.push('/sign-in');
-    },
-  });
+  // A slide-over closes when the person goes somewhere, and when the screen widens into a column.
+  useEffect(() => setSlideOver(false), [pathname, isDesktop]);
+  useFocusTrap(panelRef, slideOver && !isDesktop, () => setSlideOver(false));
+
+  function toggleCollapsed(next: boolean) {
+    setCollapsed(next);
+    saveCollapsed(next);
+  }
+
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (!isCollapseShortcut(e)) return;
+      e.preventDefault();
+      if (isDesktop) toggleCollapsed(!collapsed);
+      else setSlideOver((v) => !v);
+    }
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [isDesktop, collapsed]);
+
+  const column = isDesktop && !collapsed;
 
   return (
-    <div className="min-h-screen">
-      <header className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-3 px-4 py-3">
-          <Link to="/w/$tenantSlug" params={{ tenantSlug: tenant.slug }} className="mr-2 text-base font-semibold">
-            {tenant.name}
-          </Link>
-          <SpaceSwitcher />
-          <nav aria-label="Workspace" className="flex flex-1 flex-wrap gap-1">
-            <ReviewsLink />
-            <Link
-              to="/w/$tenantSlug/search"
-              params={{ tenantSlug: tenant.slug }}
-              className={NAV_LINK}
-              activeProps={{ className: `${NAV_LINK} bg-slate-100` }}
-            >
-              Search
-            </Link>
-            {screens.length > 0 && (
-              <Link
-                to={screens[0].to}
-                params={{ tenantSlug: tenant.slug }}
-                className={NAV_LINK}
-                activeProps={{ className: `${NAV_LINK} bg-slate-100` }}
-              >
-                Administration
-              </Link>
-            )}
-          </nav>
-          <span className="text-sm text-slate-600">{user?.name}</span>
-          <Button variant="secondary" onClick={() => signOut.mutate()} disabled={signOut.isPending}>
-            Sign out
-          </Button>
+    <div className="flex min-h-screen">
+      {column && (
+        <aside aria-label="Sidebar" className="sticky top-0 h-screen w-64 shrink-0 border-r border-line bg-sidebar">
+          <Sidebar onCollapse={() => toggleCollapsed(true)} />
+        </aside>
+      )}
+
+      {!isDesktop && slideOver && (
+        <div className="fixed inset-0 z-40 flex">
+          <div
+            ref={panelRef}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Sidebar"
+            tabIndex={-1}
+            className="h-full w-72 max-w-[85vw] border-r border-line bg-sidebar shadow-pop"
+          >
+            <Sidebar />
+          </div>
+          <button
+            type="button"
+            aria-label="Close sidebar"
+            tabIndex={-1}
+            className="flex-1 bg-overlay"
+            onClick={() => setSlideOver(false)}
+          />
         </div>
-      </header>
-      <main className="mx-auto max-w-5xl px-4 py-6">
-        <Outlet />
-      </main>
+      )}
+
+      <div className="min-w-0 flex-1">
+        {!column && (
+          <div className="px-3 pt-3">
+            <button
+              type="button"
+              aria-label="Open sidebar"
+              title="Open sidebar (Ctrl+\)"
+              aria-expanded={isDesktop ? false : slideOver}
+              onClick={() => (isDesktop ? toggleCollapsed(false) : setSlideOver(true))}
+              className="flex size-8 items-center justify-center rounded-md text-lg text-muted hover:bg-hover"
+            >
+              {isDesktop ? <SidebarIcon /> : <MenuIcon />}
+            </button>
+          </div>
+        )}
+        <main className="mx-auto w-full max-w-5xl px-4 py-6 md:px-8">
+          <Outlet />
+        </main>
+      </div>
     </div>
   );
 }
