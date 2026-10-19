@@ -1,19 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { and, eq } from 'drizzle-orm';
-import { auditEvents, documents, jobs, lockDocument, versions, withTenantTx } from '@living-wiki/db';
+import { auditEvents, documents, jobs, versions, withTenantTx } from '@living-wiki/db';
 import { createTestDb, type TestDb } from '@living-wiki/db/testing';
 import { AppError } from '@living-wiki/contracts';
 import { InMemoryObjectStorage } from '@living-wiki/shared';
-import {
-  FakeExtractor,
-  detectFileType,
-  extractVersion,
-  fileObjectPath,
-  insertFileVersion,
-  type Extractor,
-} from '../src/index.js';
-import { seedFileDocument, type FileSeed } from './fixtures/fileSeed.js';
+import { FakeExtractor, extractVersion, fileObjectPath, type Extractor } from '../src/index.js';
+import { seedFileDocument, uploadFixtureFile, type FileSeed } from './fixtures/fileSeed.js';
 
 let testDb: TestDb;
 beforeAll(async () => {
@@ -35,42 +28,12 @@ beforeEach(() => {
   storage = new InMemoryObjectStorage();
 });
 
-/** Stores the bytes and inserts the version, as an upload does. */
-async function upload(
+const upload = (
   seed: FileSeed,
   name: string,
   content: string | Uint8Array,
   actorType: 'user' | 'agent' | 'connector' = 'user'
-) {
-  const bytes = typeof content === 'string' ? enc(content) : content;
-  const detected = detectFileType(name, bytes);
-  if (!detected.ok) throw new Error(`fixture ${name} is not a valid file`);
-  const versionId = randomUUID();
-  const { objectKey } = await storage.put(
-    seed.tenantId,
-    fileObjectPath(seed.documentId, versionId, 'original'),
-    bytes,
-    detected.file.mimeType
-  );
-  return withTenantTx(seed.tenantId, async (tx) => {
-    const doc = await lockDocument(tx, seed.tenantId, seed.documentId);
-    return insertFileVersion(tx, {
-      tenantId: seed.tenantId,
-      doc,
-      versionId,
-      file: {
-        name,
-        mimeType: detected.file.mimeType,
-        sizeBytes: bytes.length,
-        contentHash: randomUUID(),
-        objectKey,
-        handling: detected.file.handling,
-      },
-      actor: { type: actorType, id: seed.userId },
-      reason: actorType === 'connector' ? 'source' : 'upload',
-    });
-  });
-}
+) => uploadFixtureFile(seed, storage, name, content, actorType);
 
 const reload = (seed: FileSeed, id: string) =>
   withTenantTx(seed.tenantId, async (tx) => {

@@ -2,7 +2,8 @@ import { describe, test, beforeEach, afterEach, vi } from 'vitest';
 import assert from 'node:assert/strict';
 import { and, eq } from 'drizzle-orm';
 import { withTenantTx, versions, jobs, auditEvents, type Job } from '@living-wiki/db';
-import type { EmbeddingProvider } from '@living-wiki/core';
+import { UnavailableExtractor, type EmbeddingProvider } from '@living-wiki/core';
+import { InMemoryObjectStorage } from '@living-wiki/shared';
 import { runPendingJobsForTenant } from '../../worker/src/runner.js';
 import { handlers } from '../../worker/src/registry.js';
 import { ERROR_SENTENCES } from '@living-wiki/contracts';
@@ -342,6 +343,9 @@ describe('failed versions and retry', () => {
     await handlers['version.index']!.run(job, {
       now: new Date(),
       embeddingProvider: brokenProvider,
+      storage: new InMemoryObjectStorage(),
+      extractor: new UnavailableExtractor(),
+      maxExtractedChars: 1000,
     });
 
     const logged = warn.mock.calls.map((args) => args.join(' '));

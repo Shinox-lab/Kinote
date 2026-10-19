@@ -40,6 +40,11 @@ describe('FakeExtractor', () => {
     ExtractedDocumentSchema.parse(doc);
   });
 
+  it('finds the marker line after a real file signature', async () => {
+    const doc = await run('%PDF-1.7\nFAKE-EXTRACT\nonly page');
+    expect(doc.sections.map((s) => s.text)).toEqual(['only page']);
+  });
+
   it('yields no sections for FAKE-EXTRACT-EMPTY', async () => {
     expect((await run('FAKE-EXTRACT-EMPTY\n')).sections).toEqual([]);
   });

@@ -1,6 +1,6 @@
 import { assertEmbeddingDimensions, closeDb, initDb } from '@living-wiki/db';
-import { defaultEmbeddingProvider } from '@living-wiki/core';
-import { loadConfig } from '@living-wiki/shared';
+import { createExtractor, defaultEmbeddingProvider } from '@living-wiki/core';
+import { createObjectStorage, loadConfig } from '@living-wiki/shared';
 import { runWorkerLoop } from './runner.js';
 
 const POLL_INTERVAL_MS = 1000;
@@ -16,6 +16,9 @@ async function main(): Promise<void> {
   }
   const db = initDb({ url: config.DATABASE_URL });
   await assertEmbeddingDimensions(db, config.EMBEDDING_DIMENSIONS);
+  const storage = createObjectStorage(config);
+  await storage.ensureBucket();
+  const extractor = createExtractor(config);
 
   const controller = new AbortController();
   const stop = () => controller.abort();
@@ -28,6 +31,9 @@ async function main(): Promise<void> {
       intervalMs: POLL_INTERVAL_MS,
       signal: controller.signal,
       embeddingProvider: provider,
+      storage,
+      extractor,
+      maxExtractedChars: config.MAX_EXTRACTED_CHARS,
     });
   } finally {
     await closeDb();

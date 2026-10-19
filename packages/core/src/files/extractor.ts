@@ -24,24 +24,24 @@ export class UnavailableExtractor implements Extractor {
   }
 }
 
-const MARKER = 'FAKE-EXTRACT';
+const MARKER_LINE = /^FAKE-EXTRACT(?:-(DOWN|EMPTY))?[ \t]*$/m;
 
 /**
  * A deterministic extractor for tests and local e2e: the file's bytes carry
- * their own text. First line `FAKE-EXTRACT`, then either JSON in the
- * `ExtractedDocument` shape or plain text (one section per form-feed page);
- * `FAKE-EXTRACT-EMPTY` reads as no text, `FAKE-EXTRACT-DOWN` as an extractor
- * that is down; anything else is an unreadable file.
+ * their own text. A line `FAKE-EXTRACT` (after any real file signature such as
+ * `%PDF-1.7`) is followed by either JSON in the `ExtractedDocument` shape or
+ * plain text (one section per form-feed page); the line `FAKE-EXTRACT-EMPTY`
+ * reads as no text, `FAKE-EXTRACT-DOWN` as an extractor that is down; bytes
+ * without a marker line are an unreadable file.
  */
 export class FakeExtractor implements Extractor {
   async extract({ bytes }: ExtractInput): Promise<ExtractedDocument> {
     const text = new TextDecoder('utf-8').decode(bytes);
-    const newline = text.indexOf('\n');
-    const first = newline === -1 ? text : text.slice(0, newline);
-    const rest = newline === -1 ? '' : text.slice(newline + 1);
-    if (first === `${MARKER}-DOWN`) throw new AppError('extractor_unavailable');
-    if (first === `${MARKER}-EMPTY`) return { pageCount: 0, sections: [], ocrUsed: false };
-    if (first !== MARKER) throw new AppError('file_unreadable');
+    const marker = MARKER_LINE.exec(text);
+    if (!marker) throw new AppError('file_unreadable');
+    if (marker[1] === 'DOWN') throw new AppError('extractor_unavailable');
+    if (marker[1] === 'EMPTY') return { pageCount: 0, sections: [], ocrUsed: false };
+    const rest = text.slice(marker.index + marker[0].length).replace(/^\r?\n/, '');
     if (rest.trimStart().startsWith('{')) {
       try {
         return ExtractedDocumentSchema.parse(JSON.parse(rest));

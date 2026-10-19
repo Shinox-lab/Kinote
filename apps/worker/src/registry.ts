@@ -1,7 +1,14 @@
 import { and, eq } from 'drizzle-orm';
-import { withTenantTx, versions, storableMessage, type Job } from '@living-wiki/db';
+import { withTenantTx, versions, storableMessage, NonRetryableError, type Job } from '@living-wiki/db';
 import { AppError, ERROR_SENTENCES } from '@living-wiki/contracts';
-import { takePageSnapshot, indexVersion, type EmbeddingProvider } from '@living-wiki/core';
+import {
+  takePageSnapshot,
+  indexVersion,
+  extractVersion,
+  type EmbeddingProvider,
+  type Extractor,
+} from '@living-wiki/core';
+import type { ObjectStorage } from '@living-wiki/shared';
 
 /** Longest `versions.error` stored for a failed version. */
 const MAX_VERSION_ERROR_LENGTH = 500;
@@ -40,17 +47,28 @@ const CONTRACT_SENTENCES = Object.values(ERROR_SENTENCES);
  * database error quoting SQL, a bug) becomes the generic `internal_error`
  * sentence; the full text stays in `jobs.last_error` for operators.
  */
-export function failedVersionError(attempts: number, error: string, thrown?: unknown): string {
+export function failedVersionError(
+  attempts: number,
+  error: string,
+  thrown?: unknown,
+  stage: 'Indexing' | 'Extraction' = 'Indexing'
+): string {
   const ours =
     thrown instanceof AppError || CONTRACT_SENTENCES.some((sentence) => error.startsWith(sentence));
   const detail = ours ? failureDetail(error) : ERROR_SENTENCES.internal_error;
-  const text = `Indexing failed after ${attempts} attempt${attempts === 1 ? '' : 's'}: ${detail}`;
+  const text = `${stage} failed after ${attempts} attempt${attempts === 1 ? '' : 's'}: ${detail}`;
   return storableMessage(text).slice(0, MAX_VERSION_ERROR_LENGTH);
 }
 
 export interface JobContext {
   now: Date;
   embeddingProvider: EmbeddingProvider;
+  /** Where file bytes and extracted text live. */
+  storage: ObjectStorage;
+  /** Reads PDFs, Office files and images (text files are read by the worker itself). */
+  extractor: Extractor;
+  /** Most characters of text one file may yield. */
+  maxExtractedChars: number;
 }
 
 /**
@@ -65,6 +83,49 @@ export interface JobHandler {
 }
 
 export const handlers: Record<string, JobHandler> = {
+  'file.extract': {
+    async run(job, ctx) {
+      const payload = job.payload as { versionId?: unknown };
+      if (typeof payload?.versionId !== 'string') {
+        throw new NonRetryableError('file.extract job has no versionId');
+      }
+      const result = await extractVersion(
+        { tenantId: job.tenantId, versionId: payload.versionId },
+        { storage: ctx.storage, extractor: ctx.extractor, maxChars: ctx.maxExtractedChars }
+      );
+      if (result.outcome === 'skipped') {
+        console.warn(
+          `[worker] file.extract: version ${payload.versionId} not extracted (skipped: ${result.reason})`
+        );
+      }
+    },
+    /**
+     * Marks the version `failed` ("Extraction failed after N attempts: <cause>"),
+     * only while it is still `extracting`: a version withdrawn, superseded or
+     * extracted meanwhile keeps its status. Retry (POST /versions/:id/retry)
+     * revives it.
+     */
+    async onDeadLetter(job, error, thrown) {
+      const payload = job.payload as { versionId?: unknown };
+      if (typeof payload?.versionId !== 'string') return;
+      const versionId = payload.versionId;
+      await withTenantTx(job.tenantId, (tx) =>
+        tx
+          .update(versions)
+          .set({
+            status: 'failed',
+            error: failedVersionError(job.attempts, error, thrown, 'Extraction'),
+          })
+          .where(
+            and(
+              eq(versions.tenantId, job.tenantId),
+              eq(versions.id, versionId),
+              eq(versions.status, 'extracting')
+            )
+          )
+      );
+    },
+  },
   'page.snapshot': {
     async run(job) {
       const payload = job.payload as {

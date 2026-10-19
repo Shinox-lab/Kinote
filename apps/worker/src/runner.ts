@@ -9,14 +9,24 @@ import {
   type Job,
 } from '@living-wiki/db';
 import { AppError } from '@living-wiki/contracts';
-import { defaultEmbeddingProvider, type EmbeddingProvider } from '@living-wiki/core';
-import { handlers as defaultHandlers, type JobHandler } from './registry.js';
+import {
+  defaultEmbeddingProvider,
+  UnavailableExtractor,
+  type EmbeddingProvider,
+  type Extractor,
+} from '@living-wiki/core';
+import { InMemoryObjectStorage, type ObjectStorage } from '@living-wiki/shared';
+import { handlers as defaultHandlers, type JobContext, type JobHandler } from './registry.js';
 
 /** Seconds a claimed job stays leased before another worker may reclaim it. */
 export const LEASE_SECONDS = 300;
 const DEFAULT_LIMIT = 10;
 /** Passes per tenant run: jobs enqueue jobs (page.snapshot -> version.index). */
 const MAX_PASSES = 5;
+const DEFAULT_MAX_EXTRACTED_CHARS = 2_000_000;
+
+/** What every handler gets besides the time. */
+type RunDeps = Omit<JobContext, 'now'>;
 
 export interface RunnerOptions {
   /** Fixed time for every step (tests). Ignored when `clock` is given. */
@@ -25,6 +35,12 @@ export interface RunnerOptions {
   clock?: () => Date;
   limit?: number;
   embeddingProvider?: EmbeddingProvider;
+  /** File bytes and extracted text. Default: an empty in-memory store (tests only). */
+  storage?: ObjectStorage;
+  /** Default: an extractor that is always unavailable. */
+  extractor?: Extractor;
+  /** Default 2 000 000 characters. */
+  maxExtractedChars?: number;
   /** Overrides the queue registry (tests). */
   handlers?: Record<string, JobHandler>;
   /** Stops between jobs and passes; claimed jobs not yet started are released. */
@@ -67,7 +83,12 @@ export async function runPendingJobsForTenant(
   o: RunnerOptions = {}
 ): Promise<Processed[]> {
   const registry = o.handlers ?? defaultHandlers;
-  const embeddingProvider = o.embeddingProvider ?? defaultEmbeddingProvider;
+  const deps: RunDeps = {
+    embeddingProvider: o.embeddingProvider ?? defaultEmbeddingProvider,
+    storage: o.storage ?? new InMemoryObjectStorage(),
+    extractor: o.extractor ?? new UnavailableExtractor(),
+    maxExtractedChars: o.maxExtractedChars ?? DEFAULT_MAX_EXTRACTED_CHARS,
+  };
   const limit = o.limit ?? DEFAULT_LIMIT;
   const fixedNow = o.now;
   const clock = o.clock ?? (fixedNow ? () => fixedNow : () => new Date());
@@ -102,7 +123,7 @@ export async function runPendingJobsForTenant(
         );
         status = 'skipped_expired';
       } else {
-        status = await runOne(tenantId, job, registry, clock, embeddingProvider);
+        status = await runOne(tenantId, job, registry, clock, deps);
       }
       processed.push({ id: job.id, queue: job.queue, status });
     }
@@ -151,14 +172,14 @@ async function runOne(
   job: Job,
   registry: Record<string, JobHandler>,
   clock: () => Date,
-  embeddingProvider: EmbeddingProvider
+  deps: RunDeps
 ): Promise<string> {
   const handler = registry[job.queue];
   const lease = job.lockedAt ?? undefined;
   let failure: { err: unknown } | undefined;
   try {
     if (!handler) throw new NonRetryableError(`No handler registered for queue "${job.queue}"`);
-    await handler.run(job, { now: clock(), embeddingProvider });
+    await handler.run(job, { now: clock(), ...deps });
   } catch (err) {
     failure = { err };
   }
@@ -227,6 +248,9 @@ export async function runWorkerLoop(o: {
   intervalMs: number;
   signal: AbortSignal;
   embeddingProvider?: EmbeddingProvider;
+  storage?: ObjectStorage;
+  extractor?: Extractor;
+  maxExtractedChars?: number;
   handlers?: Record<string, JobHandler>;
 }): Promise<void> {
   while (!o.signal.aborted) {
@@ -241,6 +265,9 @@ export async function runWorkerLoop(o: {
       try {
         await runPendingJobsForTenant(tenantId, {
           embeddingProvider: o.embeddingProvider,
+          storage: o.storage,
+          extractor: o.extractor,
+          maxExtractedChars: o.maxExtractedChars,
           handlers: o.handlers,
           signal: o.signal,
         });
