@@ -89,6 +89,7 @@ import { parseReply } from './reply.js';
 import { searchWiki } from './search/hybridSearch.js';
 import { askWiki } from './search/ask.js';
 import type { CollabClient } from './collab/client.js';
+import { fastifyLogger, type ApiLoggerOptions } from './logger.js';
 
 export interface ApiServerOptions {
   /** Per-IP limit for sign-up and sign-in (each route counted separately). */
@@ -105,6 +106,11 @@ export interface ApiServerOptions {
    * without it (tests that do not run collab) the flush is skipped.
    */
   collab?: CollabClient;
+  /**
+   * Logging (pino, with secrets redacted: see logger.ts). Without it the
+   * server is silent, as tests want it; main.ts always passes one.
+   */
+  logger?: ApiLoggerOptions;
 }
 
 const DEFAULT_AUTH_RATE_LIMIT: AuthRateLimit = { max: DEFAULT_AUTH_RATE_LIMIT_MAX, timeWindow: '1 minute' };
@@ -121,7 +127,7 @@ function sessionOf(req: FastifyRequest): AuthSession {
 }
 
 export function buildApiServer(opts: ApiServerOptions = {}) {
-  const app = Fastify({ logger: false, trustProxy: opts.trustProxy ?? false });
+  const app = Fastify({ logger: fastifyLogger(opts.logger), trustProxy: opts.trustProxy ?? false });
   registerErrorHandler(app);
 
   // Identity comes only from the session token and, for tenant routes, the

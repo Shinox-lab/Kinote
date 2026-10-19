@@ -27,3 +27,16 @@ describe('loadConfig: auth rate limit and embeddings', () => {
     expect(loadConfig({ ...base, AUTH_RATE_LIMIT_MAX: '100000' }).AUTH_RATE_LIMIT_MAX).toBe(100_000);
   });
 });
+
+describe('loadConfig: logging', () => {
+  it('logs at info by default and takes any pino level', () => {
+    expect(loadConfig(base).LOG_LEVEL).toBe('info');
+    for (const level of ['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']) {
+      expect(loadConfig({ ...base, LOG_LEVEL: level }).LOG_LEVEL).toBe(level);
+    }
+  });
+
+  it('refuses a level pino does not know', () => {
+    expect(() => loadConfig({ ...base, LOG_LEVEL: 'verbose' })).toThrow(/LOG_LEVEL/);
+  });
+});

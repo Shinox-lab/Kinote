@@ -32,6 +32,8 @@ export const ConfigSchema = z.object({
    * brute-force limit into no limit at all.
    */
   AUTH_RATE_LIMIT_MAX: z.coerce.number().int().positive().max(100_000).default(DEFAULT_AUTH_RATE_LIMIT_MAX),
+  /** pino level of the api's log (stdout). Request headers and bodies are never logged. */
+  LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
   EMBEDDING_PROVIDER: z.enum(['deterministic']).default('deterministic'),
   EMBEDDING_DIMENSIONS: z.coerce.number().int().positive().max(4000).default(1536),
   S3_ENDPOINT: z.string().min(1).optional(),

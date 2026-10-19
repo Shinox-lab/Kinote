@@ -4,7 +4,7 @@ import { AppError, ERROR_SENTENCES } from '@living-wiki/contracts';
 import { mapDbError } from '@living-wiki/db';
 
 export function registerErrorHandler(app: FastifyInstance): void {
-  app.setErrorHandler((err, _req, reply) => {
+  app.setErrorHandler((err, req, reply) => {
     if (err instanceof AppError) {
       return reply.status(err.statusCode).send({ error: err.code, message: err.message });
     }
@@ -30,7 +30,9 @@ export function registerErrorHandler(app: FastifyInstance): void {
         message: ERROR_SENTENCES.validation_failed,
       });
     }
-    app.log.error(err);
+    // Logged with a fixed message: pino would otherwise copy err.message (a
+    // query error's params line included) into msg. See logger.ts.
+    req.log.error({ err }, 'unexpected error');
     return reply.status(500).send({
       error: 'internal_error',
       message: ERROR_SENTENCES.internal_error,

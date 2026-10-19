@@ -25,6 +25,7 @@ x-app-env: &app-env
   TRUST_PROXY: ${TRUST_PROXY:-false}
   # `pnpm e2e` sets both (the suite signs up more accounts than 10 a minute).
   AUTH_RATE_LIMIT_MAX: ${AUTH_RATE_LIMIT_MAX:-10}
+  LOG_LEVEL: ${LOG_LEVEL:-info}
   EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-deterministic}
   EMBEDDING_DIMENSIONS: "1536"
   S3_ENDPOINT: http://minio:9000

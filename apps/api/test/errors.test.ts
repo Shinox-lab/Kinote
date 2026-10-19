@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { DrizzleQueryError } from 'drizzle-orm';
 import { AppError, ErrorCodeSchema, ERROR_SENTENCES, ERROR_STATUS } from '@living-wiki/contracts';
 import { buildTestApp, bootstrapTenant, asUser, signUp, useTestDb } from './support/testkit.js';
 
@@ -58,6 +59,43 @@ describe('error model', () => {
       message: ERROR_SENTENCES.internal_error,
     });
     assert.equal(res.body.includes('Failed query'), false);
+  });
+
+  test('an unexpected error is logged (without query params, headers or body) and the reply still leaks nothing', async () => {
+    const lines: string[] = [];
+    const logged = buildTestApp({
+      logger: { level: 'info', stream: { write: (line: string) => void lines.push(line) } },
+    });
+    logged.post('/__boom', { config: { auth: 'public' } }, async (req) => {
+      // Stands in for a careless log line: request headers must be censored.
+      req.log.info({ headers: req.headers }, 'headers seen');
+      throw new DrizzleQueryError('insert into sessions values ($1)', ['hash-of-sekrit-param'], new Error('boom'));
+    });
+
+    const res = await logged.inject({
+      method: 'POST',
+      url: '/__boom',
+      headers: { authorization: 'Bearer sekrit-token', 'x-internal-secret': 'sekrit-internal' },
+      payload: { password: 'sekrit-password' },
+    });
+    await logged.close();
+
+    assert.equal(res.statusCode, 500);
+    assert.deepEqual(res.json(), { error: 'internal_error', message: ERROR_SENTENCES.internal_error });
+    const entries = lines.map((l) => JSON.parse(l));
+    const errorEntry = entries.find((e) => e.level === 50);
+    assert.ok(errorEntry, lines.join('\n'));
+    assert.equal(errorEntry.msg, 'unexpected error');
+    assert.match(errorEntry.err.message, /^Failed query: insert into sessions values \(\$1\)$/);
+    assert.match(errorEntry.err.stack, /Failed query/);
+    assert.equal(errorEntry.err.cause.message, 'boom');
+    const headersEntry = entries.find((e) => e.msg === 'headers seen');
+    assert.equal(headersEntry.headers.authorization, '[redacted]');
+    assert.equal(headersEntry.headers['x-internal-secret'], '[redacted]');
+    const all = lines.join('\n');
+    for (const secret of ['sekrit-token', 'sekrit-internal', 'sekrit-password', 'hash-of-sekrit-param']) {
+      assert.equal(all.includes(secret), false, secret);
+    }
   });
 
   test('AppError answers its contract status and code', async () => {

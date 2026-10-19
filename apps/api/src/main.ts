@@ -9,6 +9,7 @@ async function main(): Promise<void> {
   await assertEmbeddingDimensions(db, config.EMBEDDING_DIMENSIONS);
 
   const app = buildApiServer({
+    logger: { level: config.LOG_LEVEL },
     trustProxy: config.TRUST_PROXY,
     authRateLimit: { max: config.AUTH_RATE_LIMIT_MAX, timeWindow: '1 minute' },
     collab: new HttpCollabClient(config.COLLAB_INTERNAL_URL, config.INTERNAL_SECRET),
