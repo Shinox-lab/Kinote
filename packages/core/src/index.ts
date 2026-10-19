@@ -24,3 +24,11 @@ export {
   defaultEmbeddingProvider,
   type EmbeddingProvider,
 } from './embedding.js';
+export {
+  detectFileType,
+  listZipEntries,
+  cleanFileName,
+  type DetectedFile,
+  type DetectResult,
+  type FileHandling,
+} from './files/detect.js';
