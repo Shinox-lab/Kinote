@@ -107,9 +107,10 @@ export function parseDocumentName(name: string): { tenantId: string; pageId: str
 
 /**
  * The collab token signing secret from `COLLAB_TOKEN_SECRET` (at least 32
- * characters). The only place the variable is read until the config loader
- * exists; throws when it is unset or too short so a server never signs or
- * verifies with a weak key.
+ * characters). The api's token route signs with it, and it is the default
+ * for verifying outside the collab server (which gets the secret from
+ * `loadConfig` at start, as the api's main.ts validates it). Throws when it is
+ * unset or too short so nothing ever signs or verifies with a weak key.
  */
 export function getCollabTokenSecret(): string {
   const secret = process.env.COLLAB_TOKEN_SECRET;

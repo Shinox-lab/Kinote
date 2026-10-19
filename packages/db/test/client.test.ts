@@ -88,13 +88,13 @@ describe('loadConfig', () => {
     expect(cfg.DATABASE_MIGRATE_URL).toBeUndefined();
   });
 
-  it('defaults HOST to 0.0.0.0 and TRUST_PROXY to false', () => {
+  it('defaults HOST to 127.0.0.1 (loopback) and TRUST_PROXY to false', () => {
     const cfg = loadConfig(VALID_ENV);
-    expect(cfg.HOST).toBe('0.0.0.0');
+    expect(cfg.HOST).toBe('127.0.0.1');
     expect(cfg.TRUST_PROXY).toBe(false);
   });
 
-  it('parses TRUST_PROXY as a boolean flag', () => {
+  it('parses TRUST_PROXY as a boolean flag or a hop count', () => {
     expect(loadConfig({ ...VALID_ENV, TRUST_PROXY: 'true' }).TRUST_PROXY).toBe(true);
     expect(loadConfig({ ...VALID_ENV, TRUST_PROXY: 'false' }).TRUST_PROXY).toBe(false);
     expect(() => loadConfig({ ...VALID_ENV, TRUST_PROXY: 'yes' })).toThrow(/TRUST_PROXY/);

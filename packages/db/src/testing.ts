@@ -9,18 +9,14 @@ import { drizzle } from 'drizzle-orm/pglite';
 import { migrate } from 'drizzle-orm/pglite/migrator';
 import { initDb, schema, type Db } from './client.js';
 
-// Locate packages/db/migrations from source (packages/db/src -> ../migrations)
-// and from a compiled bundle (dist/packages/db/src -> ../../../../packages/db/migrations).
+// packages/db/migrations, next to this file's src directory (tests run the
+// TypeScript sources; there is no compiled bundle).
 function findMigrationsDir(): string {
-  const here = path.dirname(fileURLToPath(import.meta.url));
-  const candidates = [
-    path.resolve(here, '../../../..', 'packages/db/migrations'),
-    path.resolve(here, '../migrations'),
-  ];
-  for (const candidate of candidates) {
-    if (fs.existsSync(path.join(candidate, 'meta', '_journal.json'))) return candidate;
+  const dir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../migrations');
+  if (!fs.existsSync(path.join(dir, 'meta', '_journal.json'))) {
+    throw new Error(`Unable to locate packages/db/migrations (looked in: ${dir})`);
   }
-  throw new Error(`Unable to locate packages/db/migrations (looked in: ${candidates.join(', ')})`);
+  return dir;
 }
 
 export interface TestDb {

@@ -22,9 +22,6 @@ export async function verifyPassword(pw: string, storedHash: string): Promise<bo
   }
 }
 
-/** Placeholder stored for accounts that have no usable password; never verifies. */
-export const UNUSABLE_PASSWORD_HASH = '!';
-
 export function isUsableHash(storedHash: string): boolean {
   return storedHash.startsWith('$argon2');
 }
