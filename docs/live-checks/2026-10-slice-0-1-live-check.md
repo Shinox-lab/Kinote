@@ -10,7 +10,7 @@ on real Postgres (2026-10-19, second session; the section for each says what ran
 | | |
 | --- | --- |
 | Date | 2026-10-19 |
-| Code | branch `remediation/slice-0-1`, base commit `31454e5` plus the Task 5.10 commit (`git log -1 -- docs/live-checks`) |
+| Code | branch `remediation/slice-0-1`. PGlite runs (items 1, 3, 4, 5): commit `bf20a90` (the fix-round code commit, clean tree). The first-session run of the earlier spec: `0d8f2e4`. Docker runs: see the sections below. |
 | Host | macOS (Darwin 25.6.0), node v22.23.2, pnpm 9.12.0 |
 | Browser | Playwright 1.64.1, Chromium headless shell 156.0.8078.4 |
 | Stack | **PGlite harness, not Docker**: `e2e/harness/local-stack.ts` runs the api, collab and worker in one Node process on an in-memory PGlite database (real migration chain, role `living_wiki_app`, RLS forced), deterministic embeddings (1536 dimensions), the console as a production build behind `vite preview`. api 18787, collab 11234, console 15173, worker poll 250 ms, collab store debounce 300 ms. |
@@ -23,8 +23,8 @@ on real Postgres (2026-10-19, second session; the section for each says what ran
 | --- | --- | --- |
 | 1 | Two tenants cannot see each other: api calls with each tenant's session | PASSED on the PGlite harness (output below) |
 | 2 | Two tenants cannot see each other: the SQL check of `rls.pg.test.ts` | PASSED on real Postgres 17 (11 tests, output below) |
-| 3 | Co-edit in a review space; a snapshot is held until approved | PASSED on the PGlite harness (`pnpm e2e:local`, output below) |
-| 4 | Search and Ask cite v1 only after approval | PASSED on the PGlite harness (`pnpm e2e:local`, output below) |
+| 3 | Co-edit in a review space; the snapshot is held until approved | PASSED on the PGlite harness (`pnpm e2e:local`, output below): the held version is `pending_review`, nothing is indexed for the page, and search and Ask return an indexed decoy page but not the held one |
+| 4 | Search and Ask cite v1 only after approval | PASSED on the PGlite harness (`pnpm e2e:local`, output below): the held page's link is absent from search and Ask before approval and present, cited `(v1, updated …)`, after R approves and the worker has indexed it |
 | 5 | Withdraw removes results at once | PASSED on the PGlite harness (output below) |
 | 6 | A restart of every container loses nothing | PASSED on the compose stack (`docker compose restart`, output below) |
 | 7 | `pnpm stack:up` | PARTIAL: postgres and minio start healthy; the host migration FAILS on the default port 55543 (stale Docker listener); migrations apply (11) on a remapped port |
@@ -46,22 +46,32 @@ page text is written through the collab internal endpoint and indexed with
 "Falcon protocol: tenant one confidential launch checklist."; tenant two's says
 "Heron protocol: tenant two unrelated notes." Every call below was made with the
 bearer token of the user named first and the `x-tenant-id` named second. The
-script is `check.mjs` (a plain `fetch` script; its output is below, long
-search and Ask replies are shortened to the page ids and citations they name).
+script is `docs/live-checks/tenants-and-withdraw.mjs` (a plain `fetch` script, committed with
+this document); run it as
+
+```sh
+node --import tsx e2e/harness/local-stack.ts &    # wait for the line READY
+node docs/live-checks/tenants-and-withdraw.mjs
+kill %1
+```
+
+Its output is below (ids and dates differ per run); long search and Ask replies are shortened
+to the page ids and citations they name.
 
 ```
+== Tenant isolation ==
 tenant one page indexed; badge: Indexed · v1
 tenant two page indexed; badge: Indexed · v1
-tenant1=a9259b5a-ff07-43a8-8877-a9ff1ef6ea8f page1=860404f8-9839-4ea8-aef0-4e6ce2a6e381 space1=d1e28afc-3644-4aec-b6b3-672c0a100b65
-tenant2=4e58a62e-60a8-4b35-8c18-7fe1d37c02d7 page2=35b2c02f-b48a-47e3-8cc7-65815b8705f5
+tenant1=6cf73c72-abe4-4fe9-b245-75028194be96 page1=d4bc6a46-1224-496e-8dc9-06906f811240 space1=67ab91bb-1337-486e-b74d-4413b9138a11
+tenant2=12e9f737-c518-429d-988b-4c125c2aae2d page2=e31b826d-1513-495f-9197-f16581c072d5
 -- positive control: tenant one finds its own text
 user1 / tenant1  POST /search {query: "falcon protocol"}
-    -> 200 {"passages":[{"documentId":"860404f8-9839-4ea8-aef0-4e6ce2a6e381","versionTitle":"one page","citeAs":"one page (v1, updated 2026-10-19)"}]}
+    -> 200 {"passages":[{"documentId":"d4bc6a46-1224-496e-8dc9-06906f811240","versionTitle":"one page","citeAs":"one page (v1, updated 2026-10-19)"}]}
 -- user2 acting in tenant2 reaches for tenant1 data
 user2 / tenant2  POST /search {query: "falcon protocol"}
-    -> 200 {"passages":[{"documentId":"35b2c02f-b48a-47e3-8cc7-65815b8705f5","versionTitle":"two page","citeAs":"two page (v1, updated 2026-10-19)"}]}
+    -> 200 {"passages":[{"documentId":"e31b826d-1513-495f-9197-f16581c072d5","versionTitle":"two page","citeAs":"two page (v1, updated 2026-10-19)"}]}
 user2 / tenant2  POST /ask {question: "falcon protocol"}
-    -> 200 {"foundRelevant":true,"answer":"Based on indexed wiki sources (two page (v1, updated 2026-10-19)): # two page\n\nHeron protocol: tenant two unre","citations":[{"documentId":"35b2c02f-b48a-47e3-8cc7-65815b8705f5","citeAs":"two page (v1, updated 2026-10-19)"}]}
+    -> 200 {"foundRelevant":true,"answer":"Based on indexed wiki sources (two page (v1, updated 2026-10-19)): # two page\n\nHeron protocol: tenant two unre","citations":[{"documentId":"e31b826d-1513-495f-9197-f16581c072d5","citeAs":"two page (v1, updated 2026-10-19)"}]}
 user2 / tenant2  GET /pages/<tenant1 page>
     -> 404 {"error":"page_not_found","message":"The requested page could not be found."}
 user2 / tenant2  GET /pages/<tenant1 page>/versions
@@ -71,7 +81,7 @@ user2 / tenant2  POST /pages/<tenant1 page>/collab-token
 user2 / tenant2  GET /spaces/<tenant1 space>/tree
     -> 404 {"error":"space_not_found","message":"The requested space could not be found."}
 user2 / tenant2  GET /spaces (own list only)
-    -> 200 [{"tenantId":"4e58a62e-60a8-4b35-8c18-7fe1d37c02d7","name":"Inbox","myRole":"admin"},{"tenantId":"4e58a62e-60a8-4b35-8c18-7fe1d37c02d7","name":"Docs","myRole":"admin"}]
+    -> 200 [{"tenantId":"12e9f737-c518-429d-988b-4c125c2aae2d","name":"Inbox","myRole":"admin"},{"tenantId":"12e9f737-c518-429d-988b-4c125c2aae2d","name":"Docs","myRole":"admin"}]
 -- user2 names tenant1 in x-tenant-id
 user2 / tenant1  GET /spaces
     -> 404 {"error":"tenant_not_found","message":"The requested organisation could not be found."}
@@ -85,7 +95,7 @@ user1 / tenant2  GET /pages/<tenant2 page>
 user1 / tenant1  GET /pages/<tenant2 page>
     -> 404 {"error":"page_not_found","message":"The requested page could not be found."}
 user1 / tenant1  POST /search {query: "heron protocol"}
-    -> 200 {"passages":[{"documentId":"860404f8-9839-4ea8-aef0-4e6ce2a6e381","versionTitle":"one page","citeAs":"one page (v1, updated 2026-10-19)"}]}
+    -> 200 {"passages":[{"documentId":"d4bc6a46-1224-496e-8dc9-06906f811240","versionTitle":"one page","citeAs":"one page (v1, updated 2026-10-19)"}]}
 no token         GET /spaces
     -> 401 {"error":"unauthenticated","message":"Please sign in to continue."}
 ```
@@ -120,53 +130,66 @@ $ pnpm test:pg      (TEST_DATABASE_URL = living_wiki_app, TEST_DATABASE_MIGRATE_
 S3 case against MinIO: `S3_ENDPOINT=http://127.0.0.1:59100 pnpm vitest run packages/shared/test/objectStorage.test.ts`
 -> `Test Files 1 passed (1)`, `Tests 65 passed (65)`, none skipped.
 
-## 3 and 4. Co-edit, held until approval, v1 cited after approval — `pnpm e2e:local`
+## 3 and 4. Co-edit, held until approval, v1 cited after approval — `pnpm e2e:local` (spec as of `bf20a90`)
 
 `e2e/co-edit.spec.ts` drives three browser contexts through the console: A (Ada) signs
 up, creates a workspace and a review-required space "Docs"; invites B (Bea) and R (Rae)
 and opens their accept links in their own contexts (each signs up on the way); A grants
-B editor and R reviewer; A creates a page; A and B type into it at the same time
-(different blocks, key by key with a delay) and both editors show both texts; A clicks
-**Submit for review**; the badge reads `Saved · not indexed (awaiting approval)`; on the
-Reviews screen A sees version 1 as "Awaiting review" with **Approve** disabled and the
-reason "You can't approve this change…"; A's search for the new text answers "No passages
-matched."; R approves (the item leaves the queue); after the worker has run the badge
-reads `Indexed · v1`, a search shows the passage with `(v1, updated YYYY-MM-DD)`, Ask lists
-the source `Leave policy (v1, updated YYYY-MM-DD)`, and clicking it opens the page.
+B editor and R reviewer. A then creates and indexes a decoy page "Holiday calendar" in
+the Inbox (a space without review), so that search has something to return. A creates the
+page "Leave policy" in Docs; A and B type into it at the same time (different blocks, key
+by key with a delay) and both editors show both texts; A clicks **Submit for review**.
 
-Output of the three consecutive runs (command: `pnpm e2e:local`; each run starts the
-harness, runs the specs, stops it, and leaves no process behind):
+What is demonstrated before approval (item 3):
+- the badge reads `Saved · not indexed (awaiting approval)`;
+- the Reviews screen shows version 1 "Awaiting review" with **Approve** disabled for A and
+  the reason "You can't approve this change…";
+- the api, asked with A's session, says the page has no indexed version (`indexedVersion`
+  null) and its latest version is number 1, status `pending_review`;
+- A's search and Ask return the decoy "Holiday calendar" (so the results are not empty) and
+  no link to the held page (checked by `href`, not by text).
+
+What is demonstrated after R approves (item 4): the item leaves R's queue; the api shows an
+indexed version and the latest version `indexed`; the badge reads `Indexed · v1`; search
+shows the passage and a link to the page with `(v1, updated YYYY-MM-DD)`; Ask lists the
+source `Leave policy (v1, updated YYYY-MM-DD)` next to the decoy, and clicking it opens the page.
+
+Caveat: the deterministic embedding is not lexical (any query returns the nearest passages of
+the tenant), so "the new text is not found" cannot be shown by an empty result or by matching
+the text. That is why the proof is the decoy plus the held page's absence by link, together
+with the api state; it shows the review hold, not retrieval quality.
+
+Output of the three consecutive runs at `bf20a90` (command: `pnpm e2e:local`; each run starts
+the harness, runs the specs, stops it, and leaves no process behind; the lines are the real
+list-reporter lines, nothing abridged):
 
 ```
 Running 5 tests using 1 worker
 
-  ✓  1 [chromium] › e2e/co-edit.spec.ts:38:1 › two editors and a reviewer: co-edit, hold until approval, index, cite v1 (3.8s)
-  ✓  2 [chromium] › e2e/console.spec.ts:50:1 › review queue: Approve and Reject states, lazy diff (1.4s)
-  ✓  3 [chromium] › e2e/console.spec.ts:117:1 › history drawer: compare two versions, restore with confirmation, Escape returns focus (1.1s)
-  ✓  4 [chromium] › e2e/console.spec.ts:178:1 › citations link to the cited page (539ms)
-  ✓  5 [chromium] › e2e/viewer.spec.ts:4:1 › a viewer sees the page read-only, without Submit (966ms)
+  ✓  1 [chromium] › e2e/co-edit.spec.ts:53:1 › two editors and a reviewer: co-edit, hold until approval, index, cite v1 (6.7s)
+  ✓  2 [chromium] › e2e/console.spec.ts:51:1 › review queue: Approve and Reject states, lazy diff (1.4s)
+  ✓  3 [chromium] › e2e/console.spec.ts:118:1 › history drawer: compare two versions, restore with confirmation, Escape returns focus (1.1s)
+  ✓  4 [chromium] › e2e/console.spec.ts:179:1 › citations link to the cited page (492ms)
+  ✓  5 [chromium] › e2e/viewer.spec.ts:4:1 › a viewer sees the page read-only, without Submit (918ms)
+  5 passed (17.3s)
 
-  5 passed (13.4s)
+  ✓  1 [chromium] › e2e/co-edit.spec.ts:53:1 › two editors and a reviewer: co-edit, hold until approval, index, cite v1 (6.9s)
+  ✓  2 [chromium] › e2e/console.spec.ts:51:1 › review queue: Approve and Reject states, lazy diff (1.3s)
+  ✓  3 [chromium] › e2e/console.spec.ts:118:1 › history drawer: compare two versions, restore with confirmation, Escape returns focus (870ms)
+  ✓  4 [chromium] › e2e/console.spec.ts:179:1 › citations link to the cited page (595ms)
+  ✓  5 [chromium] › e2e/viewer.spec.ts:4:1 › a viewer sees the page read-only, without Submit (945ms)
+  5 passed (17.1s)
 
-  ✓  1 [chromium] › e2e/co-edit.spec.ts:38:1 › … (5.7s)
-  ✓  2 [chromium] › e2e/console.spec.ts:50:1 › … (1.6s)
-  ✓  3 [chromium] › e2e/console.spec.ts:117:1 › … (931ms)
-  ✓  4 [chromium] › e2e/console.spec.ts:178:1 › … (519ms)
-  ✓  5 [chromium] › e2e/viewer.spec.ts:4:1 › … (860ms)
-
-  5 passed (16.2s)
-
-  ✓  1 [chromium] › e2e/co-edit.spec.ts:38:1 › … (5.7s)
-  ✓  2 [chromium] › e2e/console.spec.ts:50:1 › … (1.6s)
-  ✓  3 [chromium] › e2e/console.spec.ts:117:1 › … (979ms)
-  ✓  4 [chromium] › e2e/console.spec.ts:178:1 › … (636ms)
-  ✓  5 [chromium] › e2e/viewer.spec.ts:4:1 › … (919ms)
-
-  5 passed (17.4s)
+  ✓  1 [chromium] › e2e/co-edit.spec.ts:53:1 › two editors and a reviewer: co-edit, hold until approval, index, cite v1 (5.0s)
+  ✓  2 [chromium] › e2e/console.spec.ts:51:1 › review queue: Approve and Reject states, lazy diff (1.3s)
+  ✓  3 [chromium] › e2e/console.spec.ts:118:1 › history drawer: compare two versions, restore with confirmation, Escape returns focus (846ms)
+  ✓  4 [chromium] › e2e/console.spec.ts:179:1 › citations link to the cited page (470ms)
+  ✓  5 [chromium] › e2e/viewer.spec.ts:4:1 › a viewer sees the page read-only, without Submit (753ms)
+  5 passed (15.0s)
 ```
 
-Also run, as a flakiness check: `playwright test --repeat-each 6` on the co-edit and
-viewer specs, 12 passed (38.9 s), all green.
+A `--repeat-each 6` flakiness run of the co-edit and viewer specs (12 passed, 38.9 s) was made
+on the earlier spec (`0d8f2e4`) and not repeated for the changed one.
 
 The other specs cover the screens the Task 5.9 reviews asked for: Approve disabled for
 the reviewer's own change (with the reason), Reject disabled until the note is 1 to 300
@@ -179,21 +202,16 @@ returns to the History button); search results, Ask sources and answer markers l
 the cited page; the viewer's read-only page (not editable, no Submit, no Page actions,
 typed text never reaches the owner).
 
-The review-held snapshot is shown by the Reviews screen (version 1, "Awaiting review",
-Approve off for A) and the empty search before approval, with the badge
-`Saved · not indexed (awaiting approval)` in between; the indexed side by the badge
-`Indexed · v1` and the `(v1, updated …)` citations only after R's approval.
-
 ## 5. Withdraw removes results at once
 
-Same harness, same script (`check.mjs`), tenant one's page from item 1, indexed as v1:
+Same harness, same script (`docs/live-checks/tenants-and-withdraw.mjs`, second half of its output, the same run as item 1), tenant one's page from item 1, indexed as v1. Here the "before" call shows the page is returned, so the empty "after" is not the empty index of a tenant that never had a page:
 
 ```
 == Withdraw removes results at once ==
 before: user1 searches "falcon protocol"
-    -> 200 {"passages":[{"documentId":"860404f8-9839-4ea8-aef0-4e6ce2a6e381","versionTitle":"one page","citeAs":"one page (v1, updated 2026-10-19)"}]}
+    -> 200 {"passages":[{"documentId":"d4bc6a46-1224-496e-8dc9-06906f811240","versionTitle":"one page","citeAs":"one page (v1, updated 2026-10-19)"}]}
 POST /pages/<page>/withdraw
-    -> 200 {"id":"860404f8-9839-4ea8-aef0-4e6ce2a6e381","spaceId":"d1e28afc-3644-4aec-b6b3-672c0a100b65","parentId":null,"position":"a0","title":"one page","archivedAt":null,"indexedVersionId":null}
+    -> 200 {"id":"d4bc6a46-1224-496e-8dc9-06906f811240","spaceId":"67ab91bb-1337-486e-b74d-4413b9138a11","parentId":null,"position":"a0","title":"one page","archivedAt":null,"indexedVersionId":null}
 after (immediately): user1 searches "falcon protocol"
     -> 200 {"passages":[]}
 after (immediately): user1 asks "falcon protocol"
@@ -279,6 +297,9 @@ disk unreferenced, `down -v` deletes them.
       ✓  5 [chromium] › e2e/viewer.spec.ts:4:1 › a viewer sees the page read-only, without Submit (1.0s)
       5 passed (13.7s)
     ```
+
+    (These five lines are from the first-session spec, `0d8f2e4`, before the decoy page was added to
+    co-edit; the changed spec has not been run on compose.)
 
     The dev proxy logs `ws proxy socket error: write EPIPE` lines while sockets close; no
     test is affected. Still owed: `pnpm e2e` unmodified on the default ports.
