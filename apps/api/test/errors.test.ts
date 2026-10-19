@@ -128,6 +128,79 @@ describe('error model', () => {
     });
   });
 
+  test('a body-less POST with Content-Type application/json is accepted on routes that take no body', async () => {
+    const { headers, owner } = await bootstrapTenant(app, { name: 'Empty Co', slug: 'empty-co' });
+    const json = { ...headers, 'content-type': 'application/json' };
+    const space = await app.inject({
+      method: 'POST',
+      url: '/api/v1/spaces',
+      headers,
+      payload: { name: 'Docs', slug: 'docs' },
+    });
+    const page = await app.inject({
+      method: 'POST',
+      url: '/api/v1/pages',
+      headers,
+      payload: { space_id: space.json().id, title: 'Empty', slug: 'empty', markdown: 'Some text.' },
+    });
+    const pageId = page.json().id;
+    const post = (url: string, h: Record<string, string> = json) =>
+      app.inject({ method: 'POST', url, headers: h, payload: '' });
+
+    const collabToken = await post(`/api/v1/pages/${pageId}/collab-token`);
+    assert.equal(collabToken.statusCode, 200, collabToken.body);
+    const snapshot = await post(`/api/v1/pages/${pageId}/snapshot`);
+    assert.equal(snapshot.statusCode, 201, snapshot.body);
+    // Answered by the route itself (not a 400 from the body parser).
+    const restoreVersion = await post(`/api/v1/pages/${pageId}/versions/1/restore`);
+    assert.equal(restoreVersion.statusCode, 409, restoreVersion.body);
+    assert.equal(restoreVersion.json().error, 'no_changes');
+    const retry = await post(`/api/v1/versions/${snapshot.json().id}/retry`);
+    assert.equal(retry.statusCode, 409, retry.body);
+    assert.equal(retry.json().error, 'version_not_failed');
+    for (const action of ['withdraw', 'archive', 'restore']) {
+      const res = await post(`/api/v1/pages/${pageId}/${action}`);
+      assert.equal(res.statusCode, 200, `${action}: ${res.body}`);
+    }
+    const signOut = await post('/api/v1/auth/sign-out', {
+      ...asUser(owner),
+      'content-type': 'application/json',
+    });
+    assert.equal(signOut.statusCode, 204, signOut.body);
+  });
+
+  test('a malformed or whitespace-only JSON body is still 400; a body over the limit is still 413', async () => {
+    const session = await signUp(app);
+    for (const payload of ['{not json', ' ', 'null x']) {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/v1/spaces',
+        headers: { ...asUser(session), 'content-type': 'application/json' },
+        payload,
+      });
+      assert.equal(res.statusCode, 400, JSON.stringify(payload));
+      assert.equal(res.json().error, 'validation_failed');
+    }
+    const huge = await app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/sign-in',
+      headers: { 'content-type': 'application/json' },
+      payload: JSON.stringify({ email: 'a@b.c', password: 'x'.repeat(1_100_000) }),
+    });
+    assert.equal(huge.statusCode, 413);
+  });
+
+  test('a prototype-poisoning JSON body is refused', async () => {
+    const session = await signUp(app);
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/spaces',
+      headers: { ...asUser(session), 'content-type': 'application/json' },
+      payload: '{"name":"x","slug":"x","__proto__":{"admin":true}}',
+    });
+    assert.equal(res.statusCode, 400);
+  });
+
   test('unsupported media type answers 415 validation_failed', async () => {
     const session = await signUp(app);
     const res = await app.inject({

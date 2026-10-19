@@ -144,6 +144,22 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
   const app = Fastify({ logger: fastifyLogger(opts.logger), trustProxy: trustProxyOption(opts.trustProxy) });
   registerErrorHandler(app);
 
+  // Fastify refuses an EMPTY body sent as application/json (400), which
+  // browsers and fetch wrappers send on body-less POSTs (snapshot, archive,
+  // sign-out, ...). An empty body is no body (`undefined`); anything else goes
+  // through Fastify's own strict parser (prototype poisoning refused, server
+  // body limit), so malformed JSON, even whitespace, is still 400.
+  const strictJson = app.getDefaultJsonParser('error', 'error');
+  app.removeContentTypeParser('application/json');
+  app.addContentTypeParser('application/json', { parseAs: 'string' }, (req, body, done) => {
+    const text = typeof body === 'string' ? body : body.toString('utf8');
+    if (text === '') {
+      done(null, undefined);
+      return;
+    }
+    strictJson(req, text, done);
+  });
+
   // Identity comes only from the session token and, for tenant routes, the
   // membership row of the session user in x-tenant-id. Routes declare
   // config.auth ('public' | 'session' | 'tenant'); undeclared means 'tenant'.
