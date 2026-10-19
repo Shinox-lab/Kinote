@@ -7,7 +7,7 @@ export function ErrorFallback({ error, onRetry }: { error: unknown; onRetry?: ()
   return (
     <main className="mx-auto max-w-md px-4 py-16">
       <h1 className="mb-2 text-xl font-semibold">Something went wrong</h1>
-      <p role="alert" className="mb-4 text-sm text-slate-700">
+      <p role="alert" className="mb-4 text-sm text-fg">
         {errorMessage(error)}
       </p>
       <Button onClick={onRetry ?? (() => window.location.reload())}>Try again</Button>

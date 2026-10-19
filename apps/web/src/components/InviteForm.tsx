@@ -19,7 +19,7 @@ function AcceptLink({ link, email, expiresAt }: { link: string; email: string; e
   };
 
   return (
-    <div className="mt-4 flex flex-col gap-2 rounded-md bg-slate-50 p-3">
+    <div className="mt-4 flex flex-col gap-2 rounded-md bg-sidebar p-3">
       <p className="text-sm">
         Send this link to {email}. It works once, for the account with that email, until{' '}
         {new Date(expiresAt).toLocaleDateString()}.

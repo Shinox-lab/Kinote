@@ -30,9 +30,9 @@ export function SpaceCard({ space }: { space: SpaceResponse }) {
     <li className="py-4">
       <div className="flex flex-wrap items-center gap-2">
         <h3 className="text-sm font-semibold">{space.name}</h3>
-        <span className="text-xs text-slate-500">/{space.slug}</span>
-        {space.kind === 'inbox' && <span className="rounded bg-slate-100 px-1.5 text-xs">Inbox</span>}
-        {archived && <span className="rounded bg-amber-100 px-1.5 text-xs text-amber-900">Archived</span>}
+        <span className="text-xs text-muted">/{space.slug}</span>
+        {space.kind === 'inbox' && <span className="rounded bg-hover px-1.5 text-xs">Inbox</span>}
+        {archived && <span className="rounded bg-dot-review/15 px-1.5 text-xs text-fg">Archived</span>}
       </div>
       {!archived && (
         <div className="mt-3 flex flex-col gap-3">

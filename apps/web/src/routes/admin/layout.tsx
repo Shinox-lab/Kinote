@@ -3,7 +3,7 @@ import { adminScreens } from '../../lib/console.js';
 import { useWorkspace } from '../../lib/queries.js';
 import { Card } from '../../components/ui.js';
 
-const TAB = 'rounded-md px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-100';
+const TAB = 'rounded-md px-3 py-1.5 text-sm font-medium text-fg hover:bg-hover';
 
 /** `/w/$tenantSlug/admin`: tabs for the admin screens, or a plain "no access" state for other roles. */
 export function AdminLayout() {
@@ -13,7 +13,7 @@ export function AdminLayout() {
   if (screens.length === 0) {
     return (
       <Card title="You don't have access">
-        <p className="text-sm text-slate-700">
+        <p className="text-sm text-fg">
           Only owners and admins of this workspace can manage members, groups and spaces. Ask an owner or admin if you
           need a change.
         </p>
@@ -24,14 +24,14 @@ export function AdminLayout() {
   return (
     <div className="flex flex-col gap-5">
       <h1 className="text-xl font-semibold">Administration</h1>
-      <nav aria-label="Administration" className="flex gap-1 border-b border-slate-200 pb-2">
+      <nav aria-label="Administration" className="flex gap-1 border-b border-line pb-2">
         {screens.map((screen) => (
           <Link
             key={screen.to}
             to={screen.to}
             params={{ tenantSlug: tenant.slug }}
             className={TAB}
-            activeProps={{ className: `${TAB} bg-slate-200` }}
+            activeProps={{ className: `${TAB} bg-active` }}
           >
             {screen.label}
           </Link>

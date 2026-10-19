@@ -93,7 +93,7 @@ export function SpacesPage() {
         {isPending && <Loading what="spaces" />}
         <ErrorNote error={error} />
         {spaces && (
-          <ul className="divide-y divide-slate-100">
+          <ul className="divide-y divide-line">
             {spaces.map((s) => (
               <SpaceCard key={s.id} space={s} />
             ))}

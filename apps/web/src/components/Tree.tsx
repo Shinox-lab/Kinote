@@ -10,17 +10,17 @@ function Items({ items, tenantSlug }: { items: TreeItem[]; tenantSlug: string })
             <Link
               to="/w/$tenantSlug/p/$pageId"
               params={{ tenantSlug, pageId: node.id }}
-              className="rounded px-1 text-sm font-medium text-indigo-700 hover:underline"
+              className="rounded px-1 text-sm font-medium text-accent-text hover:underline"
             >
               {node.title}
             </Link>
           ) : (
-            <span className="px-1 text-sm text-slate-700">
-              {node.title} <span className="text-xs text-slate-500">(file)</span>
+            <span className="px-1 text-sm text-fg">
+              {node.title} <span className="text-xs text-muted">(file)</span>
             </span>
           )}
           {children.length > 0 && (
-            <div className="ml-3 mt-1 border-l border-slate-200 pl-3">
+            <div className="ml-3 mt-1 border-l border-line pl-3">
               <Items items={children} tenantSlug={tenantSlug} />
             </div>
           )}

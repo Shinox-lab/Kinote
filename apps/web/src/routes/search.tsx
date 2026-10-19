@@ -29,24 +29,24 @@ function Answer({ answer }: { answer: AskResponse }) {
             s.type === 'text' ? (
               s.text
             ) : (
-              <PageLink key={i} pageId={s.citation.documentId} className="font-medium text-indigo-700 hover:underline">
+              <PageLink key={i} pageId={s.citation.documentId} className="font-medium text-accent-text hover:underline">
                 {`[${answer.citations.indexOf(s.citation) + 1}]`}
               </PageLink>
             )
           )}
         </p>
-        {!answer.foundRelevant && <p className="text-sm text-slate-600">No answer was found in the pages you can read.</p>}
+        {!answer.foundRelevant && <p className="text-sm text-muted">No answer was found in the pages you can read.</p>}
         {answer.citations.length > 0 && (
           <div>
             <h3 className="mb-1 text-sm font-semibold">Sources</h3>
             <ol aria-label="Sources" className="flex flex-col gap-2">
               {answer.citations.map((c, i) => (
                 <li key={c.chunkId} className="text-sm">
-                  <span className="text-slate-600">[{i + 1}] </span>
-                  <PageLink pageId={c.documentId} className="font-medium text-indigo-700 hover:underline">
+                  <span className="text-muted">[{i + 1}] </span>
+                  <PageLink pageId={c.documentId} className="font-medium text-accent-text hover:underline">
                     {c.citeAs}
                   </PageLink>
-                  <p className="mt-0.5 whitespace-pre-wrap break-words text-xs text-slate-600">{c.quote}</p>
+                  <p className="mt-0.5 whitespace-pre-wrap break-words text-xs text-muted">{c.quote}</p>
                 </li>
               ))}
             </ol>
@@ -116,19 +116,19 @@ export function SearchPage() {
         <section aria-label="Search results" className="flex flex-col gap-3">
           <h2 className="text-base font-semibold">Results for &ldquo;{search.variables?.query}&rdquo;</h2>
           {search.data.passages.length === 0 ? (
-            <p className="text-sm text-slate-600">No passages matched.</p>
+            <p className="text-sm text-muted">No passages matched.</p>
           ) : (
             <ul className="flex flex-col gap-3">
               {search.data.passages.map((p) => (
                 <li key={p.chunkId}>
                   <Card>
                     <div className="flex flex-col gap-1">
-                      <PageLink pageId={p.documentId} className="text-base font-semibold text-indigo-700 hover:underline">
+                      <PageLink pageId={p.documentId} className="text-base font-semibold text-accent-text hover:underline">
                         {p.versionTitle}
                       </PageLink>
-                      {p.headingPath.length > 0 && <p className="text-xs text-slate-600">{headingLine(p.headingPath)}</p>}
+                      {p.headingPath.length > 0 && <p className="text-xs text-muted">{headingLine(p.headingPath)}</p>}
                       <p className="line-clamp-4 whitespace-pre-wrap break-words text-sm">{p.text}</p>
-                      <p className="text-xs text-slate-500">{p.citeAs}</p>
+                      <p className="text-xs text-muted">{p.citeAs}</p>
                     </div>
                   </Card>
                 </li>

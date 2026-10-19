@@ -26,7 +26,7 @@ function GrantRow({ spaceId, grant }: { spaceId: string; grant: Grant }) {
   return (
     <li className="flex flex-wrap items-center gap-3 py-2">
       <p className="min-w-40 flex-1 text-sm">
-        {name} <span className="text-xs text-slate-500">({grant.principalType})</span>
+        {name} <span className="text-xs text-muted">({grant.principalType})</span>
       </p>
       <div className="w-36">
         <SelectField
@@ -71,19 +71,19 @@ export function SpaceGrants({ spaceId }: { spaceId: string }) {
   });
 
   return (
-    <div className="mt-3 flex flex-col gap-3 rounded-md bg-slate-50 p-3">
+    <div className="mt-3 flex flex-col gap-3 rounded-md bg-sidebar p-3">
       {isPending && <Loading what="grants" />}
       <ErrorNote error={error} />
-      {grants && grants.length === 0 && <p className="text-sm text-slate-600">No grants yet.</p>}
+      {grants && grants.length === 0 && <p className="text-sm text-muted">No grants yet.</p>}
       {grants && (
-        <ul className="divide-y divide-slate-200">
+        <ul className="divide-y divide-line">
           {grants.map((g) => (
             <GrantRow key={`${g.principalType}:${g.principalId}`} spaceId={spaceId} grant={g} />
           ))}
         </ul>
       )}
       <form
-        className="flex flex-col gap-3 border-t border-slate-200 pt-3"
+        className="flex flex-col gap-3 border-t border-line pt-3"
         onSubmit={(e) => {
           e.preventDefault();
           add.mutate();

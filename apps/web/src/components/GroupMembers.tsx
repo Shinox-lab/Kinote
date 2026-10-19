@@ -33,7 +33,7 @@ export function GroupMembers({ groupId }: { groupId: string }) {
   });
 
   return (
-    <div className="mt-3 flex flex-col gap-3 rounded-md bg-slate-50 p-3">
+    <div className="mt-3 flex flex-col gap-3 rounded-md bg-sidebar p-3">
       <PrincipalPicker
         types={['user', 'agent']}
         value={principal}
@@ -52,7 +52,7 @@ export function GroupMembers({ groupId }: { groupId: string }) {
           Remove from group
         </Button>
         {done && (
-          <span role="status" className="text-sm text-slate-600">
+          <span role="status" className="text-sm text-muted">
             {done}
           </span>
         )}

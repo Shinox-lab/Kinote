@@ -62,7 +62,7 @@ function NotFound() {
   return (
     <main className="mx-auto max-w-md px-4 py-16">
       <h1 className="mb-2 text-xl font-semibold">Page not found</h1>
-      <Link to="/" className="text-sm font-medium text-indigo-700 underline">
+      <Link to="/" className="text-sm font-medium text-accent-text underline">
         Go to your workspace
       </Link>
     </main>

@@ -42,9 +42,9 @@ export function SignInPage() {
           {signIn.isPending ? 'Signing in…' : 'Sign in'}
         </Button>
       </form>
-      <p className="mt-4 text-sm text-slate-600">
+      <p className="mt-4 text-sm text-muted">
         New here?{' '}
-        <Link to="/sign-up" search={{ redirect }} className="font-medium text-indigo-700 underline">
+        <Link to="/sign-up" search={{ redirect }} className="font-medium text-accent-text underline">
           Create an account
         </Link>
       </p>

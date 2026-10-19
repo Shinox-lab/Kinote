@@ -89,7 +89,7 @@ function ArchivedPages({ space, tenantSlug }: { space: SpaceResponse; tenantSlug
       ) : !data ? (
         <Loading what="archived pages" />
       ) : data.nodes.length === 0 ? (
-        <p className="text-sm text-slate-600">No archived pages.</p>
+        <p className="text-sm text-muted">No archived pages.</p>
       ) : (
         <Tree items={buildTree(data.nodes)} tenantSlug={tenantSlug} label="Archived pages" />
       )}
@@ -111,8 +111,8 @@ export function SpacePage() {
     return (
       <div className="flex flex-col gap-2">
         <h1 className="text-xl font-semibold">Space not found</h1>
-        <p className="text-sm text-slate-600">There is no space called “{spaceSlug}” that you can open.</p>
-        <Link to="/w/$tenantSlug" params={{ tenantSlug: tenant.slug }} className="text-sm font-medium text-indigo-700 underline">
+        <p className="text-sm text-muted">There is no space called “{spaceSlug}” that you can open.</p>
+        <Link to="/w/$tenantSlug" params={{ tenantSlug: tenant.slug }} className="text-sm font-medium text-accent-text underline">
           Back to the workspace
         </Link>
       </div>
@@ -126,8 +126,8 @@ export function SpacePage() {
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-baseline gap-3">
         <h1 className="text-xl font-semibold">{space.name}</h1>
-        {archived && <span className="rounded bg-amber-100 px-1.5 text-xs text-amber-900">Archived</span>}
-        <span className="text-sm text-slate-500">Your role: {space.myRole}</span>
+        {archived && <span className="rounded bg-dot-review/15 px-1.5 text-xs text-fg">Archived</span>}
+        <span className="text-sm text-muted">Your role: {space.myRole}</span>
       </div>
       <Card title="Pages">
         {treeError ? (
@@ -135,7 +135,7 @@ export function SpacePage() {
         ) : !tree ? (
           <Loading what="pages" />
         ) : tree.nodes.length === 0 ? (
-          <p className="text-sm text-slate-600">No pages yet.</p>
+          <p className="text-sm text-muted">No pages yet.</p>
         ) : (
           <Tree items={buildTree(tree.nodes)} tenantSlug={tenant.slug} label="Pages" />
         )}

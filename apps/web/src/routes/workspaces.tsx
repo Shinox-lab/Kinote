@@ -37,7 +37,7 @@ export function CreateWorkspacePage() {
 
   return (
     <AuthShell title="Create your workspace">
-      <p className="mb-4 text-sm text-slate-600">
+      <p className="mb-4 text-sm text-muted">
         You are not in a workspace yet. Create one, or open an invitation link someone sent you.
       </p>
       <form onSubmit={submit} className="flex flex-col gap-4">

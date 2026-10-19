@@ -28,7 +28,7 @@ export function AcceptInvitePage() {
 
   return (
     <AuthShell title="Accept your invitation">
-      <p className="mb-4 text-sm text-slate-700">
+      <p className="mb-4 text-sm text-fg">
         You are signed in as <strong>{session?.user.email}</strong>. An invitation only works for the account with
         the email it was sent to.
       </p>

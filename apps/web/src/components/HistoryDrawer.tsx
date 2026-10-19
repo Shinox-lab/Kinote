@@ -30,21 +30,21 @@ function VersionRow({
     <li className="flex flex-col gap-1 py-3 first:pt-0 last:pb-0">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
         <span className="text-sm font-semibold">Version {version.number}</span>
-        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-800">{versionStatusLabel(version.status)}</span>
-        <span className="text-xs text-slate-600">{versionReasonLabel(version.reason)}</span>
+        <span className="rounded-full bg-hover px-2 py-0.5 text-xs text-fg">{versionStatusLabel(version.status)}</span>
+        <span className="text-xs text-muted">{versionReasonLabel(version.reason)}</span>
         {canRestore && (
           <Button variant="secondary" className="ml-auto" ref={restoreRef} onClick={onRestore} aria-label={`Restore version ${version.number}`}>
             Restore
           </Button>
         )}
       </div>
-      <p className="flex flex-wrap items-center gap-x-2 text-xs text-slate-600">
+      <p className="flex flex-wrap items-center gap-x-2 text-xs text-muted">
         <span>{who.name}</span>
-        {who.isAgent && <span className="rounded bg-slate-800 px-1.5 text-[10px] uppercase tracking-wide text-white">Agent</span>}
+        {who.isAgent && <span className="rounded border border-line px-1.5 text-[10px] uppercase tracking-wide text-muted">Agent</span>}
         <span aria-hidden="true">·</span>
         <time dateTime={version.createdAt}>{whenLabel(version.createdAt)}</time>
       </p>
-      {version.reviewNote && <p className="text-xs text-slate-700">Review note: {version.reviewNote}</p>}
+      {version.reviewNote && <p className="text-xs text-fg">Review note: {version.reviewNote}</p>}
       {children}
     </li>
   );
@@ -68,7 +68,7 @@ function Compare({ pageId, versions }: { pageId: string; versions: VersionSummar
   const blocked = same || isFetching;
 
   return (
-    <section aria-label="Compare versions" className="flex flex-col gap-3 border-t border-slate-200 pt-4">
+    <section aria-label="Compare versions" className="flex flex-col gap-3 border-t border-line pt-4">
       <h3 className="text-sm font-semibold">Compare versions</h3>
       <form
         className="flex flex-col gap-3"
@@ -85,7 +85,7 @@ function Compare({ pageId, versions }: { pageId: string; versions: VersionSummar
           <Button type="submit" aria-disabled={blocked} className="aria-disabled:cursor-not-allowed aria-disabled:opacity-50">
             Compare
           </Button>
-          {same && <span className="text-xs text-slate-600">Choose two different versions.</span>}
+          {same && <span className="text-xs text-muted">Choose two different versions.</span>}
         </div>
       </form>
       <ErrorNote error={error} />
@@ -94,7 +94,7 @@ function Compare({ pageId, versions }: { pageId: string; versions: VersionSummar
       ) : (
         entries && shown && (
           <div className="flex flex-col gap-2">
-            <p className="text-xs text-slate-600">
+            <p className="text-xs text-muted">
               Version {shown.from} to version {shown.to}
             </p>
             <DiffView entries={entries} label={`Changes from version ${shown.from} to version ${shown.to}`} />
@@ -122,7 +122,7 @@ function RestoreConfirm({ pageId, number, onDone, onCancel }: { pageId: string; 
       aria-labelledby={titleId}
       aria-describedby={bodyId}
       tabIndex={-1}
-      className="mt-2 flex flex-col gap-3 rounded-md border border-slate-200 bg-slate-50 p-3 outline-none"
+      className="mt-2 flex flex-col gap-3 rounded-md border border-line bg-sidebar p-3 outline-none"
     >
       <p id={titleId} className="text-sm font-semibold">
         Restore version {number}?
@@ -227,14 +227,14 @@ export function HistoryDrawer({
 
   return (
     <>
-      <div aria-hidden="true" className="fixed inset-0 z-20 bg-slate-900/30" onClick={onClose} />
+      <div aria-hidden="true" className="fixed inset-0 z-20 bg-overlay" onClick={onClose} />
       <div
         ref={dialog}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
         tabIndex={-1}
-        className="fixed inset-y-0 right-0 z-30 flex w-full max-w-lg flex-col gap-4 overflow-y-auto border-l border-slate-200 bg-white p-5 shadow-xl outline-none"
+        className="fixed inset-y-0 right-0 z-30 flex w-full max-w-lg flex-col gap-4 overflow-y-auto border-l border-line bg-surface p-5 shadow-pop outline-none"
       >
         <div className="flex items-center justify-between gap-3">
           <h2 id={titleId} className="text-base font-semibold">
@@ -249,10 +249,10 @@ export function HistoryDrawer({
         ) : error ? (
           <ErrorNote error={error} />
         ) : versions.length === 0 ? (
-          <p className="text-sm text-slate-600">This page has no saved versions yet.</p>
+          <p className="text-sm text-muted">This page has no saved versions yet.</p>
         ) : (
           <>
-            <ul aria-label="Versions" className="divide-y divide-slate-100">
+            <ul aria-label="Versions" className="divide-y divide-line">
               {versions.map((v) => (
                 <VersionRow
                   key={v.id}

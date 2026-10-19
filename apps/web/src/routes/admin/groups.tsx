@@ -12,7 +12,7 @@ function GroupRow({ group }: { group: Group }) {
     <li className="py-3">
       <div className="flex items-center gap-3">
         <p className="flex-1 text-sm font-medium">{group.name}</p>
-        <p className="text-sm text-slate-600">
+        <p className="text-sm text-muted">
           {group.memberCount} {group.memberCount === 1 ? 'member' : 'members'}
         </p>
         <Button variant="secondary" aria-expanded={open} onClick={() => setOpen(!open)}>
@@ -61,9 +61,9 @@ export function GroupsPage() {
       <Card title="Groups">
         {isPending && <Loading what="groups" />}
         <ErrorNote error={error} />
-        {groups && groups.length === 0 && <p className="text-sm text-slate-600">No groups yet.</p>}
+        {groups && groups.length === 0 && <p className="text-sm text-muted">No groups yet.</p>}
         {groups && (
-          <ul className="divide-y divide-slate-100">
+          <ul className="divide-y divide-line">
             {groups.map((g) => (
               <GroupRow key={g.id} group={g} />
             ))}

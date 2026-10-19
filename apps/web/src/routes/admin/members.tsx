@@ -30,9 +30,9 @@ function MemberRow({ member, actorRole, isSelf }: { member: Member; actorRole: T
       <div className="min-w-48 flex-1">
         <p className="text-sm font-medium">
           {member.name}
-          {isSelf && <span className="ml-2 text-xs text-slate-500">(you)</span>}
+          {isSelf && <span className="ml-2 text-xs text-muted">(you)</span>}
         </p>
-        <p className="text-sm text-slate-600">{member.email}</p>
+        <p className="text-sm text-muted">{member.email}</p>
       </div>
       <div className="w-36">
         <SelectField
@@ -79,7 +79,7 @@ export function MembersPage() {
         {isPending && <Loading what="members" />}
         <ErrorNote error={error} />
         {members && (
-          <ul className="divide-y divide-slate-100">
+          <ul className="divide-y divide-line">
             {members.map((m) => (
               <MemberRow key={m.userId} member={m} actorRole={role} isSelf={m.userId === selfId} />
             ))}
