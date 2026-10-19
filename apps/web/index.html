@@ -7,6 +7,20 @@
     <meta name="referrer" content="no-referrer" />
     <link rel="icon" href="data:," />
     <title>Living Wiki</title>
+    <!-- Sets the theme before the first paint, so there is no flash. Same rules as src/lib/theme.ts. -->
+    <script>
+      (function () {
+        var choice = 'system';
+        try {
+          var stored = localStorage.getItem('lw-theme');
+          if (stored === 'light' || stored === 'dark') choice = stored;
+        } catch (e) {}
+        var dark =
+          choice === 'dark' ||
+          (choice === 'system' && !!window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

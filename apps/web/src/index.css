@@ -1,12 +1,140 @@
 @import 'tailwindcss';
 
+/* Dark utilities (`dark:`) follow the resolved theme on <html data-theme>. */
+@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
+
+/*
+ * Design tokens. Light is the default; the pre-paint script in index.html and
+ * lib/theme.ts set data-theme to the resolved choice. test/theme.test.ts reads
+ * the hex values below and checks them against WCAG AA.
+ */
+:root {
+  color-scheme: light;
+  --page: #ffffff;
+  --sidebar: #f7f7f5;
+  --surface: #ffffff;
+  --line: #e9e9e7;
+  --fg: #37352f;
+  --muted: #6b6a67;
+  --hover: #efefed;
+  --active: #e8e8e5;
+  --accent: #1b6ec2;
+  --accent-fg: #ffffff;
+  --accent-text: #0f62b5;
+  --danger: #c4291f;
+  --danger-bg: rgba(196, 41, 31, 0.08);
+  --success: #1f7a3d;
+  --success-bg: rgba(31, 122, 61, 0.1);
+  --dot-failed: #d1332a;
+  --dot-review: #b86e00;
+  --dot-editing: #7b4fe0;
+  --selection: rgba(35, 131, 226, 0.22);
+  --overlay: rgba(15, 15, 15, 0.4);
+  --shadow: 0 1px 2px rgba(15, 15, 15, 0.06), 0 4px 14px rgba(15, 15, 15, 0.08);
+  --author-0: #6d4ae0;
+  --author-1: #b86e00;
+  --author-2: #0e7c86;
+  --author-3: #c2336a;
+  --author-4: #1b6ec2;
+  --author-5: #2f7d32;
+  --author-6: #c2540a;
+  --author-7: #5b6b7b;
+  --author-0-tint: rgba(109, 74, 224, 0.12);
+  --author-1-tint: rgba(184, 110, 0, 0.13);
+  --author-2-tint: rgba(14, 124, 134, 0.12);
+  --author-3-tint: rgba(194, 51, 106, 0.11);
+  --author-4-tint: rgba(27, 110, 194, 0.12);
+  --author-5-tint: rgba(47, 125, 50, 0.12);
+  --author-6-tint: rgba(194, 84, 10, 0.12);
+  --author-7-tint: rgba(91, 107, 123, 0.14);
+}
+
+[data-theme='dark'] {
+  color-scheme: dark;
+  --page: #191919;
+  --sidebar: #202020;
+  --surface: #202020;
+  --line: #2f2f2f;
+  --fg: #e6e6e4;
+  --muted: #9b9a97;
+  --hover: #2a2a2a;
+  --active: #343434;
+  --accent: #2b6cb8;
+  --accent-fg: #ffffff;
+  --accent-text: #6aa9ee;
+  --danger: #ff7b72;
+  --danger-bg: rgba(255, 123, 114, 0.12);
+  --success: #6fcf75;
+  --success-bg: rgba(111, 207, 117, 0.12);
+  --dot-failed: #ff6b61;
+  --dot-review: #e5a23c;
+  --dot-editing: #a58bff;
+  --selection: rgba(82, 156, 202, 0.35);
+  --overlay: rgba(0, 0, 0, 0.6);
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 14px rgba(0, 0, 0, 0.45);
+  --author-0: #a58bff;
+  --author-1: #e5a23c;
+  --author-2: #4fc3cd;
+  --author-3: #f27aa6;
+  --author-4: #6aa9ee;
+  --author-5: #6fcf75;
+  --author-6: #f29a5a;
+  --author-7: #9fb0c0;
+  --author-0-tint: rgba(165, 139, 255, 0.16);
+  --author-1-tint: rgba(229, 162, 60, 0.16);
+  --author-2-tint: rgba(79, 195, 205, 0.15);
+  --author-3-tint: rgba(242, 122, 166, 0.15);
+  --author-4-tint: rgba(106, 169, 238, 0.15);
+  --author-5-tint: rgba(111, 207, 117, 0.15);
+  --author-6-tint: rgba(242, 154, 90, 0.15);
+  --author-7-tint: rgba(159, 176, 192, 0.16);
+}
+
+/* Token names become Tailwind utilities: bg-page, text-fg, border-line, ... */
+@theme inline {
+  --color-page: var(--page);
+  --color-sidebar: var(--sidebar);
+  --color-surface: var(--surface);
+  --color-line: var(--line);
+  --color-fg: var(--fg);
+  --color-muted: var(--muted);
+  --color-hover: var(--hover);
+  --color-active: var(--active);
+  --color-accent: var(--accent);
+  --color-accent-fg: var(--accent-fg);
+  --color-accent-text: var(--accent-text);
+  --color-danger: var(--danger);
+  --color-danger-bg: var(--danger-bg);
+  --color-success: var(--success);
+  --color-success-bg: var(--success-bg);
+  --color-dot-failed: var(--dot-failed);
+  --color-dot-review: var(--dot-review);
+  --color-dot-editing: var(--dot-editing);
+  --color-overlay: var(--overlay);
+  --shadow-pop: var(--shadow);
+  --font-sans: ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+}
+
 @layer base {
   body {
-    @apply bg-slate-50 text-slate-900 antialiased;
+    @apply bg-page font-sans text-fg antialiased;
+  }
+
+  ::selection {
+    background: var(--selection);
   }
 
   /* One visible focus ring for every control. */
   :focus-visible {
-    @apply outline-2 outline-offset-2 outline-indigo-600;
+    @apply outline-2 outline-offset-2 outline-accent;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
   }
 }
