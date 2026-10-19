@@ -2,7 +2,8 @@
 
 What was run, what it printed, and what is still owed. Only output that was really
 observed is recorded as passed; every item that needs Docker is marked
-`NOT RUN — needs Docker` with the exact command owed.
+`NOT RUN — needs Docker` with the exact command owed. Items 2 and 6 to 10 were later run
+on real Postgres (2026-10-19, second session; the section for each says what ran).
 
 ## Environment
 
@@ -13,27 +14,28 @@ observed is recorded as passed; every item that needs Docker is marked
 | Host | macOS (Darwin 25.6.0), node v22.23.2, pnpm 9.12.0 |
 | Browser | Playwright 1.64.1, Chromium headless shell 156.0.8078.4 |
 | Stack | **PGlite harness, not Docker**: `e2e/harness/local-stack.ts` runs the api, collab and worker in one Node process on an in-memory PGlite database (real migration chain, role `living_wiki_app`, RLS forced), deterministic embeddings (1536 dimensions), the console as a production build behind `vite preview`. api 18787, collab 11234, console 15173, worker poll 250 ms, collab store debounce 300 ms. |
-| Not the environment | real Postgres 17 + pgvector, MinIO, the container images, the compose network. Docker cannot start containers on this machine. |
+| Not the environment (first session) | real Postgres 17 + pgvector, MinIO, the container images, the compose network. Docker could not start containers then. |
+| Docker session (items 2, 6 to 10) | Docker Desktop 29.5.2, Compose v5.1.3, `pgvector/pgvector:pg17`, `pgsty/minio`, the repo's images. Host ports 55543, 59000, 59001, 8787 and 1234 were held by stale listeners of `com.docker.backend` with no container behind them, so the stack ran with local, untracked host-port overrides: postgres 55643, MinIO 59100/59101, api 58787, collab 51234. Details: `.superpowers/sdd/2026-10-18-slice-0-1-remediation/docker-verify-report.md`. |
 
 ## Results
 
 | # | Item | Result |
 | --- | --- | --- |
 | 1 | Two tenants cannot see each other: api calls with each tenant's session | PASSED on the PGlite harness (output below) |
-| 2 | Two tenants cannot see each other: the SQL check of `rls.pg.test.ts` | NOT RUN — needs Docker |
+| 2 | Two tenants cannot see each other: the SQL check of `rls.pg.test.ts` | PASSED on real Postgres 17 (11 tests, output below) |
 | 3 | Co-edit in a review space; a snapshot is held until approved | PASSED on the PGlite harness (`pnpm e2e:local`, output below) |
 | 4 | Search and Ask cite v1 only after approval | PASSED on the PGlite harness (`pnpm e2e:local`, output below) |
 | 5 | Withdraw removes results at once | PASSED on the PGlite harness (output below) |
-| 6 | A restart of every container loses nothing | NOT RUN — needs Docker |
-| 7 | `pnpm stack:up` | NOT RUN — needs Docker |
-| 8 | `pnpm test:pg` | NOT RUN — needs Docker |
-| 9 | `bookkeepingLock.pg.test.ts`, positive and negative run | NOT RUN — needs Docker |
-| 10 | `pnpm e2e` against the compose stack | NOT RUN — needs Docker |
+| 6 | A restart of every container loses nothing | PASSED on the compose stack (`docker compose restart`, output below) |
+| 7 | `pnpm stack:up` | PARTIAL: postgres and minio start healthy; the host migration FAILS on the default port 55543 (stale Docker listener); migrations apply (11) on a remapped port |
+| 8 | `pnpm test:pg` | PASSED: 4 files, 20 tests (and the S3 case, 65 tests, against MinIO) |
+| 9 | `bookkeepingLock.pg.test.ts`, positive and negative run | PASSED: passes with the lock, FAILS without it, passes again after restore |
+| 10 | `pnpm e2e` against the compose stack | `pnpm e2e` itself NOT RUN (needs the held ports 55543, 8787, 1234); the same 5 specs PASSED against the compose containers on remapped ports |
 
 The PGlite harness runs one transaction at a time and has no network between
 services, so a pass there says the application logic and the screens are right; it
 does not say anything about row locks, the pool, MinIO or the images. Items 2, 6 to
-10 are those.
+10 are those; they have since been run on Docker (sections below).
 
 ## 1. Two tenants cannot see each other (api calls)
 
@@ -98,16 +100,25 @@ What this does not show: the database policies themselves. The harness runs as t
 non-superuser `living_wiki_app` with RLS forced, but PGlite is not Postgres 17; item 2
 is the check on real Postgres.
 
-## 2. Two tenants, SQL check (`rls.pg.test.ts`) — NOT RUN — needs Docker
+## 2. Two tenants, SQL check (`rls.pg.test.ts`) — PASSED on real Postgres 17
 
-```sh
-pnpm stack:up
-TEST_DATABASE_URL=postgres://living_wiki_app:$APP_DB_PASSWORD@127.0.0.1:55543/living_wiki \
-TEST_DATABASE_MIGRATE_URL=postgres://postgres:$POSTGRES_PASSWORD@127.0.0.1:55543/living_wiki \
-  pnpm test:pg
+Stack: `postgres` (pgvector/pgvector:pg17 plus `01-roles.sh`) and `minio` from
+docker-compose.yml, migrations applied (11 rows in `drizzle.__drizzle_migrations`; role
+`living_wiki_app|t|f|f` = LOGIN, not superuser, not BYPASSRLS; extension `vector`).
+Host port 55643 instead of 55543 (see Environment).
+
+```
+$ pnpm test:pg      (TEST_DATABASE_URL = living_wiki_app, TEST_DATABASE_MIGRATE_URL = postgres superuser)
+ ✓ apps/api/test/search.pg.test.ts (6 tests) 7337ms
+ ✓ apps/worker/test/claim.pg.test.ts (2 tests) 76ms
+ ✓ packages/db/test/rls.pg.test.ts (11 tests) 62ms
+ ✓ apps/collab/test/bookkeepingLock.pg.test.ts (1 test) 568ms
+ Test Files  4 passed (4)
+      Tests  20 passed (20)
 ```
 
-Expected: every `*.pg.test.ts` passes, `packages/db/test/rls.pg.test.ts` among them.
+S3 case against MinIO: `S3_ENDPOINT=http://127.0.0.1:59100 pnpm vitest run packages/shared/test/objectStorage.test.ts`
+-> `Test Files 1 passed (1)`, `Tests 65 passed (65)`, none skipped.
 
 ## 3 and 4. Co-edit, held until approval, v1 cited after approval — `pnpm e2e:local`
 
@@ -192,46 +203,85 @@ page badge after withdraw: Withdrawn
 
 The search and the Ask follow the withdraw call directly, without waiting for the worker.
 
-## 6. Restart of every container loses nothing — NOT RUN — needs Docker
+## 6. Restart of every container loses nothing — PASSED on the compose stack
 
-```sh
-pnpm stack:up && docker compose up -d --build            # whole stack
-pnpm e2e                                                 # leaves its three accounts, pages and v1 indexing in the stack
-API=http://127.0.0.1:8787/api/v1
-# before: a fresh account with a workspace
-curl -s -X POST $API/auth/sign-up -H 'content-type: application/json' \
-  -d '{"email":"restart@example.test","name":"Restart","password":"correct-horse-battery"}'   # note session.token as TOKEN
-curl -s -X POST $API/tenants -H "authorization: Bearer $TOKEN" -H 'content-type: application/json' \
-  -d '{"name":"Restart Co","slug":"restart-co"}'                                              # note tenant.id as TENANT_ID
-docker compose restart
-# after: the session, the account and the workspace are still there
-curl -s $API/me -H "authorization: Bearer $TOKEN"
-curl -s -X POST $API/auth/sign-in -H 'content-type: application/json' \
-  -d '{"email":"restart@example.test","password":"correct-horse-battery"}'
-# and indexed content still answers: open the console on a page of the e2e run, or search its tenant
+Whole stack up with `docker compose up -d --build` (migrate exited 0; api, collab, worker,
+postgres, minio up). Before the restart, through the api (api on host port 58787):
+
+```
+sign-up             -> 201   restart-mvetwuav@example.test
+create tenant       -> 201   383ea41f-abf0-4a8a-be93-79f025631ba1
+create space, page  -> 201   page text "Quokka protocol: data must survive a restart."
+snapshot            -> 201   status "indexing"
+page after worker   -> 200   badge "Indexed · v1"
+search              -> 200   the page's passage, versionNumber 1
 ```
 
-Expected: `/me` lists the workspace, sign-in succeeds, and a page of the e2e run still shows
-`Indexed · v1`, its history and its text. Data lives in anonymous volumes, which `restart` keeps (docs/operations.md).
+`docker compose restart` (all six containers of the project). The postgres volume
+(`1152b19e…`) and the minio volume (`c6822d04…`) were the same before and after. After:
 
-## 7 to 10. Also owed (Docker)
-
-```sh
-pnpm stack:up                                            # 7: postgres + minio come up, migrations apply
-TEST_DATABASE_URL=postgres://living_wiki_app:$APP_DB_PASSWORD@127.0.0.1:55543/living_wiki \
-TEST_DATABASE_MIGRATE_URL=postgres://postgres:$POSTGRES_PASSWORD@127.0.0.1:55543/living_wiki \
-  pnpm test:pg                                           # 8: every *.pg.test.ts
-S3_ENDPOINT=http://127.0.0.1:59000 pnpm vitest run packages/shared/test/objectStorage.test.ts   # S3 case, MinIO
-pnpm e2e                                                 # 10: the same specs against the compose stack
+```
+GET /me with the pre-restart token -> 200 user + membership "Restart Co mvetwuav"
+POST /auth/sign-in                 -> 200
+GET /pages/<id>                    -> 200 badge "Indexed · v1", liveMarkdown "Quokka protocol: data must survive a restart."
+GET /pages/<id>/versions           -> 200 [number 1, status "indexed"]
+POST /search "quokka protocol"     -> 200 the page's passage, v1
 ```
 
-9. `apps/collab/test/bookkeepingLock.pg.test.ts`, positive and negative run (Task 4.3,
-   ruling R25): with the TEST_DATABASE_* variables above,
-   `pnpm vitest run -c vitest.pg.config.ts apps/collab/test/bookkeepingLock.pg.test.ts`
-   must pass (positive); then remove the explicit `FOR KEY SHARE` lock (the `.for('key share')` select in
-   `apps/collab/src/recorder.ts`), run the same command and it must FAIL (negative: without
-   the lock the write commits while the snapshot holds the document row); then restore
-   `recorder.ts`.
+Nothing was lost. Anonymous volumes survive `restart`; `down` without `-v` keeps them on
+disk unreferenced, `down -v` deletes them.
+
+## 7 to 10. Stack, tests, lock, e2e
+
+7. `pnpm stack:up` as written: both containers reach healthy, then the host migration fails
+   because 127.0.0.1:55543 is held by a stale `com.docker.backend` listener with no container
+   (the compose postgres shows `5432/tcp` published to nothing):
+
+   ```
+    Container living-wiki-postgres-1 Healthy
+    Container living-wiki-minio-1 Healthy
+   > tsx packages/db/src/migrate.ts
+   migration failed: DrizzleQueryError: Failed query: CREATE SCHEMA IF NOT EXISTS "drizzle"
+     cause: Error: Connection terminated unexpectedly
+   ```
+
+   With postgres on 127.0.0.1:55643 the same `pnpm db:migrate` prints
+   `migrations applied from …/packages/db/migrations`. Still owed: `pnpm stack:up` unmodified
+   once those host ports are free (needs a Docker Desktop restart, not done).
+
+8. `pnpm test:pg` and the S3 case: see item 2 (20 and 65 tests passed).
+
+9. `apps/collab/test/bookkeepingLock.pg.test.ts`, with the `.for('key share')` select in
+   `apps/collab/src/recorder.ts` removed:
+
+   ```
+    FAIL  … > a repeat contributor's write started under the snapshot lock commits wholly after it
+   AssertionError: expected true to be false // Object.is equality
+    ❯ apps/collab/test/bookkeepingLock.pg.test.ts:145:20
+       145|     expect(landed).toBe(false);
+    Test Files  1 failed (1)   Tests  1 failed (1)
+   ```
+
+   (its `afterAll` also hit the 60 s hook timeout because the failed case left its
+   transaction open). After `git checkout -- apps/collab/src/recorder.ts` (tree clean):
+   `✓ apps/collab/test/bookkeepingLock.pg.test.ts (1 test) 589ms`, `Tests 1 passed (1)`.
+
+10. `pnpm e2e` as written was NOT run: it needs host ports 55543, 8787 and 1234 (see 7).
+    The same specs against the compose containers (api, collab and worker started with
+    `AUTH_RATE_LIMIT_MAX=1000 EMBEDDING_PROVIDER=deterministic`, as infra/e2e.sh does; Playwright
+    with `API_URL=http://127.0.0.1:58787 COLLAB_URL=http://127.0.0.1:51234`, `vite dev` on 5173):
+
+    ```
+      ✓  1 [chromium] › e2e/co-edit.spec.ts:38:1 › two editors and a reviewer: co-edit, hold until approval, index, cite v1 (7.1s)
+      ✓  2 [chromium] › e2e/console.spec.ts:50:1 › review queue: Approve and Reject states, lazy diff (1.7s)
+      ✓  3 [chromium] › e2e/console.spec.ts:117:1 › history drawer: compare two versions, restore with confirmation, Escape returns focus (1.4s)
+      ✓  4 [chromium] › e2e/console.spec.ts:178:1 › citations link to the cited page (838ms)
+      ✓  5 [chromium] › e2e/viewer.spec.ts:4:1 › a viewer sees the page read-only, without Submit (1.0s)
+      5 passed (13.7s)
+    ```
+
+    The dev proxy logs `ws proxy socket error: write EPIPE` lines while sockets close; no
+    test is affected. Still owed: `pnpm e2e` unmodified on the default ports.
 
 ## Other checks run for this task
 
