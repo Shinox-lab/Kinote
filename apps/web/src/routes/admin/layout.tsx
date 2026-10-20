@@ -14,7 +14,7 @@ export function AdminLayout() {
     return (
       <Card title="You don't have access">
         <p className="text-sm text-fg">
-          Only owners and admins of this workspace can manage members, groups and spaces. Ask an owner or admin if you
+          Only owners and admins of this workspace can manage members, groups, spaces and sources. Ask an owner or admin if you
           need a change.
         </p>
       </Card>

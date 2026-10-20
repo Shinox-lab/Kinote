@@ -206,9 +206,16 @@ export async function uploadViaApi(
   return (JSON.parse(text) as { document: { id: string } }).document.id;
 }
 
-/** A document's row in the sidebar's space tree (the upload panel lists the same name after it). */
+/**
+ * A document's row in the sidebar's space tree. Its accessible name is the title, then the status dot's
+ * words when it has one ("Q3.pdf Waiting for review"); the upload panel lists the same name after the tree.
+ */
 export function treeLink(page: Page, name: string): Locator {
-  return page.getByRole('complementary', { name: 'Sidebar' }).getByRole('link', { name, exact: true }).first();
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return page
+    .getByRole('complementary', { name: 'Sidebar' })
+    .getByRole('link', { name: new RegExp(`^${escaped}(?:\\s|$)`) })
+    .first();
 }
 
 /** Approves every version waiting for review that `reviewer` can see; returns how many. */
@@ -258,4 +265,61 @@ export function fakePng(name: string, label: string, text: string): TestFile {
     'base64'
   );
   return { name, mimeType: 'image/png', buffer: Buffer.concat([png, Buffer.from(`\n${label}\nFAKE-EXTRACT\n${text}`, 'utf8')]) };
+}
+
+// --- Sources -------------------------------------------------------------------
+
+/** What a script sends: one file into the source's space under an id of its own (the source token is the only credential). */
+export async function putAsSource(
+  request: APIRequestContext,
+  token: string,
+  externalId: string,
+  file: TestFile
+): Promise<{ status: number; body: { created?: boolean; unchanged?: boolean; document?: { id: string } } }> {
+  const res = await request.fetch(`/api/v1/source/files/${externalId}`, {
+    method: 'PUT',
+    headers: { authorization: `Bearer ${token}` },
+    multipart: { file: { name: file.name, mimeType: file.mimeType, buffer: file.buffer } },
+  });
+  const text = await res.text();
+  return { status: res.status(), body: text ? JSON.parse(text) : {} };
+}
+
+export async function deleteAsSource(request: APIRequestContext, token: string, externalId: string): Promise<number> {
+  const res = await request.fetch(`/api/v1/source/files/${externalId}`, {
+    method: 'DELETE',
+    headers: { authorization: `Bearer ${token}` },
+  });
+  return res.status();
+}
+
+/** A source and one token, through the admin api (for specs that are not about the Sources screen). */
+export async function makeSource(
+  request: APIRequestContext,
+  world: World,
+  o: { name: string; trusted?: boolean }
+): Promise<{ id: string; token: string }> {
+  const source = await call<{ id: string }>(request, '/sources', {
+    account: world.owner,
+    tenantId: world.tenantId,
+    method: 'POST',
+    data: { name: o.name, target_space_id: world.spaceId },
+  });
+  if (o.trusted) {
+    await call(request, `/sources/${source.id}`, { account: world.owner, tenantId: world.tenantId, method: 'PATCH', data: { trusted: true } });
+  }
+  const issued = await call<{ token: string }>(request, `/sources/${source.id}/tokens`, {
+    account: world.owner,
+    tenantId: world.tenantId,
+    method: 'POST',
+    data: { name: 'e2e' },
+  });
+  return { id: source.id, token: issued.token };
+}
+
+/** Opens a space in the sidebar unless it is open already (the console remembers which ones are). */
+export async function expandSpace(page: Page, name: string): Promise<void> {
+  const toggle = page.getByRole('complementary', { name: 'Sidebar' }).getByRole('button', { name: new RegExp(`^(Expand|Collapse) ${name}$`) });
+  await expect(toggle).toBeVisible();
+  if ((await toggle.getAttribute('aria-expanded')) === 'false') await toggle.click();
 }

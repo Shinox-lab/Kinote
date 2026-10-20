@@ -11,7 +11,11 @@ export function canAdminister(role: TenantRole): boolean {
 }
 
 export interface AdminScreen {
-  to: '/w/$tenantSlug/admin/members' | '/w/$tenantSlug/admin/groups' | '/w/$tenantSlug/admin/spaces';
+  to:
+    | '/w/$tenantSlug/admin/members'
+    | '/w/$tenantSlug/admin/groups'
+    | '/w/$tenantSlug/admin/spaces'
+    | '/w/$tenantSlug/admin/sources';
   label: string;
 }
 
@@ -19,6 +23,7 @@ const ADMIN_SCREENS: AdminScreen[] = [
   { to: '/w/$tenantSlug/admin/members', label: 'Members' },
   { to: '/w/$tenantSlug/admin/groups', label: 'Groups' },
   { to: '/w/$tenantSlug/admin/spaces', label: 'Spaces' },
+  { to: '/w/$tenantSlug/admin/sources', label: 'Sources' },
 ];
 
 /** The admin screens a role may open: all of them for owners and admins, none otherwise. */
