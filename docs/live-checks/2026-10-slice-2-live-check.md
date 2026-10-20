@@ -7,7 +7,7 @@ session; anything not run says so.
 
 | | |
 | --- | --- |
-| Code | branch `slice-2-files`, commit `37bbad9` plus the files of the commit that adds this document |
+| Code | branch `slice-2-files`, commit `06d8d65`; the three fixes of the final review (`caa1a39`) came after the stack run and are covered by the gates below |
 | Host | macOS (Darwin 25.6.0), Docker 29.5.2, Compose 5.1.3, node v22.23.2, 6.3 GiB available to containers |
 | Stack | a separate compose project (`docker compose -p lwlive --profile extractor up -d --build`, ports 55600, 59100, 8800, 1300), so the developer's own stack was not touched: Postgres 17 + pgvector, MinIO, the migration, api, collab, worker and the **real Docling extractor** (`EXTRACTOR_MODE=http`) |
 | Extractor image | `lwlive-extractor` **5.24 GB** (models baked in). Its layers were cached from the earlier 2a build (15 h old), so the whole `up --build` took **35 s** here; a first build downloads several gigabytes and was not timed |
@@ -197,8 +197,8 @@ entry vs baseline 491.84 kB: +3.6% (limit 5%)
 
 ## Gates on the final tree
 
-Run on the tree of this commit: `pnpm vitest run` 104 files, 1107 tests passed (31 skipped, the real-Postgres files);
-`pnpm typecheck` clean; `pnpm e2e:local` 35 of 35 specs; `pnpm test:pg` on a throwaway database on the compose Postgres:
+Run on the tree of this commit: `pnpm vitest run` 106 files, 1113 tests passed (31 skipped, the real-Postgres files);
+`pnpm typecheck` clean; `pnpm e2e:local` 36 of 36 specs; `pnpm test:pg` on a throwaway database on the compose Postgres:
 7 files, 28 tests passed.
 
 ## Not run
