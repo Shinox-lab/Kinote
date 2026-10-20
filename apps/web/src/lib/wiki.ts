@@ -192,9 +192,16 @@ export type BadgeTone = 'ok' | 'danger' | 'muted' | 'pending';
 
 /** Colour for a server badge. Only styling: what the badge means is the server's call. */
 export function badgeTone(badge: string): BadgeTone {
-  if (badge === 'Index failed') return 'danger';
+  if (badge === 'Index failed' || badge === 'Extraction failed') return 'danger';
   if (badge.startsWith('Indexed ·')) return 'ok';
-  if (badge === 'Withdrawn' || badge.startsWith('Not indexed ·')) return 'muted';
+  if (
+    badge === 'Withdrawn' ||
+    badge === 'Removed at source' ||
+    badge === 'Stored · no searchable text' ||
+    badge.startsWith('Not indexed ·')
+  ) {
+    return 'muted';
+  }
   return 'pending';
 }
 
@@ -204,7 +211,13 @@ export function badgeTone(badge: string): BadgeTone {
  * Only decides when to look again: what the badge says is still the server's.
  */
 export function badgeSettles(badge: string): boolean {
-  return badge === 'Indexing…' || badge === 'Saved · indexing soon';
+  return (
+    badge === 'Indexing…' ||
+    badge === 'Saved · indexing soon' ||
+    badge === 'Reading text…' ||
+    // A file whose newer version is being read or indexed while an older one answers search.
+    (badge.startsWith('Indexed ·') && (badge.endsWith(' being read') || badge.endsWith(' indexing')))
+  );
 }
 
 /** How often a page whose badge is still settling is fetched again. */

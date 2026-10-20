@@ -179,3 +179,53 @@ export function useRefresh() {
   const { tenant } = useWorkspace();
   return (...part: string[]) => qc.invalidateQueries({ queryKey: ['t', tenant.id, ...part] });
 }
+
+/** A file with its server-computed badge; looked at again while the server is still reading or indexing it. */
+export function useFile(fileId: string | undefined) {
+  const settling = useRef<{ fileId: string | undefined; since: number | null }>({ fileId, since: null });
+  return useQuery({
+    queryKey: useTenantKey('file', fileId),
+    queryFn: () => api.getFile(fileId!),
+    enabled: fileId !== undefined,
+    staleTime: 0,
+    refetchInterval: (query) => {
+      if (settling.current.fileId !== fileId) settling.current = { fileId, since: null };
+      const next = pagePoll(settling.current.since, query.state.data?.badge, Date.now());
+      settling.current.since = next.since;
+      return next.interval;
+    },
+  });
+}
+
+/** A file's versions, newest first. */
+export function useFileVersions(fileId: string, enabled = true) {
+  return useQuery({
+    queryKey: useTenantKey('file', fileId, 'versions'),
+    queryFn: () => api.fileVersions(fileId),
+    enabled,
+    staleTime: 0,
+  });
+}
+
+/** The text read from a file version (what a viewer without edit rights may see of it). */
+export function useVersionText(versionId: string, enabled = true) {
+  return useQuery({
+    queryKey: useTenantKey('versionText', versionId),
+    queryFn: () => api.versionText(versionId),
+    enabled,
+  });
+}
+
+/** The chunks a file version is (or would be) searched by; `enabled` false until someone opens them. */
+export function useVersionChunks(versionId: string, enabled: boolean) {
+  return useQuery({
+    queryKey: useTenantKey('versionChunks', versionId),
+    queryFn: () => api.versionChunks(versionId),
+    enabled,
+  });
+}
+
+/** The workspace's sources (admins only, so `enabled` follows the role). */
+export function useSources(enabled = true) {
+  return useQuery({ queryKey: useTenantKey('sources'), queryFn: () => api.listSources(), enabled });
+}

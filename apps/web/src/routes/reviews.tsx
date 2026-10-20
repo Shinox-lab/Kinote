@@ -1,11 +1,11 @@
 import { useId, useState } from 'react';
-import { Link } from '@tanstack/react-router';
 import { useMutation } from '@tanstack/react-query';
 import type { ReviewItem } from '@living-wiki/contracts';
 import { api, errorMessage } from '../lib/api.js';
 import { versionReasonLabel, versionStatusLabel, whenLabel } from '../lib/history.js';
 import { useRefresh, useReviews, useSpaces, useVersionDiff, useWorkspace } from '../lib/queries.js';
 import { REJECT_NOTE_MAX, approveBlockedReason, rejectNoteState } from '../lib/review.js';
+import { DocumentLink } from '../components/DocumentLink.js';
 import { DiffView } from '../components/DiffView.js';
 import { Button, Card, ErrorNote, Loading, SelectField } from '../components/ui.js';
 
@@ -122,13 +122,14 @@ function Item({ item, onOutcome }: { item: ReviewItem; onOutcome: (error: unknow
       <Card>
         <div className="flex flex-col gap-3">
           <div className="flex flex-col gap-1">
-            <Link
-              to="/w/$tenantSlug/p/$pageId"
-              params={{ tenantSlug: tenant.slug, pageId: item.document.id }}
+            <DocumentLink
+              tenantSlug={tenant.slug}
+              kind={item.document.kind}
+              id={item.document.id}
               className="text-base font-semibold text-accent-text hover:underline"
             >
               {item.document.title}
-            </Link>
+            </DocumentLink>
             <p className="text-xs text-muted">
               {item.document.spaceName} · Version {version.number} · {versionStatusLabel(version.status)} ·{' '}
               {versionReasonLabel(version.reason)} · <time dateTime={version.createdAt}>{whenLabel(version.createdAt)}</time>

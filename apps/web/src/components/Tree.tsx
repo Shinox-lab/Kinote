@@ -1,4 +1,4 @@
-import { Link } from '@tanstack/react-router';
+import { DocumentLink } from './DocumentLink.js';
 import type { TreeItem } from '../lib/wiki.js';
 
 function Items({ items, tenantSlug }: { items: TreeItem[]; tenantSlug: string }) {
@@ -6,19 +6,14 @@ function Items({ items, tenantSlug }: { items: TreeItem[]; tenantSlug: string })
     <ul className="flex flex-col gap-1">
       {items.map(({ node, children }) => (
         <li key={node.id}>
-          {node.kind === 'page' ? (
-            <Link
-              to="/w/$tenantSlug/p/$pageId"
-              params={{ tenantSlug, pageId: node.id }}
-              className="rounded px-1 text-sm font-medium text-accent-text hover:underline"
-            >
-              {node.title}
-            </Link>
-          ) : (
-            <span className="px-1 text-sm text-fg">
-              {node.title} <span className="text-xs text-muted">(file)</span>
-            </span>
-          )}
+          <DocumentLink
+            tenantSlug={tenantSlug}
+            kind={node.kind}
+            id={node.id}
+            className="rounded px-1 text-sm font-medium text-accent-text hover:underline"
+          >
+            {node.title}
+          </DocumentLink>
           {children.length > 0 && (
             <div className="ml-3 mt-1 border-l border-line pl-3">
               <Items items={children} tenantSlug={tenantSlug} />

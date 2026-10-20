@@ -2,10 +2,14 @@ import {
   AcceptInvitationResponseSchema,
   AskResponseSchema,
   AuthResponseSchema,
+  ChunkInspectorSchema,
+  CreateSourceTokenResponseSchema,
   BlockDiffSchema,
   CollabTokenResponseSchema,
   CreateTenantResponseSchema,
   DocumentSummarySchema,
+  FileDetailsSchema,
+  FileVersionListSchema,
   ERROR_SENTENCES,
   GrantListSchema,
   GroupListSchema,
@@ -21,6 +25,11 @@ import {
   ReviewListSchema,
   UpdatesResponseSchema,
   SearchResponseSchema,
+  SourceListSchema,
+  SourceSchema,
+  SourceTokenSchema,
+  UploadFileResponseSchema,
+  VersionTextSchema,
   SpaceListSchema,
   SpaceResponseSchema,
   SpaceSchema,
@@ -35,6 +44,10 @@ import {
   type AskRequest,
   type CreateGroupRequest,
   type CreatePageRequest,
+  type CreateSourceRequest,
+  type CreateSourceTokenRequest,
+  type MoveFileRequest,
+  type UpdateSourceRequest,
   type CreateSpaceRequest,
   type CreateTenantRequest,
   type InviteMemberRequest,
@@ -126,7 +139,8 @@ export async function request<T>(
     headers.set('authorization', `Bearer ${current.token}`);
     if (current.tenantId) headers.set('x-tenant-id', current.tenantId);
   }
-  if (init.body !== undefined && init.body !== null && !headers.has('content-type')) {
+  // A FormData body carries its own multipart boundary: the browser sets the header.
+  if (init.body !== undefined && init.body !== null && !(init.body instanceof FormData) && !headers.has('content-type')) {
     headers.set('content-type', 'application/json');
   }
 
@@ -155,6 +169,31 @@ export async function request<T>(
     throw new Error(`Unexpected reply from ${path} (${issues})`);
   }
   return parsed.data;
+}
+
+/** The bytes of an authenticated GET (a file); an error answer throws like `request` does. */
+export async function fetchBytes(path: string): Promise<{ bytes: ArrayBuffer; mimeType: string }> {
+  const headers = new Headers();
+  const current = loadSession();
+  if (current) {
+    headers.set('authorization', `Bearer ${current.token}`);
+    if (current.tenantId) headers.set('x-tenant-id', current.tenantId);
+  }
+  let res: Response;
+  try {
+    res = await fetch(`${apiBase}${path}`, { headers });
+  } catch {
+    throw new ApiError(NETWORK_ERROR);
+  }
+  if (!res.ok) {
+    const body: unknown = await res.json().catch(() => null);
+    const code =
+      typeof body === 'object' && body !== null && typeof (body as { error?: unknown }).error === 'string'
+        ? (body as { error: string }).error
+        : 'internal_error';
+    throw new ApiError(code, res.status);
+  }
+  return { bytes: await res.arrayBuffer(), mimeType: res.headers.get('content-type') ?? 'application/octet-stream' };
 }
 
 const e = encodeURIComponent;
@@ -235,6 +274,34 @@ export const api = {
     request(`/api/v1/versions/${e(id)}/reject`, VersionSummarySchema, send('POST', body)),
   retryVersion: (id: string) =>
     request(`/api/v1/versions/${e(id)}/retry`, RetryVersionResponseSchema, send('POST')),
+
+  // Files
+  getFile: (id: string) => request(`/api/v1/files/${e(id)}`, FileDetailsSchema),
+  fileVersions: (id: string) => request(`/api/v1/files/${e(id)}/versions`, FileVersionListSchema),
+  uploadFile: (form: FormData) =>
+    request('/api/v1/files', UploadFileResponseSchema, { method: 'POST', body: form }),
+  replaceFile: (id: string, form: FormData) =>
+    request(`/api/v1/files/${e(id)}/versions`, UploadFileResponseSchema, { method: 'POST', body: form }),
+  moveFile: (id: string, body: MoveFileRequest) =>
+    request(`/api/v1/files/${e(id)}/move`, DocumentSummarySchema, send('POST', body)),
+  withdrawFile: (id: string) => request(`/api/v1/files/${e(id)}/withdraw`, DocumentSummarySchema, send('POST')),
+  archiveFile: (id: string) => request(`/api/v1/files/${e(id)}/archive`, DocumentSummarySchema, send('POST')),
+  restoreFile: (id: string) => request(`/api/v1/files/${e(id)}/restore`, DocumentSummarySchema, send('POST')),
+  dismissRemoval: (id: string) =>
+    request(`/api/v1/files/${e(id)}/dismiss-removal`, DocumentSummarySchema, send('POST')),
+  versionText: (id: string) => request(`/api/v1/versions/${e(id)}/text`, VersionTextSchema),
+  versionChunks: (id: string) => request(`/api/v1/versions/${e(id)}/chunks`, ChunkInspectorSchema),
+  versionFile: (id: string) => fetchBytes(`/api/v1/versions/${e(id)}/file`),
+
+  // Sources (admin)
+  listSources: () => request('/api/v1/sources', SourceListSchema),
+  createSource: (body: CreateSourceRequest) => request('/api/v1/sources', SourceSchema, send('POST', body)),
+  updateSource: (id: string, body: UpdateSourceRequest) =>
+    request(`/api/v1/sources/${e(id)}`, SourceSchema, send('PATCH', body)),
+  issueSourceToken: (id: string, body: CreateSourceTokenRequest) =>
+    request(`/api/v1/sources/${e(id)}/tokens`, CreateSourceTokenResponseSchema, send('POST', body)),
+  revokeSourceToken: (id: string, tokenId: string) =>
+    request(`/api/v1/sources/${e(id)}/tokens/${e(tokenId)}`, SourceTokenSchema, del),
 
   // Search and ask
   search: (body: SearchRequest) => request('/api/v1/search', SearchResponseSchema, send('POST', body)),

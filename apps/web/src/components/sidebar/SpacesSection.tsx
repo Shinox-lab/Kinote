@@ -5,7 +5,8 @@ import { loadExpanded, saveExpanded } from '../../lib/sidebar.js';
 import { usePage, useSpaceTree, useSpaces, useWorkspace } from '../../lib/queries.js';
 import { buildTree, canCreatePages, expandedFor, type TreeItem } from '../../lib/wiki.js';
 import { errorMessage } from '../../lib/api.js';
-import { BookIcon, ChevronDownIcon, ChevronRightIcon, InboxIcon, PageIcon, PlusIcon } from '../icons.js';
+import { BookIcon, ChevronDownIcon, ChevronRightIcon, FileIcon, InboxIcon, PageIcon, PlusIcon } from '../icons.js';
+import { DocumentLink } from '../DocumentLink.js';
 import { AttentionDot } from './AttentionDot.js';
 import { NewPageRow } from './NewPageRow.js';
 import { ROW, ROW_ACTIVE } from './NavRow.js';
@@ -60,29 +61,21 @@ function PageNode({
         ) : (
           <span className="size-5 shrink-0" aria-hidden="true" />
         )}
-        {node.kind === 'page' ? (
-          <Link
-            to="/w/$tenantSlug/p/$pageId"
-            params={{ tenantSlug, pageId: node.id }}
-            className={`${ROW} min-w-0 flex-1`}
-            activeProps={{ className: `${ROW_ACTIVE} min-w-0 flex-1` }}
-          >
-            <span className="flex size-5 shrink-0 items-center justify-center text-base text-muted">
-              <PageIcon />
-            </span>
-            <span className="truncate">{node.title}</span>
-            <span className="ml-auto flex items-center">
-              <AttentionDot attention={node.attention} />
-            </span>
-          </Link>
-        ) : (
-          <span className={`${ROW} min-w-0 flex-1 cursor-default text-muted`}>
-            <span className="flex size-5 shrink-0 items-center justify-center text-base">
-              <PageIcon />
-            </span>
-            <span className="truncate">{node.title}</span>
+        <DocumentLink
+          tenantSlug={tenantSlug}
+          kind={node.kind}
+          id={node.id}
+          className={`${ROW} min-w-0 flex-1`}
+          activeClassName={`${ROW_ACTIVE} min-w-0 flex-1`}
+        >
+          <span className="flex size-5 shrink-0 items-center justify-center text-base text-muted">
+            {node.kind === 'file' ? <FileIcon /> : <PageIcon />}
           </span>
-        )}
+          <span className="truncate">{node.title}</span>
+          <span className="ml-auto flex items-center">
+            <AttentionDot attention={node.attention} />
+          </span>
+        </DocumentLink>
         {canAdd && node.kind === 'page' && (
           <button
             type="button"

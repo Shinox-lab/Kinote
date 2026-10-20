@@ -1,20 +1,35 @@
 import { useState } from 'react';
-import { Link } from '@tanstack/react-router';
 import { useMutation } from '@tanstack/react-query';
 import type { AskResponse } from '@living-wiki/contracts';
 import { api } from '../lib/api.js';
 import { useSpaces, useWorkspace } from '../lib/queries.js';
 import { answerSegments, headingLine, queryAllows } from '../lib/search.js';
+import { DocumentLink } from '../components/DocumentLink.js';
 import { Button, Card, ErrorNote, Loading, SelectField, TextField } from '../components/ui.js';
 
 const ALL_SPACES = '';
 
-function PageLink({ pageId, children, className }: { pageId: string; children: string; className: string }) {
+/** A link to what a passage or citation came from: a page, or a file opened on the page the text is on. */
+function SourceLink({
+  target,
+  children,
+  className,
+}: {
+  target: { documentId: string; documentKind: 'page' | 'file'; pageFrom: number | null };
+  children: string;
+  className: string;
+}) {
   const { tenant } = useWorkspace();
   return (
-    <Link to="/w/$tenantSlug/p/$pageId" params={{ tenantSlug: tenant.slug, pageId }} className={className}>
+    <DocumentLink
+      tenantSlug={tenant.slug}
+      kind={target.documentKind}
+      id={target.documentId}
+      page={target.pageFrom}
+      className={className}
+    >
       {children}
-    </Link>
+    </DocumentLink>
   );
 }
 
@@ -29,9 +44,9 @@ function Answer({ answer }: { answer: AskResponse }) {
             s.type === 'text' ? (
               s.text
             ) : (
-              <PageLink key={i} pageId={s.citation.documentId} className="font-medium text-accent-text hover:underline">
+              <SourceLink key={i} target={s.citation} className="font-medium text-accent-text hover:underline">
                 {`[${answer.citations.indexOf(s.citation) + 1}]`}
-              </PageLink>
+              </SourceLink>
             )
           )}
         </p>
@@ -43,9 +58,9 @@ function Answer({ answer }: { answer: AskResponse }) {
               {answer.citations.map((c, i) => (
                 <li key={c.chunkId} className="text-sm">
                   <span className="text-muted">[{i + 1}] </span>
-                  <PageLink pageId={c.documentId} className="font-medium text-accent-text hover:underline">
+                  <SourceLink target={c} className="font-medium text-accent-text hover:underline">
                     {c.citeAs}
-                  </PageLink>
+                  </SourceLink>
                   <p className="mt-0.5 whitespace-pre-wrap break-words text-xs text-muted">{c.quote}</p>
                 </li>
               ))}
@@ -123,9 +138,9 @@ export function SearchPage() {
                 <li key={p.chunkId}>
                   <Card>
                     <div className="flex flex-col gap-1">
-                      <PageLink pageId={p.documentId} className="text-base font-semibold text-accent-text hover:underline">
+                      <SourceLink target={p} className="text-base font-semibold text-accent-text hover:underline">
                         {p.versionTitle}
-                      </PageLink>
+                      </SourceLink>
                       {p.headingPath.length > 0 && <p className="text-xs text-muted">{headingLine(p.headingPath)}</p>}
                       <p className="line-clamp-4 whitespace-pre-wrap break-words text-sm">{p.text}</p>
                       <p className="text-xs text-muted">{p.citeAs}</p>

@@ -54,6 +54,30 @@ describe('updateSentence', () => {
   });
 });
 
+describe('updateSentence for files', () => {
+  const file = (over: Parameters<typeof item>[0] = {}) =>
+    item({ ...over, document: { ...item().document, title: 'Report.pdf', kind: 'file' as const } });
+
+  test('the first version is an upload and a later one a replacement', () => {
+    expect(updateSentence(file({ number: 1, status: 'indexed' }), ME).what).toBe('uploaded Report.pdf');
+    expect(updateSentence(file({ number: 1, status: 'pending_review' }), ME).what).toBe('uploaded Report.pdf');
+    expect(updateSentence(file({ number: 3, status: 'indexed' }), ME).what).toBe('replaced Report.pdf');
+    expect(updateSentence(file({ number: 3, status: 'pending_review' }), ME).what).toBe('replaced Report.pdf');
+  });
+
+  test('a connector syncs the file', () => {
+    const sys = { type: 'system' as const, id: null, name: 'System · Reports' };
+    expect(updateSentence(file({ number: 1, actor: sys }), ME)).toEqual({ who: 'System · Reports', what: 'synced Report.pdf' });
+    expect(updateSentence(file({ number: 4, actor: sys }), ME).what).toBe('synced Report.pdf');
+  });
+
+  test('rejected, withdrawn and failed still name the version', () => {
+    expect(updateSentence(file({ number: 2, status: 'rejected' }), ME).what).toBe('had v2 of Report.pdf rejected');
+    expect(updateSentence(file({ number: 2, status: 'withdrawn' }), ME).what).toBe('had v2 of Report.pdf withdrawn');
+    expect(updateSentence(file({ number: 2, status: 'failed' }), ME).what).toBe('had v2 of Report.pdf fail to index');
+  });
+});
+
 describe('relativeTime', () => {
   const now = new Date('2026-10-19T12:00:00.000Z');
   const ago = (ms: number) => new Date(now.getTime() - ms).toISOString();

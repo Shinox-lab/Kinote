@@ -69,6 +69,12 @@ export const PageIcon = (p: IconProps) => (
     <path d="M14 3.5V8h4M9.5 12.5h5M9.5 16h5" />
   </Icon>
 );
+export const FileIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M7 3.5h7l4 4V20a.5.5 0 0 1-.5.5h-10.5a.5.5 0 0 1-.5-.5V4a.5.5 0 0 1 .5-.5Z" />
+    <path d="M14 3.5V8h4" />
+  </Icon>
+);
 export const BookIcon = (p: IconProps) => (
   <Icon {...p}>
     <path d="M5 4.5A1.5 1.5 0 0 1 6.5 3H19v15H6.5A1.5 1.5 0 0 0 5 19.5v-15Z" />

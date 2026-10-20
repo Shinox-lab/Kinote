@@ -1,10 +1,10 @@
 import { useState } from 'react';
-import { Link } from '@tanstack/react-router';
 import { errorMessage } from '../../lib/api.js';
 import { useUpdates, useWorkspace } from '../../lib/queries.js';
 import { loadSession } from '../../lib/session.js';
 import { loadUpdatesOpen, saveUpdatesOpen } from '../../lib/sidebar.js';
 import { relativeTime, updateSentence } from '../../lib/updates.js';
+import { DocumentLink } from '../DocumentLink.js';
 import { ChevronDownIcon, ChevronRightIcon } from '../icons.js';
 import { ROW } from './NavRow.js';
 
@@ -55,9 +55,10 @@ export function UpdatesSection() {
                 const { who, what } = updateSentence(item, selfId);
                 return (
                   <li key={item.versionId}>
-                    <Link
-                      to="/w/$tenantSlug/p/$pageId"
-                      params={{ tenantSlug: tenant.slug, pageId: item.document.id }}
+                    <DocumentLink
+                      tenantSlug={tenant.slug}
+                      kind={item.document.kind}
+                      id={item.document.id}
                       className={`${ROW} items-start`}
                     >
                       <span className="min-w-0 flex-1 text-xs leading-snug">
@@ -72,7 +73,7 @@ export function UpdatesSection() {
                       <time dateTime={item.createdAt} className="shrink-0 pt-px text-xs text-muted">
                         {relativeTime(item.createdAt, now)}
                       </time>
-                    </Link>
+                    </DocumentLink>
                   </li>
                 );
               })}

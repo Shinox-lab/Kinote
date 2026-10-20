@@ -9,6 +9,7 @@ export function updateSentence(item: UpdateItem, selfId: string | null): { who: 
   const who = isSelf ? 'You' : item.actor.name;
   const { title } = item.document;
   const v = `v${item.number}`;
+  if (item.document.kind === 'file') return { who, what: fileWhat(item, title, v) };
   switch (item.status) {
     case 'pending_review':
       return { who, what: `proposed a change to ${title}` };
@@ -21,6 +22,21 @@ export function updateSentence(item: UpdateItem, selfId: string | null): { who: 
       return { who, what: `had ${v} of ${title} withdrawn` };
     case 'failed':
       return { who, what: `had ${v} of ${title} fail to index` };
+  }
+}
+
+/** What happened to a file: the first version is an upload, a later one a replacement, a connector's a sync. */
+function fileWhat(item: UpdateItem, title: string, v: string): string {
+  switch (item.status) {
+    case 'rejected':
+      return `had ${v} of ${title} rejected`;
+    case 'withdrawn':
+      return `had ${v} of ${title} withdrawn`;
+    case 'failed':
+      return `had ${v} of ${title} fail to index`;
+    default:
+      if (item.actor.type === 'system') return `synced ${title}`;
+      return item.number <= 1 ? `uploaded ${title}` : `replaced ${title}`;
   }
 }
 

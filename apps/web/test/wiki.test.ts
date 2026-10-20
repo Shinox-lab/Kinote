@@ -138,6 +138,24 @@ describe('badgeTone', () => {
     expect(badgeTone('Saved · indexing soon')).toBe('pending');
     expect(badgeTone('Something new from a later server')).toBe('pending');
   });
+
+  test('file badges: reading and awaiting approval are pending, removed and stored are muted, failures are danger', () => {
+    expect(badgeTone('Reading text…')).toBe('pending');
+    expect(badgeTone('Not indexed (awaiting approval)')).toBe('pending');
+    expect(badgeTone('Removed at source')).toBe('muted');
+    expect(badgeTone('Stored · no searchable text')).toBe('muted');
+    expect(badgeTone('Extraction failed')).toBe('danger');
+    expect(badgeTone('Indexed · v1, v2 awaiting approval')).toBe('ok');
+  });
+
+  test('file badges that settle by themselves', () => {
+    expect(badgeSettles('Reading text…')).toBe(true);
+    expect(badgeSettles('Indexed · v1, v2 being read')).toBe(true);
+    expect(badgeSettles('Indexed · v1, v2 indexing')).toBe(true);
+    expect(badgeSettles('Indexed · v1, v2 awaiting approval')).toBe(false);
+    expect(badgeSettles('Removed at source')).toBe(false);
+    expect(badgeSettles('Extraction failed')).toBe(false);
+  });
 });
 
 describe('badgeSettles', () => {

@@ -2,6 +2,7 @@ import { Link } from '@tanstack/react-router';
 import { useSpaces, useUpdates, useWorkspace } from '../lib/queries.js';
 import { loadSession } from '../lib/session.js';
 import { relativeTime, updateSentence } from '../lib/updates.js';
+import { DocumentLink } from '../components/DocumentLink.js';
 import { BookIcon, InboxIcon } from '../components/icons.js';
 import { ErrorNote, Loading } from '../components/ui.js';
 
@@ -26,9 +27,10 @@ function RecentChanges() {
             const { who, what } = updateSentence(item, selfId);
             return (
               <li key={item.versionId}>
-                <Link
-                  to="/w/$tenantSlug/p/$pageId"
-                  params={{ tenantSlug: tenant.slug, pageId: item.document.id }}
+                <DocumentLink
+                  tenantSlug={tenant.slug}
+                  kind={item.document.kind}
+                  id={item.document.id}
                   className="flex items-baseline gap-3 rounded-md px-2 py-1.5 text-sm hover:bg-hover"
                 >
                   <span className="min-w-0 flex-1">
@@ -38,7 +40,7 @@ function RecentChanges() {
                   <time dateTime={item.createdAt} className="shrink-0 text-xs text-muted">
                     {relativeTime(item.createdAt, now)}
                   </time>
-                </Link>
+                </DocumentLink>
               </li>
             );
           })}
