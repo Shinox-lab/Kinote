@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { corruptDocx, docx, xlsx } from './fixtures.js';
+import { corruptDocx, docx, pptx, realPdf, xlsx } from './fixtures.js';
 import {
   addMember,
   approveAll,
@@ -267,4 +267,53 @@ test('a CSV opens as a table of text, and a workbook as tabs; the page number pi
   await expect(preview.getByRole('tab', { name: 'Costs' })).toHaveAttribute('aria-selected', 'true');
   await expect(preview.getByRole('cell', { name: 'Power' })).toBeVisible();
   expect(dialogs).toEqual([]);
+});
+
+test('a PDF opens on the page a search result points to, and a slide deck as text', async ({ browser, request }) => {
+  const world = await seedWorld(request, { reviewRequired: false });
+  const pages = Array.from({ length: 4 }, (_, i) => `Page ${i + 1} text ${world.suffix}.`);
+  const pdf = await uploadViaApi(request, world, world.owner, realPdf('Report.pdf', world.suffix, ...pages));
+  await waitForFileBadge(request, world, world.owner, pdf, /^Indexed/);
+
+  const page = await openAs(browser, world, world.owner);
+  await page.goto(`/w/${world.slug}/f/${pdf}?page=3`);
+  const preview = page.getByRole('region', { name: 'Preview' });
+  const input = preview.getByRole('textbox', { name: 'Page number' });
+  await expect(input).toHaveValue('3');
+  await expect(preview.getByText('of 4', { exact: true })).toBeVisible();
+  await preview.getByRole('button', { name: 'Next page' }).click();
+  await expect(input).toHaveValue('4');
+  await expect(preview.getByRole('button', { name: 'Next page' })).toBeDisabled();
+  await input.fill('2');
+  await input.press('Enter');
+  await expect(input).toHaveValue('2');
+  await input.fill('99');
+  await input.press('Enter');
+  await expect(input).toHaveValue('4');
+  await preview.getByRole('button', { name: 'Zoom in' }).click();
+  await expect(preview.getByText('125%')).toBeVisible();
+  // The page is really drawn: some of the canvas is dark ink.
+  const canvas = preview.getByRole('img', { name: 'Page 4 of 4' });
+  await expect
+    .poll(() =>
+      canvas.evaluate((c: HTMLCanvasElement) => {
+        const data = c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data;
+        for (let i = 0; i < data.length; i += 4) if (data[i]! < 100 && data[i + 3]! > 200) return true;
+        return false;
+      })
+    )
+    .toBe(true);
+
+  const deck = await uploadViaApi(
+    request,
+    world,
+    world.owner,
+    pptx('Kickoff.pptx', world.suffix, `Welcome slide ${world.suffix}`, 'Agenda slide', 'Questions slide')
+  );
+  await waitForFileBadge(request, world, world.owner, deck, /^Indexed/);
+  await page.goto(`/w/${world.slug}/f/${deck}?page=2`);
+  const slides = page.getByRole('region', { name: 'Preview' }).getByRole('list', { name: 'Slides' });
+  await expect(slides.getByRole('listitem')).toHaveCount(3);
+  await expect(slides).toContainText(`Welcome slide ${world.suffix}`);
+  await expect(slides.getByRole('listitem').nth(1)).toContainText('Slide 2');
 });

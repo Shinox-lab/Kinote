@@ -121,3 +121,44 @@ export function xlsx(name: string, label: string, sheets: { name: string; rows: 
   entries['fake-extract.txt'] = marker(`${label}\n${sheets.flatMap((s) => s.rows.map((r) => r.join(' '))).join('\n')}`);
   return { name, mimeType: XLSX_MIME, buffer: zip(entries) };
 }
+
+/**
+ * A real, drawable PDF (one line of text per page) that the fake extractor can also read: after
+ * `%%EOF` comes the marker line and the pages' text, which a PDF reader ignores. `label` makes the bytes unique.
+ */
+export function realPdf(name: string, label: string, ...pages: string[]): TestFile {
+  const objs: string[] = [];
+  objs[1] = '<< /Type /Catalog /Pages 2 0 R >>';
+  objs[2] = `<< /Type /Pages /Kids [${pages.map((_, i) => `${4 + i * 2} 0 R`).join(' ')}] /Count ${pages.length} >>`;
+  objs[3] = '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>';
+  pages.forEach((text, i) => {
+    const page = 4 + i * 2;
+    const stream = `BT /F1 18 Tf 20 100 Td (${text.replace(/[()\\]/g, '\\$&')}) Tj ET`;
+    objs[page] = `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 200] /Resources << /Font << /F1 3 0 R >> >> /Contents ${page + 1} 0 R >>`;
+    objs[page + 1] = `<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`;
+  });
+  let out = `%PDF-1.4\n%${label}\n`;
+  const offsets: number[] = [];
+  for (let n = 1; n < objs.length; n++) {
+    offsets[n] = out.length;
+    out += `${n} 0 obj\n${objs[n]}\nendobj\n`;
+  }
+  const xref = out.length;
+  out += `xref\n0 ${objs.length}\n0000000000 65535 f \n`;
+  for (let n = 1; n < objs.length; n++) out += `${String(offsets[n]).padStart(10, '0')} 00000 n \n`;
+  out += `trailer\n<< /Size ${objs.length} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  out += `FAKE-EXTRACT\n${pages.join('\f')}`;
+  return { name, mimeType: 'application/pdf', buffer: Buffer.from(out, 'latin1') };
+}
+
+export const PPTX_MIME = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+
+/** A deck that passes the upload's type check; its slides' text is what the fake extractor reads (one slide per page). */
+export function pptx(name: string, label: string, ...slides: string[]): TestFile {
+  const buffer = zip({
+    '[Content_Types].xml': '<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"/>',
+    'ppt/presentation.xml': `<?xml version="1.0" encoding="UTF-8"?><p:presentation xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"><!-- ${label} --></p:presentation>`,
+    'fake-extract.txt': `\nFAKE-EXTRACT\n${slides.join('\f')}\n`,
+  });
+  return { name, mimeType: PPTX_MIME, buffer };
+}

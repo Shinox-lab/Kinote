@@ -44,4 +44,20 @@ describe('lazy viewers', () => {
       .filter((r) => /from '[./]*(?:viewers\/)(?!FileViewer\.js)/.test(read(r)));
     expect(offenders).toEqual([]);
   });
+
+  test('the PDF library is a version with the script-injection fix, has no eval path, and the viewer never loads scripting', () => {
+    const root = new URL('../../../node_modules/pdfjs-dist', import.meta.url).pathname;
+    const { version } = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) as { version: string };
+    const [major, minor, patch] = version.split('.').map(Number) as [number, number, number];
+    // CVE-2024-4367 (arbitrary JavaScript through a crafted font) is fixed from 4.2.67.
+    expect(major > 4 || (major === 4 && (minor > 2 || (minor === 2 && patch >= 67)))).toBe(true);
+    for (const file of ['build/pdf.mjs', 'build/pdf.worker.mjs']) {
+      const code = readFileSync(join(root, file), 'utf8');
+      expect(code, file).not.toMatch(/isEvalSupported/);
+      expect(code, file).not.toMatch(/\bnew Function\(|[^.\w]eval\(/);
+    }
+    const viewer = read('viewers/PdfViewer.tsx');
+    expect(viewer).not.toMatch(/scripting|PDFScriptingManager|enableScripting/i);
+    expect(viewer).not.toMatch(/AnnotationLayer|TextLayer/);
+  });
 });

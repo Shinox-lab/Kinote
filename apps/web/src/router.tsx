@@ -20,7 +20,6 @@ import { MembersPage } from './routes/admin/members.js';
 import { SpacesPage } from './routes/admin/spaces.js';
 import { parseFileSearch } from './lib/documentLink.js';
 import { WorkspaceLayout } from './routes/layout.js';
-import { FilePage } from './routes/file.js';
 import { ReviewsPage } from './routes/reviews.js';
 import { SearchPage } from './routes/search.js';
 import { SignInPage } from './routes/sign-in.js';
@@ -151,7 +150,8 @@ const fileRoute = createRoute({
   getParentRoute: () => workspaceRoute,
   path: 'f/$fileId',
   validateSearch: parseFileSearch,
-  component: FilePage,
+  // The file screen, its viewers and their libraries load only when a file is opened.
+  component: lazyRouteComponent(() => import('./routes/file.js'), 'FilePage'),
 });
 
 const reviewsRoute = createRoute({

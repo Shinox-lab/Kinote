@@ -20,10 +20,13 @@ const MarkdownViewer = lazy(() => import('./MarkdownViewer.js'));
 const DocxViewer = lazy(() => import('./DocxViewer.js'));
 const CsvViewer = lazy(() => import('./CsvViewer.js'));
 const XlsxViewer = lazy(() => import('./XlsxViewer.js'));
+const PdfViewer = lazy(() => import('./PdfViewer.js'));
+const PptxViewer = lazy(() => import('./PptxViewer.js'));
 
 const VIEWERS: Partial<Record<ViewerKind, ComponentType<ViewerProps>>> = {
   text: ({ bytes }) => <TextViewer bytes={bytes} />,
   markdown: ({ bytes }) => <MarkdownViewer bytes={bytes} />,
+  pdf: ({ bytes, page }) => <PdfViewer bytes={bytes} page={page} />,
   csv: ({ bytes, version }) => <CsvViewer bytes={bytes} name={version.fileName} />,
   xlsx: ({ bytes, version, page }) => (
     <XlsxViewer bytes={bytes} versionId={version.id} name={version.fileName} page={page} />
@@ -59,7 +62,7 @@ export function FileViewer({ version, page }: { version: FileVersion; page?: num
     // Keyed by version: another version starts from a clean viewer.
     <ViewerBoundary key={version.id} fallback={fallback}>
       <Suspense fallback={<Loading what="preview" />}>
-        <Bytes version={version} kind={kind} page={page} />
+        {kind === 'pptx' ? <PptxViewer versionId={version.id} page={page} /> : <Bytes version={version} kind={kind} page={page} />}
       </Suspense>
     </ViewerBoundary>
   );
