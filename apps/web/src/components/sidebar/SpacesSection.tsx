@@ -3,7 +3,7 @@ import { Link, useParams } from '@tanstack/react-router';
 import type { SpaceResponse } from '@living-wiki/contracts';
 import { useUploads } from '../../lib/useUploads.js';
 import { loadExpanded, saveExpanded } from '../../lib/sidebar.js';
-import { usePage, useSpaceTree, useSpaces, useWorkspace } from '../../lib/queries.js';
+import { useFile, usePage, useSpaceTree, useSpaces, useWorkspace } from '../../lib/queries.js';
 import { buildTree, canCreatePages, expandedFor, type TreeItem } from '../../lib/wiki.js';
 import { errorMessage } from '../../lib/api.js';
 import { BookIcon, ChevronDownIcon, ChevronRightIcon, FileIcon, InboxIcon, PageIcon, PlusIcon } from '../icons.js';
@@ -236,9 +236,12 @@ function SpaceNode({
 /** The Spaces part of the sidebar: every open space, each opening into its page tree. */
 export function SpacesSection() {
   const { tenant } = useWorkspace();
-  const { spaceSlug, pageId } = useParams({ strict: false });
+  const { spaceSlug, pageId, fileId } = useParams({ strict: false });
   const { data: spaces = [] } = useSpaces();
   const { data: page } = usePage(pageId);
+  const { data: file } = useFile(fileId);
+  // The document being read, a page or a file: its space opens and its row is revealed.
+  const currentDocId = pageId ?? fileId;
   const [expanded, setExpanded] = useState<Set<string>>(() => loadExpanded(tenant.id));
   const [adding, setAdding] = useState<Adding>(null);
 
@@ -246,17 +249,18 @@ export function SpacesSection() {
 
   const open = spaces.filter((s) => s.archivedAt === null);
   // The space being read: the page's, or the one named in the address.
-  const currentSpaceId = pageId !== undefined ? page?.spaceId : open.find((s) => s.slug === spaceSlug)?.id;
+  const currentSpaceId =
+    pageId !== undefined ? page?.spaceId : fileId !== undefined ? file?.spaceId : open.find((s) => s.slug === spaceSlug)?.id;
 
   // Going to a page (or a space) opens its space once per visit, so the page is never hidden in a closed one;
   // the person can close it again, and the next page they go to opens it once more.
   const openedFor = useRef<string | undefined>(undefined);
   useEffect(() => {
-    const visit = currentSpaceId === undefined ? undefined : `${currentSpaceId}:${pageId ?? ''}`;
+    const visit = currentSpaceId === undefined ? undefined : `${currentSpaceId}:${currentDocId ?? ''}`;
     if (currentSpaceId === undefined || openedFor.current === visit) return;
     openedFor.current = visit;
     setExpanded((prev) => (prev.has(currentSpaceId) ? prev : new Set(prev).add(currentSpaceId)));
-  }, [currentSpaceId, pageId]);
+  }, [currentSpaceId, currentDocId]);
 
   function toggle(id: string) {
     setExpanded((prev) => {
@@ -278,7 +282,7 @@ export function SpacesSection() {
             tenantSlug={tenant.slug}
             open={expanded.has(space.id)}
             isCurrent={space.id === currentSpaceId}
-            currentPageId={pageId}
+            currentPageId={currentDocId}
             expanded={expanded}
             toggle={toggle}
             reveal={setExpanded}

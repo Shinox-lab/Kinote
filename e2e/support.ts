@@ -210,3 +210,28 @@ export async function uploadViaApi(
 export function treeLink(page: Page, name: string): Locator {
   return page.getByRole('complementary', { name: 'Sidebar' }).getByRole('link', { name, exact: true }).first();
 }
+
+/** Approves every version waiting for review that `reviewer` can see; returns how many. */
+export async function approveAll(request: APIRequestContext, world: World, reviewer: Account): Promise<number> {
+  const queue = await call<{ version: { id: string } }[]>(request, '/reviews', { account: reviewer, tenantId: world.tenantId });
+  for (const item of queue) {
+    await call(request, `/versions/${item.version.id}/approve`, {
+      account: reviewer,
+      tenantId: world.tenantId,
+      method: 'POST',
+      data: {},
+    });
+  }
+  return queue.length;
+}
+
+/** The passages a search returns for `query`, as `version number: text`. */
+export async function searchPassages(request: APIRequestContext, world: World, account: Account, query: string): Promise<string[]> {
+  const res = await call<{ passages: { versionNumber: number; text: string }[] }>(request, '/search', {
+    account,
+    tenantId: world.tenantId,
+    method: 'POST',
+    data: { query },
+  });
+  return res.passages.map((p) => `${p.versionNumber}: ${p.text}`);
+}
