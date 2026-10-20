@@ -317,7 +317,7 @@ source, rotating a token, the `curl` example) and `pnpm dev` documents how to tu
 - Two-tenant isolation tests for every new route; RLS tests for the new tables; the existing suites stay green
   (`pnpm vitest run`, `pnpm typecheck`, `pnpm e2e:local`, `pnpm test:pg`).
 - Contracts first; replies camelCase, requests snake_case; every reply parsed; new error codes and sentences added to the
-  contract table (`not_removed`; no others expected).
+  contract table (`not_removed`, and `source_name_taken` for a duplicate source name).
 - Slice work stays on the branch; the merge is a separate decision.
 
 ## Calls made by the author (to be checked)
@@ -346,7 +346,7 @@ source, rotating a token, the `curl` example) and `pnpm dev` documents how to tu
 - **`DELETE` works for any live source**, even when the target space has since been archived; the archived check is on `PUT`.
 - **Viewers read only the published version** (bytes and text); editors read every version. This tightens the 2a download route.
 - **Migration `0013`** is custom SQL for RLS and the DELETE revoke on `sources`, following the repo's 0008/0009 pattern.
-- **`not_removed` as a new error code** for dismissing a file that was not removed at its source.
+- **Two new error codes:** `not_removed` (dismissing a file that was not removed at its source) and `source_name_taken` (a duplicate source name).
 
 ## Edge cases the plans must cover (each needs a named test)
 
