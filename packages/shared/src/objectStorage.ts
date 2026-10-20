@@ -121,7 +121,13 @@ export class S3ObjectStorage implements ObjectStorage {
       const status = (err as { $metadata?: { httpStatusCode?: number } }).$metadata?.httpStatusCode;
       const name = (err as { name?: unknown }).name;
       if (status !== 404 && name !== 'NotFound' && name !== 'NoSuchBucket') throw err;
-      await this.client.send(new CreateBucketCommand({ Bucket: this.bucket }));
+      try {
+        await this.client.send(new CreateBucketCommand({ Bucket: this.bucket }));
+      } catch (created) {
+        // Another process (the api and the worker start together) created it between the check and now.
+        const createdName = (created as { name?: unknown }).name;
+        if (createdName !== 'BucketAlreadyOwnedByYou' && createdName !== 'BucketAlreadyExists') throw created;
+      }
     }
   }
 

@@ -38,7 +38,10 @@ function splitParagraph(paragraph: string, opts: ChunkOptions): string[] {
   return pieces;
 }
 
-/** A table is one unit; over `maxWords` it splits on lines and each part starts with the header line. */
+/**
+ * A table is one unit; over `maxWords` it splits on lines and each part starts with the header
+ * line, also the pieces of a single row that is itself too long.
+ */
 function splitTable(text: string, opts: ChunkOptions): string[] {
   if (countWords(text) <= opts.maxWords) return [text];
   const [header = '', ...rows] = text.split('\n');
@@ -55,7 +58,8 @@ function splitTable(text: string, opts: ChunkOptions): string[] {
     const n = countWords(row);
     if (n > opts.targetWords) {
       flush();
-      parts.push(...splitWords(row, opts.targetWords));
+      const room = Math.max(1, opts.targetWords - headerWords);
+      parts.push(...splitWords(row, room).map((piece) => `${header}\n${piece}`));
       continue;
     }
     if (words + n > opts.targetWords) flush();

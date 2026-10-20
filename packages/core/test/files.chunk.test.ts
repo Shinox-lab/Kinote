@@ -49,7 +49,13 @@ describe('readTextNative', () => {
     const doc = readTextNative('csv', enc('name,note\n"Doe, J","line one\nline two"\n'));
     expect(doc.sections).toHaveLength(1);
     expect(doc.sections[0]).toMatchObject({ kind: 'table', headingPath: [] });
-    expect(doc.sections[0]!.text).toBe('name | note\nDoe, J | line one\nline two');
+    // A line break inside a cell must not look like the end of a record: it reads as a space.
+    expect(doc.sections[0]!.text).toBe('name | note\nDoe, J | line one line two');
+  });
+
+  it('keeps every CSV record on one line, however many line breaks its cells hold', () => {
+    const doc = readTextNative('csv', enc('a,b\r\n"x\r\ny","p\n\nq"\n"z",w\n'));
+    expect(doc.sections[0]!.text.split('\n')).toEqual(['a | b', 'x y | p q', 'z | w']);
   });
 });
 
@@ -130,6 +136,19 @@ describe('chunkExtracted', () => {
     }
     const seen = chunks.flatMap((c) => bodyOf(c.text).split('\n').slice(1));
     expect(seen).toEqual(rows);
+  });
+
+  it('splits one row that is over the limit and keeps the header line on every piece', () => {
+    const header = 'Name | Note';
+    const long = `big | ${words(1500, 'w')}`;
+    const chunks = chunkExtracted('D', [table([], [header, 'small | one', long, 'last | row'].join('\n'))]);
+    const bodies = chunks.map((c) => bodyOf(c.text));
+    for (const b of bodies) expect(b.split('\n')[0]).toBe(header);
+    for (const c of chunks) expect(wc(bodyOf(c.text))).toBeLessThanOrEqual(DEFAULT_CHUNK_OPTIONS.maxWords);
+    const text = bodies.map((b) => b.split('\n').slice(1).join(' ')).join(' ');
+    expect(text.split(/\s+/).filter((w) => /^w\d*/.test(w)).length).toBeGreaterThanOrEqual(1500);
+    expect(bodies.some((b) => b.includes('last | row'))).toBe(true);
+    expect(bodies.some((b) => b.includes('small | one'))).toBe(true);
   });
 
   it('drops blank sections and never makes a chunk with an empty body', () => {

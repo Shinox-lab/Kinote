@@ -212,6 +212,18 @@ describe('reading files', () => {
     assert.equal((await get(c.viewer.headers, `/api/v1/versions/${up.version.id}/chunks`)).statusCode, 403);
   });
 
+  test('hasText: true once text was read, false for a stored version that has no searchable text', async () => {
+    const c = await setup();
+    const up = await upload(c.author.headers, c.open.id, 'notes.txt', 'Some words to read.');
+    const text = async () => (await get(c.author.headers, `/api/v1/files/${up.document.id}`)).json().latestVersion.hasText as boolean;
+    assert.equal(await text(), false, 'not read yet');
+    await settle(c.tenant.id);
+    assert.equal(await text(), true);
+    // A stored version keeps an extracted file when its text was blank: that is not searchable text.
+    await withTenantTx(c.tenant.id, (tx) => tx.update(versions).set({ status: 'stored' }).where(eq(versions.id, up.version.id)));
+    assert.equal(await text(), false);
+  });
+
   describe('what a viewer may read: the published version only', () => {
     const NOT_FOUND = { error: 'version_not_found', message: ERROR_SENTENCES.version_not_found };
 

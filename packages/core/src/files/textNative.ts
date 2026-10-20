@@ -87,7 +87,7 @@ function readMarkdown(text: string): ExtractedSection[] {
 /**
  * Reads a plain-text type without the extractor. TXT is one text section; MD is
  * cut at its headings (not inside code fences); CSV is one table whose rows
- * are the records with cells joined by " | ".
+ * are the records, one per line, with cells joined by " | ".
  */
 export function readTextNative(type: 'txt' | 'md' | 'csv', bytes: Uint8Array): ExtractedDocument {
   const text = decode(bytes);
@@ -98,7 +98,9 @@ export function readTextNative(type: 'txt' | 'md' | 'csv', bytes: Uint8Array): E
     sections = readMarkdown(text);
   } else {
     const rows = parseCsv(text).filter((r) => r.some((c) => c.trim() !== ''));
-    sections = rows.length > 0 ? [section([], rows.map((r) => r.join(' | ')).join('\n'), 'table')] : [];
+    // A table's rows are told apart by line breaks, so a line break inside a cell reads as a space.
+    const flat = (cell: string) => cell.replace(/\s*[\r\n]+\s*/g, ' ');
+    sections = rows.length > 0 ? [section([], rows.map((r) => r.map(flat).join(' | ')).join('\n'), 'table')] : [];
   }
   return { pageCount: null, sections, ocrUsed: false };
 }

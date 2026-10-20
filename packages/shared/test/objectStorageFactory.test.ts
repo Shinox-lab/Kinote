@@ -29,6 +29,40 @@ describe('createObjectStorage', () => {
   });
 });
 
+describe('S3ObjectStorage.ensureBucket with a client that races another creator', () => {
+  const storageWith = (send: (cmd: { constructor: { name: string } }) => Promise<unknown>) => {
+    const storage = createObjectStorage({
+      S3_ENDPOINT: 'http://127.0.0.1:1',
+      S3_BUCKET: 'lw-race',
+      S3_ACCESS_KEY: 'k',
+      S3_SECRET_KEY: 's',
+      S3_REGION: 'us-east-1',
+    }) as unknown as { ensureBucket(): Promise<void>; client: { send: typeof send } };
+    storage.client = { send };
+    return storage;
+  };
+  const missing = () => Object.assign(new Error('missing'), { name: 'NotFound', $metadata: { httpStatusCode: 404 } });
+
+  it.each(['BucketAlreadyOwnedByYou', 'BucketAlreadyExists'])('is fine when the bucket appears meanwhile (%s)', async (name) => {
+    const calls: string[] = [];
+    const storage = storageWith(async (cmd) => {
+      calls.push(cmd.constructor.name);
+      if (cmd.constructor.name === 'HeadBucketCommand') throw missing();
+      throw Object.assign(new Error('exists'), { name });
+    });
+    await expect(storage.ensureBucket()).resolves.toBeUndefined();
+    expect(calls).toEqual(['HeadBucketCommand', 'CreateBucketCommand']);
+  });
+
+  it('still fails for any other error', async () => {
+    const storage = storageWith(async (cmd) => {
+      if (cmd.constructor.name === 'HeadBucketCommand') throw missing();
+      throw Object.assign(new Error('denied'), { name: 'AccessDenied' });
+    });
+    await expect(storage.ensureBucket()).rejects.toThrow('denied');
+  });
+});
+
 // Runs against the MinIO of docker-compose.yml only when S3_ENDPOINT is set.
 describe.skipIf(!process.env.S3_ENDPOINT)('S3ObjectStorage.ensureBucket', () => {
   it('creates a missing bucket, is repeatable and then stores objects', async () => {

@@ -75,7 +75,8 @@ export function toFileVersion(row: VersionRow): FileVersion {
     fileName: row.fileName ?? row.title,
     mimeType: row.mimeType ?? 'application/octet-stream',
     sizeBytes: row.sizeBytes ?? 0,
-    hasText: row.extractedKey !== null,
+    // Searchable text: text was read, and it was not set aside as `stored` (a blank scan keeps an empty extract).
+    hasText: row.extractedKey !== null && row.status !== 'stored',
   };
 }
 

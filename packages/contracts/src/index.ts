@@ -748,7 +748,7 @@ export const UploadFileFieldsSchema = z.object({
 });
 export type UploadFileFields = z.infer<typeof UploadFileFieldsSchema>;
 
-/** A version of a file: the 12 summary keys plus what was uploaded and whether text was read. */
+/** A version of a file: the 12 summary keys plus what was uploaded and whether it has searchable text (read, and not set aside as `stored`). */
 export const FileVersionSchema = VersionSummarySchema.extend({
   fileName: z.string(),
   mimeType: z.string(),
