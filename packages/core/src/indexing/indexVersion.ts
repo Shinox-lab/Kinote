@@ -24,7 +24,7 @@ export interface IndexDeps {
 
 export type IndexVersionResult =
   | { outcome: 'indexed' }
-  | { outcome: 'skipped'; reason: 'not_indexing' | 'archived' | 'older_than_indexed' };
+  | { outcome: 'skipped'; reason: 'not_indexing' | 'archived' | 'source_deleted' | 'older_than_indexed' };
 
 /**
  * Rows per multi-row INSERT. Each row binds about a dozen parameters (the
@@ -163,6 +163,14 @@ export async function indexVersion(
         .set({ status: 'withdrawn' })
         .where(and(eq(versions.tenantId, tenantId), eq(versions.id, ver.id)));
       return { outcome: 'skipped', reason: 'archived' };
+    }
+
+    if (doc.sourceDeletedAt) {
+      await tx
+        .update(versions)
+        .set({ status: 'withdrawn' })
+        .where(and(eq(versions.tenantId, tenantId), eq(versions.id, ver.id)));
+      return { outcome: 'skipped', reason: 'source_deleted' };
     }
 
     if (doc.indexedVersionId && doc.indexedVersionId !== ver.id) {

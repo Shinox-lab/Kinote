@@ -555,6 +555,39 @@ export async function archiveFile(actor: Actor, fileId: string): Promise<Documen
 }
 
 /**
+ * Dismisses "Removed at source" (editor): archives a synced file its source removed. A pinned
+ * file that lost its source stays withdrawn and listed (a space admin archives it like any
+ * file), and any file that was not removed at its source, or is already archived, is 409
+ * `not_removed`.
+ */
+export async function dismissRemoval(actor: Actor, fileId: string): Promise<DocumentSummary> {
+  assertValidUuid(fileId, 'document_not_found');
+  return withTenantTx(actor.tenantId, async (tx) => {
+    const doc = await lockFile(tx, actor.tenantId, fileId);
+    await requireDocumentRole(tx, actor, doc, 'editor', { notFound: 'document_not_found' });
+    if (doc.placement !== 'synced' || doc.sourceDeletedAt === null || doc.archivedAt !== null) {
+      throw new AppError('not_removed');
+    }
+    await withdrawLiveVersions(tx, actor.tenantId, fileId);
+    const [updated] = await tx
+      .update(documents)
+      .set({ archivedAt: new Date(), indexedVersionId: null })
+      .where(and(eq(documents.tenantId, actor.tenantId), eq(documents.id, fileId)))
+      .returning();
+    await writeAuditEvent(tx, {
+      tenantId: actor.tenantId,
+      type: 'file.archived',
+      actorType: actor.principalType,
+      actorId: actor.principalId,
+      subjectType: 'file',
+      subjectId: fileId,
+      payload: { reason: 'removal_dismissed' },
+    });
+    return toDocumentSummary(updated!);
+  });
+}
+
+/**
  * Restores an archived file (space admin). The file comes back withdrawn (its
  * versions stay `withdrawn`; uploading it again goes through review and
  * indexing). A parent that is archived or no longer a page of the same space

@@ -198,6 +198,21 @@ describe('extractVersion', () => {
     expect((await reload(seed, v.id)).status).toBe('withdrawn');
   });
 
+  it('withdraws the version and drops its text when the file was removed at its source meanwhile', async () => {
+    const seed = await seedFileDocument({ title: 'notes.txt' });
+    const v = await upload(seed, 'notes.txt', 'one');
+    await withTenantTx(seed.tenantId, (tx) =>
+      tx.update(documents).set({ sourceDeletedAt: new Date() }).where(eq(documents.id, seed.documentId))
+    );
+    expect(await extractVersion({ tenantId: seed.tenantId, versionId: v.id }, deps())).toEqual({
+      outcome: 'skipped',
+      reason: 'source_deleted',
+    });
+    const row = await reload(seed, v.id);
+    expect([row.status, row.extractedKey]).toEqual(['withdrawn', null]);
+    expect(await storage.get(seed.tenantId, `${seed.tenantId}/files/${seed.documentId}/${v.id}/extracted.json`).catch(() => null)).toBeNull();
+  });
+
   it('a run that lost the race leaves the winner\'s extracted text alone', async () => {
     const seed = await seedFileDocument({ title: 'notes.txt' });
     const v = await upload(seed, 'notes.txt', 'shared text');

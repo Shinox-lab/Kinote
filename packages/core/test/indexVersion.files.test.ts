@@ -139,4 +139,20 @@ describe('indexVersion for file versions', () => {
       indexVersion({ tenantId: seed.tenantId, versionId: v.id }, new DeterministicEmbeddingProvider())
     ).rejects.toBeInstanceOf(NonRetryableError);
   });
+
+  it('a file version of a document removed at its source is withdrawn and writes no chunks', async () => {
+    const seed = await seedFileDocument();
+    const v = await ready(seed, 'a.pdf', TWO_PAGES);
+    await withTenantTx(seed.tenantId, (tx) =>
+      tx.update(documents).set({ sourceDeletedAt: new Date() }).where(eq(documents.id, seed.documentId))
+    );
+    const result = await indexVersion(
+      { tenantId: seed.tenantId, versionId: v.id },
+      new DeterministicEmbeddingProvider(),
+      { storage }
+    );
+    expect(result).toEqual({ outcome: 'skipped', reason: 'source_deleted' });
+    expect((await versionRow(seed, v.id)).status).toBe('withdrawn');
+    expect(await chunksOf(seed)).toEqual([]);
+  });
 });

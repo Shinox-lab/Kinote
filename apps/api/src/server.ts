@@ -38,6 +38,7 @@ import {
   RetryVersionResponseSchema,
   UploadFileResponseSchema,
   SourcePutResponseSchema,
+  SourceDeleteResponseSchema,
   ExternalIdSchema,
   FileDetailsSchema,
   FileVersionListSchema,
@@ -74,7 +75,7 @@ import {
   listSpaceGrants,
   deleteSpaceGrant,
 } from './routes/admin.js';
-import { putSourceFile } from './routes/sourceFiles.js';
+import { deleteSourceFile, putSourceFile } from './routes/sourceFiles.js';
 import { createSource, issueSourceToken, listSources, revokeSourceToken, updateSource } from './routes/sources.js';
 import {
   createPage,
@@ -98,6 +99,7 @@ import {
 import { listReviewQueue } from './routes/reviews.js';
 import {
   archiveFile,
+  dismissRemoval,
   downloadVersionFile,
   getFileDetails,
   getVersionChunks,
@@ -507,6 +509,16 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
     const upload = await readMultipartUpload(req);
     const out = await putSourceFile(source, externalId, upload.file, deps);
     return reply.status(out.status).send(parseReply(SourcePutResponseSchema, out.response));
+  });
+
+  app.delete('/api/v1/source/files/:externalId', { config: { auth: 'source' } }, async (req, reply) => {
+    const res = await deleteSourceFile(sourceOf(req), (req.params as any).externalId);
+    return reply.send(parseReply(SourceDeleteResponseSchema, res));
+  });
+
+  app.post('/api/v1/files/:id/dismiss-removal', async (req, reply) => {
+    const res = await dismissRemoval(actorOf(req), (req.params as any).id);
+    return reply.send(parseReply(DocumentSummarySchema, res));
   });
 
   app.post('/api/v1/files/:id/versions', async (req, reply) => {

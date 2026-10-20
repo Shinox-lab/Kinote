@@ -17,7 +17,7 @@ import { fileObjectPath } from './versions.js';
 
 export type ExtractVersionResult =
   | { outcome: 'extracted'; status: 'pending_review' | 'indexing' | 'stored' }
-  | { outcome: 'skipped'; reason: 'not_extracting' | 'superseded' | 'archived' };
+  | { outcome: 'skipped'; reason: 'not_extracting' | 'superseded' | 'archived' | 'source_deleted' };
 
 export interface ExtractDeps {
   storage: ObjectStorage;
@@ -106,6 +106,11 @@ export async function extractVersion(
     if (doc.archivedAt) {
       await settle('withdrawn');
       return { outcome: 'skipped', reason: 'archived' };
+    }
+    if (doc.sourceDeletedAt) {
+      // The source removed the file while it was being read: it must not come back through this job.
+      await settle('withdrawn');
+      return { outcome: 'skipped', reason: 'source_deleted' };
     }
     if (doc.latestVersionId !== ver.id) {
       await settle('superseded');
