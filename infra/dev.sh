@@ -5,6 +5,8 @@
 # proxies /api and /collab to the stack's host ports (API_HOST_PORT / COLLAB_HOST_PORT
 # in .env; defaults 8787 and 1234). Ctrl+C stops the console; the stack keeps running
 # (`docker compose stop` pauses it, `pnpm stack:down` deletes it and its data).
+#   EXTRACTOR=1 pnpm dev   also starts the Docling extractor (PDF, Office files, images) and points the
+#                          worker at it; the first build downloads several gigabytes (docs/operations.md).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -13,7 +15,12 @@ if [[ ! -f .env ]]; then
   exit 1
 fi
 
-docker compose up -d --build --wait --wait-timeout 180
+if [[ "${EXTRACTOR:-0}" == "1" ]]; then
+  export EXTRACTOR_MODE=http
+  docker compose --profile extractor up -d --build --wait --wait-timeout 600
+else
+  docker compose up -d --build --wait --wait-timeout 180
+fi
 
 env_value() { sed -n "s/^$1=//p" .env | tail -n 1; }
 api_port="$(env_value API_HOST_PORT)"

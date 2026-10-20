@@ -138,6 +138,13 @@ image at build time, so the first build downloads several gigabytes) and point t
 EXTRACTOR_MODE=http docker compose --profile extractor up -d --build extractor worker
 ```
 
+`EXTRACTOR=1 pnpm dev` does the same for the local app (stack and console in one command; off by default). It needs about
+2 GB of memory for the extractor while it reads a file (about 1 GB at rest) and a 5 GB image; see
+`docs/live-checks/2026-10-slice-2-live-check.md` for measured numbers.
+
+The console's viewers (Markdown, DOCX, XLSX, PDF) load on demand. `pnpm web:build && pnpm bundle:report` prints the
+size of every chunk and fails if a viewer library is in the entry chunk (set `BUNDLE_BASELINE_KB` to also guard its size).
+
 The extractor shares an internal network with the worker only: no internet, no database, no object storage. The worker
 sends the bytes and gets text back. Without the profile everything still works for TXT, MD and CSV, audio and video are
 stored for download, and other files wait for the extractor and fail with a plain sentence after their retries (Retry
