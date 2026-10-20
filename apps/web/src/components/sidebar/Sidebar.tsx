@@ -4,6 +4,7 @@ import { useReviews, useWorkspace } from '../../lib/queries.js';
 import { SearchIcon, SettingsIcon, SidebarIcon, ReviewsIcon } from '../icons.js';
 import { AccountRow } from './AccountRow.js';
 import { ROW, ROW_ACTIVE, RowContent } from './NavRow.js';
+import { UploadPanel } from './UploadPanel.js';
 import { OnThisPage } from './OnThisPage.js';
 import { SpacesSection } from './SpacesSection.js';
 import { UpdatesSection } from './UpdatesSection.js';
@@ -78,6 +79,7 @@ export function Sidebar({ onCollapse }: { onCollapse?: () => void }) {
         <SpacesSection key={tenant.id} />
       </nav>
 
+      <UploadPanel />
       <OnThisPage />
       <AccountRow />
     </div>

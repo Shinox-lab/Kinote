@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useParams } from '@tanstack/react-router';
 import type { SpaceResponse } from '@living-wiki/contracts';
+import { useUploads } from '../../lib/useUploads.js';
 import { loadExpanded, saveExpanded } from '../../lib/sidebar.js';
 import { usePage, useSpaceTree, useSpaces, useWorkspace } from '../../lib/queries.js';
 import { buildTree, canCreatePages, expandedFor, type TreeItem } from '../../lib/wiki.js';
 import { errorMessage } from '../../lib/api.js';
 import { BookIcon, ChevronDownIcon, ChevronRightIcon, FileIcon, InboxIcon, PageIcon, PlusIcon } from '../icons.js';
+import { AddMenu } from '../AddMenu.js';
 import { DocumentLink } from '../DocumentLink.js';
 import { AttentionDot } from './AttentionDot.js';
 import { NewPageRow } from './NewPageRow.js';
@@ -51,6 +53,7 @@ function PageNode({
   setAdding: (a: Adding) => void;
 }) {
   const { node, children } = item;
+  const { enqueue } = useUploads();
   const open = expanded.has(node.id);
   const hasChildren = children.length > 0;
   return (
@@ -77,18 +80,18 @@ function PageNode({
           </span>
         </DocumentLink>
         {canAdd && node.kind === 'page' && (
-          <button
-            type="button"
-            aria-label={`Add a page inside ${node.title}`}
-            title="Add a page inside"
+          <AddMenu
+            label={node.title}
             className={`${ICON_BUTTON} ${REVEAL}`}
-            onClick={() => {
+            onNewPage={() => {
               if (!open) toggle(node.id);
               setAdding({ spaceId, parentId: node.id });
             }}
-          >
-            <PlusIcon />
-          </button>
+            onFiles={(picked) => {
+              if (!open) toggle(node.id);
+              enqueue(picked, { spaceId, parentId: node.id });
+            }}
+          />
         )}
       </div>
       {open && (hasChildren || (adding?.parentId === node.id)) && (
@@ -149,6 +152,7 @@ function SpaceNode({
   // The tree is fetched only once the space is opened; the space being read also polls.
   const { data, error, isPending } = useSpaceTree(space.id, { enabled: open, refetchOnFocus: true, poll: isCurrent });
   const nodes = data?.nodes;
+  const { enqueue } = useUploads();
   const items = nodes ? buildTree(nodes) : [];
   const canAdd = canCreatePages(space.myRole);
 
@@ -179,18 +183,18 @@ function SpaceNode({
           <span className="truncate">{space.name}</span>
         </Link>
         {canAdd && (
-          <button
-            type="button"
-            aria-label={`Add a page to ${space.name}`}
-            title="Add a page"
+          <AddMenu
+            label={space.name}
             className={`${ICON_BUTTON} ${REVEAL}`}
-            onClick={() => {
+            onNewPage={() => {
               if (!open) toggle(space.id);
               setAdding({ spaceId: space.id, parentId: null });
             }}
-          >
-            <PlusIcon />
-          </button>
+            onFiles={(picked) => {
+              if (!open) toggle(space.id);
+              enqueue(picked, { spaceId: space.id, parentId: null });
+            }}
+          />
         )}
       </div>
       {open && (

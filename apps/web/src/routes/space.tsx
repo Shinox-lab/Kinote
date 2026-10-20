@@ -8,6 +8,8 @@ import { useArchivedTree, useRefresh, useSpaceTree, useSpaces, useWorkspace } fr
 import { buildTree } from '../lib/wiki.js';
 import { Button, Card, ErrorNote, Loading, SelectField, TextField } from '../components/ui.js';
 import { Tree } from '../components/Tree.js';
+import { DropZone } from '../components/DropZone.js';
+import { useUploads } from '../lib/useUploads.js';
 
 const TOP_LEVEL = '';
 
@@ -104,6 +106,7 @@ export function SpacePage() {
   const { data: spaces, error, isPending } = useSpaces();
   const space = spaces?.find((s) => s.slug === spaceSlug);
   const { data: tree, error: treeError } = useSpaceTree(space?.id);
+  const { enqueue } = useUploads();
 
   if (isPending) return <Loading what="space" />;
   if (error) return <ErrorNote error={error} />;
@@ -122,8 +125,8 @@ export function SpacePage() {
   const archived = space.archivedAt !== null;
   const canCreate = !archived && space.myRole !== 'viewer';
 
-  return (
-    <div className="flex flex-col gap-4">
+  const body = (
+    <>
       <div className="flex flex-wrap items-baseline gap-3">
         <h1 className="text-xl font-semibold">{space.name}</h1>
         {archived && <span className="rounded bg-dot-review/15 px-1.5 text-xs text-fg">Archived</span>}
@@ -142,6 +145,14 @@ export function SpacePage() {
       </Card>
       {canCreate && <CreatePageForm space={space} />}
       <ArchivedPages space={space} tenantSlug={tenant.slug} />
-    </div>
+    </>
+  );
+
+  return canCreate ? (
+    <DropZone target={space.name} onFiles={(files) => enqueue(files, { spaceId: space.id, parentId: null })}>
+      <div className="flex flex-col gap-4">{body}</div>
+    </DropZone>
+  ) : (
+    <div className="flex flex-col gap-4">{body}</div>
   );
 }

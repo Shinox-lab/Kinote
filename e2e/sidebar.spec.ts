@@ -87,7 +87,8 @@ test('adding a page from the sidebar opens it', async ({ browser, request }) => 
   const side = sidebar(page);
   await side.getByRole('button', { name: 'Expand Docs' }).click();
   await side.getByRole('link', { name: 'Docs', exact: true }).hover();
-  await side.getByRole('button', { name: 'Add a page to Docs' }).click();
+  await side.getByRole('button', { name: 'Add to Docs' }).click();
+  await side.getByRole('menuitem', { name: 'New page' }).click();
   await page.getByLabel('New page title').fill('Brand new page');
   await page.keyboard.press('Enter');
   await page.waitForURL(/\/p\/[0-9a-f-]{36}$/);
@@ -307,7 +308,7 @@ test('on a touch screen the add-page button is visible without hovering', async 
   await page.goto(`/w/${world.slug}`);
   await page.getByRole('button', { name: 'Open sidebar' }).click();
   const dialog = page.getByRole('dialog', { name: 'Sidebar' });
-  await expect(dialog.getByRole('button', { name: 'Add a page to Docs' })).toHaveCSS('opacity', '1');
+  await expect(dialog.getByRole('button', { name: 'Add to Docs' })).toHaveCSS('opacity', '1');
   await context.close();
 });
 

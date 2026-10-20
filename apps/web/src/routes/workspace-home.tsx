@@ -2,6 +2,8 @@ import { Link } from '@tanstack/react-router';
 import { useSpaces, useUpdates, useWorkspace } from '../lib/queries.js';
 import { loadSession } from '../lib/session.js';
 import { relativeTime, updateSentence } from '../lib/updates.js';
+import { DropZone } from '../components/DropZone.js';
+import { useUploads } from '../lib/useUploads.js';
 import { DocumentLink } from '../components/DocumentLink.js';
 import { BookIcon, InboxIcon } from '../components/icons.js';
 import { ErrorNote, Loading } from '../components/ui.js';
@@ -55,11 +57,13 @@ export function WorkspaceHomePage() {
   const { tenant } = useWorkspace();
   const { data: spaces, error, isPending } = useSpaces();
   const user = loadSession()?.user;
+  const { enqueue } = useUploads();
 
   if (isPending) return <Loading what="spaces" />;
   if (error) return <ErrorNote error={error} />;
 
   const open = spaces.filter((s) => s.archivedAt === null);
+  const inbox = open.find((s) => s.kind === 'inbox' && s.myRole !== 'viewer');
 
   return (
     <div className="mx-auto flex w-full max-w-[720px] flex-col gap-8">
@@ -67,6 +71,12 @@ export function WorkspaceHomePage() {
         <h1 className="text-4xl font-bold tracking-tight">{tenant.name}</h1>
         {user && <p className="text-muted">Welcome back, {user.name}.</p>}
       </header>
+
+      {inbox && (
+        <DropZone target="your Inbox" onFiles={(files) => enqueue(files, { spaceId: inbox.id, parentId: null })}>
+          <></>
+        </DropZone>
+      )}
 
       <section aria-labelledby="home-spaces" className="flex flex-col gap-2">
         <h2 id="home-spaces" className="text-sm font-medium text-muted">

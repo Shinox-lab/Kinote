@@ -145,3 +145,68 @@ export async function typeAtEnd(page: Page, text: string): Promise<void> {
   await page.keyboard.press('ControlOrMeta+End');
   await page.keyboard.type(text);
 }
+
+// --- Files ---------------------------------------------------------------------
+
+export interface TestFile {
+  name: string;
+  mimeType: string;
+  buffer: Buffer;
+}
+
+/**
+ * A "PDF" the e2e stack's fake extractor can read: a real signature, then the marker line and one
+ * page of text per argument (pages are separated by a form feed). `label` makes the bytes unique.
+ */
+export function fakePdf(name: string, label: string, ...pages: string[]): TestFile {
+  const body = `%PDF-1.7\n%${label}\nFAKE-EXTRACT\n${pages.join('\f')}`;
+  return { name, mimeType: 'application/pdf', buffer: Buffer.from(body, 'utf8') };
+}
+
+/** A plain text or Markdown or CSV file (these are read without the extractor). */
+export function textFile(name: string, mimeType: string, text: string): TestFile {
+  return { name, mimeType, buffer: Buffer.from(text, 'utf8') };
+}
+
+/** The upload panel of the sidebar. */
+export function uploadPanel(page: Page): Locator {
+  return page.getByRole('region', { name: 'Uploads' });
+}
+
+/** Uploads files through the "+" menu of a space row in the sidebar (the space must be listed there). */
+export async function uploadThroughMenu(page: Page, spaceName: string, files: TestFile[]): Promise<void> {
+  const side = page.getByRole('complementary', { name: 'Sidebar' });
+  await side.getByRole('link', { name: spaceName, exact: true }).hover();
+  await side.getByRole('button', { name: `Add to ${spaceName}` }).click();
+  const [chooser] = await Promise.all([
+    page.waitForEvent('filechooser'),
+    side.getByRole('menuitem', { name: 'Upload file' }).click(),
+  ]);
+  await chooser.setFiles(files);
+}
+
+/** A file through the api, for specs that are not about uploading. Returns its document id. */
+export async function uploadViaApi(
+  request: APIRequestContext,
+  world: World,
+  account: Account,
+  file: TestFile,
+  o: { spaceId?: string } = {}
+): Promise<string> {
+  const res = await request.fetch('/api/v1/files', {
+    method: 'POST',
+    headers: { authorization: `Bearer ${account.token}`, 'x-tenant-id': world.tenantId },
+    multipart: {
+      ...(o.spaceId ? { space_id: o.spaceId } : { space_id: world.spaceId }),
+      file: { name: file.name, mimeType: file.mimeType, buffer: file.buffer },
+    },
+  });
+  const text = await res.text();
+  if (!res.ok()) throw new Error(`upload ${file.name} -> ${res.status()} ${text}`);
+  return (JSON.parse(text) as { document: { id: string } }).document.id;
+}
+
+/** A document's row in the sidebar's space tree (the upload panel lists the same name after it). */
+export function treeLink(page: Page, name: string): Locator {
+  return page.getByRole('complementary', { name: 'Sidebar' }).getByRole('link', { name, exact: true }).first();
+}

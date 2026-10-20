@@ -83,6 +83,23 @@ describe('web api client', () => {
     expect(headers.get('content-type')).toBe('application/json');
   });
 
+  test('a multipart body gets no content-type of its own, so the browser can add the boundary', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ ok: true }));
+    const form = new FormData();
+    form.set('file', new Blob(['x']), 'x.txt');
+    await request('/api/v1/files', z.object({ ok: z.boolean() }), { method: 'POST', body: form });
+    const headers = new Headers(fetchMock.mock.calls[0][1]?.headers);
+    expect(headers.has('content-type')).toBe(false);
+  });
+
+  test('a file that is too big is an ApiError with its sentence', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ error: 'file_too_large' }, 413));
+    const err = await request('/api/v1/files', z.unknown(), { method: 'POST', body: new FormData() }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as ApiError).code).toBe('file_too_large');
+    expect((err as ApiError).status).toBe(413);
+  });
+
   test('sends neither header without a session, and prefixes the API base', async () => {
     clearSession();
     setApiBase('https://api.example.test');

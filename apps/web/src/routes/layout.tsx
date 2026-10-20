@@ -9,6 +9,8 @@ import {
   loadCollapsed,
   saveCollapsed,
 } from '../lib/sidebar.js';
+import { UploadsProvider } from '../lib/useUploads.js';
+import { useWorkspace } from '../lib/queries.js';
 import { useFocusTrap } from '../lib/useFocusTrap.js';
 import { useMediaQuery } from '../lib/useMediaQuery.js';
 
@@ -17,6 +19,16 @@ import { useMediaQuery } from '../lib/useMediaQuery.js';
  * screen, a slide-over on a narrow one) and the screen beside it.
  */
 export function WorkspaceLayout() {
+  const { tenant } = useWorkspace();
+  return (
+    // Keyed by workspace: a switch drops the queue instead of sending its files to the other one.
+    <UploadsProvider key={tenant.id}>
+      <Shell />
+    </UploadsProvider>
+  );
+}
+
+function Shell() {
   const isDesktop = useMediaQuery(`(min-width: ${SIDEBAR_BREAKPOINT_PX}px)`);
   const [collapsed, setCollapsed] = useState(() => loadCollapsed());
   const [slideOver, setSlideOver] = useState(false);
