@@ -177,12 +177,15 @@ export async function putSourceFile(
             sql`SELECT pg_advisory_xact_lock(hashtextextended(${`src:${tenantId}:${source.sourceId}:${externalId}`}, 0))`
           );
         }
-        const item = await findItem(tx, source, externalId);
+        let item = await findItem(tx, source, externalId);
         if (item && item.documentId !== documentId) {
           // Another request made the document first: forget our bytes and decide again against it.
           return { result: 'retry' as const, keep: false };
         }
         const locked = item ? await lockDocument(tx, tenantId, item.documentId) : null;
+        // Read the item again under the document lock: a DELETE that committed while this request
+        // waited for the lock must be seen, or the file would be revived without its removal mark cleared.
+        if (locked) item = await findItem(tx, source, externalId);
         const decision = await decide(tx, source, item, locked, contentHash);
         if (decision.kind === 'unchanged') {
           await touch(tx, source, externalId);

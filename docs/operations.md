@@ -144,6 +144,40 @@ stored for download, and other files wait for the extractor and fail with a plai
 recovers them). `EXTRACTOR_MODE=fake` (tests and `pnpm e2e:local`) reads the text a test file carries after a
 `FAKE-EXTRACT` line instead.
 
+## Sources (the upload API)
+
+A *source* lets a script keep files in a space without a person in the loop. A tenant owner or admin creates one
+(`POST /api/v1/sources`: a name and one target space, never the Inbox), then issues it a token
+(`POST /api/v1/sources/:id/tokens`). The token is shown **once**, in that reply; only its hash is stored. Anyone who
+holds it can send files into that one space as "System · {source name}" and nothing else: it opens no other route.
+
+```sh
+API=https://wiki.example.com
+TOKEN=lwsrc_...            # from the reply of POST /api/v1/sources/:id/tokens
+
+# Create or replace a file. The external id is yours (1 to 256 characters, URL-encode it).
+curl -X PUT -H "Authorization: Bearer $TOKEN" -F "file=@report.pdf" "$API/api/v1/source/files/reports%2F2026-q3"
+
+# Remove it. It leaves search at once.
+curl -X DELETE -H "Authorization: Bearer $TOKEN" "$API/api/v1/source/files/reports%2F2026-q3"
+```
+
+- **Sending the same bytes again** does nothing (`200`, `"unchanged": true`). Different bytes add a new version; the
+  old one keeps answering until the new one is read and, where review applies, approved.
+- **Review.** A source's files wait for a reviewer unless the source is **trusted** (`PATCH /api/v1/sources/:id` with
+  `"trusted": true`). A trusted source still waits for review in a space that requires it. The switch applies to files
+  read from then on; a file already waiting stays waiting.
+- **Removed at source.** After a `DELETE` the file is withdrawn and stays listed with "Removed at source" until an editor
+  dismisses it (`POST /api/v1/files/:id/dismiss-removal`, which archives it). A file someone moved by hand stays where
+  they put it, withdrawn, and is archived like any file. Sending the id again brings the file back as a new version.
+- **A file a person archived on purpose** is not touched by a `PUT`: the script gets `409` until the file is restored.
+- **Pausing** a source (`"status": "paused"`) makes every one of its tokens answer `401` until it is resumed. A source
+  is never deleted.
+- **Rotating a token:** issue a new token, switch the script to it, then revoke the old one
+  (`DELETE /api/v1/sources/:id/tokens/:tokenId`). Tokens can carry an expiry (`expires_in_days`); by default they do not
+  expire. A revoked, expired or paused source's token, a token for another organisation and a malformed token all get the
+  same `401`, so a failed call says nothing about why.
+
 ## Database client
 
 `initDb({ url })` creates one pool per process. Calling it again replaces the
