@@ -13,6 +13,7 @@ import {
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 import { tenants, spaces } from './foundations.js';
+import { sources } from './sources.js';
 
 const bytea = customType<{ data: Buffer; notNull: false; default: false }>({
   dataType() {
@@ -65,7 +66,7 @@ export const documents = pgTable('documents', {
   position: text('position').notNull().default('a0'),
   kind: text('kind', { enum: ['page', 'file'] }).notNull(),
   title: text('title').notNull(),
-  sourceId: uuid('source_id'),
+  sourceId: uuid('source_id').references(() => sources.id),
   externalId: text('external_id'),
   placement: text('placement', { enum: ['pinned', 'synced'] }).notNull().default('pinned'),
   latestVersionId: uuid('latest_version_id'),

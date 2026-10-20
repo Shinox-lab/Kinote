@@ -85,6 +85,20 @@
       "when": 1792428823867,
       "tag": "0011_panoramic_gateway",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1792476975813,
+      "tag": "0012_giant_the_hand",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1792476979025,
+      "tag": "0013_sources_rls",
+      "breakpoints": true
     }
   ]
 }

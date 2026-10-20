@@ -71,6 +71,9 @@ export const AuditEventTypeSchema = z.enum([
   'source.unlinked',
   'source.mapping_changed',
   'source.item_deleted',
+  'source.updated',
+  'source.token_issued',
+  'source.token_revoked',
   'flag.raised',
   'flag.resolved',
   'export.created',
@@ -809,3 +812,80 @@ export const ChunkInspectorSchema = z.object({
   ),
 });
 export type ChunkInspector = z.infer<typeof ChunkInspectorSchema>;
+
+// --- Sources (upload API) ---------------------------------------------------
+
+/** The id a script gives a file: 1 to 256 characters, no control characters. */
+export const ExternalIdSchema = z
+  .string()
+  .min(1)
+  .max(256)
+  // eslint-disable-next-line no-control-regex
+  .refine((v) => !/[\u0000-\u001f\u007f]/.test(v), 'must not contain control characters');
+
+const SourceNameSchema = z.string().trim().min(1).max(80);
+
+export const CreateSourceRequestSchema = z.object({
+  name: SourceNameSchema,
+  target_space_id: z.string().uuid(),
+});
+export type CreateSourceRequest = z.input<typeof CreateSourceRequestSchema>;
+
+export const UpdateSourceRequestSchema = z
+  .object({
+    name: SourceNameSchema.optional(),
+    target_space_id: z.string().uuid().optional(),
+    trusted: z.boolean().optional(),
+    status: z.enum(['active', 'paused']).optional(),
+  })
+  .refine((v) => Object.values(v).some((x) => x !== undefined), 'nothing to change');
+export type UpdateSourceRequest = z.input<typeof UpdateSourceRequestSchema>;
+
+export const CreateSourceTokenRequestSchema = z.object({
+  name: SourceNameSchema,
+  expires_in_days: z.number().int().min(1).max(3650).optional(),
+});
+export type CreateSourceTokenRequest = z.input<typeof CreateSourceTokenRequestSchema>;
+
+/** A token as listed: never its secret or hash, only the first characters of the secret. */
+export const SourceTokenSchema = z.object({
+  id: z.string().uuid(),
+  name: z.string(),
+  prefix: z.string(),
+  createdAt: z.string().datetime(),
+  lastUsedAt: z.string().datetime().nullable(),
+  expiresAt: z.string().datetime().nullable(),
+  revokedAt: z.string().datetime().nullable(),
+});
+export type SourceToken = z.infer<typeof SourceTokenSchema>;
+
+export const SourceSchema = z.object({
+  id: z.string().uuid(),
+  kind: z.literal('upload_api'),
+  name: z.string(),
+  targetSpaceId: z.string().uuid(),
+  targetSpaceName: z.string(),
+  trusted: z.boolean(),
+  status: z.enum(['active', 'paused']),
+  itemCount: z.number().int().nonnegative(),
+  lastSyncAt: z.string().datetime().nullable(),
+  createdAt: z.string().datetime(),
+  tokens: z.array(SourceTokenSchema),
+});
+export type Source = z.infer<typeof SourceSchema>;
+export const SourceListSchema = z.array(SourceSchema);
+
+/** Reply of POST /api/v1/sources/:id/tokens: the only time the secret is shown. */
+export const CreateSourceTokenResponseSchema = z.object({
+  token: z.string(),
+  info: SourceTokenSchema,
+});
+export type CreateSourceTokenResponse = z.infer<typeof CreateSourceTokenResponseSchema>;
+
+/** Reply of PUT /api/v1/source/files/:externalId. `created`: a new document (not just a new version). */
+export const SourcePutResponseSchema = UploadFileResponseSchema.extend({ created: z.boolean() });
+export type SourcePutResponse = z.infer<typeof SourcePutResponseSchema>;
+
+/** Reply of DELETE /api/v1/source/files/:externalId. */
+export const SourceDeleteResponseSchema = z.object({ removed: z.literal(true) });
+export type SourceDeleteResponse = z.infer<typeof SourceDeleteResponseSchema>;

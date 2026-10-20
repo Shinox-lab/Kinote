@@ -41,6 +41,8 @@ export const ErrorCodeSchema = z.enum([
   'last_owner',
   'group_name_taken',
   'version_not_failed',
+  'not_removed',
+  'source_name_taken',
   'internal_error',
 ]);
 
@@ -87,6 +89,8 @@ export const ERROR_SENTENCES: Record<ErrorCode, string> = {
   last_owner: 'An organisation must keep at least one owner.',
   group_name_taken: 'A group with this name already exists in your organisation.',
   version_not_failed: 'Only a failed version can be retried.',
+  not_removed: 'This file has not been removed at its source.',
+  source_name_taken: 'A source with this name already exists in your organisation.',
   internal_error: 'Something went wrong.',
 };
 
