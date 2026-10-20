@@ -155,11 +155,12 @@ holds it can send files into that one space as "System · {source name}" and not
 API=https://wiki.example.com
 TOKEN=lwsrc_...            # from the reply of POST /api/v1/sources/:id/tokens
 
-# Create or replace a file. The external id is yours (1 to 256 characters, URL-encode it).
-curl -X PUT -H "Authorization: Bearer $TOKEN" -F "file=@report.pdf" "$API/api/v1/source/files/reports%2F2026-q3"
+# Create or replace a file. The external id is yours (1 to 256 characters). A slash may be sent as it is
+# or as %2F; characters such as ? and # must be URL-encoded.
+curl -X PUT -H "Authorization: Bearer $TOKEN" -F "file=@report.pdf" "$API/api/v1/source/files/reports/2026-q3"
 
 # Remove it. It leaves search at once.
-curl -X DELETE -H "Authorization: Bearer $TOKEN" "$API/api/v1/source/files/reports%2F2026-q3"
+curl -X DELETE -H "Authorization: Bearer $TOKEN" "$API/api/v1/source/files/reports/2026-q3"
 ```
 
 - **Sending the same bytes again** does nothing (`200`, `"unchanged": true`). Different bytes add a new version; the
@@ -169,7 +170,8 @@ curl -X DELETE -H "Authorization: Bearer $TOKEN" "$API/api/v1/source/files/repor
   read from then on; a file already waiting stays waiting.
 - **Removed at source.** After a `DELETE` the file is withdrawn and stays listed with "Removed at source" until an editor
   dismisses it (`POST /api/v1/files/:id/dismiss-removal`, which archives it). A file someone moved by hand stays where
-  they put it, withdrawn, and is archived like any file. Sending the id again brings the file back as a new version.
+  they put it, withdrawn, and is archived like any file; if a person uploads a corrected copy of such a file they take it
+  over (it is no longer marked removed). Sending the id again brings the file back as a new version.
 - **A file a person archived on purpose** is not touched by a `PUT`: the script gets `409` until the file is restored.
 - **Pausing** a source (`"status": "paused"`) makes every one of its tokens answer `401` until it is resumed. A source
   is never deleted.

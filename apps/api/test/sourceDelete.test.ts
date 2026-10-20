@@ -214,6 +214,27 @@ describe('DELETE /api/v1/source/files/:externalId, revive and dismiss', () => {
     assert.equal(res.json().error, 'not_removed');
   });
 
+  test("a person's replacement of a pinned file that lost its source is kept, not withdrawn by the worker", async () => {
+    const { w, src } = await setup();
+    const id = await publish(w, src.token, 'takeover', 'takeover original dormouse text');
+    await app.inject({ method: 'POST', url: `/api/v1/files/${id}/move`, headers: w.ownerHeaders, payload: { target_space_id: w.open.id } });
+    await deleteFile(app, src.token, 'takeover');
+    assert.ok((await docOf(w, 'takeover')).sourceDeletedAt);
+
+    const replaced = await app.inject(uploadRequest(`/api/v1/files/${id}/versions`, w.editor.headers, { name: 'takeover.pdf', data: pdf('takeover corrected gerbil text') }));
+    assert.equal(replaced.statusCode, 201, replaced.body);
+    await settle(w.tenant.id); // a person's upload in a space without review needs no approval
+    const latest = (await versionsOf(w, id)).at(-1)!;
+    assert.equal(latest.status, 'indexed', `the person's version ended ${latest.status}`);
+    assert.equal((await search(w, 'takeover corrected gerbil text')).filter((p) => p.documentId === id).length, 1);
+    assert.equal((await docOf(w, 'takeover')).sourceDeletedAt, null, 'the person took the file over');
+
+    // The source can still bring it back: new bytes are a new version.
+    const back = await putFile(app, src.token, 'takeover', { name: 'takeover.pdf', data: pdf('takeover source again wombat text') });
+    assert.equal(back.statusCode, 201, back.body);
+    assert.equal((await itemOf(w, id)).deletedAt, null);
+  });
+
   test('dismiss-removal: an editor archives a removed synced file; the other cases are refused', async () => {
     const { w, src } = await setup();
     const id = (await putFile(app, src.token, 'd', { name: 'd.pdf', data: pdf('dismiss me') })).json().document.id as string;

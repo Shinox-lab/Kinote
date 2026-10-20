@@ -504,17 +504,19 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
   });
 
   // The upload API: a script acts as its source, with a source token and no session.
-  app.put('/api/v1/source/files/:externalId', { config: { auth: 'source' } }, async (req, reply) => {
+  // A wildcard, not a parameter: an id such as `reports/2026-q3` works with or without URL-encoding the
+  // slash, instead of an unmatched path that answers a valid token with 401.
+  app.put('/api/v1/source/files/*', { config: { auth: 'source' } }, async (req, reply) => {
     const source = sourceOf(req);
     const deps = fileDeps();
-    const externalId = ExternalIdSchema.parse((req.params as any).externalId);
+    const externalId = ExternalIdSchema.parse((req.params as any)['*']);
     const upload = await readMultipartUpload(req);
     const out = await putSourceFile(source, externalId, upload.file, deps);
     return reply.status(out.status).send(parseReply(SourcePutResponseSchema, out.response));
   });
 
-  app.delete('/api/v1/source/files/:externalId', { config: { auth: 'source' } }, async (req, reply) => {
-    const res = await deleteSourceFile(sourceOf(req), (req.params as any).externalId);
+  app.delete('/api/v1/source/files/*', { config: { auth: 'source' } }, async (req, reply) => {
+    const res = await deleteSourceFile(sourceOf(req), (req.params as any)['*']);
     return reply.send(parseReply(SourceDeleteResponseSchema, res));
   });
 

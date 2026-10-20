@@ -238,6 +238,23 @@ describe('PUT /api/v1/source/files/:externalId', () => {
     assert.ok([400, 404].includes(empty.statusCode), String(empty.statusCode));
   });
 
+  test('a slash in the external id works with or without URL-encoding, for PUT and DELETE', async () => {
+    const { w, src } = await setup();
+    const file = { name: 'q3.pdf', data: pdf('slash path ferret text') };
+    const raw = await app.inject({ ...uploadRequest('/api/v1/source/files/reports/2026/q3', { authorization: `Bearer ${src.token}` }, file), method: 'PUT' });
+    assert.equal(raw.statusCode, 201, raw.body);
+    assert.equal((await docOf(w, 'reports/2026/q3')).id, raw.json().document.id);
+    const encoded = await putFile(app, src.token, 'reports/2026/q3', file);
+    assert.equal(encoded.statusCode, 200, encoded.body);
+    assert.equal(encoded.json().document.id, raw.json().document.id);
+    assert.equal(encoded.json().unchanged, true);
+    const gone = await app.inject({ method: 'DELETE', url: '/api/v1/source/files/reports/2026/q3', headers: { authorization: `Bearer ${src.token}` } });
+    assert.equal(gone.statusCode, 200, gone.body);
+    // An empty id is refused with a plain validation error, not a sign-in prompt.
+    const empty = await app.inject({ ...uploadRequest('/api/v1/source/files/', { authorization: `Bearer ${src.token}` }, file), method: 'PUT' });
+    assert.equal(empty.statusCode, 400, empty.body);
+  });
+
   test('two simultaneous PUTs of one new id make one document; different bytes end with two versions', async () => {
     const { w, src } = await setup();
     const same = { name: 's.pdf', data: pdf('simultaneous okapi text') };

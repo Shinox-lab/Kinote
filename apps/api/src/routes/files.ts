@@ -334,6 +334,15 @@ export async function replaceFile(
     withTenantTx(actor.tenantId, async (tx) => {
       const { doc, latest } = await loadReplaceable(tx, actor, fileId, true);
       if (latest && sameAsLatest(latest, contentHash)) return { result: unchanged(doc, latest), keep: false };
+      if (doc.sourceDeletedAt) {
+        // A pinned file whose source removed it: the person's replacement takes it over, so the removal
+        // mark goes (a worker settles every version of a removed file as withdrawn). The source can
+        // still bring it back with a PUT.
+        await tx
+          .update(documents)
+          .set({ sourceDeletedAt: null })
+          .where(and(eq(documents.tenantId, actor.tenantId), eq(documents.id, fileId)));
+      }
       const version = await insertFileVersion(tx, {
         tenantId: actor.tenantId,
         doc,
