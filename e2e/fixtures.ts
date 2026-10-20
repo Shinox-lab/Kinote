@@ -76,3 +76,48 @@ export function corruptDocx(name: string, label: string): TestFile {
     buffer: zip({ 'word/document.xml': `this is not xml ${label}`, 'fake-extract.txt': marker(`unreadable ${label}`) }),
   };
 }
+
+export const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+
+/** A small workbook: each sheet is a name and rows of text or numbers. `label` makes the bytes unique. */
+export function xlsx(name: string, label: string, sheets: { name: string; rows: (string | number)[][] }[]): TestFile {
+  const strings: string[] = [];
+  const index = (s: string) => {
+    const i = strings.indexOf(s);
+    return i >= 0 ? i : strings.push(s) - 1;
+  };
+  const colName = (c: number) => String.fromCharCode(65 + c);
+  const sheetXml = (rows: (string | number)[][]) =>
+    `<?xml version="1.0" encoding="UTF-8"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>${rows
+      .map(
+        (row, r) =>
+          `<row r="${r + 1}">${row
+            .map((v, c) =>
+              typeof v === 'number'
+                ? `<c r="${colName(c)}${r + 1}"><v>${v}</v></c>`
+                : `<c r="${colName(c)}${r + 1}" t="s"><v>${index(v)}</v></c>`
+            )
+            .join('')}</row>`
+      )
+      .join('')}</sheetData></worksheet>`;
+  const sheetFiles = sheets.map((s) => sheetXml(s.rows));
+  const entries: Record<string, string> = {
+    '[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>${sheets
+      .map((_, i) => `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`)
+      .join('')}<Override PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/></Types>`,
+    '_rels/.rels':
+      '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>',
+    'xl/workbook.xml': `<?xml version="1.0" encoding="UTF-8"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>${sheets
+      .map((s, i) => `<sheet name="${escapeXml(s.name)}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`)
+      .join('')}</sheets></workbook>`,
+    'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${sheets
+      .map((_, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i + 1}.xml"/>`)
+      .join('')}<Relationship Id="rId${sheets.length + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" Target="sharedStrings.xml"/></Relationships>`,
+  };
+  sheetFiles.forEach((xml, i) => (entries[`xl/worksheets/sheet${i + 1}.xml`] = xml));
+  entries['xl/sharedStrings.xml'] = `<?xml version="1.0" encoding="UTF-8"?><sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="${strings.length}" uniqueCount="${strings.length}">${strings
+    .map((s) => `<si><t xml:space="preserve">${escapeXml(s)}</t></si>`)
+    .join('')}</sst>`;
+  entries['fake-extract.txt'] = marker(`${label}\n${sheets.flatMap((s) => s.rows.map((r) => r.join(' '))).join('\n')}`);
+  return { name, mimeType: XLSX_MIME, buffer: zip(entries) };
+}

@@ -18,10 +18,16 @@ const TextViewer = lazy(() => import('./TextViewer.js'));
 const ImageViewer = lazy(() => import('./ImageViewer.js'));
 const MarkdownViewer = lazy(() => import('./MarkdownViewer.js'));
 const DocxViewer = lazy(() => import('./DocxViewer.js'));
+const CsvViewer = lazy(() => import('./CsvViewer.js'));
+const XlsxViewer = lazy(() => import('./XlsxViewer.js'));
 
 const VIEWERS: Partial<Record<ViewerKind, ComponentType<ViewerProps>>> = {
   text: ({ bytes }) => <TextViewer bytes={bytes} />,
   markdown: ({ bytes }) => <MarkdownViewer bytes={bytes} />,
+  csv: ({ bytes, version }) => <CsvViewer bytes={bytes} name={version.fileName} />,
+  xlsx: ({ bytes, version, page }) => (
+    <XlsxViewer bytes={bytes} versionId={version.id} name={version.fileName} page={page} />
+  ),
   docx: ({ bytes, version }) => <DocxViewer bytes={bytes} versionId={version.id} />,
   image: ({ bytes, version }) => <ImageViewer bytes={bytes} mimeType={version.mimeType} name={version.fileName} />,
 };

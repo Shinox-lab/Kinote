@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { corruptDocx, docx } from './fixtures.js';
+import { corruptDocx, docx, xlsx } from './fixtures.js';
 import {
   addMember,
   approveAll,
@@ -224,4 +224,47 @@ test('a Word document opens as text; a corrupt one falls back to a download and 
   await expect(page.getByRole('heading', { name: 'Broken.docx', level: 1 })).toBeVisible();
   await expect(page.getByRole('list', { name: 'Versions' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'File actions' })).toBeVisible();
+});
+
+test('a CSV opens as a table of text, and a workbook as tabs; the page number picks the sheet', async ({ browser, request }) => {
+  const world = await seedWorld(request, { reviewRequired: false });
+  const rows = ['name,note', `Ada,"<img src=x onerror=alert(1)>"`, `Grace,=HYPERLINK("http://evil.example")`, ...Array.from({ length: 1100 }, (_, i) => `row${i},x`)];
+  const csv = await uploadViaApi(request, world, world.owner, textFile('People.csv', 'text/csv', rows.join('\n')));
+  const book = await uploadViaApi(
+    request,
+    world,
+    world.owner,
+    xlsx('Budget.xlsx', world.suffix, [
+      { name: 'Income', rows: [['Item', 'Amount'], ['Sales', 1200]] },
+      { name: 'Costs', rows: [['Item', 'Amount'], ['Rent', 800], ['Power', 150]] },
+    ])
+  );
+  await waitForFileBadge(request, world, world.owner, csv, /^Indexed/);
+  await waitForFileBadge(request, world, world.owner, book, /^Indexed/);
+
+  const page = await openAs(browser, world, world.owner);
+  const dialogs: string[] = [];
+  page.on('dialog', (d) => {
+    dialogs.push(d.message());
+    void d.dismiss();
+  });
+  await page.goto(`/w/${world.slug}/f/${csv}`);
+  const preview = page.getByRole('region', { name: 'Preview' });
+  await expect(preview.getByRole('columnheader', { name: 'note' })).toBeVisible();
+  await expect(preview.getByRole('cell', { name: '<img src=x onerror=alert(1)>' })).toBeVisible();
+  await expect(preview.getByRole('cell', { name: '=HYPERLINK("http://evil.example")' })).toBeVisible();
+  await expect(preview.locator('img, a')).toHaveCount(0);
+  await expect(preview).toContainText('Showing the first 1,000 of 1,103 rows');
+
+  await page.goto(`/w/${world.slug}/f/${book}`);
+  await expect(preview.getByRole('tab', { name: 'Income' })).toHaveAttribute('aria-selected', 'true');
+  await expect(preview.getByRole('cell', { name: 'Sales' })).toBeVisible();
+  await preview.getByRole('tab', { name: 'Costs' }).click();
+  await expect(preview.getByRole('cell', { name: 'Rent' })).toBeVisible();
+
+  // A link from search lands on the sheet the text is on.
+  await page.goto(`/w/${world.slug}/f/${book}?page=2`);
+  await expect(preview.getByRole('tab', { name: 'Costs' })).toHaveAttribute('aria-selected', 'true');
+  await expect(preview.getByRole('cell', { name: 'Power' })).toBeVisible();
+  expect(dialogs).toEqual([]);
 });
