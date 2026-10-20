@@ -61,10 +61,10 @@ describe('a source is named wherever its work is listed', () => {
     const { w, documentId } = await setup();
     const other = await sourceWorld(app, 'names-other');
     const foreign = await makeSource(app, other.ownerHeaders, { name: 'Foreign secret feed', spaceId: other.open.id });
-    for (const id of [randomUUID(), foreign.id]) {
+    for (const [i, id] of [randomUUID(), foreign.id].entries()) {
       await withTenantTx(w.tenant.id, (tx) =>
         tx.insert(versions).values({
-          tenantId: w.tenant.id, documentId, number: 50 + Math.floor(Math.random() * 40), title: 'x', status: 'superseded',
+          tenantId: w.tenant.id, documentId, number: 50 + i, title: 'x', status: 'superseded',
           contentHash: `h-${randomUUID()}`, reason: 'source', createdByType: 'connector', createdBy: id,
         })
       );

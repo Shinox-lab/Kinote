@@ -189,7 +189,7 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
     logger: fastifyLogger(opts.logger),
     trustProxy: trustProxyOption(opts.trustProxy),
     // An external id is up to 256 characters, each up to four bytes, each byte `%XX`: the default (100) would refuse legal ids.
-    maxParamLength: 4096,
+    routerOptions: { maxParamLength: 4096 },
   });
   registerErrorHandler(app);
 
