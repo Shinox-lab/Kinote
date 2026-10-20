@@ -8,6 +8,7 @@ import { fileBanner, fileControls, formatBytes, publishedVersionId } from '../li
 import { useFile, useFileVersions, useRefresh, useSpaces, useSpaceTree, useWorkspace } from '../lib/queries.js';
 import { ancestorIds, type BadgeTone } from '../lib/wiki.js';
 import { ChunkInspector } from '../components/ChunkInspector.js';
+import { FileViewer } from '../viewers/FileViewer.js';
 import { Badge } from '../components/Badge.js';
 import { DocumentLink } from '../components/DocumentLink.js';
 import { FileMenu } from '../components/FileMenu.js';
@@ -190,6 +191,12 @@ export function FilePage() {
         <p className="text-sm text-muted">
           {shown.fileName} · {formatBytes(shown.sizeBytes)} · version {shown.number}
         </p>
+      )}
+
+      {shown && (
+        <Card title="Preview">
+          <FileViewer version={shown} page={search.page} />
+        </Card>
       )}
 
       {controls.chunks && shown && (

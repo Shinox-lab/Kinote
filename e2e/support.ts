@@ -250,3 +250,12 @@ export async function waitForFileBadge(
     })
     .toMatch(typeof badge === 'string' ? new RegExp(`^${badge.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`) : badge);
 }
+
+/** A 1×1 PNG, then the fake extractor's marker and a line of "text" (the browser ignores bytes after the image). */
+export function fakePng(name: string, label: string, text: string): TestFile {
+  const png = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+    'base64'
+  );
+  return { name, mimeType: 'image/png', buffer: Buffer.concat([png, Buffer.from(`\n${label}\nFAKE-EXTRACT\n${text}`, 'utf8')]) };
+}
