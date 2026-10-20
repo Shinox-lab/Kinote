@@ -1,12 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { and, eq } from 'drizzle-orm';
-import { auditEvents, documents, jobs, versions, withTenantTx } from '@living-wiki/db';
+import { auditEvents, documents, jobs, sources, versions, withTenantTx } from '@living-wiki/db';
 import { createTestDb, type TestDb } from '@living-wiki/db/testing';
 import { AppError } from '@living-wiki/contracts';
 import { InMemoryObjectStorage } from '@living-wiki/shared';
 import { FakeExtractor, extractVersion, fileObjectPath, type Extractor } from '../src/index.js';
-import { seedFileDocument, uploadFixtureFile, type FileSeed } from './fixtures/fileSeed.js';
+import { seedFileDocument, seedSource, uploadFixtureFile, type FileSeed } from './fixtures/fileSeed.js';
 
 let testDb: TestDb;
 beforeAll(async () => {
@@ -32,8 +32,9 @@ const upload = (
   seed: FileSeed,
   name: string,
   content: string | Uint8Array,
-  actorType: 'user' | 'agent' | 'connector' = 'user'
-) => uploadFixtureFile(seed, storage, name, content, actorType);
+  actorType: 'user' | 'agent' | 'connector' = 'user',
+  actorId?: string
+) => uploadFixtureFile(seed, storage, name, content, actorType, actorId);
 
 const reload = (seed: FileSeed, id: string) =>
   withTenantTx(seed.tenantId, async (tx) => {
@@ -78,6 +79,99 @@ describe('extractVersion', () => {
       await extractVersion({ tenantId: seed.tenantId, versionId: v.id }, deps());
       expect((await reload(seed, v.id)).status).toBe('pending_review');
     }
+  });
+
+  describe('the trusted switch', () => {
+    const extract = (seed: FileSeed, id: string) => extractVersion({ tenantId: seed.tenantId, versionId: id }, deps());
+
+    it('sends a trusted source\'s version straight to indexing in a space without review', async () => {
+      const seed = await seedFileDocument({ title: 'notes.txt' });
+      const source = await seedSource(seed, { trusted: true });
+      const v = await upload(seed, 'notes.txt', 'hello', 'connector', source);
+      expect(await extract(seed, v.id)).toEqual({ outcome: 'extracted', status: 'indexing' });
+      expect(await jobsOf(seed, 'version.index')).toHaveLength(1);
+    });
+
+    it('holds an untrusted source\'s version for review', async () => {
+      const seed = await seedFileDocument({ title: 'notes.txt' });
+      const source = await seedSource(seed, { trusted: false });
+      const v = await upload(seed, 'notes.txt', 'hello', 'connector', source);
+      expect(await extract(seed, v.id)).toEqual({ outcome: 'extracted', status: 'pending_review' });
+      expect(await jobsOf(seed, 'version.index')).toEqual([]);
+    });
+
+    it('still holds a trusted source\'s version when the space requires review', async () => {
+      const seed = await seedFileDocument({ title: 'notes.txt', reviewRequired: true });
+      const source = await seedSource(seed, { trusted: true });
+      const v = await upload(seed, 'notes.txt', 'hello', 'connector', source);
+      expect(await extract(seed, v.id)).toEqual({ outcome: 'extracted', status: 'pending_review' });
+    });
+
+    it('never lets an agent skip review, whatever id it carries', async () => {
+      const seed = await seedFileDocument({ title: 'notes.txt' });
+      const source = await seedSource(seed, { trusted: true });
+      const v = await upload(seed, 'notes.txt', 'hello', 'agent', source);
+      expect(await extract(seed, v.id)).toEqual({ outcome: 'extracted', status: 'pending_review' });
+    });
+
+    it('treats a connector version whose source is unknown as untrusted', async () => {
+      const seed = await seedFileDocument({ title: 'notes.txt' });
+      const v = await upload(seed, 'notes.txt', 'hello', 'connector', randomUUID());
+      expect(await extract(seed, v.id)).toEqual({ outcome: 'extracted', status: 'pending_review' });
+    });
+
+    it('leaves a version already waiting for review waiting when the source becomes trusted', async () => {
+      const seed = await seedFileDocument({ title: 'notes.txt' });
+      const source = await seedSource(seed, { trusted: false });
+      const v = await upload(seed, 'notes.txt', 'hello', 'connector', source);
+      await extract(seed, v.id);
+      await withTenantTx(seed.tenantId, (tx) => tx.update(sources).set({ trusted: true }).where(eq(sources.id, source)));
+      expect((await reload(seed, v.id)).status).toBe('pending_review');
+    });
+  });
+
+  describe('one waiting version per file', () => {
+    /** v1 (set back to waiting, as a move into a review space does) and a newer v2 still being read. */
+    async function waitingOlderAndNewerExtracting() {
+      const seed = await seedFileDocument({ title: 'notes.txt', reviewRequired: true });
+      const v1 = await upload(seed, 'notes.txt', 'first');
+      const v2 = await upload(seed, 'notes.txt', 'second');
+      await withTenantTx(seed.tenantId, (tx) =>
+        tx.update(versions).set({ status: 'pending_review' }).where(eq(versions.id, v1.id))
+      );
+      return { seed, v1, v2 };
+    }
+
+    it('supersedes the other waiting version when the newer one enters review', async () => {
+      const { seed, v1, v2 } = await waitingOlderAndNewerExtracting();
+      expect(await extractVersion({ tenantId: seed.tenantId, versionId: v2.id }, deps())).toEqual({
+        outcome: 'extracted',
+        status: 'pending_review',
+      });
+      expect((await reload(seed, v1.id)).status).toBe('superseded');
+      expect((await reload(seed, v2.id)).status).toBe('pending_review');
+    });
+
+    it('leaves the older waiting version waiting when the newer one ends up stored', async () => {
+      const seed = await seedFileDocument({ title: 'notes.txt', reviewRequired: true });
+      const v1 = await upload(seed, 'notes.txt', 'first');
+      const v2 = await upload(seed, 'scan.pdf', enc('%PDF-1.7\nblank scan'));
+      await withTenantTx(seed.tenantId, (tx) =>
+        tx.update(versions).set({ status: 'pending_review' }).where(eq(versions.id, v1.id))
+      );
+      const blank = {
+        extract: async () => ({
+          pageCount: 1,
+          sections: [{ headingPath: [], pageFrom: 1, pageTo: 1, kind: 'text' as const, text: ' ' }],
+          ocrUsed: true,
+        }),
+      };
+      expect(await extractVersion({ tenantId: seed.tenantId, versionId: v2.id }, deps({ extractor: blank }))).toEqual({
+        outcome: 'extracted',
+        status: 'stored',
+      });
+      expect((await reload(seed, v1.id)).status).toBe('pending_review');
+    });
   });
 
   it('stores a file whose extraction has no text, with a plain reason', async () => {

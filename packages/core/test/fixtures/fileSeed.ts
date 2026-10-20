@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { documents, lockDocument, spaces, tenants, withTenantTx, type DocumentRow } from '@living-wiki/db';
+import { documents, lockDocument, sources, spaces, tenants, withTenantTx, type DocumentRow } from '@living-wiki/db';
 import type { ObjectStorage } from '@living-wiki/shared';
 import { detectFileType, fileObjectPath, insertFileVersion } from '../../src/index.js';
 
@@ -48,7 +48,9 @@ export async function uploadFixtureFile(
   storage: ObjectStorage,
   name: string,
   content: string | Uint8Array,
-  actorType: 'user' | 'agent' | 'connector' = 'user'
+  actorType: 'user' | 'agent' | 'connector' = 'user',
+  /** Who the version is by: the seed's user unless given (a connector's is a source id). */
+  actorId: string = seed.userId
 ) {
   const bytes = typeof content === 'string' ? new TextEncoder().encode(content) : content;
   const detected = detectFileType(name, bytes);
@@ -74,10 +76,27 @@ export async function uploadFixtureFile(
         objectKey,
         handling: detected.file.handling,
       },
-      actor: { type: actorType, id: seed.userId },
+      actor: { type: actorType, id: actorId },
       reason: actorType === 'connector' ? 'source' : 'upload',
     });
   });
+}
+
+/** An upload-API source delivering into the seed's space; returns its id. */
+export async function seedSource(seed: FileSeed, opts: { trusted: boolean }): Promise<string> {
+  const id = randomUUID();
+  await withTenantTx(seed.tenantId, (tx) =>
+    tx.insert(sources).values({
+      id,
+      tenantId: seed.tenantId,
+      kind: 'upload_api',
+      name: `source-${id.slice(0, 8)}`,
+      targetSpaceId: seed.spaceId,
+      trusted: opts.trusted,
+      createdBy: seed.userId,
+    })
+  );
+  return id;
 }
 
 export type { DocumentRow };

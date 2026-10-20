@@ -1,6 +1,7 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, ne } from 'drizzle-orm';
 import {
   documents,
+  sources,
   enqueueJob,
   lockDocument,
   spaces,
@@ -54,7 +55,8 @@ async function readDocument(
  *    CSV; the extractor for the rest) and store `extracted.json`;
  * C. (transaction, document locked) re-check the version is still `extracting`
  *    and the document live; then no text means `stored`; a space with review
- *    on, an agent author or a connector means `pending_review`; anything else
+ *    on, an agent author or a connector whose source is not trusted means
+ *    `pending_review` (and supersedes any other waiting version); anything else
  *    `indexing` with its `version.index` job.
  *
  * Failures are thrown and the version stays `extracting`: `extractor_unavailable`
@@ -123,15 +125,39 @@ export async function extractVersion(
       .where(and(eq(spaces.tenantId, tenantId), eq(spaces.id, doc.spaceId)));
     if (!space) throw new AppError('space_not_found');
 
-    // Plan 2b replaces the connector rule with the source's `trusted` switch.
+    // A connector's version is held unless its source is trusted (a source that cannot be found is
+    // not); an agent's never skips review; either way a review-required space holds it.
+    let trusted = false;
+    if (ver.createdByType === 'connector') {
+      const [source] = await tx
+        .select({ trusted: sources.trusted })
+        .from(sources)
+        .where(and(eq(sources.tenantId, tenantId), eq(sources.id, ver.createdBy)));
+      trusted = source?.trusted === true;
+    }
     const needsReview =
-      space.reviewRequired || ver.createdByType === 'agent' || ver.createdByType === 'connector';
+      space.reviewRequired || ver.createdByType === 'agent' || (ver.createdByType === 'connector' && !trusted);
     const status = !hasText ? 'stored' : needsReview ? 'pending_review' : 'indexing';
 
     await tx
       .update(versions)
       .set({ status, extractedKey, error: status === 'stored' ? NO_TEXT : null })
       .where(and(eq(versions.tenantId, tenantId), eq(versions.id, ver.id)));
+    if (status === 'pending_review') {
+      // A reviewer reviews the newest state: another version still waiting (one a move into a
+      // review space sent back) gives way to this one.
+      await tx
+        .update(versions)
+        .set({ status: 'superseded' })
+        .where(
+          and(
+            eq(versions.tenantId, tenantId),
+            eq(versions.documentId, doc.id),
+            eq(versions.status, 'pending_review'),
+            ne(versions.id, ver.id)
+          )
+        );
+    }
     if (status === 'indexing') {
       await enqueueJob(tx, {
         tenantId,
