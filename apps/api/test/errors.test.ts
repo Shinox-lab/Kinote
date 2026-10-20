@@ -264,6 +264,8 @@ describe('error model', () => {
       'block_recently_edited',
       'managed_by_source',
       'whatsapp_not_linked',
+      'not_removed',
+      'source_name_taken',
     ]) {
       expected[code] = 409;
     }
