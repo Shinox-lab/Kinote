@@ -39,6 +39,7 @@ import {
   UploadFileResponseSchema,
   SourcePutResponseSchema,
   SourceDeleteResponseSchema,
+  VersionTextSchema,
   ExternalIdSchema,
   FileDetailsSchema,
   FileVersionListSchema,
@@ -100,6 +101,7 @@ import { listReviewQueue } from './routes/reviews.js';
 import {
   archiveFile,
   dismissRemoval,
+  getVersionText,
   downloadVersionFile,
   getFileDetails,
   getVersionChunks,
@@ -549,6 +551,11 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
       fileDeps()
     );
     return reply.headers(out.headers).send(Buffer.from(out.bytes));
+  });
+
+  app.get('/api/v1/versions/:id/text', async (req, reply) => {
+    const res = await getVersionText(actorOf(req), (req.params as any).id, fileDeps());
+    return reply.send(parseReply(VersionTextSchema, res));
   });
 
   app.get('/api/v1/versions/:id/chunks', async (req, reply) => {

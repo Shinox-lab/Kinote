@@ -22,6 +22,7 @@ import {
   type FileVersion,
   type FileVersionList,
   type UploadFileResponse,
+  type VersionText,
 } from '@living-wiki/contracts';
 import {
   requireSpaceRole,
@@ -687,12 +688,11 @@ export async function listFileVersions(actor: Actor, fileId: string): Promise<Fi
     const names = await resolveActorNames(
       tx,
       actor.tenantId,
-      all.flatMap((v) => (v.createdByType === 'connector' ? [] : [{ type: v.createdByType, id: v.createdBy }]))
+      all.map((v) => ({ type: v.createdByType, id: v.createdBy }))
     );
     return all.map((v) => ({
       ...toFileVersion(v),
-      createdByName:
-        v.createdByType === 'connector' ? 'System' : (names.get(`${v.createdByType}:${v.createdBy}`) ?? 'Former member'),
+      createdByName: names.get(`${v.createdByType}:${v.createdBy}`)!,
     }));
   });
 }
@@ -718,7 +718,12 @@ async function readableFileVersion(
     .from(documents)
     .where(and(eq(documents.tenantId, actor.tenantId), eq(documents.id, ver.documentId)));
   if (!doc || doc.kind !== 'file' || ver.objectKey === null) throw new AppError('version_not_found');
-  await requireDocumentRole(tx, actor, doc, minimumRole, { notFound: 'version_not_found' });
+  const access = await requireDocumentRole(tx, actor, doc, minimumRole, { notFound: 'version_not_found' });
+  // Below editor, only what has been published is readable: another version (waiting, rejected,
+  // withdrawn, older, newer) is indistinguishable from one that does not exist.
+  if (access.effectiveRole === 'viewer' && doc.indexedVersionId !== ver.id) {
+    throw new AppError('version_not_found');
+  }
   return { ver, doc };
 }
 
@@ -755,6 +760,24 @@ export async function downloadVersionFile(
       'content-disposition': `${inline ? 'inline' : 'attachment'}; filename*=UTF-8''${encodeHeaderName(ver.fileName ?? ver.title)}`,
     },
   };
+}
+
+/**
+ * GET /api/v1/versions/:id/text (viewer, on the published version; any version for an editor):
+ * the text read from the file, section by section, with no chunks. Not yet read is an empty
+ * text with a null page count.
+ */
+export async function getVersionText(
+  actor: Actor,
+  versionId: string,
+  deps: Pick<FileDeps, 'storage'>
+): Promise<VersionText> {
+  const { ver } = await withTenantTx(actor.tenantId, (tx) => readableFileVersion(tx, actor, versionId, 'viewer'));
+  if (ver.extractedKey === null) {
+    return { versionId: ver.id, pageCount: null, ocrUsed: false, sections: [] };
+  }
+  const { extracted } = await loadFileChunks(deps.storage, actor.tenantId, ver);
+  return { versionId: ver.id, pageCount: extracted.pageCount, ocrUsed: extracted.ocrUsed, sections: extracted.sections };
 }
 
 /**

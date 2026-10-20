@@ -889,3 +889,16 @@ export type SourcePutResponse = z.infer<typeof SourcePutResponseSchema>;
 /** Reply of DELETE /api/v1/source/files/:externalId. */
 export const SourceDeleteResponseSchema = z.object({ removed: z.literal(true) });
 export type SourceDeleteResponse = z.infer<typeof SourceDeleteResponseSchema>;
+
+/**
+ * Reply of GET /api/v1/versions/:id/text: the text read from a file version, section by section,
+ * without chunks (so a viewer can see what an editor sees, minus how it is cut for search).
+ * `pageCount` is null while the text has not been read.
+ */
+export const VersionTextSchema = z.object({
+  versionId: z.string().uuid(),
+  pageCount: z.number().int().nonnegative().nullable(),
+  ocrUsed: z.boolean(),
+  sections: z.array(ExtractedSectionSchema),
+});
+export type VersionText = z.infer<typeof VersionTextSchema>;

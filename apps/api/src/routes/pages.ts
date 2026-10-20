@@ -342,12 +342,11 @@ export async function listPageVersions(actor: Actor, pageId: string): Promise<Ve
     const names = await resolveActorNames(
       tx,
       actor.tenantId,
-      rows.flatMap((r) => (r.createdByType === 'connector' ? [] : [{ type: r.createdByType, id: r.createdBy }]))
+      rows.map((r) => ({ type: r.createdByType, id: r.createdBy }))
     );
     return rows.map((r) => ({
       ...toVersionSummary(r),
-      createdByName:
-        r.createdByType === 'connector' ? 'System' : names.get(`${r.createdByType}:${r.createdBy}`) ?? 'Former member',
+      createdByName: names.get(`${r.createdByType}:${r.createdBy}`)!,
     }));
   });
 }

@@ -8,10 +8,13 @@ import {
   ChunkInspectorSchema,
   FileDetailsSchema,
   FileVersionListSchema,
+  ERROR_SENTENCES,
+  VersionTextSchema,
 } from '@living-wiki/contracts';
 import { runPendingJobsForTenant } from '../../worker/src/runner.js';
 import { buildTestApp, bootstrapTenant, signUpMember, useTestDb } from './support/testkit.js';
 import { uploadRequest } from './support/multipart.js';
+import { randomUUID } from 'node:crypto';
 
 describe('reading files', () => {
   let storage: InMemoryObjectStorage;
@@ -137,6 +140,7 @@ describe('reading files', () => {
   test('download returns the exact bytes with the safe headers', async () => {
     const c = await setup();
     const up = await upload(c.author.headers, c.open.id, 'ü report (final).md', '# Title\n\nbody <script>alert(1)</script>');
+    await settle(c.tenant.id); // a viewer reads only what has been published
     const res = await get(c.viewer.headers, `/api/v1/versions/${up.version.id}/file`);
     assert.equal(res.statusCode, 200, res.body);
     assert.equal(res.body, '# Title\n\nbody <script>alert(1)</script>');
@@ -206,5 +210,75 @@ describe('reading files', () => {
     const up = await upload(c.author.headers, c.open.id, 'policy.txt', 'Remote work is allowed.');
     await settle(c.tenant.id);
     assert.equal((await get(c.viewer.headers, `/api/v1/versions/${up.version.id}/chunks`)).statusCode, 403);
+  });
+
+  describe('what a viewer may read: the published version only', () => {
+    const NOT_FOUND = { error: 'version_not_found', message: ERROR_SENTENCES.version_not_found };
+
+    /** v1 published; v2 uploaded after it (still being read). */
+    async function publishedThenNewer(c: Ctx) {
+      const v1 = await upload(c.author.headers, c.open.id, 'policy.txt', 'The published policy text.');
+      await settle(c.tenant.id);
+      const second = await app.inject(uploadRequest(`/api/v1/files/${v1.document.id}/versions`, c.author.headers, { name: 'policy.txt', data: 'The newer unreviewed text.' }));
+      assert.equal(second.statusCode, 201, second.body);
+      return { documentId: v1.document.id, v1: v1.version.id, v2: second.json().version.id as string };
+    }
+
+    test('bytes and text of any other version are 404 for a viewer, whatever its status', async () => {
+      const c = await setup();
+      const { v1, v2 } = await publishedThenNewer(c);
+      const unknown = await get(c.viewer.headers, `/api/v1/versions/${randomUUID()}/file`);
+      for (const status of ['extracting', 'pending_review', 'rejected', 'withdrawn', 'superseded', 'stored', 'failed'] as const) {
+        await withTenantTx(c.tenant.id, (tx) => tx.update(versions).set({ status }).where(eq(versions.id, v2)));
+        for (const route of ['file', 'text']) {
+          const res = await get(c.viewer.headers, `/api/v1/versions/${v2}/${route}`);
+          assert.equal(res.statusCode, 404, `${status} ${route}: ${res.body}`);
+          assert.deepEqual(res.json(), NOT_FOUND);
+          assert.equal(res.body, (await get(c.viewer.headers, `/api/v1/versions/${randomUUID()}/${route}`)).body);
+        }
+      }
+      assert.equal(unknown.statusCode, 404);
+      assert.equal((await get(c.viewer.headers, `/api/v1/versions/${v1}/file`)).body, 'The published policy text.');
+    });
+
+    test('an editor and a tenant admin read every version', async () => {
+      const c = await setup();
+      const { v2 } = await publishedThenNewer(c);
+      for (const headers of [c.author.headers, c.ownerHeaders]) {
+        assert.equal((await get(headers, `/api/v1/versions/${v2}/file`)).body, 'The newer unreviewed text.');
+        assert.equal((await get(headers, `/api/v1/versions/${v2}/text`)).statusCode, 200);
+      }
+    });
+
+    test('a viewer reads the newer version once it is the published one, and no longer the old one', async () => {
+      const c = await setup();
+      const { v1, v2 } = await publishedThenNewer(c);
+      await settle(c.tenant.id);
+      assert.equal((await get(c.viewer.headers, `/api/v1/versions/${v2}/file`)).body, 'The newer unreviewed text.');
+      assert.equal((await get(c.viewer.headers, `/api/v1/versions/${v1}/file`)).statusCode, 404);
+    });
+
+    test('the text route returns the extracted sections; not yet read is empty for an editor', async () => {
+      const c = await setup();
+      const up = await upload(c.author.headers, c.open.id, 'notes.txt', 'First paragraph.\n\nSecond paragraph.');
+      const early = await get(c.author.headers, `/api/v1/versions/${up.version.id}/text`);
+      assert.deepEqual(VersionTextSchema.parse(early.json()), { versionId: up.version.id, pageCount: null, ocrUsed: false, sections: [] });
+      await settle(c.tenant.id);
+      const text = VersionTextSchema.parse((await get(c.viewer.headers, `/api/v1/versions/${up.version.id}/text`)).json());
+      assert.equal(text.versionId, up.version.id);
+      assert.equal(text.sections.map((x) => x.text).join('\n\n'), 'First paragraph.\n\nSecond paragraph.');
+      assert.equal('chunks' in text, false);
+    });
+
+    test("another member's Inbox file is 404 on both routes, for a viewer elsewhere and for an editor", async () => {
+      const c = await setup();
+      const up = await upload(c.author.headers, undefined, 'private.txt', 'My private inbox text.');
+      await settle(c.tenant.id);
+      for (const headers of [c.viewer.headers, c.reviewer.headers]) {
+        for (const route of ['file', 'text']) {
+          assert.equal((await get(headers, `/api/v1/versions/${up.version.id}/${route}`)).statusCode, 404);
+        }
+      }
+    });
   });
 });

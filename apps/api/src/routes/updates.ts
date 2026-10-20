@@ -95,9 +95,7 @@ export async function listUpdates(actor: Actor, query: unknown): Promise<UpdateI
     const names = await resolveActorNames(
       tx,
       actor.tenantId,
-      rows.flatMap((r) =>
-        r.actorType === 'connector' ? [] : [{ type: r.actorType, id: r.actorId }]
-      )
+      rows.map((r) => ({ type: r.actorType, id: r.actorId }))
     );
 
     return rows.map((r) => ({
@@ -115,7 +113,7 @@ export async function listUpdates(actor: Actor, query: unknown): Promise<UpdateI
       },
       actor:
         r.actorType === 'connector'
-          ? { type: 'system' as const, id: null, name: 'System' }
+          ? { type: 'system' as const, id: null, name: names.get(`connector:${r.actorId}`)! }
           : {
               type: r.actorType,
               id: r.actorId,

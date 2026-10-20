@@ -10,6 +10,7 @@ import {
   SourceListSchema,
   SourcePutResponseSchema,
   UpdateSourceRequestSchema,
+  VersionTextSchema,
 } from '../src/index.js';
 
 describe('source contracts', () => {
@@ -65,5 +66,13 @@ describe('source contracts', () => {
     expect(SourceDeleteResponseSchema.parse({ removed: true })).toEqual({ removed: true });
     expect(SourceDeleteResponseSchema.safeParse({ removed: false }).success).toBe(false);
     expect(SourcePutResponseSchema.shape.created).toBeDefined();
+  });
+
+  it('parses the version text reply and refuses chunks in it', () => {
+    const id = '5f0c1a2b-3c4d-4e5f-8a9b-0c1d2e3f4a5b';
+    const body = { versionId: id, pageCount: 2, ocrUsed: false, sections: [{ headingPath: [], pageFrom: 1, pageTo: 1, kind: 'text', text: 'x' }] };
+    expect(VersionTextSchema.parse(body).sections).toHaveLength(1);
+    expect(VersionTextSchema.parse({ versionId: id, pageCount: null, ocrUsed: false, sections: [] }).pageCount).toBeNull();
+    expect('chunks' in VersionTextSchema.shape).toBe(false);
   });
 });
