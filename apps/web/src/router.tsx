@@ -17,7 +17,6 @@ import { AcceptInvitePage } from './routes/accept-invite.js';
 import { AdminLayout } from './routes/admin/layout.js';
 import { GroupsPage } from './routes/admin/groups.js';
 import { MembersPage } from './routes/admin/members.js';
-import { SourcesPage } from './routes/admin/sources.js';
 import { SpacesPage } from './routes/admin/spaces.js';
 import { parseFileSearch } from './lib/documentLink.js';
 import { WorkspaceLayout } from './routes/layout.js';
@@ -184,7 +183,12 @@ const adminIndexRoute = createRoute({
 const membersRoute = createRoute({ getParentRoute: () => adminRoute, path: 'members', component: MembersPage });
 const groupsRoute = createRoute({ getParentRoute: () => adminRoute, path: 'groups', component: GroupsPage });
 const spacesRoute = createRoute({ getParentRoute: () => adminRoute, path: 'spaces', component: SpacesPage });
-const sourcesRoute = createRoute({ getParentRoute: () => adminRoute, path: 'sources', component: SourcesPage });
+const sourcesRoute = createRoute({
+  getParentRoute: () => adminRoute,
+  path: 'sources',
+  // Rarely opened: its code loads when it is.
+  component: lazyRouteComponent(() => import('./routes/admin/sources.js'), 'SourcesPage'),
+});
 
 const routeTree = rootRoute.addChildren([
   signInRoute,

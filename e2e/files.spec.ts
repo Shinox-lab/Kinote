@@ -3,6 +3,7 @@ import { corruptDocx, docx, pptx, realPdf, xlsx } from './fixtures.js';
 import {
   addMember,
   approveAll,
+  expandSpace,
   fakePdf,
   fakePng,
   openAs,
@@ -316,4 +317,148 @@ test('a PDF opens on the page a search result points to, and a slide deck as tex
   await expect(slides.getByRole('listitem')).toHaveCount(3);
   await expect(slides).toContainText(`Welcome slide ${world.suffix}`);
   await expect(slides.getByRole('listitem').nth(1)).toContainText('Slide 2');
+});
+
+test('a search result for a file opens it on the page the text is on', async ({ browser, request }) => {
+  const world = await seedWorld(request, { reviewRequired: false });
+  const filler = (word: string) => Array.from({ length: 700 }, (_, i) => `${word}${i}`).join(' ');
+  const id = await uploadViaApi(
+    request,
+    world,
+    world.owner,
+    realPdf('Long report.pdf', world.suffix, filler('alpha'), `quokka${world.suffix} ${filler('beta')}`, filler('gamma'))
+  );
+  await waitForFileBadge(request, world, world.owner, id, /^Indexed/);
+
+  const page = await openAs(browser, world, world.owner);
+  await page.goto(`/w/${world.slug}/search`);
+  await page.getByLabel('Search or ask a question').fill(`quokka${world.suffix}`);
+  await page.getByRole('button', { name: 'Search', exact: true }).click();
+  const link = page.getByRole('main').getByRole('link', { name: 'Long report.pdf' }).first();
+  await expect(link).toBeVisible();
+  const href = await link.getAttribute('href');
+  expect(href).toMatch(new RegExp(`/f/${id}\\?page=2$`));
+  await link.click();
+  await expect(page.getByRole('region', { name: 'Preview' }).getByRole('textbox', { name: 'Page number' })).toHaveValue('2');
+});
+
+test('several files at once: a refused one, a copy and a good one do not stop each other; a network error can be retried', async ({
+  browser,
+  request,
+}) => {
+  const world = await seedWorld(request, { reviewRequired: false });
+  const page = await openAs(browser, world, world.owner);
+  await page.goto(`/w/${world.slug}`);
+  await expandSpace(page, 'Docs');
+
+  const good = textFile('Good.txt', 'text/plain', `A good file ${world.suffix}.`);
+  await uploadThroughMenu(page, 'Docs', [
+    good,
+    textFile('Page.html', 'text/html', '<html><body>nope</body></html>'),
+    textFile('Good copy.txt', 'text/plain', `A good file ${world.suffix}.`),
+  ]);
+  const panel = uploadPanel(page);
+  const rowOf = (name: string) => panel.getByRole('listitem').filter({ hasText: name });
+  await expect(rowOf('Good.txt')).toContainText('Indexed · v1');
+  await expect(rowOf('Page.html')).toContainText('This file type is not supported for security reasons.');
+  await expect(rowOf('Good copy.txt')).toContainText('Already here');
+  await expect(treeLink(page, 'Good.txt')).toBeVisible();
+
+  // The network drops once: the file says so, and "Try again" sends it.
+  let dropped = false;
+  await page.route('**/api/v1/files', async (route) => {
+    if (route.request().method() === 'POST' && !dropped) {
+      dropped = true;
+      await route.abort();
+    } else await route.continue();
+  });
+  await uploadThroughMenu(page, 'Docs', [textFile('Later.txt', 'text/plain', `Sent later ${world.suffix}.`)]);
+  await expect(rowOf('Later.txt')).toContainText('Could not reach the server');
+  await rowOf('Later.txt').getByRole('button', { name: 'Try Later.txt again' }).click();
+  await expect(rowOf('Later.txt')).toContainText('Indexed · v1');
+
+  // Moving around the console does not cancel what is queued.
+  await rowOf('Later.txt').getByRole('button', { name: 'Dismiss Later.txt' }).click();
+  await expect(rowOf('Later.txt')).toHaveCount(0);
+  await rowOf('Page.html').getByRole('button', { name: 'Dismiss Page.html' }).click();
+  await expect(rowOf('Page.html')).toHaveCount(0);
+});
+
+test('an upload keeps going while the person moves to another screen', async ({ browser, request }) => {
+  const world = await seedWorld(request, { reviewRequired: false });
+  const page = await openAs(browser, world, world.owner);
+  await page.goto(`/w/${world.slug}`);
+  await expandSpace(page, 'Docs');
+  // Hold the upload long enough to leave the screen while it is in flight.
+  await page.route('**/api/v1/files', async (route) => {
+    if (route.request().method() === 'POST') await new Promise((r) => setTimeout(r, 1500));
+    await route.continue();
+  });
+  await uploadThroughMenu(page, 'Docs', [textFile('Slow.txt', 'text/plain', `Slow file ${world.suffix}.`)]);
+  await expect(uploadPanel(page)).toContainText('Uploading');
+  await sidebar(page).getByRole('link', { name: 'Search', exact: true }).click();
+  await page.waitForURL(/\/search$/);
+  await expect(uploadPanel(page).getByRole('listitem').filter({ hasText: 'Slow.txt' })).toContainText('Indexed · v1');
+});
+
+test('a file that cannot be drawn offers its download, and the rest of the screen works', async ({ browser, request }) => {
+  const world = await seedWorld(request, { reviewRequired: false });
+  const id = await uploadViaApi(request, world, world.owner, fakePdf('Scan.pdf', world.suffix, 'Not really a PDF.'));
+  await waitForFileBadge(request, world, world.owner, id, /^Indexed/);
+  const page = await openAs(browser, world, world.owner);
+  await page.goto(`/w/${world.slug}/f/${id}`);
+  const preview = page.getByRole('region', { name: 'Preview' });
+  await expect(preview.getByText("This file can't be previewed.")).toBeVisible();
+  const [download] = await Promise.all([page.waitForEvent('download'), preview.getByRole('button', { name: 'Download Scan.pdf' }).click()]);
+  expect(download.suggestedFilename()).toBe('Scan.pdf');
+  await expect(page.getByRole('button', { name: 'File actions' })).toBeVisible();
+});
+
+test('a file moves to the Inbox and back, and the sidebar follows', async ({ browser, request }) => {
+  const world = await seedWorld(request, { reviewRequired: false });
+  const id = await uploadViaApi(request, world, world.owner, textFile('Movable.txt', 'text/plain', `Move me ${world.suffix}.`));
+  await waitForFileBadge(request, world, world.owner, id, /^Indexed/);
+  const page = await openAs(browser, world, world.owner);
+  await page.goto(`/w/${world.slug}/f/${id}`);
+  await expandSpace(page, 'Docs');
+  await expect(treeLink(page, 'Movable.txt')).toBeVisible();
+
+  await page.getByRole('button', { name: 'File actions' }).click();
+  await page.getByRole('button', { name: 'Move…' }).click();
+  await page.getByLabel('Move to space').selectOption({ label: 'Inbox' });
+  await page.getByRole('button', { name: 'Move file' }).click();
+  await expect(page.getByRole('navigation', { name: 'Breadcrumb' })).toContainText('Inbox');
+  await expandSpace(page, 'Inbox');
+  await expect(page.getByRole('complementary', { name: 'Sidebar' }).getByRole('button', { name: 'Collapse Docs' }).locator('xpath=ancestor::li[1]')
+    .getByRole('link', { name: /^Movable\.txt/ })).toHaveCount(0);
+  await expect(treeLink(page, 'Movable.txt')).toBeVisible();
+
+  await page.getByRole('button', { name: 'File actions' }).click();
+  await page.getByRole('button', { name: 'Move…' }).click();
+  await page.getByLabel('Move to space').selectOption({ label: 'Docs' });
+  await page.getByRole('button', { name: 'Move file' }).click();
+  await expect(page.getByRole('navigation', { name: 'Breadcrumb' })).toContainText('Docs');
+});
+
+test('the add menu works from the keyboard: Enter opens it, Escape closes it and returns focus', async ({ browser, request }) => {
+  const world = await seedWorld(request, { reviewRequired: false });
+  const page = await openAs(browser, world, world.owner);
+  await page.goto(`/w/${world.slug}`);
+  const add = sidebar(page).getByRole('button', { name: 'Add to Docs' });
+  await expect(add).toBeAttached();
+  await add.focus();
+  await page.keyboard.press('Enter');
+  const menu = sidebar(page).getByRole('menu', { name: 'Add to Docs' });
+  await expect(menu).toBeVisible();
+  await expect(menu.getByRole('menuitem', { name: 'New page' })).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(menu).toHaveCount(0);
+  await expect(add).toBeFocused();
+
+  // Tab reaches "Upload file", and Enter opens the file chooser.
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Tab');
+  const [chooser] = await Promise.all([page.waitForEvent('filechooser'), page.keyboard.press('Enter')]);
+  await chooser.setFiles(textFile('Keys.txt', 'text/plain', `Typed by keys ${world.suffix}.`));
+  await expect(uploadPanel(page)).toContainText('Keys.txt');
 });

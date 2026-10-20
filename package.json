@@ -8,6 +8,7 @@
     "dev": "bash infra/dev.sh",
     "web": "pnpm --filter @living-wiki/web run dev",
     "web:build": "pnpm --filter @living-wiki/web run build",
+    "bundle:report": "node scripts/bundle-report.mjs",
     "test": "vitest run",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "db:generate": "drizzle-kit generate",
