@@ -235,3 +235,18 @@ export async function searchPassages(request: APIRequestContext, world: World, a
   });
   return res.passages.map((p) => `${p.versionNumber}: ${p.text}`);
 }
+
+/** Waits (through the api) until a file's badge is `badge`; the worker reads and indexes files in the background. */
+export async function waitForFileBadge(
+  request: APIRequestContext,
+  world: World,
+  account: Account,
+  id: string,
+  badge: string | RegExp
+): Promise<void> {
+  await expect
+    .poll(async () => (await call<{ badge: string }>(request, `/files/${id}`, { account, tenantId: world.tenantId })).badge, {
+      timeout: 30_000,
+    })
+    .toMatch(typeof badge === 'string' ? new RegExp(`^${badge.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`) : badge);
+}

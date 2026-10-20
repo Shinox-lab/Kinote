@@ -4,7 +4,8 @@ import type { ReviewItem } from '@living-wiki/contracts';
 import { api, errorMessage } from '../lib/api.js';
 import { versionReasonLabel, versionStatusLabel, whenLabel } from '../lib/history.js';
 import { useRefresh, useReviews, useSpaces, useVersionDiff, useWorkspace } from '../lib/queries.js';
-import { REJECT_NOTE_MAX, approveBlockedReason, rejectNoteState } from '../lib/review.js';
+import { REJECT_NOTE_MAX, approveBlockedReason, fileMeta, rejectNoteState } from '../lib/review.js';
+import { FileReviewPreview } from '../components/FileReviewPreview.js';
 import { DocumentLink } from '../components/DocumentLink.js';
 import { DiffView } from '../components/DiffView.js';
 import { Button, Card, ErrorNote, Loading, SelectField } from '../components/ui.js';
@@ -131,6 +132,7 @@ function Item({ item, onOutcome }: { item: ReviewItem; onOutcome: (error: unknow
               {item.document.title}
             </DocumentLink>
             <p className="text-xs text-muted">
+              {item.file && <>{fileMeta(item)} · </>}
               {item.document.spaceName} · Version {version.number} · {versionStatusLabel(version.status)} ·{' '}
               {versionReasonLabel(version.reason)} · <time dateTime={version.createdAt}>{whenLabel(version.createdAt)}</time>
             </p>
@@ -145,7 +147,11 @@ function Item({ item, onOutcome }: { item: ReviewItem; onOutcome: (error: unknow
               ))}
             </p>
           </div>
-          <ItemDiff item={item} />
+          {item.document.kind === 'file' ? (
+            <FileReviewPreview versionId={version.id} title={item.document.title} />
+          ) : (
+            <ItemDiff item={item} />
+          )}
           <div className="flex flex-wrap items-center gap-2">
             <Button onClick={() => approve.mutate()} disabled={blocked !== null || busy} aria-describedby={blocked ? blockedId : undefined}>
               Approve

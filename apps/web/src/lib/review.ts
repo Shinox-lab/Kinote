@@ -1,4 +1,6 @@
 import type { ReviewItem } from '@living-wiki/contracts';
+import { formatBytes } from './fileUi.js';
+import { mimeLabel } from './mime.js';
 
 // Pure helpers behind the review queue: the reject note rule and why Approve is off.
 // Whether the actor may approve is the server's (`canApprove`); nothing is derived here.
@@ -17,4 +19,9 @@ export function approveBlockedReason(item: Pick<ReviewItem, 'canApprove'>): stri
   return item.canApprove
     ? null
     : "You can't approve this change. A change needs a reviewer other than the people who made it, unless the space allows self-approval.";
+}
+
+/** "PDF · 2.4 MB" for a file item of the queue; null for a page. */
+export function fileMeta(item: Pick<ReviewItem, 'file'>): string | null {
+  return item.file ? `${mimeLabel(item.file.mimeType)} · ${formatBytes(item.file.sizeBytes)}` : null;
 }
