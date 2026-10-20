@@ -1,20 +1,33 @@
 import type { FastifyRequest } from 'fastify';
-import { and, eq, isNull } from 'drizzle-orm';
-import { withTenantTx, memberships, tenants } from '@living-wiki/db';
+import { and, eq, isNull, lt, or } from 'drizzle-orm';
+import { withTenantTx, memberships, sources, sourceTokens, tenants } from '@living-wiki/db';
 import { AppError } from '@living-wiki/contracts';
 import type { Actor } from '@living-wiki/core';
 import { resolveSession } from './sessions.js';
+import { parseSourceToken } from './sourceTokens.js';
 
-export type AuthMode = 'public' | 'session' | 'tenant';
+export type AuthMode = 'public' | 'session' | 'tenant' | 'source';
 
 export interface AuthSession {
   userId: string;
   token: string;
 }
 
+/**
+ * Who a source token acts as: one source in one tenant, delivering into one space.
+ * Never an `Actor`: it has no session, no membership and no role.
+ */
+export interface SourceActor {
+  tenantId: string;
+  sourceId: string;
+  sourceName: string;
+  trusted: boolean;
+  targetSpaceId: string;
+}
+
 declare module 'fastify' {
   interface FastifyContextConfig {
-    /** Who may call the route. Default: 'tenant'. */
+    /** Who may call the route. Default: 'tenant'. 'source' is a bearer source token, never a session. */
     auth?: AuthMode;
   }
   interface FastifyRequest {
@@ -22,6 +35,8 @@ declare module 'fastify' {
     authSession: AuthSession | null;
     /** Set for 'tenant' routes; derived from the session and the membership row only. */
     actor: Actor | null;
+    /** Set for 'source' routes; derived from the source token only. */
+    sourceActor: SourceActor | null;
   }
 }
 
@@ -77,5 +92,62 @@ export async function resolveActor(req: FastifyRequest): Promise<Actor> {
     principalType: 'user',
     principalId: session.userId,
     tenantRole: membership.role,
+  };
+}
+
+const LAST_USED_EVERY_MS = 60_000;
+
+/**
+ * The source behind a request's bearer source token. The token carries its tenant id, so the
+ * lookup runs inside that tenant's transaction (row level security stays on); the row is found
+ * by the token's hash. Every failure, whatever its cause, is the same 401: a malformed token, an
+ * unknown tenant or hash, a revoked, expired or paused one, a deleted tenant. `last_used_at`
+ * is moved at most once a minute.
+ */
+export async function resolveSourceActor(req: FastifyRequest): Promise<SourceActor> {
+  const raw = bearerToken(req);
+  const parsed = raw ? parseSourceToken(raw) : null;
+  if (!parsed) throw new AppError('unauthenticated');
+  const now = new Date();
+  const found = await withTenantTx(parsed.tenantId, async (tx) => {
+    const [row] = await tx
+      .select({ token: sourceTokens, source: sources })
+      .from(sourceTokens)
+      .innerJoin(
+        sources,
+        and(eq(sources.tenantId, sourceTokens.tenantId), eq(sources.id, sourceTokens.sourceId))
+      )
+      .innerJoin(tenants, eq(tenants.id, sourceTokens.tenantId))
+      .where(
+        and(
+          eq(sourceTokens.tenantId, parsed.tenantId),
+          eq(sourceTokens.tokenHash, parsed.hash),
+          isNull(tenants.deletedAt)
+        )
+      );
+    if (!row) return null;
+    const { token, source } = row;
+    if (token.revokedAt || (token.expiresAt && token.expiresAt <= now) || source.status !== 'active') {
+      return null;
+    }
+    await tx
+      .update(sourceTokens)
+      .set({ lastUsedAt: now })
+      .where(
+        and(
+          eq(sourceTokens.tenantId, parsed.tenantId),
+          eq(sourceTokens.id, token.id),
+          or(isNull(sourceTokens.lastUsedAt), lt(sourceTokens.lastUsedAt, new Date(now.getTime() - LAST_USED_EVERY_MS)))
+        )
+      );
+    return source;
+  });
+  if (!found) throw new AppError('unauthenticated');
+  return {
+    tenantId: parsed.tenantId,
+    sourceId: found.id,
+    sourceName: found.name,
+    trusted: found.trusted,
+    targetSpaceId: found.targetSpaceId,
   };
 }

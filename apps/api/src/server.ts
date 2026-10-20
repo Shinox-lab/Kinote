@@ -37,6 +37,8 @@ import {
   UpdatesResponseSchema,
   RetryVersionResponseSchema,
   UploadFileResponseSchema,
+  SourcePutResponseSchema,
+  ExternalIdSchema,
   FileDetailsSchema,
   FileVersionListSchema,
   ChunkInspectorSchema,
@@ -72,6 +74,7 @@ import {
   listSpaceGrants,
   deleteSpaceGrant,
 } from './routes/admin.js';
+import { putSourceFile } from './routes/sourceFiles.js';
 import { createSource, issueSourceToken, listSources, revokeSourceToken, updateSource } from './routes/sources.js';
 import {
   createPage,
@@ -108,7 +111,7 @@ import {
 } from './routes/files.js';
 import { listUpdates } from './routes/updates.js';
 import { authRoutes, type AuthRateLimit } from './routes/auth.js';
-import { requireSession, resolveActor, type AuthSession } from './auth/actor.js';
+import { requireSession, resolveActor, resolveSourceActor, type AuthSession, type SourceActor } from './auth/actor.js';
 import { registerErrorHandler } from './errors.js';
 import { parseReply } from './reply.js';
 import { searchWiki } from './search/hybridSearch.js';
@@ -166,13 +169,24 @@ function actorOf(req: FastifyRequest): Actor {
   return req.actor;
 }
 
+/** The source attached by the auth hook on `auth: 'source'` routes. */
+function sourceOf(req: FastifyRequest): SourceActor {
+  if (!req.sourceActor) throw new AppError('unauthenticated');
+  return req.sourceActor;
+}
+
 function sessionOf(req: FastifyRequest): AuthSession {
   if (!req.authSession) throw new AppError('unauthenticated');
   return req.authSession;
 }
 
 export function buildApiServer(opts: ApiServerOptions = {}) {
-  const app = Fastify({ logger: fastifyLogger(opts.logger), trustProxy: trustProxyOption(opts.trustProxy) });
+  const app = Fastify({
+    logger: fastifyLogger(opts.logger),
+    trustProxy: trustProxyOption(opts.trustProxy),
+    // An external id is up to 256 characters, each up to four bytes, each byte `%XX`: the default (100) would refuse legal ids.
+    maxParamLength: 4096,
+  });
   registerErrorHandler(app);
 
   // Fastify refuses an EMPTY body sent as application/json (400), which
@@ -219,9 +233,14 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
   // unauthenticated request never gets as far as the JSON parser.
   app.decorateRequest('authSession', null);
   app.decorateRequest('actor', null);
+  app.decorateRequest('sourceActor', null);
   app.addHook('onRequest', async (req) => {
     const mode = req.routeOptions.config?.auth ?? 'tenant';
     if (mode === 'public') return;
+    if (mode === 'source') {
+      req.sourceActor = await resolveSourceActor(req);
+      return;
+    }
     req.authSession = await requireSession(req);
     if (mode === 'tenant') req.actor = await resolveActor(req);
   });
@@ -478,6 +497,16 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
     return reply
       .status(out.status === 'created' ? 201 : 200)
       .send(parseReply(UploadFileResponseSchema, out.response));
+  });
+
+  // The upload API: a script acts as its source, with a source token and no session.
+  app.put('/api/v1/source/files/:externalId', { config: { auth: 'source' } }, async (req, reply) => {
+    const source = sourceOf(req);
+    const deps = fileDeps();
+    const externalId = ExternalIdSchema.parse((req.params as any).externalId);
+    const upload = await readMultipartUpload(req);
+    const out = await putSourceFile(source, externalId, upload.file, deps);
+    return reply.status(out.status).send(parseReply(SourcePutResponseSchema, out.response));
   });
 
   app.post('/api/v1/files/:id/versions', async (req, reply) => {

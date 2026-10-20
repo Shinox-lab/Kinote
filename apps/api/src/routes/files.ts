@@ -78,7 +78,7 @@ export function toFileVersion(row: VersionRow): FileVersion {
   };
 }
 
-function detect(file: UploadedFile): DetectedFile {
+export function detect(file: UploadedFile): DetectedFile {
   const result = detectFileType(file.name, file.bytes);
   if (!result.ok) {
     throw new AppError(result.reason === 'empty' ? 'empty_file' : 'unsupported_file_type');
@@ -86,7 +86,7 @@ function detect(file: UploadedFile): DetectedFile {
   return result.file;
 }
 
-const sha256 = (bytes: Uint8Array): string => createHash('sha256').update(bytes).digest('hex');
+export const sha256 = (bytes: Uint8Array): string => createHash('sha256').update(bytes).digest('hex');
 
 function unchanged(doc: DocumentRow, ver: VersionRow): UploadOutcome {
   return {
@@ -158,7 +158,7 @@ async function findDuplicate(
 }
 
 /** Stores the original bytes; on any failure after this the bytes are deleted again (best effort). */
-async function withStoredBytes<T>(
+export async function withStoredBytes<T>(
   deps: FileDeps,
   tenantId: string,
   documentId: string,
@@ -390,7 +390,7 @@ export async function readMultipartUpload(
   return { fields, file };
 }
 
-const fileArchived = () =>
+export const fileArchived = () =>
   new AppError('page_archived', 'This file is archived. Restore it before making changes.');
 
 /**
