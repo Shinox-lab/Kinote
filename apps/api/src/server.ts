@@ -20,6 +20,10 @@ import {
   MemberListSchema,
   GroupSchema,
   GroupListSchema,
+  SourceListSchema,
+  SourceSchema,
+  SourceTokenSchema,
+  CreateSourceTokenResponseSchema,
   GroupMemberResponseSchema,
   PageSummarySchema,
   PageDetailsSchema,
@@ -68,6 +72,7 @@ import {
   listSpaceGrants,
   deleteSpaceGrant,
 } from './routes/admin.js';
+import { createSource, issueSourceToken, listSources, revokeSourceToken, updateSource } from './routes/sources.js';
 import {
   createPage,
   getPageDetails,
@@ -354,6 +359,31 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
     await removeGroupMember(actor, p.id, p.principalType, p.principalId);
     await revokeLiveSessions(req, revokeTarget(actor, p.principalType, p.principalId));
     return reply.status(204).send();
+  });
+
+  app.get('/api/v1/sources', async (req, reply) => {
+    return reply.send(parseReply(SourceListSchema, await listSources(actorOf(req))));
+  });
+
+  app.post('/api/v1/sources', async (req, reply) => {
+    const res = await createSource(actorOf(req), req.body);
+    return reply.status(201).send(parseReply(SourceSchema, res));
+  });
+
+  app.patch('/api/v1/sources/:id', async (req, reply) => {
+    const res = await updateSource(actorOf(req), (req.params as any).id, req.body);
+    return reply.send(parseReply(SourceSchema, res));
+  });
+
+  app.post('/api/v1/sources/:id/tokens', async (req, reply) => {
+    const res = await issueSourceToken(actorOf(req), (req.params as any).id, req.body);
+    return reply.status(201).send(parseReply(CreateSourceTokenResponseSchema, res));
+  });
+
+  app.delete('/api/v1/sources/:id/tokens/:tokenId', async (req, reply) => {
+    const p = req.params as any;
+    const res = await revokeSourceToken(actorOf(req), p.id, p.tokenId);
+    return reply.send(parseReply(SourceTokenSchema, res));
   });
 
   app.post('/api/v1/pages', async (req, reply) => {

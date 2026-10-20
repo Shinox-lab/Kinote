@@ -26,7 +26,7 @@ import { principalExists } from './foundations.js';
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Tenant administration is for tenant owners and admins (users, never agents). */
-function requireTenantAdmin(actor: Actor): void {
+export function requireTenantAdmin(actor: Actor): void {
   if (
     actor.principalType !== 'user' ||
     (actor.tenantRole !== 'owner' && actor.tenantRole !== 'admin')

@@ -8,6 +8,7 @@ const UNIQUE_CONSTRAINT_CODES: Record<string, ErrorCode> = {
   spaces_tenant_slug_idx: 'slug_taken',
   pages_space_slug_idx: 'slug_taken',
   groups_tenant_name_idx: 'group_name_taken',
+  sources_tenant_name_idx: 'source_name_taken',
   users_email_unique: 'email_taken',
 };
 
