@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { corruptDocx, docx } from './fixtures.js';
 import {
   addMember,
   approveAll,
@@ -160,4 +161,67 @@ test('a viewer sees only what is published: nothing while the file waits for rev
   await expect(page.getByRole('note')).toHaveCount(0);
   await expect(page.getByRole('region', { name: 'Search chunks' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Download', exact: true })).toBeVisible();
+});
+
+test('a hostile Markdown file is shown as text and runs nothing', async ({ browser, request }) => {
+  const world = await seedWorld(request, { reviewRequired: false });
+  const md = [
+    '# A heading',
+    '',
+    '<script>window.__pwned = 1</script>',
+    '',
+    '[bad link](javascript:window.__pwned=1) and <img src=x onerror="window.__pwned=1"> and [good](https://example.com/ok)',
+    '',
+    `Safe paragraph ${world.suffix}.`,
+  ].join('\n');
+  const id = await uploadViaApi(request, world, world.owner, textFile('Evil.md', 'text/markdown', md));
+  await waitForFileBadge(request, world, world.owner, id, /^Indexed/);
+
+  const page = await openAs(browser, world, world.owner);
+  const dialogs: string[] = [];
+  page.on('dialog', (d) => {
+    dialogs.push(d.message());
+    void d.dismiss();
+  });
+  await page.goto(`/w/${world.slug}/f/${id}`);
+  const preview = page.getByRole('region', { name: 'Preview' });
+  await expect(preview.getByRole('heading', { name: 'A heading' })).toBeVisible();
+  await expect(preview).toContainText(`Safe paragraph ${world.suffix}.`);
+  // The script is on screen as words, and nothing ran.
+  await expect(preview).toContainText('<script>window.__pwned = 1</script>');
+  await expect(preview.locator('script, img, iframe')).toHaveCount(0);
+  await expect(preview.locator('a[href^="javascript"]')).toHaveCount(0);
+  await expect(preview.getByRole('link', { name: 'good' })).toHaveAttribute('href', 'https://example.com/ok');
+  await expect(preview.getByRole('link', { name: 'good' })).toHaveAttribute('rel', 'noopener noreferrer nofollow');
+  expect(await page.evaluate(() => (window as unknown as { __pwned?: number }).__pwned)).toBeUndefined();
+  expect(dialogs).toEqual([]);
+});
+
+test('a Word document opens as text; a corrupt one falls back to a download and the page keeps working', async ({ browser, request }) => {
+  const world = await seedWorld(request, { reviewRequired: false });
+  const good = await uploadViaApi(
+    request,
+    world,
+    world.owner,
+    docx('Policy.docx', world.suffix, 'Leave policy', `Twenty days of leave ${world.suffix}, and <b>not bold</b>.`)
+  );
+  const bad = await uploadViaApi(request, world, world.owner, corruptDocx('Broken.docx', world.suffix));
+  await waitForFileBadge(request, world, world.owner, good, /^Indexed/);
+  await waitForFileBadge(request, world, world.owner, bad, /^Indexed/);
+
+  const page = await openAs(browser, world, world.owner);
+  await page.goto(`/w/${world.slug}/f/${good}`);
+  const preview = page.getByRole('region', { name: 'Preview' });
+  await expect(preview.getByRole('heading', { name: 'Leave policy' })).toBeVisible();
+  await expect(preview).toContainText(`Twenty days of leave ${world.suffix}`);
+  await expect(preview).toContainText('<b>not bold</b>');
+  await expect(preview.locator('b')).toHaveCount(0);
+
+  await page.goto(`/w/${world.slug}/f/${bad}`);
+  await expect(preview.getByText("This file can't be previewed.")).toBeVisible();
+  await expect(preview.getByRole('button', { name: 'Download Broken.docx' })).toBeVisible();
+  // The rest of the screen still works.
+  await expect(page.getByRole('heading', { name: 'Broken.docx', level: 1 })).toBeVisible();
+  await expect(page.getByRole('list', { name: 'Versions' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'File actions' })).toBeVisible();
 });

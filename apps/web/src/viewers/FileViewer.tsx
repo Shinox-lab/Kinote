@@ -16,9 +16,13 @@ export interface ViewerProps {
 // Every viewer is its own chunk: its code (and the library behind it) loads only when a file of its type is opened.
 const TextViewer = lazy(() => import('./TextViewer.js'));
 const ImageViewer = lazy(() => import('./ImageViewer.js'));
+const MarkdownViewer = lazy(() => import('./MarkdownViewer.js'));
+const DocxViewer = lazy(() => import('./DocxViewer.js'));
 
 const VIEWERS: Partial<Record<ViewerKind, ComponentType<ViewerProps>>> = {
   text: ({ bytes }) => <TextViewer bytes={bytes} />,
+  markdown: ({ bytes }) => <MarkdownViewer bytes={bytes} />,
+  docx: ({ bytes, version }) => <DocxViewer bytes={bytes} versionId={version.id} />,
   image: ({ bytes, version }) => <ImageViewer bytes={bytes} mimeType={version.mimeType} name={version.fileName} />,
 };
 

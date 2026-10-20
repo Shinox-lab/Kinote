@@ -43,7 +43,16 @@ async function readDocument(
       : await deps.extractor.extract({ bytes, fileName, file });
   const chars = document.sections.reduce((n, s) => n + s.text.length, 0);
   if (chars > deps.maxChars) throw new AppError('file_text_too_large');
-  return ExtractedDocumentSchema.parse(document);
+  return withoutNul(ExtractedDocumentSchema.parse(document));
+}
+
+/** Postgres text cannot hold a NUL character; an extractor (or a file) that yields one must not fail indexing later. */
+function withoutNul(document: ExtractedDocument): ExtractedDocument {
+  const clean = (s: string) => s.replaceAll('\u0000', '');
+  return {
+    ...document,
+    sections: document.sections.map((s) => ({ ...s, headingPath: s.headingPath.map(clean), text: clean(s.text) })),
+  };
 }
 
 /**

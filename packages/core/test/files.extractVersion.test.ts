@@ -81,6 +81,24 @@ describe('extractVersion', () => {
     }
   });
 
+  it('removes NUL characters from what an extractor returns (Postgres text cannot hold them)', async () => {
+    const seed = await seedFileDocument({ title: 'scan.pdf' });
+    const v = await upload(seed, 'scan.pdf', '%PDF-1.7\nFAKE-EXTRACT\nplaceholder');
+    const extractor: Extractor = {
+      extract: async () => ({
+        pageCount: 1,
+        ocrUsed: false,
+        sections: [{ headingPath: ['Chap\u0000ter'], pageFrom: 1, pageTo: 1, kind: 'text', text: 'before\u0000after\u0000' }],
+      }),
+    };
+    const result = await extractVersion({ tenantId: seed.tenantId, versionId: v.id }, deps({ extractor }));
+    expect(result).toEqual({ outcome: 'extracted', status: 'indexing' });
+    const row = await reload(seed, v.id);
+    const stored = JSON.parse(new TextDecoder().decode((await storage.get(seed.tenantId, row.extractedKey!)).bytes));
+    expect(stored.sections[0].text).toBe('beforeafter');
+    expect(stored.sections[0].headingPath).toEqual(['Chapter']);
+  });
+
   describe('the trusted switch', () => {
     const extract = (seed: FileSeed, id: string) => extractVersion({ tenantId: seed.tenantId, versionId: id }, deps());
 
