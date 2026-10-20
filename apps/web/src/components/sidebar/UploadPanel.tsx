@@ -5,8 +5,11 @@ import { useUploads } from '../../lib/useUploads.js';
 import { ChevronDownIcon, ChevronRightIcon, FileIcon } from '../icons.js';
 import { DocumentLink } from '../DocumentLink.js';
 
-/** What the person has sent lately and what became of each file; hidden when there is nothing. */
-export function UploadPanel() {
+/**
+ * What the person has sent lately and what became of each file; hidden when there is nothing. `floating`
+ * is for when the sidebar (its usual home) is not on screen: a collapsed sidebar, or a phone.
+ */
+export function UploadPanel({ floating = false }: { floating?: boolean }) {
   const { tenant } = useWorkspace();
   const { uploads, retry, dismiss } = useUploads();
   const [open, setOpen] = useState(true);
@@ -14,7 +17,14 @@ export function UploadPanel() {
   const active = uploads.filter((u) => u.status === 'waiting' || u.status === 'uploading' || u.status === 'reading').length;
 
   return (
-    <section aria-label="Uploads" className="border-t border-line px-1 pt-2">
+    <section
+      aria-label="Uploads"
+      className={
+        floating
+          ? 'fixed bottom-3 right-3 z-30 w-80 max-w-[calc(100vw-1.5rem)] rounded-lg border border-line bg-surface px-2 py-2 shadow-pop'
+          : 'border-t border-line px-1 pt-2'
+      }
+    >
       <h2 className="pb-1">
         <button
           type="button"

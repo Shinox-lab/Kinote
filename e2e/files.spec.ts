@@ -462,3 +462,25 @@ test('the add menu works from the keyboard: Enter opens it, Escape closes it and
   await chooser.setFiles(textFile('Keys.txt', 'text/plain', `Typed by keys ${world.suffix}.`));
   await expect(uploadPanel(page)).toContainText('Keys.txt');
 });
+
+test('on a phone, where the sidebar is closed, uploads still show their progress and refusals', async ({ browser, request }) => {
+  const world = await seedWorld(request, { reviewRequired: false });
+  const context = await browser.newContext({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 800 } });
+  await context.addInitScript((s) => localStorage.setItem('living-wiki.session', JSON.stringify(s)), {
+    token: world.owner.token,
+    user: world.owner.user,
+    tenantId: world.tenantId,
+    tenantSlug: world.slug,
+  });
+  const page = await context.newPage();
+  await page.goto(`/w/${world.slug}/s/${world.spaceSlug}`);
+  await page.getByLabel('Choose files to upload to Docs').setInputFiles([
+    textFile('Phone.txt', 'text/plain', `From a phone ${world.suffix}.`),
+    textFile('Page.html', 'text/html', '<html><body>nope</body></html>'),
+  ]);
+  const panel = uploadPanel(page);
+  await expect(panel).toHaveCount(1);
+  await expect(panel.getByRole('listitem').filter({ hasText: 'Phone.txt' })).toContainText('Indexed · v1');
+  await expect(panel.getByRole('listitem').filter({ hasText: 'Page.html' })).toContainText('not supported');
+  await context.close();
+});

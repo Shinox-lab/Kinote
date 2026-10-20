@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Outlet, useRouterState } from '@tanstack/react-router';
 import { MenuIcon, SidebarIcon } from '../components/icons.js';
+import { UploadPanel } from '../components/sidebar/UploadPanel.js';
 import { Sidebar } from '../components/sidebar/Sidebar.js';
 import { SidebarColumnContext } from '../components/sidebar/SidebarContext.js';
 import {
@@ -108,6 +109,9 @@ function Shell() {
           </SidebarColumnContext.Provider>
         </main>
       </div>
+
+      {/* The sidebar holds the upload panel; with it hidden, the panel floats so progress and refusals stay visible. */}
+      {!column && !slideOver && <UploadPanel floating />}
     </div>
   );
 }

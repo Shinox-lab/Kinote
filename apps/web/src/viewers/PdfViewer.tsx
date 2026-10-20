@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import { ZOOM_STEPS, clampPage, nextZoom, parsePageInput } from '../lib/pdfPages.js';
-import { VIEWER_TIMEOUT_MS, withTimeout } from '../lib/viewers.js';
+import { VIEWER_TIMEOUT_MS } from '../lib/viewers.js';
 import { Loading } from '../components/ui.js';
+import { openPdf } from './pdfOpen.js';
 
 const TOOL = 'rounded-md border border-line bg-page px-2.5 py-1 text-sm hover:bg-hover disabled:cursor-not-allowed disabled:opacity-50';
 
@@ -23,23 +24,24 @@ export default function PdfViewer({ bytes, page }: { bytes: ArrayBuffer; page?: 
   // Open the document (in pdf.js's own worker). The worker takes ownership of the buffer it is given, so it gets a copy.
   useEffect(() => {
     let cancelled = false;
-    let opened: PDFDocumentProxy | null = null;
-    let task: { destroy: () => Promise<void> } | null = null;
-    (async () => {
-      const [pdfjs, worker] = await Promise.all([import('pdfjs-dist'), import('pdfjs-dist/build/pdf.worker.min.mjs?url')]);
-      pdfjs.GlobalWorkerOptions.workerSrc = worker.default;
-      const loading = pdfjs.getDocument({
-        data: new Uint8Array(bytes.slice(0)),
-        disableAutoFetch: true,
-        useSystemFonts: false,
-      });
-      task = loading;
-      opened = await withTimeout(loading.promise, VIEWER_TIMEOUT_MS);
-      if (cancelled) return;
-      if (opened.numPages < 1) throw new Error('empty document');
-      setDoc(opened);
-      setCurrent(clampPage(page, opened.numPages));
-    })().catch(() => !cancelled && setFailed(true));
+    let task: { destroy: () => Promise<void> | void } | null = null;
+    openPdf<PDFDocumentProxy>(
+      async () => {
+        const [pdfjs, worker] = await Promise.all([import('pdfjs-dist'), import('pdfjs-dist/build/pdf.worker.min.mjs?url')]);
+        pdfjs.GlobalWorkerOptions.workerSrc = worker.default;
+        return () =>
+          pdfjs.getDocument({ data: new Uint8Array(bytes.slice(0)), disableAutoFetch: true, useSystemFonts: false });
+      },
+      () => cancelled,
+      VIEWER_TIMEOUT_MS,
+      (t) => (task = t)
+    )
+      .then((opened) => {
+        if (!opened) return;
+        setDoc(opened);
+        setCurrent(clampPage(page, opened.numPages));
+      })
+      .catch(() => !cancelled && setFailed(true));
     return () => {
       cancelled = true;
       void task?.destroy();
