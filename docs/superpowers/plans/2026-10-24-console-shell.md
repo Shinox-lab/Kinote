@@ -163,7 +163,7 @@ Create `e2e/shell.spec.ts`:
 
 ```ts
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { addMember, call, openAs, seedWorld, uploadViaApi } from './support.js';
+import { addMember, openAs, seedWorld } from './support.js';
 
 const sidebar = (page: Page): Locator => page.getByRole('complementary', { name: 'Sidebar' });
 
@@ -284,7 +284,7 @@ git commit -m "feat(web): size the shell and restyle the workspace and spaces tr
 
 - [ ] **Step 1: Write the failing top-bar test.**
 
-Add to `e2e/shell.spec.ts` (the file already imports `call` from the Task 3 step):
+Add to `e2e/shell.spec.ts`; add `call` and `uploadViaApi` to the `./support.js` import:
 
 ```ts
 test('the page breadcrumb and menu live in the top bar', async ({ browser, request }) => {
