@@ -1,16 +1,21 @@
 import { useId, useState } from 'react';
+import type { FileVersion } from '@living-wiki/contracts';
 import { previewLines } from '../lib/chunks.js';
 import { useVersionChunks } from '../lib/queries.js';
+import { FileViewer } from '../viewers/FileViewer.js';
 import { Button, ErrorNote, Loading } from './ui.js';
 
 /** The first lines of the text read from a file waiting for review, fetched when first opened. */
 export function FileReviewPreview({
   versionId,
   title,
+  version,
   autoOpen = false,
 }: {
   versionId: string;
   title: string;
+  /** The file itself, so a reviewer can look at the page/image, not only its extracted text. */
+  version?: FileVersion;
   autoOpen?: boolean;
 }) {
   const [open, setOpen] = useState(autoOpen);
@@ -19,6 +24,11 @@ export function FileReviewPreview({
 
   return (
     <div className="flex flex-col gap-2">
+      {version && (
+        <section aria-label="File preview" className="rounded-lg bg-file-mat p-2">
+          <FileViewer version={version} />
+        </section>
+      )}
       {!autoOpen && (
         <Button variant="secondary" className="self-start" aria-expanded={open} aria-controls={panel} onClick={() => setOpen((v) => !v)}>
           {open ? 'Hide text' : 'Show text'}

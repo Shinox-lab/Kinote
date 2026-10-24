@@ -11,7 +11,7 @@ export function OpenSidebarButton() {
       title="Open sidebar (Ctrl+\)"
       aria-expanded={isDesktop ? false : slideOver}
       onClick={openSidebar}
-      className="flex size-8 shrink-0 items-center justify-center rounded-md text-lg text-muted hover:bg-hover"
+      className="flex size-8 shrink-0 items-center justify-center rounded-md text-lg text-muted hover:bg-hover max-md:size-11"
     >
       {isDesktop ? <SidebarIcon /> : <MenuIcon />}
     </button>

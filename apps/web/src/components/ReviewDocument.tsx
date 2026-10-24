@@ -2,9 +2,9 @@ import type { BlockDiffEntry } from '@living-wiki/contracts';
 import { changeLabel, changedEntries, type ChangeKind } from '../lib/diff.js';
 
 const TONE: Record<ChangeKind, string> = {
-  added: 'border-success bg-success-bg',
-  changed: 'border-dot-review bg-dot-review/10',
-  removed: 'border-danger bg-danger-bg',
+  added: 'border-diff-added-line bg-diff-added',
+  changed: 'border-diff-changed-line bg-diff-changed',
+  removed: 'border-diff-removed-line bg-diff-removed',
 };
 
 const HEADING: Record<number, string> = {
@@ -18,7 +18,7 @@ function text(value: string | undefined): string {
 }
 
 /** One block's text, shaped by its type; inline bold/links/table cells are plain text by design. */
-function BlockText({ entry, text: value }: { entry: BlockDiffEntry; text: string }) {
+function BlockText({ entry, text: value, marker }: { entry: BlockDiffEntry; text: string; marker?: string }) {
   const type = entry.type;
   if (type === 'heading') {
     return <p className={HEADING[entry.level ?? 1] ?? 'text-[15.5px] font-semibold'}>{value}</p>;
@@ -44,7 +44,7 @@ function BlockText({ entry, text: value }: { entry: BlockDiffEntry; text: string
     return (
       <p className="text-[15.5px] leading-[1.72]" style={{ paddingLeft: `${(entry.depth ?? 0) * 18}px` }}>
         <span aria-hidden="true" className="mr-2 text-muted">
-          {type === 'numberedListItem' ? '1.' : '•'}
+          {type === 'numberedListItem' ? (marker ?? '1.') : '•'}
         </span>
         {value}
       </p>
@@ -65,12 +65,19 @@ function BlockText({ entry, text: value }: { entry: BlockDiffEntry; text: string
  */
 export function ReviewDocument({ entries, label }: { entries: readonly BlockDiffEntry[]; label: string }) {
   const changes = changedEntries(entries);
+  const counters: Record<number, number> = {};
   return (
     <div className="flex flex-col gap-3">
       {changes.length === 0 && <p className="text-xs text-muted">No block changes.</p>}
       <ul aria-label={label} className="flex flex-col gap-1.5">
         {entries.map((entry, index) => {
           const kind = entry.change;
+          let marker: string | undefined;
+          if (entry.type === 'numberedListItem') {
+            const depth = entry.depth ?? 0;
+            counters[depth] = (counters[depth] ?? 0) + 1;
+            marker = `${counters[depth]}.`;
+          }
           const tone = kind === 'unchanged' ? '' : `border-l-2 ${TONE[kind]}`;
           return (
             <li key={`${entry.blockId}-${kind}-${index}`} className={`rounded-r-md px-2 py-1 ${tone}`}>
@@ -81,10 +88,10 @@ export function ReviewDocument({ entries, label }: { entries: readonly BlockDiff
               )}
               {kind === 'changed' && (
                 <div className="text-muted line-through">
-                  <BlockText entry={entry} text={text(entry.before)} />
+                  <BlockText entry={entry} text={text(entry.before)} marker={marker} />
                 </div>
               )}
-              <BlockText entry={entry} text={text(kind === 'removed' ? entry.before : entry.after)} />
+              <BlockText entry={entry} text={text(kind === 'removed' ? entry.before : entry.after)} marker={marker} />
             </li>
           );
         })}

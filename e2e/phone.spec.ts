@@ -41,6 +41,13 @@ test('the review queue on a phone opens its detail full-screen with a back contr
   await expect(page).toHaveURL(new RegExp(`/w/${world.slug}/reviews$`));
   await expect(queue).toBeVisible();
   await expect(detail).toHaveCount(0);
+
+  // Approving the only waiting item clears the review param and says what happened.
+  await queue.getByRole('listitem').filter({ hasText: 'Phone review' }).getByRole('button').click();
+  await page.getByRole('region', { name: 'Review detail' }).getByRole('button', { name: 'Approve' }).click();
+  await expect(page).toHaveURL(new RegExp(`/w/${world.slug}/reviews$`));
+  await expect(page.getByText('Nothing is waiting for your review.')).toBeVisible();
+  await expect(page.getByRole('status')).toContainText('Approved version 1 of Phone review.');
 });
 
 test('Settings on a phone: the tabs scroll and the space pane is a full-screen sheet', async ({ browser, request }) => {

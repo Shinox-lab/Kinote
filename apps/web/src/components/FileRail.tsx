@@ -1,10 +1,10 @@
 import { useRef, useState, type KeyboardEvent } from 'react';
-import type { FileDetails, SpaceResponse, SpaceRole } from '@living-wiki/contracts';
+import type { ChunkInspector, FileDetails, SpaceResponse, SpaceRole } from '@living-wiki/contracts';
 import { chunkSummary } from '../lib/chunks.js';
 import { fileType } from '../lib/fileType.js';
 import { formatBytes } from '../lib/fileUi.js';
 import { versionWho, whenLabel } from '../lib/history.js';
-import { useFileVersions, useVersionChunks } from '../lib/queries.js';
+import { useFileVersions } from '../lib/queries.js';
 import { headingLine } from '../lib/search.js';
 import { loadSession } from '../lib/session.js';
 import type { FileControls } from '../lib/fileUi.js';
@@ -25,6 +25,10 @@ export function FileRail({
   role,
   space,
   controls,
+  chunks,
+  chunksError,
+  chunksPending,
+  onLoadChunks,
   onClose,
 }: {
   file: FileDetails;
@@ -32,13 +36,16 @@ export function FileRail({
   role: SpaceRole | null;
   space: SpaceResponse | undefined;
   controls: FileControls;
+  chunks: ChunkInspector | undefined;
+  chunksError: unknown;
+  chunksPending: boolean;
+  onLoadChunks: () => void;
   onClose: () => void;
 }) {
   const [tab, setTab] = useState<Tab>('details');
   const tabs = useRef<Record<Tab, HTMLButtonElement | null>>({ details: null, chunks: null, versions: null });
   const selfId = loadSession()?.user.id ?? null;
   const { data: versions } = useFileVersions(file.id);
-  const chunks = useVersionChunks(shownId ?? '', controls.chunks && shownId !== null);
   const latest = versions?.[0];
   const who = latest ? versionWho(latest, selfId) : null;
   const type = fileType(file.title, latest?.mimeType);
@@ -47,7 +54,7 @@ export function FileRail({
 
   const counts: Record<Tab, string> = {
     details: 'Details',
-    chunks: chunks.data ? `Chunks (${chunks.data.chunks.length})` : 'Chunks',
+    chunks: chunks ? `Chunks (${chunks.chunks.length})` : 'Chunks',
     versions: versions ? `Versions (${versions.length})` : 'Versions',
   };
 
@@ -72,8 +79,8 @@ export function FileRail({
         <button
           type="button"
           onClick={onClose}
-          aria-label="Collapse file information"
-          className="rounded px-2 py-1 text-xs text-muted hover:bg-hover hover:text-fg"
+          aria-label="Close file information"
+          className="rounded px-2 py-1 text-xs text-muted hover:bg-hover hover:text-fg max-md:min-h-11"
         >
           Close
         </button>
@@ -92,9 +99,15 @@ export function FileRail({
             aria-selected={tab === value}
             aria-controls={tab === value ? `file-rail-${value}` : undefined}
             tabIndex={tab === value ? 0 : -1}
-            onClick={() => setTab(value)}
-            onKeyDown={(event) => onTabKey(event, value)}
-            className={`-mb-px border-b-2 px-2 py-2 text-xs font-medium ${
+            onClick={() => {
+              setTab(value);
+              if (value === 'chunks') onLoadChunks();
+            }}
+            onKeyDown={(event) => {
+              onTabKey(event, value);
+              if ((event.key === 'ArrowRight' || event.key === 'End') && controls.chunks) onLoadChunks();
+            }}
+            className={`-mb-px border-b-2 px-2 py-2 text-xs font-medium max-md:min-h-11 ${
               tab === value ? 'border-accent text-fg' : 'border-transparent text-muted hover:text-fg'
             }`}
           >
@@ -135,16 +148,16 @@ export function FileRail({
                 </dd>
               </div>
             )}
-            {chunks.data?.pageCount !== null && chunks.data?.pageCount !== undefined && (
+            {chunks?.pageCount !== null && chunks?.pageCount !== undefined && (
               <div className={ROW}>
                 <dt className="text-muted">Pages</dt>
-                <dd>{chunks.data.pageCount}</dd>
+                <dd>{chunks.pageCount}</dd>
               </div>
             )}
-            {chunks.data && (
+            {chunks && (
               <div className={ROW}>
                 <dt className="text-muted">Chunks</dt>
-                <dd>{chunks.data.chunks.length}</dd>
+                <dd>{chunks.chunks.length}</dd>
               </div>
             )}
             {space && (
@@ -159,24 +172,24 @@ export function FileRail({
 
       {tab === 'chunks' && controls.chunks && (
         <div role="tabpanel" id="file-rail-chunks" aria-labelledby="file-rail-chunks-tab" className="flex flex-col gap-3">
-          {chunks.error ? (
-            <ErrorNote error={chunks.error} />
-          ) : chunks.isPending ? (
+          {chunksError ? (
+            <ErrorNote error={chunksError} />
+          ) : chunksPending ? (
             <Loading what="chunks" />
-          ) : !chunks.data ? null : !chunks.data.ready ? (
+          ) : !chunks ? null : !chunks.ready ? (
             <p className="text-xs text-muted">The text is still being read.</p>
-          ) : chunks.data.chunks.length === 0 ? (
+          ) : chunks.chunks.length === 0 ? (
             <p className="text-xs text-muted">Not indexed yet</p>
           ) : (
             <>
               <p className="text-xs text-muted">
-                {chunks.data.indexed ? 'Indexed · ' : 'Not indexed yet · '}
-                {chunks.data.chunks.length} chunks
-                {chunks.data.pageCount !== null && ` · ${chunks.data.pageCount} pages`}
-                {' · text read from the PDF'}
+                {chunks.indexed ? 'Indexed · ' : 'Not indexed yet · '}
+                {chunks.chunks.length} chunks
+                {chunks.pageCount !== null && ` · ${chunks.pageCount} pages`}
+                {' · text read from the file'}
               </p>
               <ol aria-label="Chunks" className="flex flex-col gap-2">
-                {chunks.data.chunks.map((chunk) => (
+                {chunks.chunks.map((chunk) => (
                   <li key={chunk.ordinal} className="rounded-md border border-line bg-surface p-2">
                     <p className="text-[10px] font-medium text-muted">
                       <span className="font-mono">{String(chunk.ordinal + 1).padStart(2, '0')}</span> · {chunkSummary(chunk)}

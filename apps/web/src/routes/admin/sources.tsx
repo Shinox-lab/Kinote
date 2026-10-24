@@ -1,8 +1,10 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import type { Source, SourceToken, SpaceResponse } from '@living-wiki/contracts';
 import { api, errorMessage } from '../../lib/api.js';
 import { useRefresh, useSources, useSpaces } from '../../lib/queries.js';
+import { useFocusTrap } from '../../lib/useFocusTrap.js';
+import { useMediaQuery } from '../../lib/useMediaQuery.js';
 import { lastUsedLabel, sourceStatusLabel, tokenState } from '../../lib/sources.js';
 import { relativeTime } from '../../lib/updates.js';
 import { whenLabel } from '../../lib/history.js';
@@ -235,8 +237,24 @@ export function SourcesPage() {
   const [creating, setCreating] = useState(false);
   // The one-time token, held only while its dialog is open.
   const [issued, setIssued] = useState<{ sourceName: string; token: string } | null>(null);
+  const wide = useMediaQuery('(min-width: 1200px)');
+  const pane = useRef<HTMLDivElement>(null);
   const current = sources?.find((source) => source.id === selected) ?? null;
   const now = new Date();
+  const paneOpen = creating || current !== null;
+  const closePane = () => {
+    setCreating(false);
+    setSelected(null);
+  };
+  useFocusTrap(pane, !wide && paneOpen, closePane);
+  useEffect(() => {
+    if (wide || !paneOpen) return;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previous;
+    };
+  }, [wide, paneOpen]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -275,7 +293,7 @@ export function SourcesPage() {
                       setCreating(false);
                       setSelected(source.id);
                     }}
-                    className={`flex w-full flex-col gap-0.5 rounded-md px-2 py-3 text-left ${active ? 'bg-active' : 'hover:bg-hover'}`}
+                    className={`flex w-full flex-col gap-0.5 rounded-md px-2 py-3 text-left max-md:min-h-11 ${active ? 'bg-active' : 'hover:bg-hover'}`}
                   >
                     <span className="flex flex-wrap items-baseline gap-x-2">
                       <span className={`size-1.5 rounded-full ${source.status === 'active' ? 'bg-success' : 'bg-muted'}`} aria-hidden="true" />
@@ -294,13 +312,17 @@ export function SourcesPage() {
           </ul>
 
           {(creating || current) && (
-            <div className="fixed inset-0 z-30 overflow-y-auto bg-surface p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] min-[1200px]:static min-[1200px]:z-auto min-[1200px]:rounded-lg min-[1200px]:border min-[1200px]:border-line min-[1200px]:p-4">
+            <div
+              ref={pane}
+              role={wide ? undefined : 'dialog'}
+              aria-modal={wide ? undefined : 'true'}
+              aria-label={creating ? 'Add a source' : 'Source settings'}
+              tabIndex={-1}
+              className="fixed inset-0 z-30 overflow-y-auto bg-surface p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] outline-none min-[1200px]:static min-[1200px]:z-auto min-[1200px]:rounded-lg min-[1200px]:border min-[1200px]:border-line min-[1200px]:p-4"
+            >
               <button
                 type="button"
-                onClick={() => {
-                  setCreating(false);
-                  setSelected(null);
-                }}
+                onClick={closePane}
                 className="mb-3 rounded-md px-1 py-1 text-xs font-medium text-accent-text hover:underline min-[1200px]:hidden"
               >
                 Close
@@ -315,6 +337,7 @@ export function SourcesPage() {
                 />
               ) : current ? (
                 <SourcePanel
+                  key={current.id}
                   source={current}
                   spaces={spaces}
                   onIssued={(source, token) => setIssued({ sourceName: source.name, token })}

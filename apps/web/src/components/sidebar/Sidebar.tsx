@@ -19,7 +19,7 @@ export function Sidebar({ onCollapse }: { onCollapse?: () => void }) {
   const screens = adminScreens(role);
 
   return (
-    <div className="flex h-full flex-col gap-1 px-2 py-2">
+    <div className="flex h-full flex-col gap-1 px-2 py-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
       <div className="flex items-center gap-1">
         <div className="min-w-0 flex-1">
           <WorkspaceMenu />

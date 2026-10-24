@@ -462,6 +462,7 @@ export const ReviewItemSchema = z.object({
   document: z.object({
     id: z.string().uuid(),
     title: z.string(),
+    icon: z.string().nullable(),
     kind: z.enum(['page', 'file']),
     spaceId: z.string().uuid(),
     spaceName: z.string(),

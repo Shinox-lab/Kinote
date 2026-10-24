@@ -292,7 +292,7 @@ export function HistoryDrawer({
                 setTab(next);
                 tabRefs.current[next]?.focus();
               }}
-              className={`-mb-px border-b-2 px-3 py-2 text-sm font-medium ${
+              className={`-mb-px border-b-2 px-3 py-2 text-sm font-medium max-md:min-h-11 ${
                 tab === value ? 'border-accent text-fg' : 'border-transparent text-muted hover:text-fg'
               }`}
             >

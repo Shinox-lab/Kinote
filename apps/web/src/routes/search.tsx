@@ -205,12 +205,11 @@ export function SearchPage() {
             type="search"
             aria-label="Search pages and files"
             placeholder="Search pages and files"
-            maxLength={500}
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
             className="h-[46px] w-full rounded-lg border border-line bg-surface py-0 pl-10 pr-3 text-sm text-fg placeholder:text-muted focus:border-accent focus:outline-none md:pr-40"
           />
-          <label className="mt-2 flex w-fit items-center gap-1 rounded-md border border-line bg-page px-2 py-1 text-xs text-muted md:absolute md:right-2 md:top-1/2 md:mt-0 md:-translate-y-1/2">
+          <label className="mt-2 flex w-fit items-center gap-1 rounded-md border border-line bg-page px-2 py-1 text-xs text-muted max-md:min-h-11 md:absolute md:right-2 md:top-1/2 md:mt-0 md:-translate-y-1/2">
             <span className="sr-only">Scope</span>
             <select
               aria-label="Scope"
@@ -245,7 +244,7 @@ export function SearchPage() {
                 type="button"
                 onClick={() => setAnswerWanted(true)}
                 disabled={!allows.ask || ask.isFetching}
-                className="inline-flex items-center gap-1.5 rounded-md bg-accent-soft px-2.5 py-1.5 text-xs font-medium text-accent-text hover:opacity-90 disabled:opacity-50"
+                className="inline-flex items-center gap-1.5 rounded-md bg-accent-soft px-2.5 py-1.5 text-xs font-medium text-accent-text hover:opacity-90 disabled:opacity-50 max-md:min-h-11 max-md:w-full max-md:justify-center"
               >
                 <SparkleIcon />
                 Get an answer

@@ -43,6 +43,14 @@ function Shell() {
   // A slide-over closes when the person goes somewhere, and when the screen widens into a column.
   useEffect(() => setSlideOver(false), [pathname, isDesktop]);
   useFocusTrap(panelRef, slideOver && !isDesktop, () => setSlideOver(false));
+  useEffect(() => {
+    if (isDesktop || !slideOver) return;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previous;
+    };
+  }, [isDesktop, slideOver]);
 
   function toggleCollapsed(next: boolean) {
     setCollapsed(next);

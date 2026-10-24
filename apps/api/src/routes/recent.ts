@@ -1,11 +1,11 @@
-import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, ne, or, sql } from 'drizzle-orm';
 import {
   blockActivity,
   documents,
   spaces,
   withTenantTx,
 } from '@living-wiki/db';
-import { getReadableSpaceIds, type Actor } from '@living-wiki/core';
+import { getReadableSpaceIds, isTenantAdmin, type Actor } from '@living-wiki/core';
 import { RecentQuerySchema, type RecentItem } from '@living-wiki/contracts';
 
 /**
@@ -20,6 +20,17 @@ export async function listRecent(actor: Actor, query: unknown): Promise<RecentIt
     const { readableSpaceIds } = await getReadableSpaceIds(tx, actor);
     if (readableSpaceIds.length === 0) return [];
 
+    // Inbox documents are private to their creator (tenant admins excepted), even though the space is readable.
+    const inboxRule = isTenantAdmin(actor)
+      ? undefined
+      : or(
+          ne(spaces.kind, 'inbox'),
+          and(
+            eq(spaces.kind, 'inbox'),
+            eq(documents.createdByType, actor.principalType),
+            eq(documents.createdBy, actor.principalId)
+          )
+        );
     const changedAt = sql<Date>`max(${blockActivity.changedAt})`;
     const pageRows = await tx
       .select({
@@ -48,7 +59,8 @@ export async function listRecent(actor: Actor, query: unknown): Promise<RecentIt
           eq(documents.kind, 'page'),
           isNull(documents.archivedAt),
           isNull(spaces.archivedAt),
-          inArray(documents.spaceId, readableSpaceIds)
+          inArray(documents.spaceId, readableSpaceIds),
+          inboxRule
         )
       )
       .groupBy(documents.id, documents.kind, documents.title, documents.icon, spaces.id, spaces.name)
@@ -78,7 +90,8 @@ export async function listRecent(actor: Actor, query: unknown): Promise<RecentIt
           eq(documents.createdBy, actor.principalId),
           isNull(documents.archivedAt),
           isNull(spaces.archivedAt),
-          inArray(documents.spaceId, readableSpaceIds)
+          inArray(documents.spaceId, readableSpaceIds),
+          inboxRule
         )
       )
       .orderBy(desc(documents.createdAt))

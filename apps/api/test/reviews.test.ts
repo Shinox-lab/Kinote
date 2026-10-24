@@ -137,6 +137,7 @@ describe('review queue: GET /api/v1/reviews', () => {
     expect(item.document).toEqual({
       id: pageId,
       title: 'Onboarding',
+      icon: null,
       kind: 'page',
       spaceId: w.handbook.id,
       spaceName: 'Handbook',
@@ -170,7 +171,7 @@ describe('review queue: GET /api/v1/reviews', () => {
       'reviewedBy',
       'status',
     ]);
-    expect(Object.keys(item.document).sort()).toEqual(['id', 'kind', 'spaceId', 'spaceName', 'title']);
+    expect(Object.keys(item.document).sort()).toEqual(['icon', 'id', 'kind', 'spaceId', 'spaceName', 'title']);
     expect(Object.keys(item.contributors[0]).sort()).toEqual(['id', 'isAgent', 'name', 'type']);
   });
 

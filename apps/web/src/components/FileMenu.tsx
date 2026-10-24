@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import type { FileDetails, SpaceResponse } from '@living-wiki/contracts';
 import { api } from '../lib/api.js';
@@ -35,6 +35,8 @@ export function FileMenu({
   const [open, setOpen] = useState(false);
   const [action, setAction] = useState<Action | null>(null);
   const phone = useMediaQuery('(max-width: 767px)');
+  const wrapper = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
   const restore = useMutation({ mutationFn: () => api.restoreFile(file.id), onSuccess: onChanged });
   const dismiss = useMutation({ mutationFn: () => api.dismissRemoval(file.id), onSuccess: onChanged });
   const retry = useMutation({
@@ -78,6 +80,24 @@ export function FileMenu({
   ];
   const shown = items.filter((item) => item.show && (!item.phoneOnly || phone));
 
+  useEffect(() => {
+    if (!open) return;
+    const onPointer = (event: PointerEvent) => {
+      if (!wrapper.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      setOpen(false);
+      trigger.current?.focus();
+    };
+    document.addEventListener('pointerdown', onPointer);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('pointerdown', onPointer);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
   const select = (run: () => void) => {
     setOpen(false);
     run();
@@ -86,8 +106,9 @@ export function FileMenu({
   if (shown.length === 0) return null;
 
   return (
-    <div className="relative">
+    <div ref={wrapper} className="relative">
       <button
+        ref={trigger}
         type="button"
         aria-label="File actions"
         title="File actions"
@@ -95,7 +116,7 @@ export function FileMenu({
         aria-expanded={open}
         aria-controls="file-actions"
         onClick={() => setOpen((value) => !value)}
-        className="flex size-8 items-center justify-center rounded-md text-lg text-muted hover:bg-hover"
+        className="flex size-8 items-center justify-center rounded-md text-lg text-muted hover:bg-hover max-md:size-11"
       >
         <MoreIcon />
       </button>
@@ -109,7 +130,7 @@ export function FileMenu({
             <li key={item.key} className={item.phoneOnly ? 'md:hidden' : undefined}>
               <button
                 type="button"
-                className="w-full rounded px-3 py-2 text-left text-sm text-fg hover:bg-hover disabled:opacity-50"
+                className="w-full rounded px-3 py-2 text-left text-sm text-fg hover:bg-hover disabled:opacity-50 max-md:min-h-11"
                 onClick={() => select(item.run)}
                 disabled={retry.isPending || restore.isPending || dismiss.isPending}
               >

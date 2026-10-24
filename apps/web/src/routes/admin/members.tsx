@@ -1,4 +1,4 @@
-import { useId, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import type { Member, TenantRole } from '@living-wiki/contracts';
 import { api } from '../../lib/api.js';
@@ -19,6 +19,25 @@ function MemberRow({ member, actorRole, isSelf }: { member: Member; actorRole: T
   const color = authorColor(member.userId);
   const rowId = useId();
   const more = useRef<HTMLButtonElement>(null);
+  const menuWrap = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!menu) return;
+    const onPointer = (event: PointerEvent) => {
+      if (!menuWrap.current?.contains(event.target as Node)) setMenu(false);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      setMenu(false);
+      more.current?.focus();
+    };
+    document.addEventListener('pointerdown', onPointer);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('pointerdown', onPointer);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [menu]);
 
   const changeRole = useMutation({
     mutationFn: (role: TenantRole) => api.changeMemberRole(member.userId, { role }),
@@ -59,7 +78,7 @@ function MemberRow({ member, actorRole, isSelf }: { member: Member; actorRole: T
           value={member.role}
           disabled={locked || changeRole.isPending}
           onChange={(event) => changeRole.mutate(event.target.value as TenantRole)}
-          className="h-7 rounded-full border border-line bg-page px-2 text-xs text-fg disabled:opacity-70"
+          className="h-7 rounded-full border border-line bg-page px-2 text-xs text-fg disabled:opacity-70 max-md:h-11"
         >
           {TENANT_ROLES.filter((role) => role !== 'owner').map((role) => (
             <option key={role} value={role}>
@@ -68,7 +87,7 @@ function MemberRow({ member, actorRole, isSelf }: { member: Member; actorRole: T
           ))}
         </select>
       )}
-      <div className="relative">
+      <div ref={menuWrap} className="relative">
         <button
           ref={more}
           type="button"
@@ -78,7 +97,7 @@ function MemberRow({ member, actorRole, isSelf }: { member: Member; actorRole: T
           aria-controls={rowId}
           disabled={locked}
           onClick={() => setMenu((value) => !value)}
-          className="flex size-7 items-center justify-center rounded text-muted hover:bg-hover disabled:opacity-40"
+          className="flex size-7 items-center justify-center rounded text-muted hover:bg-hover disabled:opacity-40 max-md:size-11"
         >
           <MoreIcon />
         </button>
@@ -97,7 +116,7 @@ function MemberRow({ member, actorRole, isSelf }: { member: Member; actorRole: T
             ) : (
               <button
                 type="button"
-                className="w-full rounded px-2 py-1.5 text-left text-sm text-danger hover:bg-hover"
+                className="w-full rounded px-2 py-1.5 text-left text-sm text-danger hover:bg-hover max-md:min-h-11"
                 onClick={() => setConfirming(true)}
               >
                 Remove…

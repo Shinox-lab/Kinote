@@ -78,7 +78,7 @@ export function LifecycleMenu({
             aria-expanded={open}
             aria-controls="lifecycle-actions"
             onClick={() => setOpen((v) => !v)}
-            className="flex size-8 items-center justify-center rounded-md text-lg text-muted hover:bg-hover"
+            className="flex size-8 items-center justify-center rounded-md text-lg text-muted hover:bg-hover max-md:size-11"
           >
             <MoreIcon />
           </button>
@@ -92,7 +92,7 @@ export function LifecycleMenu({
                 <li key={item.key}>
                   <button
                     type="button"
-                    className="w-full rounded px-3 py-2 text-left text-sm text-fg hover:bg-hover"
+                    className="w-full rounded px-3 py-2 text-left text-sm text-fg hover:bg-hover max-md:min-h-11"
                     onClick={() => {
                       setAction(item.key);
                       setOpen(false);

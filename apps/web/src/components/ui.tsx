@@ -118,7 +118,7 @@ export function Button({
   return (
     <button
       type={type}
-      className={`rounded-md px-3 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50 ${BUTTON[variant]} ${className}`}
+      className={`rounded-md px-3 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50 max-md:min-h-11 ${BUTTON[variant]} ${className}`}
       {...rest}
     />
   );

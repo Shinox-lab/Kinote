@@ -9,7 +9,7 @@ describe('GET /api/v1/recent', () => {
   useTestDb();
 
   async function setup() {
-    const { tenant, headers } = await bootstrapTenant(app, { name: 'Recent Co', slug: 'recent-co' });
+    const { tenant, headers, inboxSpace } = await bootstrapTenant(app, { name: 'Recent Co', slug: 'recent-co' });
     const space = await post(headers, '/api/v1/spaces', { name: 'Docs', slug: 'docs', review_required: false });
     const editor = await signUpMember(app, tenant.id, 'member');
     await post(headers, `/api/v1/spaces/${space.id}/grants`, {
@@ -17,7 +17,7 @@ describe('GET /api/v1/recent', () => {
       principal_id: editor.userId,
       role: 'editor',
     });
-    return { tenant, headers, space, editor };
+    return { tenant, headers, space, inbox: inboxSpace, editor };
   }
   type World = Awaited<ReturnType<typeof setup>>;
 
@@ -81,6 +81,28 @@ describe('GET /api/v1/recent', () => {
     expect(items[1]).toMatchObject({ kind: 'page', icon: null });
 
     expect((await recent(w, 2)).map((item) => item.title)).toEqual(['notes.txt', 'Page A']);
+  });
+
+  test('an Inbox page created by someone else does not leak into Recent', async () => {
+    const w = await setup();
+    const theirs = await post(w.headers, '/api/v1/pages', {
+      space_id: w.inbox.id,
+      title: 'Their private note',
+      slug: 'their-private-note',
+      markdown: 'private',
+    });
+    const mine = await post(w.editor.headers, '/api/v1/pages', {
+      space_id: w.inbox.id,
+      title: 'My private note',
+      slug: 'my-private-note',
+      markdown: 'mine',
+    });
+    await changed(w, theirs.id, 'theirs', new Date(Date.now() - 2000));
+    await changed(w, mine.id, 'mine', new Date(Date.now() - 1000));
+
+    const titles = (await recent(w)).map((item) => item.title);
+    expect(titles).toContain('My private note');
+    expect(titles).not.toContain('Their private note');
   });
 
   test('a page icon travels in the recent item', async () => {

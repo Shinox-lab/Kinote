@@ -82,6 +82,7 @@ export async function listReviewQueue(actor: Actor, query: unknown): Promise<Rev
         ...versionSummaryColumns,
         documentId: documents.id,
         title: documents.title,
+        icon: documents.icon,
         kind: documents.kind,
         spaceId: documents.spaceId,
         fileName: versions.fileName,
@@ -161,6 +162,7 @@ export async function listReviewQueue(actor: Actor, query: unknown): Promise<Rev
         document: {
           id: r.documentId,
           title: r.title,
+          icon: r.icon,
           kind: r.kind,
           spaceId: r.spaceId,
           spaceName: space.name,

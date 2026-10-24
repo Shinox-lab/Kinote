@@ -114,9 +114,12 @@ export function FilePage() {
   const canChunks =
     file !== undefined && !archived && !spaceArchived && (role === 'editor' || role === 'reviewer' || role === 'admin');
   const { data: versions } = useFileVersions(file?.id ?? '', file !== undefined);
-  const { data: chunks } = useVersionChunks(shown?.id ?? '', canChunks && shown !== null);
+  // Chunks are heavy: only read them once the rail's Chunks tab asks for them.
+  const [chunksFor, setChunksFor] = useState<string | null>(null);
+  useEffect(() => setChunksFor(null), [shown?.id]);
+  const chunks = useVersionChunks(chunksFor ?? '', canChunks && chunksFor !== null);
   const latest = versions?.[0];
-  const pages = chunks?.pageCount ?? null;
+  const pages = chunks.data?.pageCount ?? null;
 
   useEffect(() => {
     setRailOpen(wide);
@@ -185,6 +188,12 @@ export function FilePage() {
       role={role}
       space={space}
       controls={controls}
+      chunks={chunks.data}
+      chunksError={chunks.error}
+      chunksPending={chunks.isPending}
+      onLoadChunks={() => {
+        if (shown && canChunks) setChunksFor(shown.id);
+      }}
       onClose={() => setRailOpen(false)}
     />
   );
@@ -232,7 +241,7 @@ export function FilePage() {
 
       <header className="flex flex-col gap-2">
         <FileTypeTile name={file.title} mimeType={shown?.mimeType ?? latest?.mimeType} />
-        <h1 className="min-w-0 break-words text-[1.875rem] font-semibold leading-tight tracking-[-0.02em] text-fg">
+        <h1 className="min-w-0 break-words text-[24px] font-semibold leading-tight tracking-[-0.02em] text-fg md:text-[1.875rem]">
           {file.title}
         </h1>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
@@ -304,7 +313,7 @@ export function FilePage() {
             aria-modal="true"
             aria-label="File information"
             tabIndex={-1}
-            className="absolute inset-y-0 right-0 w-[330px] max-w-[90vw] overflow-y-auto border-l border-line bg-surface p-4 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-pop outline-none"
+            className="absolute inset-y-0 right-0 w-full overflow-y-auto border-l border-line bg-surface p-4 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-pop outline-none md:w-[330px] md:max-w-[90vw]"
           >
             {info}
           </div>

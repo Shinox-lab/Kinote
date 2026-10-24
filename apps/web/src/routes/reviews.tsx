@@ -1,7 +1,7 @@
 import { useEffect, useId, useState } from 'react';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { useMutation } from '@tanstack/react-query';
-import type { ReviewItem } from '@living-wiki/contracts';
+import type { FileVersion, ReviewItem } from '@living-wiki/contracts';
 import { api, errorMessage } from '../lib/api.js';
 import { diffSummary } from '../lib/diff.js';
 import { relativeTime } from '../lib/updates.js';
@@ -12,6 +12,9 @@ import { AppTopBar } from '../components/AppTopBar.js';
 import { DiffView } from '../components/DiffView.js';
 import { DocumentLink } from '../components/DocumentLink.js';
 import { FileReviewPreview } from '../components/FileReviewPreview.js';
+import { FileTypeTile } from '../components/FileTypeTile.js';
+import { PageIcon } from '../components/icons.js';
+import { isKnownIcon } from '../lib/emoji.js';
 import { ReviewDocument } from '../components/ReviewDocument.js';
 import { Button, ErrorNote, Loading } from '../components/ui.js';
 
@@ -88,6 +91,15 @@ function ReviewDetail({ item, now, onResult }: { item: ReviewItem; now: Date; on
   const isPage = item.document.kind === 'page';
   const diff = useVersionDiff(item.version.id, isPage);
   const { version } = item;
+  const reviewFile: FileVersion | null = item.file
+    ? {
+        ...version,
+        fileName: item.file.fileName,
+        mimeType: item.file.mimeType,
+        sizeBytes: item.file.sizeBytes,
+        hasText: true,
+      }
+    : null;
 
   const settle = () => {
     void refresh('reviews');
@@ -150,7 +162,7 @@ function ReviewDetail({ item, now, onResult }: { item: ReviewItem; now: Date; on
               type="button"
               aria-pressed={view === value}
               onClick={() => setView(value)}
-              className={`rounded px-2.5 py-1 text-xs font-medium ${view === value ? 'bg-active text-fg' : 'text-muted hover:text-fg'}`}
+              className={`rounded px-2.5 py-1 text-xs font-medium max-md:min-h-11 ${view === value ? 'bg-active text-fg' : 'text-muted hover:text-fg'}`}
             >
               {label}
             </button>
@@ -158,6 +170,7 @@ function ReviewDetail({ item, now, onResult }: { item: ReviewItem; now: Date; on
         </div>
       )}
 
+      <div className="w-full max-w-[620px]">
       {isPage ? (
         diff.error ? (
           <ErrorNote error={diff.error} />
@@ -171,8 +184,9 @@ function ReviewDetail({ item, now, onResult }: { item: ReviewItem; now: Date; on
           )
         ) : null
       ) : (
-        <FileReviewPreview versionId={version.id} title={item.document.title} autoOpen />
+        <FileReviewPreview versionId={version.id} title={item.document.title} version={reviewFile ?? undefined} autoOpen />
       )}
+      </div>
 
       <footer className="sticky bottom-0 z-10 mt-2 flex flex-col gap-2 border-t border-line bg-page/95 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur">
         {rejecting && (
@@ -191,10 +205,10 @@ function ReviewDetail({ item, now, onResult }: { item: ReviewItem; now: Date; on
           </p>
         )}
         <div className="flex flex-wrap items-center gap-2">
-          <Button onClick={() => approve.mutate()} disabled={blocked !== null || busy} aria-describedby={blocked ? blockedId : undefined}>
+          <Button className="max-md:min-h-11" onClick={() => approve.mutate()} disabled={blocked !== null || busy} aria-describedby={blocked ? blockedId : undefined}>
             Approve
           </Button>
-          <Button variant="danger" onClick={() => setRejecting(true)} disabled={busy || rejecting}>
+          <Button className="max-md:min-h-11" variant="danger" onClick={() => setRejecting(true)} disabled={busy || rejecting}>
             Reject…
           </Button>
         </div>
@@ -227,15 +241,26 @@ function ReviewQueue({
                 type="button"
                 aria-current={active ? 'true' : undefined}
                 onClick={() => onSelect(item)}
-                className={`flex w-full flex-col gap-0.5 rounded-md border px-3 py-2 text-left ${
+                className={`flex w-full items-start gap-2 rounded-md border px-3 py-2 text-left ${
                   active ? 'border-accent bg-active' : 'border-transparent hover:bg-hover'
                 }`}
               >
-                <span className="truncate text-[13px] font-semibold text-fg">{item.document.title}</span>
-                <span className="truncate text-[11px] text-muted">
-                  {item.document.spaceName} · Version {item.version.number}
+                <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center text-base leading-none text-muted">
+                  {item.document.kind === 'file' ? (
+                    <FileTypeTile name={item.document.title} size={20} />
+                  ) : isKnownIcon(item.document.icon) ? (
+                    <span aria-hidden="true">{item.document.icon}</span>
+                  ) : (
+                    <PageIcon />
+                  )}
                 </span>
-                <span className="text-[10.5px] text-faint">{ago(item.version.createdAt, now)}</span>
+                <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                  <span className="truncate text-[13px] font-semibold text-fg">{item.document.title}</span>
+                  <span className="truncate text-[11px] text-muted">
+                    {item.document.spaceName} · Version {item.version.number}
+                  </span>
+                  <span className="text-[10.5px] text-muted">{ago(item.version.createdAt, now)}</span>
+                </span>
               </button>
             </li>
           );
@@ -265,6 +290,18 @@ export function ReviewsPage() {
     if (selected !== null && items.some((item) => item.version.id === selected)) return;
     setSelected(items[0]?.version.id ?? null);
   }, [items, selected]);
+
+  useEffect(() => {
+    if (wide || reviewId === null || !items) return;
+    if (items.some((item) => item.version.id === reviewId)) return;
+    const next = items[0];
+    navigate({
+      to: '/w/$tenantSlug/reviews',
+      params: { tenantSlug: tenant.slug },
+      search: next ? { review: next.version.id } : {},
+      replace: true,
+    });
+  }, [wide, reviewId, items, navigate, tenant.slug]);
 
   const options = [
     { value: ALL_SPACES, label: 'All spaces' },
@@ -297,7 +334,7 @@ export function ReviewsPage() {
       <div className="mx-auto flex w-full flex-col gap-4">
         <header className="flex flex-wrap items-end justify-between gap-3">
           <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-            <h1 className="text-xl font-semibold text-fg">Reviews</h1>
+            <h1 className="text-2xl font-semibold text-fg">Reviews</h1>
             <p className="text-xs text-muted">{waiting} waiting</p>
           </div>
           <label className="flex items-center gap-2 text-xs text-muted">
@@ -352,7 +389,7 @@ export function ReviewsPage() {
               <button
                 type="button"
                 onClick={backToQueue}
-                className="self-start rounded-md px-1 py-1 text-xs font-medium text-accent-text hover:underline"
+                className="self-start rounded-md px-1 py-1 text-xs font-medium text-accent-text hover:underline max-md:min-h-11"
               >
                 ← Back to reviews
               </button>

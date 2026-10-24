@@ -28,6 +28,12 @@ test('Settings: the tabs, members, a space pane and sources', async ({ browser, 
   await expect(pane.getByLabel('Name')).toHaveValue('Docs');
   await expect(pane.getByRole('button', { name: 'Manage access' })).toBeVisible();
 
+  // Switching the pane resets the form to the newly selected space.
+  await page.getByRole('list', { name: 'Spaces' }).getByRole('button', { name: /^Inbox/ }).click();
+  await expect(page.getByRole('region', { name: 'Settings for Inbox' }).getByLabel('Name')).toHaveValue('Inbox');
+  await page.getByRole('list', { name: 'Spaces' }).getByRole('button', { name: /^Docs/ }).click();
+  await expect(page.getByRole('region', { name: 'Settings for Docs' }).getByLabel('Name')).toHaveValue('Docs');
+
   await tabs.getByRole('link', { name: 'Sources' }).click();
   await expect(page.getByRole('button', { name: 'Add source' })).toBeVisible();
   await expect(page.getByText('No sources yet.')).toBeVisible();

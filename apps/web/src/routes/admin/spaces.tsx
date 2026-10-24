@@ -1,9 +1,11 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import type { SpaceResponse } from '@living-wiki/contracts';
 import { api } from '../../lib/api.js';
 import { slugify } from '../../lib/console.js';
 import { useRefresh, useSpaces } from '../../lib/queries.js';
+import { useFocusTrap } from '../../lib/useFocusTrap.js';
+import { useMediaQuery } from '../../lib/useMediaQuery.js';
 import { BookIcon, InboxIcon } from '../../components/icons.js';
 import { SpaceCard } from '../../components/SpaceCard.js';
 import { Button, Checkbox, ErrorNote, Loading, TextField } from '../../components/ui.js';
@@ -84,7 +86,23 @@ export function SpacesPage() {
   const { data: spaces, error, isPending } = useSpaces();
   const [selected, setSelected] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const wide = useMediaQuery('(min-width: 1200px)');
+  const pane = useRef<HTMLDivElement>(null);
   const current = spaces?.find((space) => space.id === selected) ?? null;
+  const paneOpen = creating || current !== null;
+  const closePane = () => {
+    setCreating(false);
+    setSelected(null);
+  };
+  useFocusTrap(pane, !wide && paneOpen, closePane);
+  useEffect(() => {
+    if (wide || !paneOpen) return;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previous;
+    };
+  }, [wide, paneOpen]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -147,13 +165,17 @@ export function SpacesPage() {
           </ul>
 
           {(creating || current) && (
-            <div className="fixed inset-0 z-30 overflow-y-auto bg-surface p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] min-[1200px]:static min-[1200px]:z-auto min-[1200px]:rounded-lg min-[1200px]:border min-[1200px]:border-line min-[1200px]:p-4">
+            <div
+              ref={pane}
+              role={wide ? undefined : 'dialog'}
+              aria-modal={wide ? undefined : 'true'}
+              aria-label={creating ? 'Create a space' : 'Space settings'}
+              tabIndex={-1}
+              className="fixed inset-0 z-30 overflow-y-auto bg-surface p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] outline-none min-[1200px]:static min-[1200px]:z-auto min-[1200px]:rounded-lg min-[1200px]:border min-[1200px]:border-line min-[1200px]:p-4"
+            >
               <button
                 type="button"
-                onClick={() => {
-                  setCreating(false);
-                  setSelected(null);
-                }}
+                onClick={closePane}
                 className="mb-3 rounded-md px-1 py-1 text-xs font-medium text-accent-text hover:underline min-[1200px]:hidden"
               >
                 Close
@@ -166,7 +188,7 @@ export function SpacesPage() {
                   }}
                 />
               ) : current ? (
-                <SpaceCard space={current} />
+                <SpaceCard key={current.id} space={current} />
               ) : null}
             </div>
           )}

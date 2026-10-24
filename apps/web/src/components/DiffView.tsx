@@ -4,9 +4,9 @@ import { useAuthorNames } from '../lib/queries.js';
 import { authorLabel } from '../lib/wiki.js';
 
 const TONE = {
-  added: 'border-success bg-success-bg',
-  changed: 'border-dot-review bg-dot-review/15',
-  removed: 'border-danger bg-danger-bg',
+  added: 'border-diff-added-line bg-diff-added',
+  changed: 'border-diff-changed-line bg-diff-changed',
+  removed: 'border-diff-removed-line bg-diff-removed',
 } as const;
 
 const text = (value: string | undefined) => value || '(empty block)';

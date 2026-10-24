@@ -96,7 +96,7 @@ export function PageStatus({
           aria-expanded={open}
           aria-controls={popoverId}
           onClick={() => setOpen((value) => !value)}
-          className={`inline-flex h-6 items-center gap-1.5 rounded-full px-2.5 text-[11.8px] font-medium ${TONE[info.tone]}`}
+          className={`inline-flex h-6 items-center gap-1.5 rounded-full px-2.5 text-[11.8px] font-medium max-md:h-11 max-md:px-3 ${TONE[info.tone]}`}
         >
           <span aria-hidden="true" className={`size-1.5 rounded-full ${DOT[info.tone]}`} />
           <span role="status" aria-live="polite" aria-label={`Page status: ${info.label}`}>
@@ -135,14 +135,14 @@ export function PageStatus({
               <button
                 type="button"
                 onClick={() => openTab('versions')}
-                className="flex-1 rounded px-2 py-1.5 text-left text-sm text-fg hover:bg-hover"
+                className="flex-1 rounded px-2 py-1.5 text-left text-sm text-fg hover:bg-hover max-md:min-h-11"
               >
                 History
               </button>
               <button
                 type="button"
                 onClick={() => openTab('changes')}
-                className="flex-1 rounded px-2 py-1.5 text-left text-sm text-fg hover:bg-hover"
+                className="flex-1 rounded px-2 py-1.5 text-left text-sm text-fg hover:bg-hover max-md:min-h-11"
               >
                 Changes ({changedCount})
               </button>

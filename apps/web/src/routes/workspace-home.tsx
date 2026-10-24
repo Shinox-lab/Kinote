@@ -130,7 +130,7 @@ export function WorkspaceHomePage() {
   const content = (
     <div className="flex flex-col gap-7">
       <header className="flex flex-col gap-1.5">
-        <h1 className="text-[27px] font-semibold leading-tight tracking-[-0.02em] text-fg">
+        <h1 className="text-[23px] font-semibold leading-tight tracking-[-0.02em] text-fg md:text-[27px]">
           Welcome back{first ? `, ${first}` : ''}
         </h1>
         <p className="text-[11.5px] text-muted">{date}</p>
@@ -161,6 +161,7 @@ export function WorkspaceHomePage() {
         />
       </form>
 
+      {recent.error && <ErrorNote error={recent.error} />}
       {recentItems.length > 0 && (
         <section aria-labelledby="home-continue" className="flex flex-col gap-2">
           <h2 id="home-continue" className="text-xs font-medium uppercase tracking-wide text-muted">
@@ -186,7 +187,7 @@ export function WorkspaceHomePage() {
         {updates.data && items.length === 0 && <p className="text-sm text-muted">Nothing has changed yet.</p>}
         {groups.map((group) => (
           <section key={group.key} aria-label={group.label} className="flex flex-col gap-1">
-            <h3 className="px-2 pt-1 text-[11px] font-medium uppercase tracking-wide text-faint">{group.label}</h3>
+            <h3 className="px-2 pt-1 text-[11px] font-medium uppercase tracking-wide text-muted">{group.label}</h3>
             <ul className="flex flex-col">
               {group.items.map((item) => (
                 <UpdateRow key={item.versionId} item={item} selfId={selfId} now={now} />
@@ -210,7 +211,7 @@ export function WorkspaceHomePage() {
   return (
     <>
       <AppTopBar crumbs={<span className="text-sm font-medium text-fg">Home</span>} />
-      <div className="mx-auto w-full max-w-[900px]">
+      <div className="mx-auto w-full max-w-[820px]">
         {inbox ? (
           <DropZone
             target="your Inbox"

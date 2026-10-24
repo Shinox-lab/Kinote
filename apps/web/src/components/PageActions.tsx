@@ -57,18 +57,18 @@ export function PageActions({
     <div className="flex flex-col gap-2">
       <div className={`flex gap-2 ${stacked ? 'flex-col' : 'flex-wrap items-center'}`}>
         {controls.primary && (
-          <Button className={width} onClick={() => snapshot.mutate()} disabled={busy}>
+          <Button className={`${width} max-md:min-h-11`} onClick={() => snapshot.mutate()} disabled={busy}>
             {controls.primary}
           </Button>
         )}
         {controls.retry && failed && (
-          <Button className={width} variant="secondary" onClick={() => retry.mutate(failed.id)} disabled={busy}>
+          <Button className={`${width} max-md:min-h-11`} variant="secondary" onClick={() => retry.mutate(failed.id)} disabled={busy}>
             Retry
           </Button>
         )}
         {controls.restoreIndexed && page.indexedVersion && (
           <Button
-            className={width}
+            className={`${width} max-md:min-h-11`}
             variant="secondary"
             onClick={() => restoreIndexed.mutate(page.indexedVersion!.number)}
             disabled={busy}
