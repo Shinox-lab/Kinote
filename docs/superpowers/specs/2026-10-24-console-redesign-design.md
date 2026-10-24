@@ -117,7 +117,7 @@ the same workspace, the same permissions, the same data.
 
 ### Tokens
 
-All colours are CSS custom properties on `:root` and `.dark`; Tailwind maps them (no raw hex in components).
+All colours are CSS custom properties on `:root` and `[data-theme='dark']` (the existing mechanism); Tailwind maps them (no raw hex in components).
 
 Light:
 
@@ -171,6 +171,12 @@ Night:
 
 Rules: no pure `#000` or `#fff` text; surfaces differ in luminance, not only borders; status is always
 text + dot, never colour alone; images and PDF canvases are not tinted; the PDF page stays white.
+
+The existing CSS variable names stay (`--page`, `--sidebar`, `--surface`, `--line`, `--fg`, `--muted`,
+`--hover`, `--active`, `--accent`, `--accent-fg`, `--accent-text`); the design names above map onto them
+(paper → `--page`, ink → `--fg`, hairline → `--line`). New tokens (faint, the four status tints, the three
+diff tints) are additive. The tree's existing attention-dot values keep their meaning (failed / review /
+editing); the review screen's diff tones use the new diff tokens.
 
 ### Type and space
 
@@ -338,7 +344,7 @@ opened from an "Info" control in the top bar.
 
 Warm charcoal, three planes (sidebar `#141210`, paper `#1a1713`, surface `#221e19`), ink `#ece6dd`, violet
 `#a08cff`, rebuilt status tints (table above). The theme control lives in the account menu: System follows
-`prefers-color-scheme`; Light/Dark set `.dark` on `<html>` and persist (existing storage). BlockNote's CSS
+`prefers-color-scheme`; Light/Dark set `data-theme="dark"` on `<html>` and persist (existing storage). BlockNote's CSS
 variables, the History drawer, popovers, the diff tones, the file mat and the editors' chrome are all
 themed; PDF pages, images and extracted content are not tinted. Dark uses borders over shadows; popovers
 keep a soft shadow.
@@ -412,8 +418,8 @@ change. The tree updates optimistically; a failed save reverts.
 ## Delivery order
 
 0. Commit the previous round. Tokens + shell (sidebar, top bar, account menu, theme control, collapse);
-   remove the feed and the OnThis page panel; update the shell e2e baseline. This lands the frame every
-   later phase lives in.
+   update the shell e2e baseline. The feed and the OnThis page panel stay until Home and the page phases
+   replace them, so every phase ships working software. This lands the frame every later phase lives in.
 1. Page: icon migration/API/picker; header; status chip and popover; HistoryDrawer Changes tab; presence;
    type and table styles.
 2. File: rail, type tiles, fit, menu changes, markdown/sheet treatments.
