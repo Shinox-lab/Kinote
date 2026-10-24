@@ -15,6 +15,7 @@ import {
 import {
   AppError,
   MoveFileRequestSchema,
+  UpdateTitleRequestSchema,
   UploadFileFieldsSchema,
   type ChunkInspector,
   type DocumentSummary,
@@ -413,6 +414,40 @@ async function lockFile(tx: DbTransaction, tenantId: string, fileId: string): Pr
   const doc = await lockDocument(tx, tenantId, fileId);
   if (doc.kind !== 'file') throw new AppError('document_not_found');
   return doc;
+}
+
+/**
+ * Renames a file (editor): the name the tree and the file screen show. The
+ * stored file keeps its own name, so a download is still the file that was
+ * uploaded. A file a source keeps in sync is not renamed by hand (409
+ * `managed_by_source`), and an archived file is not renamed at all (409
+ * `page_archived`).
+ */
+export async function renameFile(actor: Actor, fileId: string, input: unknown): Promise<DocumentSummary> {
+  assertValidUuid(fileId, 'document_not_found');
+  const parsed = UpdateTitleRequestSchema.parse(input);
+
+  return withTenantTx(actor.tenantId, async (tx) => {
+    const doc = await lockFile(tx, actor.tenantId, fileId);
+    await requireDocumentRole(tx, actor, doc, 'editor', { notFound: 'document_not_found' });
+    if (doc.archivedAt) throw fileArchived();
+    if (doc.placement === 'synced') throw new AppError('managed_by_source');
+    const [updated] = await tx
+      .update(documents)
+      .set({ title: parsed.title })
+      .where(and(eq(documents.tenantId, actor.tenantId), eq(documents.id, fileId)))
+      .returning();
+    await writeAuditEvent(tx, {
+      tenantId: actor.tenantId,
+      type: 'file.renamed',
+      actorType: actor.principalType,
+      actorId: actor.principalId,
+      subjectType: 'file',
+      subjectId: fileId,
+      payload: { previousTitle: doc.title, title: parsed.title },
+    });
+    return toDocumentSummary(updated!);
+  });
 }
 
 /**

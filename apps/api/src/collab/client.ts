@@ -25,6 +25,20 @@ export interface CollabClient {
     source: 'restore' | 'agent';
   }): Promise<void>;
   /**
+   * Renames a live page (its title only; the blocks are untouched),
+   * attributed to `actor` as a human change: the title is part of the
+   * indexed text, so a rename is a content change.
+   *
+   * Never call it while holding `lockDocument` on that page, for the same
+   * reason as `replaceBlocks`.
+   */
+  setTitle(a: {
+    tenantId: string;
+    pageId: string;
+    title: string;
+    actor: { type: 'user' | 'agent'; id: string };
+  }): Promise<void>;
+  /**
    * Closes the live editing connections of a tenant (only `userId`'s when
    * given), so they reconnect and authenticate with the current role. Call it
    * after the access change committed, never inside a transaction.
@@ -64,6 +78,14 @@ export class HttpCollabClient implements CollabClient {
       blocks: a.blocks,
       actor: a.actor,
       source: a.source,
+    });
+  }
+
+  async setTitle(a: Parameters<CollabClient['setTitle']>[0]): Promise<void> {
+    await this.#post('/internal/set-title', {
+      documentName: documentName(a.tenantId, a.pageId),
+      title: a.title,
+      actor: a.actor,
     });
   }
 

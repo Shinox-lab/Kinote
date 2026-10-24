@@ -10,6 +10,7 @@ import {
   CollabFlushRequestSchema,
   CollabReplaceBlocksRequestSchema,
   CollabRevokeRequestSchema,
+  CollabSetTitleRequestSchema,
   ERROR_SENTENCES,
   type ErrorCode,
 } from '@living-wiki/contracts';
@@ -27,6 +28,7 @@ import { collabServerDeps, storeDocumentNow } from './serverState.js';
 export const INTERNAL_PATHS = {
   flush: '/internal/flush',
   replaceBlocks: '/internal/replace-blocks',
+  setTitle: '/internal/set-title',
   revoke: '/internal/revoke',
 } as const;
 
@@ -138,6 +140,29 @@ export async function replaceDocumentBlocks(server: Hocuspocus, input: unknown):
 }
 
 /**
+ * POST /internal/set-title: renames a live page. Only the title changes; the
+ * blocks are untouched. The change is attributed to `actor` as a human edit
+ * (`restore` and `agent` are not offered here): the title is part of the
+ * indexed text, so a rename is a content change like any other.
+ */
+export async function setDocumentTitle(server: Hocuspocus, input: unknown): Promise<void> {
+  const parsed = CollabSetTitleRequestSchema.safeParse(input);
+  if (!parsed.success) throw new AppError('validation_failed');
+  const { documentName, title, actor } = parsed.data;
+  const { tenantId, pageId } = requireDocument(documentName);
+
+  const context = await trustedContext(tenantId, pageId, actor);
+  const session = await openTrustedDirectSession(server, documentName, context);
+  try {
+    await session.transact({ source: actor.type === 'agent' ? 'agent' : 'human', actorId: actor.id }, (doc) => {
+      doc.getMap('meta').set('title', title);
+    });
+  } finally {
+    await session.close();
+  }
+}
+
+/**
  * POST /internal/revoke: closes the websocket under every live connection of
  * `tenant_id` (only `user_id`'s when given). The API calls it after an admin
  * change that can alter access (member removed or re-roled, grants, groups).
@@ -181,6 +206,7 @@ export async function revokeConnections(server: Hocuspocus, input: unknown): Pro
 const HANDLERS: Record<string, (server: Hocuspocus, input: unknown) => Promise<void>> = {
   [INTERNAL_PATHS.flush]: flushDocument,
   [INTERNAL_PATHS.replaceBlocks]: replaceDocumentBlocks,
+  [INTERNAL_PATHS.setTitle]: setDocumentTitle,
   [INTERNAL_PATHS.revoke]: revokeConnections,
 };
 

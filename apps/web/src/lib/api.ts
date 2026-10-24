@@ -249,6 +249,8 @@ export const api = {
   getPage: (id: string) => request(`/api/v1/pages/${e(id)}`, PageDetailsSchema),
   movePage: (id: string, body: MovePageRequest) =>
     request(`/api/v1/pages/${e(id)}/move`, DocumentSummarySchema, send('POST', body)),
+  renamePage: (id: string, title: string) =>
+    request(`/api/v1/pages/${e(id)}`, DocumentSummarySchema, send('PATCH', { title })),
   archivePage: (id: string) => request(`/api/v1/pages/${e(id)}/archive`, DocumentSummarySchema, send('POST')),
   restorePage: (id: string) => request(`/api/v1/pages/${e(id)}/restore`, DocumentSummarySchema, send('POST')),
   withdrawPage: (id: string) => request(`/api/v1/pages/${e(id)}/withdraw`, DocumentSummarySchema, send('POST')),
@@ -284,6 +286,8 @@ export const api = {
     request(`/api/v1/files/${e(id)}/versions`, UploadFileResponseSchema, { method: 'POST', body: form }),
   moveFile: (id: string, body: MoveFileRequest) =>
     request(`/api/v1/files/${e(id)}/move`, DocumentSummarySchema, send('POST', body)),
+  renameFile: (id: string, title: string) =>
+    request(`/api/v1/files/${e(id)}`, DocumentSummarySchema, send('PATCH', { title })),
   withdrawFile: (id: string) => request(`/api/v1/files/${e(id)}/withdraw`, DocumentSummarySchema, send('POST')),
   archiveFile: (id: string) => request(`/api/v1/files/${e(id)}/archive`, DocumentSummarySchema, send('POST')),
   restoreFile: (id: string) => request(`/api/v1/files/${e(id)}/restore`, DocumentSummarySchema, send('POST')),

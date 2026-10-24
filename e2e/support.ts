@@ -176,7 +176,7 @@ export function uploadPanel(page: Page): Locator {
 /** Uploads files through the "+" menu of a space row in the sidebar (the space must be listed there). */
 export async function uploadThroughMenu(page: Page, spaceName: string, files: TestFile[]): Promise<void> {
   const side = page.getByRole('complementary', { name: 'Sidebar' });
-  await side.getByRole('link', { name: spaceName, exact: true }).hover();
+  await side.getByRole('button', { name: new RegExp(`^(Expand|Collapse) ${spaceName}$`) }).hover();
   await side.getByRole('button', { name: `Add to ${spaceName}` }).click();
   const [chooser] = await Promise.all([
     page.waitForEvent('filechooser'),

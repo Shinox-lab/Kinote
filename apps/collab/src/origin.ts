@@ -3,7 +3,7 @@ import type { CollabContext } from './auth.js';
 
 /** What a direct (server-side) session says about the edit it makes. */
 export interface DirectOrigin {
-  source: 'agent' | 'restore';
+  source: 'agent' | 'restore' | 'human';
   actorId: string;
 }
 
@@ -33,7 +33,7 @@ export function directOriginOf(origin: unknown): DirectOrigin | null {
   if (
     !direct ||
     typeof direct.actorId !== 'string' ||
-    (direct.source !== 'agent' && direct.source !== 'restore')
+    (direct.source !== 'agent' && direct.source !== 'restore' && direct.source !== 'human')
   ) {
     return null;
   }

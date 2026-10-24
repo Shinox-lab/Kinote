@@ -88,6 +88,7 @@ import {
   rejectVersion,
   retryVersion,
   movePage,
+  renamePage,
   archivePage,
   restorePage,
   withdrawPage,
@@ -107,6 +108,7 @@ import {
   getVersionChunks,
   listFileVersions,
   moveFile,
+  renameFile,
   readMultipartUpload,
   replaceFile,
   restoreFile,
@@ -476,6 +478,11 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
     return reply.send(parseReply(DocumentSummarySchema, res));
   });
 
+  app.patch('/api/v1/pages/:id', async (req, reply) => {
+    const res = await renamePage(actorOf(req), (req.params as any).id, req.body, opts.collab);
+    return reply.send(parseReply(DocumentSummarySchema, res));
+  });
+
   app.post('/api/v1/pages/:id/archive', async (req, reply) => {
     const actor = actorOf(req);
     const res = await archivePage(actor, (req.params as any).id);
@@ -567,6 +574,11 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
 
   app.post('/api/v1/files/:id/move', async (req, reply) => {
     const res = await moveFile(actorOf(req), (req.params as any).id, req.body);
+    return reply.send(parseReply(DocumentSummarySchema, res));
+  });
+
+  app.patch('/api/v1/files/:id', async (req, reply) => {
+    const res = await renameFile(actorOf(req), (req.params as any).id, req.body);
     return reply.send(parseReply(DocumentSummarySchema, res));
   });
 

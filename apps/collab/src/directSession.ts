@@ -53,11 +53,11 @@ export async function openTrustedDirectSession(
     async transact(origin, fn) {
       if (closed || !conn.document) throw new Error('Direct collab session is closed.');
       if (
-        (origin.source !== 'agent' && origin.source !== 'restore') ||
+        (origin.source !== 'agent' && origin.source !== 'restore' && origin.source !== 'human') ||
         typeof origin.actorId !== 'string' ||
         origin.actorId === ''
       ) {
-        throw new Error('A direct collab transaction needs an agent or restore origin and an actor id.');
+        throw new Error('A direct collab transaction needs an agent, restore or human origin and an actor id.');
       }
       // Hocuspocus 4 stamps each direct transaction with
       // `{ source: 'local', context: conn.context }`, read when transact is

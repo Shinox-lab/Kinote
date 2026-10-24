@@ -50,6 +50,7 @@ export const AuditEventTypeSchema = z.enum([
   'space.archived',
   'page.created',
   'page.moved',
+  'page.renamed',
   'page.archived',
   'page.restored',
   'page.withdrawn',
@@ -61,6 +62,7 @@ export const AuditEventTypeSchema = z.enum([
   'version.retried',
   'file.uploaded',
   'file.moved',
+  'file.renamed',
   'file.extracted',
   'file.withdrawn',
   'file.archived',
@@ -303,6 +305,16 @@ export const MovePageRequestSchema = z.object({
   target_parent_id: z.string().uuid().nullable().default(null),
   position: z.string().default('a0'),
 });
+
+/**
+ * Body of PATCH /api/v1/pages/:id and PATCH /api/v1/files/:id: the new
+ * title of a document. Trimmed, never empty, at most 200 characters (the
+ * same bound a new page's title has).
+ */
+export const UpdateTitleRequestSchema = z.object({
+  title: z.string().trim().min(1).max(200),
+});
+export type UpdateTitleRequest = z.input<typeof UpdateTitleRequestSchema>;
 
 export const RejectVersionRequestSchema = z.object({
   review_note: z.string().trim().min(1).max(300),
@@ -699,6 +711,21 @@ export const CollabReplaceBlocksRequestSchema = z
     }
   });
 export type CollabReplaceBlocksRequest = z.infer<typeof CollabReplaceBlocksRequestSchema>;
+
+/**
+ * Body of POST /internal/set-title: renames a live page. Only the title
+ * changes; the blocks are untouched. The actor is the person (or agent) the
+ * change is attributed to.
+ */
+export const CollabSetTitleRequestSchema = z.object({
+  documentName: z.string().min(1).max(200),
+  title: z.string().trim().min(1).max(200),
+  actor: z.object({
+    type: z.enum(['user', 'agent']),
+    id: z.string().uuid(),
+  }),
+});
+export type CollabSetTitleRequest = z.infer<typeof CollabSetTitleRequestSchema>;
 
 // ---------------------------------------------------------------------------
 // Files (Slice 2)

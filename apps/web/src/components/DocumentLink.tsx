@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import type { DragEvent, MouseEvent, ReactNode } from 'react';
 import { Link } from '@tanstack/react-router';
 
 /**
@@ -14,6 +14,9 @@ export function DocumentLink({
   version,
   className,
   activeClassName,
+  draggable,
+  onDragStart,
+  onContextMenu,
   children,
 }: {
   tenantSlug: string;
@@ -24,12 +27,23 @@ export function DocumentLink({
   className?: string;
   /** Replaces `className` while the link's own address is the current one. */
   activeClassName?: string;
+  /** The row can be dragged (the tree moves it). */
+  draggable?: boolean;
+  onDragStart?: (e: DragEvent<HTMLAnchorElement>) => void;
+  onContextMenu?: (e: MouseEvent<HTMLAnchorElement>) => void;
   children: ReactNode;
 }) {
   const activeProps = activeClassName ? { className: activeClassName } : undefined;
+  const rest = { draggable, onDragStart, onContextMenu };
   if (kind === 'page') {
     return (
-      <Link to="/w/$tenantSlug/p/$pageId" params={{ tenantSlug, pageId: id }} className={className} activeProps={activeProps}>
+      <Link
+        to="/w/$tenantSlug/p/$pageId"
+        params={{ tenantSlug, pageId: id }}
+        className={className}
+        activeProps={activeProps}
+        {...rest}
+      >
         {children}
       </Link>
     );
@@ -41,6 +55,7 @@ export function DocumentLink({
       search={{ ...(typeof page === 'number' && Number.isInteger(page) && page > 0 ? { page } : {}), ...(version ? { v: version } : {}) }}
       className={className}
       activeProps={activeProps}
+      {...rest}
     >
       {children}
     </Link>

@@ -86,7 +86,7 @@ test('adding a page from the sidebar opens it', async ({ browser, request }) => 
   await page.goto(`/w/${world.slug}`);
   const side = sidebar(page);
   await side.getByRole('button', { name: 'Expand Docs' }).click();
-  await side.getByRole('link', { name: 'Docs', exact: true }).hover();
+  await side.getByRole('button', { name: /^(Expand|Collapse) Docs$/ }).hover();
   await side.getByRole('button', { name: 'Add to Docs' }).click();
   await side.getByRole('menuitem', { name: 'New page' }).click();
   await page.getByLabel('New page title').fill('Brand new page');
@@ -94,6 +94,53 @@ test('adding a page from the sidebar opens it', async ({ browser, request }) => 
   await page.waitForURL(/\/p\/[0-9a-f-]{36}$/);
   await expect(side.getByRole('link', { name: 'Brand new page' })).toHaveAttribute('aria-current', 'page');
   await expect(page.getByRole('heading', { name: 'Brand new page', level: 1 })).toBeVisible();
+});
+
+test('a page is renamed from the sidebar: right-click, rename, Enter', async ({ browser, request }) => {
+  const world = await seedWorld(request, { reviewRequired: false });
+  await makePage(request, world, world.owner, 'Old name', 'old-name');
+  const page = await openAs(browser, world, world.owner);
+  await page.goto(`/w/${world.slug}`);
+  const side = sidebar(page);
+  await side.getByRole('button', { name: 'Expand Docs' }).click();
+
+  await side.getByRole('link', { name: /^Old name/ }).click({ button: 'right' });
+  await side.getByRole('menuitem', { name: 'Rename' }).click();
+  await page.getByLabel('New title').fill('New name');
+  await page.keyboard.press('Enter');
+
+  await expect(side.getByRole('link', { name: /^New name/ })).toBeVisible();
+  await expect(side.getByRole('link', { name: /^Old name/ })).toHaveCount(0);
+});
+
+test('a space is made from the sidebar', async ({ browser, request }) => {
+  const world = await seedWorld(request, { reviewRequired: false });
+  const page = await openAs(browser, world, world.owner);
+  await page.goto(`/w/${world.slug}`);
+  const side = sidebar(page);
+
+  await side.getByRole('button', { name: 'New space' }).click();
+  await page.getByLabel('New space name').fill(`Notes ${world.suffix}`);
+  await page.keyboard.press('Enter');
+
+  await expect(side.getByRole('button', { name: new RegExp(`^(Expand|Collapse) Notes ${world.suffix}$`) })).toBeVisible();
+});
+
+test('a page is dragged under another page in the tree', async ({ browser, request }) => {
+  const world = await seedWorld(request, { reviewRequired: false });
+  await makePage(request, world, world.owner, 'Parent', 'parent');
+  await makePage(request, world, world.owner, 'Child', 'child');
+  const page = await openAs(browser, world, world.owner);
+  await page.goto(`/w/${world.slug}`);
+  const side = sidebar(page);
+  await side.getByRole('button', { name: 'Expand Docs' }).click();
+
+  await side.getByRole('link', { name: /^Child/ }).dragTo(side.getByRole('link', { name: /^Parent/ }));
+
+  // The dragged page is now a child of the other one (the tree keeps its own open state).
+  await side.getByRole('button', { name: 'Expand Parent' }).click();
+  const under = side.getByRole('link', { name: /^Parent/ }).locator('xpath=../following-sibling::ul');
+  await expect(under.getByRole('link', { name: /^Child/ })).toBeVisible();
 });
 
 test('updates show what others did, and your own changes read "You"; typing shows the edited dot', async ({

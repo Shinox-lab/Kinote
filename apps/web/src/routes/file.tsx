@@ -132,23 +132,25 @@ export function FilePage() {
   const failedId = file.latestVersion?.id;
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-5">
       <div className="flex items-start justify-between gap-3">
         <Breadcrumb file={file} tenantSlug={tenant.slug} />
         {role && space && <FileMenu file={file} spaces={spaces} controls={controls} onChanged={changed} />}
       </div>
 
-      <div className="flex flex-wrap items-center gap-3">
-        <h1 className="min-w-0 break-words text-xl font-semibold">{file.title}</h1>
-        <Badge badge={file.badge} label="File status" />
-        {archived && <span className="rounded bg-dot-review/15 px-1.5 text-xs text-fg">Archived</span>}
-      </div>
-
-      {banner && (
-        <p role="note" className={`rounded-md border px-3 py-2 text-sm ${BANNER_TONE[banner.tone]}`}>
-          {banner.text}
-        </p>
-      )}
+      {/* The name and the state of the file, at the top. */}
+      <header className="flex flex-col gap-2">
+        <h1 className="min-w-0 break-words text-3xl font-semibold tracking-tight">{file.title}</h1>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted">
+          <Badge badge={file.badge} label="File status" />
+          {archived && <span className="rounded bg-dot-review/15 px-1.5 text-xs text-fg">Archived</span>}
+          {shown && (
+            <span>
+              {shown.fileName} · {formatBytes(shown.sizeBytes)} · version {shown.number}
+            </span>
+          )}
+        </div>
+      </header>
 
       <div className="flex flex-wrap items-center gap-2">
         {shown && controls.download && (
@@ -184,30 +186,32 @@ export function FilePage() {
         )}
         {controls.managedBy && <span className="text-sm text-muted">Kept in sync by a source: replace it there.</span>}
       </div>
+      {banner && (
+        <p role="note" className={`rounded-md border px-3 py-2 text-sm ${BANNER_TONE[banner.tone]}`}>
+          {banner.text}
+        </p>
+      )}
       <ErrorNote error={save.error ?? replace.error ?? retry.error} />
       {replace.data?.unchanged && <p role="status" className="text-sm text-muted">That is the same file that is already here.</p>}
 
+      {/* The file itself is the screen: the preview fills it. */}
       {shown && (
-        <p className="text-sm text-muted">
-          {shown.fileName} · {formatBytes(shown.sizeBytes)} · version {shown.number}
-        </p>
-      )}
-
-      {shown && (
-        <Card title="Preview">
+        <section aria-label="Preview" className="rounded-lg border border-line bg-surface p-4">
           <FileViewer version={shown} page={search.page} />
-        </Card>
+        </section>
       )}
 
-      {controls.chunks && shown && (
-        <Card title="Search chunks">
-          <ChunkInspector key={shown.id} versionId={shown.id} />
+      {/* How it is cut for search and what it looked like before: the rest. */}
+      <div className={`grid gap-4 ${controls.chunks && shown ? 'lg:grid-cols-2' : ''}`}>
+        {controls.chunks && shown && (
+          <Card title="Search chunks">
+            <ChunkInspector key={shown.id} versionId={shown.id} />
+          </Card>
+        )}
+        <Card title="Versions">
+          <FileVersions fileId={file.id} role={role} shownId={shown?.id ?? null} />
         </Card>
-      )}
-
-      <Card title="Versions">
-        <FileVersions fileId={file.id} role={role} shownId={shown?.id ?? null} />
-      </Card>
+      </div>
     </div>
   );
 }

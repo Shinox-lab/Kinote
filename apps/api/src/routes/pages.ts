@@ -27,6 +27,7 @@ import {
   RejectVersionRequestSchema,
   CompareQuerySchema,
   RestoreVersionParamsSchema,
+  UpdateTitleRequestSchema,
   AppError,
   type CollabTokenResponse,
   type DocumentSummary,
@@ -1003,6 +1004,66 @@ async function lockPage(tx: DbTransaction, tenantId: string, pageId: string): Pr
     throw new AppError('page_not_found');
   }
   return doc;
+}
+
+/**
+ * Renames a page (editor): the live title in the collab document changes, so
+ * the page screen shows the new name at once and the next snapshot indexes it
+ * (the title is part of the indexed text, so a rename is a content change).
+ * The tree's copy of the title is updated here too, so the sidebar shows the
+ * new name without waiting for that snapshot.
+ *
+ * The collab call runs before the document lock is taken: collab's authorship
+ * bookkeeping takes a share lock on the same row, so the two would wait for
+ * each other.
+ */
+export async function renamePage(
+  actor: Actor,
+  pageId: string,
+  input: unknown,
+  collab?: CollabClient
+): Promise<DocumentSummary> {
+  assertValidUuid(pageId, 'page_not_found');
+  const parsed = UpdateTitleRequestSchema.parse(input);
+  if (!collab) throw new AppError('internal_error');
+
+  // Access and state first, in their own short transaction (no lock held while
+  // collab works on the same row).
+  await withTenantTx(actor.tenantId, async (tx) => {
+    const [doc] = await tx
+      .select()
+      .from(documents)
+      .where(and(eq(documents.tenantId, actor.tenantId), eq(documents.id, pageId)));
+    if (!doc || doc.kind !== 'page') throw new AppError('page_not_found');
+    await requireDocumentRole(tx, actor, doc, 'editor', { notFound: 'page_not_found' });
+    if (doc.archivedAt) throw new AppError('page_archived');
+  });
+
+  await collab.setTitle({
+    tenantId: actor.tenantId,
+    pageId,
+    title: parsed.title,
+    actor: { type: actor.principalType === 'agent' ? 'agent' : 'user', id: actor.principalId },
+  });
+
+  return withTenantTx(actor.tenantId, async (tx) => {
+    const doc = await lockPage(tx, actor.tenantId, pageId);
+    const [updated] = await tx
+      .update(documents)
+      .set({ title: parsed.title })
+      .where(and(eq(documents.tenantId, actor.tenantId), eq(documents.id, pageId)))
+      .returning();
+    await writeAuditEvent(tx, {
+      tenantId: actor.tenantId,
+      type: 'page.renamed',
+      actorType: actor.principalType,
+      actorId: actor.principalId,
+      subjectType: 'page',
+      subjectId: pageId,
+      payload: { previousTitle: doc.title, title: parsed.title },
+    });
+    return toDocumentSummary(updated);
+  });
 }
 
 /**
