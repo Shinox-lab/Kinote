@@ -235,21 +235,31 @@ test('the theme: choose dark, it survives a reload, and System follows the opera
   await page.emulateMedia({ colorScheme: 'light' });
   await page.goto(`/w/${world.slug}`);
   const theme = () => page.evaluate(() => document.documentElement.dataset.theme);
+  const account = sidebar(page).getByRole('button', { name: 'Account' });
   await expect.poll(theme).toBe('light');
 
-  await sidebar(page).getByRole('button', { name: 'Dark' }).click();
+  await expect(account).toBeVisible();
+  await account.click();
+  await page.getByRole('menuitemradio', { name: 'Dark' }).click();
   await expect.poll(theme).toBe('dark');
   await page.reload();
   // No flash: the page is dark as soon as it loads, and the choice is still marked.
   await expect.poll(theme).toBe('dark');
-  await expect(sidebar(page).getByRole('button', { name: 'Dark' })).toHaveAttribute('aria-pressed', 'true');
+  await account.click();
+  await expect(page.getByRole('menuitemradio', { name: 'Dark' })).toHaveAttribute('aria-checked', 'true');
 
-  await sidebar(page).getByRole('button', { name: 'System' }).click();
+  await page.getByRole('menuitemradio', { name: 'System' }).click();
   await expect.poll(theme).toBe('light');
   await page.emulateMedia({ colorScheme: 'dark' });
   await expect.poll(theme).toBe('dark');
   await page.emulateMedia({ colorScheme: 'light' });
   await expect.poll(theme).toBe('light');
+
+  // Escape closes and returns focus.
+  await account.click();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('menu', { name: 'Account' })).toHaveCount(0);
+  await expect(account).toBeFocused();
 });
 
 test('a phone: the sidebar is a slide-over that closes on navigation and on Escape', async ({ browser, request }) => {
