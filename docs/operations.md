@@ -27,19 +27,32 @@ run the script afterwards to give it a login. `packages/db/test/rls.pg.test.ts`
 asserts the role has neither superuser nor BYPASSRLS and that every policy
 compares the tenant column with `current_tenant_id()`.
 
-## Local stack
+## The app
 
-`docker-compose.yml` (project `living-wiki`) runs postgres (Postgres 17 +
-pgvector), MinIO, a one-shot `migrate`, and the `api`, `collab` and `worker`
-services built from the root `Dockerfile` (one build; each service runs its
-TypeScript entry point with tsx). Host ports, all on 127.0.0.1: postgres
-55543, MinIO 59000 (S3) and 59001 (console), api 8787, collab 1234. Each can be
-changed in `.env` (`POSTGRES_HOST_PORT`, `MINIO_HOST_PORT`,
-`MINIO_CONSOLE_HOST_PORT`, `API_HOST_PORT`, `COLLAB_HOST_PORT`) when a default
-is taken on your machine; `pnpm dev`, `pnpm web` and `pnpm e2e` follow them.
+`docker-compose.yml` (project `living-wiki`) is the whole app: postgres
+(Postgres 17 + pgvector), MinIO, the one-shot `migrate`, the `api`, `collab` and
+`worker` services built from the root `Dockerfile` (each runs its TypeScript
+entry point with tsx), the Docling `extractor`, and the `web` console (the Vite
+build served by nginx, which proxies `/api`, `/mcp` and `/collab`).
 
-To run the whole app, fill in `.env` and run `pnpm dev`: it starts the Docker
-stack and then the console at http://localhost:5173.
+```sh
+cp .env.example .env   # fill in the six secrets
+docker compose up -d   # app on http://localhost:8080 (WEB_HOST_PORT)
+```
+
+This is the only app start; there is no host Vite process in the path. `pnpm
+dev` is a thin wrapper that checks `.env`, builds every image, waits for the
+healthchecks and prints the URL. The first `up` builds the Docling extractor
+(several GB; about 2 GB RAM while it reads a file), so give it time. `pnpm web`
+still serves only the console with Vite, for UI development against the stack;
+`pnpm e2e` uses it as its test harness.
+
+Host ports, all on 127.0.0.1: postgres 55543, MinIO 59000 (S3) and 59001
+(console), api 8787, collab 1234, web 8080. Each can be changed in `.env`
+(`POSTGRES_HOST_PORT`, `MINIO_HOST_PORT`, `MINIO_CONSOLE_HOST_PORT`,
+`API_HOST_PORT`, `COLLAB_HOST_PORT`, `WEB_HOST_PORT`). Coolify does not use
+these host mappings: its proxy routes the domain to the web container's port
+80. API and collab stay published for `pnpm e2e` and UI dev only.
 
 If Docker Desktop shows a port as in use although no container holds it (a
 leftover forward of `com.docker.backend`), restarting Docker Desktop clears it;
@@ -47,7 +60,8 @@ until then set another host port in `.env`.
 
 MinIO comes from `pgsty/minio`, a community build (the official `minio/minio`
 image is no longer published on Docker Hub), pinned by tag and digest. It is
-for this development stack only: use a vetted object store in production.
+the bundled default; in production set `S3_ENDPOINT` to a vetted external store
+if you prefer one.
 
 Secrets have no defaults. Copy `.env.example` to `.env` (untracked) and fill
 in `POSTGRES_PASSWORD`, `APP_DB_PASSWORD`, `COLLAB_TOKEN_SECRET`,
@@ -59,7 +73,7 @@ TEST_DATABASE_URL=postgres://living_wiki_app:$APP_DB_PASSWORD@127.0.0.1:55543/li
 TEST_DATABASE_MIGRATE_URL=postgres://postgres:$POSTGRES_PASSWORD@127.0.0.1:55543/living_wiki \
   pnpm test:pg                 # real-Postgres RLS and job-claim tests
 S3_ENDPOINT=http://127.0.0.1:59000 pnpm vitest run packages/shared/test/objectStorage.test.ts
-docker compose up -d --build   # the whole stack (migrate runs before the services)
+docker compose up -d            # the whole app; migrate runs before the services
 pnpm stack:down                # docker compose down -v: containers and data volumes are deleted
 ```
 
@@ -72,6 +86,42 @@ Database and object data live in the named volumes `living-wiki_pgdata` and
 and a plain `docker compose down`; `docker compose down -v` (`pnpm stack:down`)
 deletes them.
 
+## Coolify (Docker Compose)
+
+The root `docker-compose.yml` is the deployment; no Coolify-specific compose
+override is needed.
+
+1. Create a Docker Compose resource from this repository, compose path
+   `docker-compose.yml`, branch `main`.
+2. In Environment Variables set `POSTGRES_PASSWORD`, `APP_DB_PASSWORD`,
+   `COLLAB_TOKEN_SECRET`, `INTERNAL_SECRET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`
+   (the two token secrets need at least 32 random characters), and
+   `TRUST_PROXY=2` (Coolify's proxy plus the web nginx). Do not set
+   `DATABASE_URL` or `DATABASE_MIGRATE_URL`; the compose builds the internal
+   ones. Set `S3_ENDPOINT` only for an external object store; otherwise the
+   bundled MinIO is used. `AUTH_RATE_LIMIT_MAX`, `MAX_UPLOAD_BYTES` and the
+   extractor settings can stay at their defaults.
+3. Add the public domain to the **web** service with internal port **80**
+   (Coolify can also generate one from `SERVICE_URL_WEB_80`). Do not add domains
+   for `api`, `collab`, `postgres` or `minio`, and do not publish their ports.
+4. Deploy. The first build includes the extractor (several GB; about 2 GB RAM
+   while it reads a file). `migrate` runs once; `web` starts after the api and
+   collab are healthy. Open the domain.
+
+The browser reaches the api, MCP and the editing WebSocket through the web
+nginx on one origin, so there is no CORS or second domain. The web blocks
+`/collab/internal/*`; never publish `INTERNAL_SECRET`.
+
+Data lives in the named volumes `living-wiki_pgdata` and
+`living-wiki_miniodata` (or your external S3). A deploy keeps them; `docker
+compose down -v` deletes them. Back them up like any database. Upgrade with
+`docker compose up -d --build`; the migration is idempotent.
+
+The compose publishes the internal services on 127.0.0.1 for local tools and
+the e2e suite; Coolify routes only the web domain to container port 80. For a
+hard split, remove the `ports:` entries from `postgres`, `minio`, `api` and
+`collab`; the web does not need them.
+
 ## Behind a reverse proxy
 
 The api keys the sign-up and sign-in rate limit on the client IP. Behind a
@@ -81,18 +131,24 @@ that header to believe:
 | `TRUST_PROXY` | Client IP | Use |
 | --- | --- | --- |
 | `false` (default) | the TCP peer; the header is ignored | no proxy in front. Behind a proxy every user shares the proxy's bucket. |
-| `1`, `2`, ... (hop count) | the address that many hops from the right of the header | **recommended** behind a proxy: the number of proxies in front of the api. The api must then be reachable only through them (a direct client would count as a proxy). |
+| `1`, `2`, ... (hop count) | the address that many hops from the right of the header | **recommended** behind a single proxy: the number of proxies in front of the api. The api must then be reachable only through them (a direct client would count as a proxy). |
 | `true` | the leftmost address | avoid: a client-supplied `X-Forwarded-For` is trusted, so a client can pick a fresh rate-limit bucket per request and evade the limit. |
 
 The edge proxy must overwrite `X-Forwarded-For` or append the address it saw
 (nginx `proxy_add_x_forwarded_for`, Caddy and most load balancers do), never
 pass a client's header through unchanged as the last entry.
 
+Behind Coolify there are two proxies — Coolify's own proxy and the web nginx —
+so set `TRUST_PROXY=2` there. Locally the web is reached directly on 8080, so
+`false` is right unless another proxy is in front. Only count proxies that
+append to the header; the web nginx does.
+
 The edge must also not expose the collab server's internal endpoints: block
 `/internal/*` on the public collab host (only the api calls them, over the
 internal network: flush, replace-blocks and revoke, which closes live editing
 sockets after a member, grant or group change), and never hand `INTERNAL_SECRET` to anything outside the
-api and collab services. The secret is the only barrier on those paths.
+api and collab services. The web nginx blocks `/collab/internal/*`; the collab
+service has no public host port. The secret is the only barrier on those paths.
 
 ## End-to-end specs
 
@@ -105,14 +161,17 @@ pnpm e2e:local   # no Docker: e2e/harness/local-stack.ts, stopped again afterwar
 ```
 
 `pnpm e2e` exports `EMBEDDING_PROVIDER=deterministic` (the only provider
-`loadConfig` accepts, passed through to the containers by docker-compose.yml) and
+`loadConfig` accepts, passed through to the containers by docker-compose.yml),
 `AUTH_RATE_LIMIT_MAX=1000` (the specs sign up more accounts than the default 10 a
-minute allows), runs `pnpm stack:up`, starts `api`, `collab` and `worker` with
-`docker compose up -d --build --no-deps`, waits for them, and runs the specs;
-Playwright serves the console with `vite dev` on 5173 against 8787 and 1234. The
-stack stays up afterwards (`pnpm stack:down` deletes it and its data). Port 5173
-must be free: Playwright never adopts a dev server already running there (it
-could proxy to another stack); `E2E_WEB_PORT=<port> pnpm e2e` uses another.
+minute allows) and `EXTRACTOR_MODE=fake` (the suite's files carry a
+`FAKE-EXTRACT` line), runs `pnpm stack:up`, starts `api`, `collab` and `worker`
+with `docker compose up -d --build --no-deps`, waits for them, and runs the
+specs; Playwright serves the console with `vite dev` on 5173 against 8787 and
+1234. This is the one place Vite serves the console; the production app is the
+web service. The stack stays up afterwards (`pnpm stack:down` deletes it and its
+data). Port 5173 must be free: Playwright never adopts a dev server already
+running there (it could proxy to another stack); `E2E_WEB_PORT=<port> pnpm e2e`
+uses another.
 
 `pnpm e2e:local` runs the api, collab and worker in one Node process on an
 in-memory PGlite database, builds the console and serves it with `vite preview`.
@@ -125,30 +184,24 @@ wait for a space's quiet window (a space setting, 10 s at least).
 ## Files
 
 Uploads are limited by `MAX_UPLOAD_BYTES` (default 50 MB). The worker reads TXT, MD and CSV itself; PDF, Office files and
-images go to the extractor service. `EXTRACTOR_MODE` is `off` by default: a file that needs the extractor then waits and
-fails with a plain sentence after its retries, and **Retry** recovers it once the extractor is up. `EXTRACTOR_MODE=http`
-with `EXTRACTOR_URL` points the worker at the Docling service (compose profile `extractor`). `EXTRACTOR_TIMEOUT_MS`
-(default 240 s, at most 270 s) stays below the worker's 300 s job lease. Extracted text above `MAX_EXTRACTED_CHARS`
-fails the file with a sentence; it is never truncated. The api and worker create the S3 bucket at start when it is missing.
+images go to the extractor service. The compose stack includes the Docling extractor and `EXTRACTOR_MODE=http` is the
+default, with `EXTRACTOR_URL=http://extractor:8000`. `off` is a deliberate text/CSV-only run; `fake` is for tests. If the
+extractor is stopped (or set off), a file that needs it waits and fails with a plain sentence after its retries, and
+**Retry** recovers it once the extractor is up. `EXTRACTOR_TIMEOUT_MS` (default 240 s, at most 270 s) stays below the
+worker's 300 s job lease. Extracted text above `MAX_EXTRACTED_CHARS` fails the file with a sentence; it is never
+truncated. The api and worker create the S3 bucket at start when it is missing.
 
-To read PDFs, Office files and images, start the extractor (Docling, `apps/extractor`; its models are baked into the
-image at build time, so the first build downloads several gigabytes) and point the worker at it:
-
-```sh
-EXTRACTOR_MODE=http docker compose --profile extractor up -d --build extractor worker
-```
-
-`EXTRACTOR=1 pnpm dev` does the same for the local app (stack and console in one command; off by default). It needs about
-2 GB of memory for the extractor while it reads a file (about 1 GB at rest) and a 5 GB image; see
-`docs/live-checks/2026-10-slice-2-live-check.md` for measured numbers.
+The extractor (Docling, `apps/extractor`) is part of `docker compose up -d`; its models are baked into the image at build
+time, so the first build downloads several gigabytes. It needs about 2 GB of memory while it reads a file (about 1 GB at
+rest) and a 5 GB image; see `docs/live-checks/2026-10-slice-2-live-check.md` for measured numbers.
 
 The console's viewers (Markdown, DOCX, XLSX, PDF) load on demand. `pnpm web:build && pnpm bundle:report` prints the
 size of every chunk and fails if a viewer library is in the entry chunk (set `BUNDLE_BASELINE_KB` to also guard its size).
 
 The extractor shares an internal network with the worker only: no internet, no database, no object storage. The worker
-sends the bytes and gets text back. Without the profile everything still works for TXT, MD and CSV, audio and video are
-stored for download, and other files wait for the extractor and fail with a plain sentence after their retries (Retry
-recovers them). `EXTRACTOR_MODE=fake` (tests and `pnpm e2e:local`) reads the text a test file carries after a
+sends the bytes and gets text back. With the extractor stopped, TXT, MD and CSV still work, audio and video are stored
+for download, and other files wait for it and fail with a plain sentence after their retries (Retry recovers them).
+`EXTRACTOR_MODE=fake` (tests, `pnpm e2e` and `pnpm e2e:local`) reads the text a test file carries after a
 `FAKE-EXTRACT` line instead.
 
 ## Sources (the upload API)

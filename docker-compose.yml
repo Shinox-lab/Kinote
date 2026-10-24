@@ -1,18 +1,17 @@
-# Local stack: Postgres 17 + pgvector, MinIO, the one-shot migration and the
-# api, collab and worker services. Every host port binds to 127.0.0.1 only.
+# The whole Living Wiki app: the console (nginx), api, collab, worker, the
+# Docling extractor, Postgres 17 + pgvector and MinIO.
 #
-# Secrets have no defaults: export them (or put them in an untracked .env next
-# to this file; see .env.example) before running compose, e.g.
-#   POSTGRES_PASSWORD APP_DB_PASSWORD COLLAB_TOKEN_SECRET INTERNAL_SECRET
-#   S3_ACCESS_KEY S3_SECRET_KEY
+#   docker compose up -d          # the app on http://localhost:8080 (WEB_HOST_PORT)
 #
-#   pnpm stack:up                 # postgres + minio, then pnpm db:migrate
-#   docker compose up -d --build  # the whole stack
-#   pnpm stack:down               # stop and delete containers and data (down -v)
+# This is also the Coolify deployment (a Docker Compose resource): see
+# docs/operations.md. Only the web service needs a public domain (container
+# port 80); every other published port is bound to 127.0.0.1 for local tools and
+# tests. Secrets have no defaults: put them in an untracked .env (see
+# .env.example) or in Coolify's Environment Variables.
 #
-# Data lives in the named volumes `pgdata` and `miniodata` (living-wiki_pgdata,
-# living-wiki_miniodata): it survives `restart`, `stop`/`start` and a plain
-# `docker compose down`; only `down -v` (pnpm stack:down) deletes it.
+# The first build includes the Docling extractor (several GB, ~2 GB RAM while it
+# reads a file). Data lives in the named volumes below and survives restart,
+# stop/start and a plain `docker compose down`; only `down -v` deletes it.
 name: living-wiki
 
 x-app-env: &app-env
@@ -23,21 +22,27 @@ x-app-env: &app-env
   API_PORT: "8787"
   COLLAB_PORT: "1234"
   HOST: 0.0.0.0
+  # Coolify adds one proxy in front of the web nginx: set TRUST_PROXY=2 there.
+  # Locally (web on :8080 with no edge proxy) leave it false; the rate limit uses
+  # the nginx address. A single edge proxy in front is 1.
   TRUST_PROXY: ${TRUST_PROXY:-false}
   # `pnpm e2e` sets both (the suite signs up more accounts than 10 a minute).
   AUTH_RATE_LIMIT_MAX: ${AUTH_RATE_LIMIT_MAX:-10}
   LOG_LEVEL: ${LOG_LEVEL:-info}
   EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-deterministic}
   EMBEDDING_DIMENSIONS: "1536"
-  S3_ENDPOINT: http://minio:9000
+  # MinIO is the bundled default; set S3_ENDPOINT to a vetted external store in
+  # production (the minio service still runs but is unused by the app).
+  S3_ENDPOINT: ${S3_ENDPOINT:-http://minio:9000}
   S3_BUCKET: ${S3_BUCKET:-living-wiki}
   S3_ACCESS_KEY: ${S3_ACCESS_KEY:?set S3_ACCESS_KEY}
   S3_SECRET_KEY: ${S3_SECRET_KEY:?set S3_SECRET_KEY}
   S3_REGION: us-east-1
-  # Files: size limit, extractor mode (off | fake | http; http needs the `extractor` profile).
   MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-52428800}
   MAX_EXTRACTED_CHARS: ${MAX_EXTRACTED_CHARS:-2000000}
-  EXTRACTOR_MODE: ${EXTRACTOR_MODE:-off}
+  # The extractor is part of the stack; http is the default. `off` is a
+  # deliberate text/CSV-only run, `fake` is for tests.
+  EXTRACTOR_MODE: ${EXTRACTOR_MODE:-http}
   EXTRACTOR_URL: ${EXTRACTOR_URL:-http://extractor:8000}
   EXTRACTOR_TIMEOUT_MS: ${EXTRACTOR_TIMEOUT_MS:-240000}
 
@@ -56,7 +61,7 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
     ports:
-      # Host ports can be changed in .env (POSTGRES_HOST_PORT, MINIO_HOST_PORT, ...) when a default is taken.
+      # Local/test access only. Coolify does not need these.
       - "127.0.0.1:${POSTGRES_HOST_PORT:-55543}:5432"
     healthcheck:
       # TCP, not the socket: the entrypoint's temporary init server listens on
@@ -65,11 +70,12 @@ services:
       interval: 2s
       timeout: 3s
       retries: 60
+    restart: unless-stopped
 
   minio:
     # minio/minio is no longer published on Docker Hub; pgsty/minio is a
     # community build of the same server (same CLI, ports and env), for the
-    # local stack only. Pinned by digest (the tag alone could be re-pushed).
+    # bundled stack only. Pinned by digest (the tag alone could be re-pushed).
     image: pgsty/minio:RELEASE.2026-08-04T00-00-00Z@sha256:b6bfe7239bfc83fb90d31612d9704d86039dd714f7904b3f1ad68f211e602372
     command: ["server", "/data", "--console-address", ":9001"]
     environment:
@@ -85,6 +91,7 @@ services:
       interval: 2s
       timeout: 3s
       retries: 60
+    restart: unless-stopped
 
   migrate:
     build:
@@ -109,6 +116,14 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8787/api/v1/me').then(r => process.exit(r.status < 500 ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 30s
     restart: unless-stopped
 
   collab:
@@ -121,6 +136,12 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:1234/').then(r => process.exit(r.status < 500 ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 30s
     restart: unless-stopped
 
   worker:
@@ -132,14 +153,15 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
+      minio:
+        condition: service_healthy
+      extractor:
+        condition: service_healthy
     restart: unless-stopped
 
-  # Docling behind POST /extract. Off by default (its models are large):
-  #   docker compose --profile extractor up -d --build extractor worker
-  # and set EXTRACTOR_MODE=http. It shares an internal network with the worker only:
-  # no internet, no database, no object storage.
   extractor:
-    profiles: ["extractor"]
+    # Docling behind POST /extract. It shares an internal network with the
+    # worker only: no internet, no database, no object storage.
     build:
       context: .
       dockerfile: apps/extractor/Dockerfile
@@ -147,6 +169,31 @@ services:
     environment:
       MAX_EXTRACTED_CHARS: ${MAX_EXTRACTED_CHARS:-2000000}
     networks: [extractor_net]
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      target: web-runtime
+    # Coolify generates the public domain for this service on container port 80.
+    environment:
+      SERVICE_URL_WEB_80: /
+    ports:
+      # Local console only. Coolify routes the domain to container port 80; it
+      # does not need this host mapping.
+      - "127.0.0.1:${WEB_HOST_PORT:-8080}:80"
+    expose:
+      - "80"
+    depends_on:
+      api:
+        condition: service_healthy
+      collab:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/ || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
     restart: unless-stopped
 
 networks:

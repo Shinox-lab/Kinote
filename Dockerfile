@@ -1,7 +1,9 @@
-# One build for every service. Services run their TypeScript entry points with
-# tsx; production bundling is deferred.
+# One build for the services: the TypeScript entry points run with tsx (api,
+# collab, worker), the migration is one-shot, and the console is built by Vite
+# and served by nginx.
 #
-#   docker build --target api .     (also: collab, worker, migrate)
+#   docker build --target api .
+#   docker build --target web-runtime .
 FROM node:22-slim AS build
 WORKDIR /app
 # pnpm is fetched once at build time into a shared COREPACK_HOME so the
@@ -40,3 +42,15 @@ CMD ["node_modules/.bin/tsx", "apps/collab/src/main.ts"]
 
 FROM build AS worker
 CMD ["node_modules/.bin/tsx", "apps/worker/src/main.ts"]
+
+# The console: build the Vite app, then serve it and keep the browser on one
+# origin. nginx proxies /api and /mcp to the api and /collab (WebSocket) to collab.
+FROM build AS web
+USER root
+RUN pnpm --filter @living-wiki/web build
+
+FROM nginx:1.27-alpine AS web-runtime
+COPY apps/web/nginx.conf /etc/nginx/conf.d/default.conf
+COPY --from=web /app/apps/web/dist /usr/share/nginx/html
+EXPOSE 80
+HEALTHCHECK --interval=5s --timeout=3s --retries=20 CMD wget -q -O /dev/null http://127.0.0.1/ || exit 1
