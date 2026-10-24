@@ -88,7 +88,7 @@ export function PageStatus({
           aria-expanded={open}
           aria-controls={popoverId}
           onClick={() => setOpen((value) => !value)}
-          className={`inline-flex h-6 items-center gap-1.5 rounded-full px-2.5 text-xs font-medium ${TONE[info.tone]}`}
+          className={`inline-flex h-6 items-center gap-1.5 rounded-full px-2.5 text-[11.8px] font-medium ${TONE[info.tone]}`}
         >
           <span aria-hidden="true" className={`size-1.5 rounded-full ${DOT[info.tone]}`} />
           <span role="status" aria-live="polite" aria-label={`Page status: ${info.label}`}>
@@ -99,7 +99,7 @@ export function PageStatus({
           </span>
         </button>
         {info.indexedAt !== null && (
-          <span className="text-xs text-muted">{relativeTime(info.indexedAt)}</span>
+          <span className="text-[11.8px] text-muted">{relativeTime(info.indexedAt)}</span>
         )}
 
         {open && (

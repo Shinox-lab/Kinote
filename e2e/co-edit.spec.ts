@@ -99,7 +99,7 @@ test('two editors and a reviewer: co-edit, hold until approval, index, cite v1',
   await test.step('a decoy page in the Inbox is indexed, so that search has something to return', async () => {
     // The tenant's search is not lexical: with nothing indexed an empty result would prove nothing.
     await a.goto(`/w/${slug}/s/inbox`);
-    await a.getByLabel('Title').fill('Holiday calendar');
+    await a.getByLabel('Title', { exact: true }).fill('Holiday calendar');
     await a.getByRole('button', { name: 'Create page' }).click();
     await a.waitForURL(/\/p\/[0-9a-f-]{36}$/);
     await expectConnected(a);
@@ -114,7 +114,7 @@ test('two editors and a reviewer: co-edit, hold until approval, index, cite v1',
 
   await test.step('A and B type into the same page at the same time', async () => {
     await a.goto(`/w/${slug}/s/docs`);
-    await a.getByLabel('Title').fill('Leave policy');
+    await a.getByLabel('Title', { exact: true }).fill('Leave policy');
     await a.getByRole('button', { name: 'Create page' }).click();
     await a.waitForURL(/\/p\/[0-9a-f-]{36}$/);
     pageId = a.url().split('/p/')[1]!;

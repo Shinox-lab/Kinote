@@ -132,7 +132,7 @@ export function badgeOf(page: Page): Locator {
 /** Creates a page from the space screen and waits until its editor is live. Returns the page id. */
 export async function createPageInSpace(page: Page, world: World, title: string): Promise<string> {
   await page.goto(`/w/${world.slug}/s/${world.spaceSlug}`);
-  await page.getByLabel('Title').fill(title);
+  await page.getByLabel('Title', { exact: true }).fill(title);
   await page.getByRole('button', { name: 'Create page' }).click();
   await page.waitForURL(/\/p\/[0-9a-f-]{36}$/);
   await expectConnected(page);

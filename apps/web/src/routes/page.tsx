@@ -108,7 +108,7 @@ export function PagePage() {
           </>
         }
       />
-      <article className="mx-auto flex w-full max-w-[720px] flex-col gap-4 pt-4">
+      <article className="mx-auto flex w-full max-w-[660px] flex-col gap-4 pt-4">
         {/* The changed blocks wear their author's colour here, as in the sidebar's list. */}
         <style>{blockHighlightCss(entries ?? [])}</style>
         <PageHeader
