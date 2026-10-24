@@ -12,7 +12,7 @@ export default function MarkdownViewer({ bytes }: { bytes: ArrayBuffer }) {
   }, [bytes]);
   return (
     <div className="flex flex-col gap-2">
-      <Html html={html} className={PROSE} />
+      <div className="mx-auto w-full max-w-[660px]"><Html html={html} className={PROSE} /></div>
       {truncated && <p className="text-xs text-muted">Showing the first {TEXT_PREVIEW_CHARS.toLocaleString('en-US')} characters. Download the file to read the rest.</p>}
     </div>
   );

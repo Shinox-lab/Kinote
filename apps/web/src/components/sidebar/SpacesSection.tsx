@@ -3,13 +3,14 @@ import { useParams } from '@tanstack/react-router';
 import { useMutation } from '@tanstack/react-query';
 import type { SpaceResponse } from '@living-wiki/contracts';
 import { isKnownIcon } from '../../lib/emoji.js';
+import { FileTypeTile } from '../FileTypeTile.js';
 import { useUploads } from '../../lib/useUploads.js';
 import { loadExpanded, saveExpanded } from '../../lib/sidebar.js';
 import { useFile, usePage, useRefresh, useSpaceTree, useSpaces, useWorkspace } from '../../lib/queries.js';
 import { buildTree, canCreatePages, expandedFor, type TreeItem } from '../../lib/wiki.js';
 import { api, errorMessage } from '../../lib/api.js';
 import { canAdminister } from '../../lib/console.js';
-import { BookIcon, ChevronDownIcon, ChevronRightIcon, FileIcon, InboxIcon, PageIcon, PlusIcon } from '../icons.js';
+import { BookIcon, ChevronDownIcon, ChevronRightIcon, InboxIcon, PageIcon, PlusIcon } from '../icons.js';
 import { AddMenu } from '../AddMenu.js';
 import { DocumentLink } from '../DocumentLink.js';
 import { AttentionDot } from './AttentionDot.js';
@@ -160,7 +161,7 @@ function PageNode({
           >
             <span className="flex size-5 shrink-0 items-center justify-center text-base text-muted">
               {node.kind === 'file' ? (
-                <FileIcon />
+                <FileTypeTile name={node.title} size={20} />
               ) : isKnownIcon(node.icon) ? (
                 <span aria-hidden="true">{node.icon}</span>
               ) : (

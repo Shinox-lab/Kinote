@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
-import { ZOOM_STEPS, clampPage, nextZoom, parsePageInput } from '../lib/pdfPages.js';
+import { ZOOM_STEPS, clampPage, fitScale, nextZoom, parsePageInput } from '../lib/pdfPages.js';
 import { VIEWER_TIMEOUT_MS } from '../lib/viewers.js';
 import { Loading } from '../components/ui.js';
 import { openPdf } from './pdfOpen.js';
@@ -14,12 +14,17 @@ const TOOL = 'rounded-md border border-line bg-page px-2.5 py-1 text-sm hover:bg
  */
 export default function PdfViewer({ bytes, page }: { bytes: ArrayBuffer; page?: number }) {
   const canvas = useRef<HTMLCanvasElement>(null);
+  const scroller = useRef<HTMLDivElement>(null);
   const [doc, setDoc] = useState<PDFDocumentProxy | null>(null);
   const [failed, setFailed] = useState(false);
   const [current, setCurrent] = useState(1);
   const [zoom, setZoom] = useState(1);
+  const [fit, setFit] = useState(true);
+  const [fitZoom, setFitZoom] = useState(1);
+  const [width, setWidth] = useState(0);
   const [typed, setTyped] = useState('1');
   const count = doc?.numPages ?? 0;
+  const effective = fit ? fitZoom : zoom;
 
   // Open the document (in pdf.js's own worker). The worker takes ownership of the buffer it is given, so it gets a copy.
   useEffect(() => {
@@ -55,6 +60,28 @@ export default function PdfViewer({ bytes, page }: { bytes: ArrayBuffer; page?: 
   }, [page, doc]);
   useEffect(() => setTyped(String(current)), [current]);
 
+  // Fit-to-width follows the rail and the window: measure the scroller, then the page.
+  useEffect(() => {
+    if (!scroller.current) return;
+    const element = scroller.current;
+    const measure = () => setWidth(element.clientWidth);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+  useEffect(() => {
+    if (!doc) return;
+    let cancelled = false;
+    void doc.getPage(current).then((pdfPage) => {
+      if (cancelled) return;
+      setFitZoom(fitScale(pdfPage.getViewport({ scale: 1 }).width, width));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [doc, current, width]);
+
   // Draw the page on screen.
   useEffect(() => {
     if (!doc || !canvas.current) return;
@@ -65,7 +92,7 @@ export default function PdfViewer({ bytes, page }: { bytes: ArrayBuffer; page?: 
       const pdfPage = await doc.getPage(current);
       if (cancelled) return;
       const ratio = window.devicePixelRatio || 1;
-      const viewport = pdfPage.getViewport({ scale: zoom * ratio });
+      const viewport = pdfPage.getViewport({ scale: effective * ratio });
       target.width = Math.floor(viewport.width);
       target.height = Math.floor(viewport.height);
       target.style.width = `${Math.floor(viewport.width / ratio)}px`;
@@ -81,23 +108,32 @@ export default function PdfViewer({ bytes, page }: { bytes: ArrayBuffer; page?: 
       cancelled = true;
       render?.cancel();
     };
-  }, [doc, current, zoom]);
+  }, [doc, current, effective]);
 
   // A page that cannot be read hands the screen to the boundary's download card.
   if (failed) throw new Error('The PDF could not be shown.');
   if (!doc) return <Loading what="PDF" />;
 
   const go = (n: number) => setCurrent(clampPage(n, count));
+  const step = (dir: 1 | -1) => {
+    setFit(false);
+    setZoom(nextZoom(effective, dir));
+  };
   return (
-    <div className="flex flex-col gap-2">
-      <div role="toolbar" aria-label="PDF controls" className="flex flex-wrap items-center gap-2">
+    <div ref={scroller} className="relative">
+      <p className="sr-only" role="status">{`Page ${current} of ${count}`}</p>
+      <div className="max-h-[75vh] overflow-auto">
+        <canvas ref={canvas} role="img" aria-label={`Page ${current} of ${count}`} className="mx-auto block" />
+      </div>
+      <div
+        role="toolbar"
+        aria-label="PDF controls"
+        className="absolute bottom-2 left-1/2 z-10 flex w-fit -translate-x-1/2 items-center gap-1 rounded-lg border border-line bg-surface/95 p-1.5 shadow-pop backdrop-blur"
+      >
         <button type="button" className={TOOL} onClick={() => go(current - 1)} disabled={current <= 1} aria-label="Previous page">
-          Previous
+          ‹
         </button>
-        <button type="button" className={TOOL} onClick={() => go(current + 1)} disabled={current >= count} aria-label="Next page">
-          Next
-        </button>
-        <label className="flex items-center gap-1 text-sm">
+        <label className="flex items-center gap-1 text-xs">
           <span className="sr-only">Page number</span>
           <input
             inputMode="numeric"
@@ -111,23 +147,26 @@ export default function PdfViewer({ bytes, page }: { bytes: ArrayBuffer; page?: 
               if (n !== null) go(n);
               else setTyped(String(current));
             }}
-            className="w-14 rounded-md border border-line bg-page px-2 py-1 text-center text-sm"
+            className="w-10 rounded border border-line bg-page px-1 py-0.5 text-center text-xs"
           />
-          <span className="text-muted">of {count}</span>
+          <span className="text-muted">/ {count}</span>
         </label>
-        <button type="button" className={TOOL} onClick={() => setZoom(nextZoom(zoom, -1))} disabled={zoom <= ZOOM_STEPS[0]} aria-label="Zoom out">
+        <button type="button" className={TOOL} onClick={() => go(current + 1)} disabled={current >= count} aria-label="Next page">
+          ›
+        </button>
+        <span className="mx-1 h-4 w-px bg-line" aria-hidden="true" />
+        <button type="button" className={TOOL} onClick={() => step(-1)} disabled={effective <= ZOOM_STEPS[0]} aria-label="Zoom out">
           −
         </button>
-        <span className="min-w-12 text-center text-sm text-muted" aria-live="polite">
-          {Math.round(zoom * 100)}%
+        <span className="min-w-10 text-center text-xs text-muted" aria-live="polite">
+          {Math.round(effective * 100)}%
         </span>
-        <button type="button" className={TOOL} onClick={() => setZoom(nextZoom(zoom, 1))} disabled={zoom >= ZOOM_STEPS[ZOOM_STEPS.length - 1]!} aria-label="Zoom in">
+        <button type="button" className={TOOL} onClick={() => step(1)} disabled={effective >= ZOOM_STEPS[ZOOM_STEPS.length - 1]!} aria-label="Zoom in">
           +
         </button>
-      </div>
-      <p className="sr-only" role="status">{`Page ${current} of ${count}`}</p>
-      <div className="max-h-[75vh] overflow-auto rounded-md border border-line bg-hover p-2">
-        <canvas ref={canvas} role="img" aria-label={`Page ${current} of ${count}`} className="mx-auto block" />
+        <button type="button" className={`${TOOL} ${fit ? 'bg-active' : ''}`} aria-pressed={fit} onClick={() => setFit(true)}>
+          Fit
+        </button>
       </div>
     </div>
   );

@@ -82,6 +82,7 @@ test('a synced file: new versions, removal at the source, dismissing it, and a r
   expect(second.status).toBe(201);
   await approveAll(request, world, world.owner).catch(() => 0);
   await page.reload();
+  await page.getByRole('tab', { name: /^Versions/ }).click();
   await expect(page.getByRole('list', { name: 'Versions' }).getByRole('listitem')).toHaveCount(2);
 
   // The script removes it: the file says so, and an editor can dismiss it.
@@ -89,7 +90,8 @@ test('a synced file: new versions, removal at the source, dismissing it, and a r
   await page.reload();
   await expect(page.getByRole('status', { name: 'File status: Removed at source' })).toBeVisible();
   await expect(page.getByRole('note')).toHaveText('This file was removed at its source.');
-  await page.getByRole('button', { name: 'Dismiss' }).click();
+  await page.getByRole('button', { name: 'File actions' }).click();
+  await page.getByRole('button', { name: /^Dismiss/ }).click();
   await page.goto(`/w/${world.slug}`);
   await expandSpace(page, 'Docs');
   await expect(treeLink(page, 'Handbook.pdf')).toHaveCount(0);

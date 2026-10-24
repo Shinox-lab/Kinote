@@ -9,5 +9,5 @@ export default function ImageViewer({ bytes, mimeType, name }: { bytes: ArrayBuf
     return () => URL.revokeObjectURL(made);
   }, [bytes, mimeType]);
   if (!url) return null;
-  return <img src={url} alt={name} className="max-h-[70vh] max-w-full rounded-md border border-line object-contain" />;
+  return <div className="flex justify-center"><img src={url} alt={name} className="max-h-[75vh] max-w-full object-contain" /></div>;
 }

@@ -9,7 +9,7 @@ export default function TextViewer({ bytes }: { bytes: ArrayBuffer }) {
   );
   return (
     <div className="flex flex-col gap-2">
-      <pre className="max-h-[70vh] overflow-auto whitespace-pre-wrap break-words rounded-md border border-line bg-surface p-4 font-mono text-sm">
+      <pre className="mx-auto max-h-[70vh] w-full max-w-[660px] overflow-auto whitespace-pre-wrap break-words font-sans text-[15.5px] leading-[1.72]">
         {text}
       </pre>
       {truncated && <p className="text-xs text-muted">Showing the first {TEXT_PREVIEW_CHARS.toLocaleString('en-US')} characters. Download the file to read the rest.</p>}

@@ -1,20 +1,32 @@
-import { useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useParams, useSearch } from '@tanstack/react-router';
 import { useMutation } from '@tanstack/react-query';
 import type { FileDetails, FileVersion } from '@living-wiki/contracts';
 import { ApiError, api } from '../lib/api.js';
 import { saveVersion } from '../lib/download.js';
 import { fileBanner, fileControls, formatBytes, publishedVersionId } from '../lib/fileUi.js';
-import { useFile, useFileVersions, useRefresh, useSpaces, useSpaceTree, useWorkspace } from '../lib/queries.js';
+import { fileType } from '../lib/fileType.js';
+import { relativeTime } from '../lib/pageStatus.js';
+import {
+  useFile,
+  useFileVersions,
+  useRefresh,
+  useSpaces,
+  useSpaceTree,
+  useVersionChunks,
+  useWorkspace,
+} from '../lib/queries.js';
+import { useFocusTrap } from '../lib/useFocusTrap.js';
+import { useMediaQuery } from '../lib/useMediaQuery.js';
 import { ancestorIds, type BadgeTone } from '../lib/wiki.js';
 import { AppTopBar } from '../components/AppTopBar.js';
-import { ChunkInspector } from '../components/ChunkInspector.js';
-import { FileViewer } from '../viewers/FileViewer.js';
 import { Badge } from '../components/Badge.js';
 import { DocumentLink } from '../components/DocumentLink.js';
 import { FileMenu } from '../components/FileMenu.js';
-import { FileVersions } from '../components/FileVersions.js';
-import { Button, Card, ErrorNote, Loading } from '../components/ui.js';
+import { FileRail } from '../components/FileRail.js';
+import { FileTypeTile } from '../components/FileTypeTile.js';
+import { FileViewer } from '../viewers/FileViewer.js';
+import { Button, ErrorNote, Loading } from '../components/ui.js';
 
 const CRUMB = 'min-w-0 max-w-[12rem] truncate rounded px-1 py-0.5 text-muted hover:bg-hover hover:text-fg';
 
@@ -82,16 +94,44 @@ function useShownVersion(file: FileDetails | undefined, wanted: string | undefin
   return { role, shown };
 }
 
-/** `/w/$tenantSlug/f/$fileId`: an uploaded file, its status, its versions and what can be done with it. */
+/** `/w/$tenantSlug/f/$fileId`: a file as identity, preview, and a rail of what it is and was. */
 export function FilePage() {
   const { tenant } = useWorkspace();
   const { fileId } = useParams({ from: '/w/$tenantSlug/f/$fileId' });
   const search = useSearch({ from: '/w/$tenantSlug/f/$fileId' });
   const refresh = useRefresh();
+  const wide = useMediaQuery('(min-width: 1200px)');
+  const [railOpen, setRailOpen] = useState(wide);
   const { data: spaces = [] } = useSpaces();
   const { data: file, error, isPending } = useFile(fileId);
   const { role, shown } = useShownVersion(file, search.v);
   const picker = useRef<HTMLInputElement>(null);
+  const sheet = useRef<HTMLDivElement>(null);
+
+  const space = file ? spaces.find((s) => s.id === file.spaceId) : undefined;
+  const archived = file ? file.archivedAt !== null : false;
+  const spaceArchived = (space?.archivedAt ?? null) !== null;
+  const canChunks =
+    file !== undefined && !archived && !spaceArchived && (role === 'editor' || role === 'reviewer' || role === 'admin');
+  const { data: versions } = useFileVersions(file?.id ?? '', file !== undefined);
+  const { data: chunks } = useVersionChunks(shown?.id ?? '', canChunks && shown !== null);
+  const latest = versions?.[0];
+  const pages = chunks?.pageCount ?? null;
+
+  useEffect(() => {
+    setRailOpen(wide);
+  }, [wide]);
+
+  // Below 1200 the rail is a sheet: the focus stays inside, Escape closes it, the page behind does not scroll.
+  useFocusTrap(sheet, !wide && railOpen, () => setRailOpen(false));
+  useEffect(() => {
+    if (wide || !railOpen) return;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previous;
+    };
+  }, [wide, railOpen]);
 
   const changed = () => {
     void refresh('file');
@@ -104,7 +144,6 @@ export function FilePage() {
     mutationFn: (form: FormData) => api.replaceFile(fileId, form),
     onSettled: changed,
   });
-  const retry = useMutation({ mutationFn: (versionId: string) => api.retryVersion(versionId), onSettled: changed });
   const save = useMutation({ mutationFn: () => saveVersion(shown!.id, shown!.fileName) });
 
   if (isPending) return <Loading what="file" />;
@@ -123,11 +162,9 @@ export function FilePage() {
     return <ErrorNote error={error} />;
   }
 
-  const space = spaces.find((s) => s.id === file.spaceId);
-  const archived = file.archivedAt !== null;
   const controls = fileControls({
     role,
-    spaceArchived: (space?.archivedAt ?? null) !== null,
+    spaceArchived,
     archived,
     placement: file.placement,
     sourceDeleted: file.sourceDeletedAt !== null,
@@ -140,89 +177,138 @@ export function FilePage() {
     hasPublished: file.indexedVersion !== null,
     role,
   });
-  const failedId = file.latestVersion?.id;
+  const type = fileType(file.title, shown?.mimeType ?? latest?.mimeType);
+  const info = (
+    <FileRail
+      file={file}
+      shownId={shown?.id ?? null}
+      role={role}
+      space={space}
+      controls={controls}
+      onClose={() => setRailOpen(false)}
+    />
+  );
 
   return (
-    <div className="flex flex-col gap-5">
+    <div className="flex flex-col gap-4">
       <AppTopBar
         crumbs={<Breadcrumb file={file} tenantSlug={tenant.slug} />}
-        right={role && space ? <FileMenu file={file} spaces={spaces} controls={controls} onChanged={changed} /> : undefined}
+        right={
+          <>
+            {shown && controls.download && (
+              <Button
+                variant="secondary"
+                className="h-8 px-2.5 py-1 text-xs"
+                onClick={() => save.mutate()}
+                disabled={save.isPending}
+              >
+                Download
+              </Button>
+            )}
+            {role && space && (
+              <FileMenu
+                file={file}
+                spaces={spaces}
+                controls={controls}
+                onReplace={() => picker.current?.click()}
+                onChanged={changed}
+              />
+            )}
+            {!railOpen && (
+              <Button
+                variant="secondary"
+                className="h-8 px-2.5 py-1 text-xs"
+                aria-controls="file-information"
+                aria-expanded={railOpen}
+                onClick={() => setRailOpen(true)}
+              >
+                Info
+              </Button>
+            )}
+          </>
+        }
       />
 
-      {/* The name and the state of the file, at the top. */}
       <header className="flex flex-col gap-2">
-        <h1 className="min-w-0 break-words text-3xl font-semibold tracking-tight">{file.title}</h1>
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted">
+        <FileTypeTile name={file.title} mimeType={shown?.mimeType ?? latest?.mimeType} />
+        <h1 className="min-w-0 break-words text-[1.875rem] font-semibold leading-tight tracking-[-0.02em] text-fg">
+          {file.title}
+        </h1>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
           <Badge badge={file.badge} label="File status" />
-          {archived && <span className="rounded bg-dot-review/15 px-1.5 text-xs text-fg">Archived</span>}
+          {archived && <span className="rounded-full bg-hover px-2 py-0.5 text-fg">Archived</span>}
           {shown && (
             <span>
-              {shown.fileName} · {formatBytes(shown.sizeBytes)} · version {shown.number}
+              {type.label} · {formatBytes(shown.sizeBytes)}
+              {pages !== null && ` · ${pages} ${pages === 1 ? 'page' : 'pages'}`}
+              {latest && ` · uploaded ${relativeTime(latest.createdAt)}`}
             </span>
           )}
         </div>
       </header>
 
-      <div className="flex flex-wrap items-center gap-2">
-        {shown && controls.download && (
-          <Button variant="secondary" onClick={() => save.mutate()} disabled={save.isPending}>
-            Download
-          </Button>
-        )}
-        {controls.replace && (
-          <>
-            <Button variant="secondary" onClick={() => picker.current?.click()} disabled={replace.isPending}>
-              Replace file
-            </Button>
-            <input
-              ref={picker}
-              type="file"
-              hidden
-              aria-label="Choose the replacement file"
-              onChange={(e) => {
-                const chosen = e.target.files?.[0];
-                e.target.value = '';
-                if (!chosen) return;
-                const form = new FormData();
-                form.set('file', chosen, chosen.name);
-                replace.mutate(form);
-              }}
-            />
-          </>
-        )}
-        {controls.retry && failedId && (
-          <Button variant="secondary" onClick={() => retry.mutate(failedId)} disabled={retry.isPending}>
-            Retry
-          </Button>
-        )}
-        {controls.managedBy && <span className="text-sm text-muted">Kept in sync by a source: replace it there.</span>}
-      </div>
+      {controls.managedBy && <p className="text-sm text-muted">Kept in sync by a source: replace it there.</p>}
       {banner && (
         <p role="note" className={`rounded-md border px-3 py-2 text-sm ${BANNER_TONE[banner.tone]}`}>
           {banner.text}
         </p>
       )}
-      <ErrorNote error={save.error ?? replace.error ?? retry.error} />
-      {replace.data?.unchanged && <p role="status" className="text-sm text-muted">That is the same file that is already here.</p>}
-
-      {/* The file itself is the screen: the preview fills it. */}
-      {shown && (
-        <section aria-label="Preview" className="rounded-lg border border-line bg-surface p-4">
-          <FileViewer version={shown} page={search.page} />
-        </section>
+      <ErrorNote error={save.error ?? replace.error} />
+      {replace.data?.unchanged && (
+        <p role="status" className="text-sm text-muted">
+          That is the same file that is already here.
+        </p>
+      )}
+      {controls.replace && (
+        <input
+          ref={picker}
+          type="file"
+          hidden
+          aria-label="Choose the replacement file"
+          onChange={(event) => {
+            const chosen = event.target.files?.[0];
+            event.target.value = '';
+            if (!chosen) return;
+            const form = new FormData();
+            form.set('file', chosen, chosen.name);
+            replace.mutate(form);
+          }}
+        />
       )}
 
-      {/* How it is cut for search and what it looked like before: the rest. */}
-      <div className={`grid gap-4 ${controls.chunks && shown ? 'lg:grid-cols-2' : ''}`}>
-        {controls.chunks && shown && (
-          <Card title="Search chunks">
-            <ChunkInspector key={shown.id} versionId={shown.id} />
-          </Card>
+      <div className={wide && railOpen ? 'grid grid-cols-[minmax(0,1fr)_300px] items-start gap-4' : ''}>
+        <div className="min-w-0">
+          {shown ? (
+            <section aria-label="Preview" className="rounded-lg bg-file-mat p-3 md:p-4">
+              <FileViewer version={shown} page={search.page} />
+            </section>
+          ) : (
+            <p className="rounded-lg bg-hover px-4 py-8 text-center text-sm text-muted">Nothing has been published yet.</p>
+          )}
+        </div>
+        {wide && railOpen && (
+          <div id="file-information" className="min-w-0">
+            {info}
+          </div>
         )}
-        <Card title="Versions">
-          <FileVersions fileId={file.id} role={role} shownId={shown?.id ?? null} />
-        </Card>
       </div>
+
+      {!wide && railOpen && (
+        <div className="fixed inset-0 z-30">
+          <div aria-hidden="true" className="absolute inset-0 bg-overlay" onClick={() => setRailOpen(false)} />
+          <div
+            ref={sheet}
+            id="file-information"
+            role="dialog"
+            aria-modal="true"
+            aria-label="File information"
+            tabIndex={-1}
+            className="absolute inset-y-0 right-0 w-[330px] max-w-[90vw] overflow-y-auto border-l border-line bg-surface p-4 shadow-pop outline-none"
+          >
+            {info}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

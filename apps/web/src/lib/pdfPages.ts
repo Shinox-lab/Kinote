@@ -1,6 +1,12 @@
 // Page and zoom arithmetic of the PDF viewer, kept apart from pdf.js so it can be tested.
 
-export const ZOOM_STEPS = [0.75, 1, 1.25, 1.5, 2] as const;
+export const ZOOM_STEPS = [0.5, 0.75, 1, 1.25, 1.5, 2] as const;
+
+/** The scale that fits a page's width inside the preview, clamped to the toolbar's 50–200%. */
+export function fitScale(pageWidth: number, containerWidth: number, inset = 24): number {
+  if (!(pageWidth > 0) || !(containerWidth > 0)) return 1;
+  return Math.min(2, Math.max(0.5, (containerWidth - inset) / pageWidth));
+}
 
 /** A 1-based page inside the document: anything missing or invalid is the first page, anything past the end the last. */
 export function clampPage(page: number | undefined, pageCount: number): number {

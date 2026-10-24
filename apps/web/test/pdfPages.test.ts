@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { clampPage, nextZoom, parsePageInput, ZOOM_STEPS } from '../src/lib/pdfPages.js';
+import { clampPage, fitScale, nextZoom, parsePageInput, ZOOM_STEPS } from '../src/lib/pdfPages.js';
 
 describe('clampPage', () => {
   test('a missing, zero, negative or fractional page opens the first page', () => {
@@ -19,11 +19,11 @@ describe('clampPage', () => {
 
 describe('nextZoom', () => {
   test('steps along the fixed scale and stops at both ends', () => {
-    expect(ZOOM_STEPS).toEqual([0.75, 1, 1.25, 1.5, 2]);
+    expect(ZOOM_STEPS).toEqual([0.5, 0.75, 1, 1.25, 1.5, 2]);
     expect(nextZoom(1, 1)).toBe(1.25);
     expect(nextZoom(1, -1)).toBe(0.75);
     expect(nextZoom(2, 1)).toBe(2);
-    expect(nextZoom(0.75, -1)).toBe(0.75);
+    expect(nextZoom(0.75, -1)).toBe(0.5);
   });
 
   test('a value between steps moves to the next step in that direction', () => {
@@ -41,5 +41,15 @@ describe('parsePageInput', () => {
     expect(parsePageInput('abc', 10)).toBeNull();
     expect(parsePageInput('', 10)).toBeNull();
     expect(parsePageInput('2.5', 10)).toBeNull();
+  });
+});
+
+describe('fitScale', () => {
+  test('fits the page width, clamped to 50–200%', () => {
+    expect(fitScale(612, 900)).toBeCloseTo(1.43, 2);
+    expect(fitScale(612, 300)).toBe(0.5);
+    expect(fitScale(100, 5000)).toBe(2);
+    expect(fitScale(0, 900)).toBe(1);
+    expect(fitScale(612, 0)).toBe(1);
   });
 });

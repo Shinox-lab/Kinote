@@ -5,37 +5,45 @@ import { api } from '../lib/api.js';
 import type { FileControls } from '../lib/fileUi.js';
 import { MoreIcon } from './icons.js';
 import { Confirm, MoveForm, PANEL } from './lifecycle.js';
-import { Button, ErrorNote } from './ui.js';
+import { TitleInput } from './sidebar/TitleInput.js';
+import { ErrorNote } from './ui.js';
 
-type Action = 'move' | 'withdraw' | 'archive';
+type Action = 'rename' | 'move' | 'withdraw' | 'archive';
 
 /**
- * A file's "…" menu: move, withdraw from the index, archive (and restoring an
- * archived file, dismissing "removed at source"), as `controls` allows for the
- * role. `onChanged` runs after each action so the file and the lists are fetched again.
+ * A file's "…" menu: replace, rename, retry, move, withdraw, archive, and the
+ * state actions (restore, dismiss a source removal), as `controls` allows.
+ * Replacing opens the hidden picker in the page; `onChanged` refetches.
  */
 export function FileMenu({
   file,
   spaces,
   controls,
+  onReplace,
   onChanged,
 }: {
   file: FileDetails;
   spaces: SpaceResponse[];
   controls: FileControls;
+  onReplace: () => void;
   onChanged: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [action, setAction] = useState<Action | null>(null);
   const restore = useMutation({ mutationFn: () => api.restoreFile(file.id), onSuccess: onChanged });
   const dismiss = useMutation({ mutationFn: () => api.dismissRemoval(file.id), onSuccess: onChanged });
-
-  const items: { key: Action; label: string; show: boolean }[] = [
-    { key: 'move', label: 'Move…', show: controls.move },
-    { key: 'withdraw', label: 'Withdraw from index…', show: controls.withdraw },
-    { key: 'archive', label: 'Archive…', show: controls.archive },
-  ];
-  const shown = items.filter((i) => i.show);
+  const retry = useMutation({
+    mutationFn: () => api.retryVersion(file.latestVersion!.id),
+    onSuccess: onChanged,
+  });
+  const rename = useMutation({
+    mutationFn: (title: string) => api.renameFile(file.id, title),
+    onSuccess: () => {
+      setAction(null);
+      setOpen(false);
+      onChanged();
+    },
+  });
   const done = () => {
     setAction(null);
     setOpen(false);
@@ -46,57 +54,66 @@ export function FileMenu({
     done();
   };
 
+  const items: { key: string; label: string; show: boolean; run: () => void }[] = [
+    { key: 'replace', label: 'Replace file…', show: controls.replace, run: onReplace },
+    { key: 'rename', label: 'Rename…', show: controls.replace, run: () => setAction('rename') },
+    { key: 'retry', label: 'Retry indexing', show: controls.retry && file.latestVersion !== null, run: () => retry.mutate() },
+    { key: 'move', label: 'Move…', show: controls.move, run: () => setAction('move') },
+    { key: 'withdraw', label: 'Withdraw from index…', show: controls.withdraw, run: () => setAction('withdraw') },
+    { key: 'archive', label: 'Archive…', show: controls.archive, run: () => setAction('archive') },
+    { key: 'restore', label: 'Restore file', show: controls.restore, run: () => restore.mutate() },
+    { key: 'dismiss', label: 'Dismiss removed file', show: controls.dismissRemoval, run: () => dismiss.mutate() },
+  ];
+  const shown = items.filter((item) => item.show);
+
+  const select = (run: () => void) => {
+    setOpen(false);
+    run();
+  };
+
+  if (shown.length === 0) return null;
+
   return (
-    <div className="relative flex items-center gap-2">
-      {controls.restore && (
-        <Button variant="secondary" onClick={() => restore.mutate()} disabled={restore.isPending}>
-          Restore file
-        </Button>
+    <div className="relative">
+      <button
+        type="button"
+        aria-label="File actions"
+        title="File actions"
+        aria-haspopup="true"
+        aria-expanded={open}
+        aria-controls="file-actions"
+        onClick={() => setOpen((value) => !value)}
+        className="flex size-8 items-center justify-center rounded-md text-lg text-muted hover:bg-hover"
+      >
+        <MoreIcon />
+      </button>
+      {open && (
+        <ul
+          id="file-actions"
+          aria-label="File actions"
+          className="absolute right-0 top-full z-20 mt-1 w-56 rounded-lg border border-line bg-surface p-1 shadow-pop"
+        >
+          {shown.map((item) => (
+            <li key={item.key}>
+              <button
+                type="button"
+                className="w-full rounded px-3 py-2 text-left text-sm text-fg hover:bg-hover disabled:opacity-50"
+                onClick={() => select(item.run)}
+                disabled={retry.isPending || restore.isPending || dismiss.isPending}
+              >
+                {item.label}
+              </button>
+            </li>
+          ))}
+        </ul>
       )}
-      {controls.dismissRemoval && (
-        <Button variant="secondary" onClick={() => dismiss.mutate()} disabled={dismiss.isPending}>
-          Dismiss
-        </Button>
-      )}
-      {shown.length > 0 && (
-        <div onKeyDown={(e) => e.key === 'Escape' && setOpen(false)}>
-          <button
-            type="button"
-            aria-label="File actions"
-            title="File actions"
-            aria-haspopup="true"
-            aria-expanded={open}
-            aria-controls="file-actions"
-            onClick={() => setOpen((v) => !v)}
-            className="flex size-8 items-center justify-center rounded-md text-lg text-muted hover:bg-hover"
-          >
-            <MoreIcon />
-          </button>
-          {open && (
-            <ul
-              id="file-actions"
-              aria-label="File actions"
-              className="absolute right-0 top-full z-20 mt-1 w-56 rounded-lg border border-line bg-surface p-1 shadow-pop"
-            >
-              {shown.map((item) => (
-                <li key={item.key}>
-                  <button
-                    type="button"
-                    className="w-full rounded px-3 py-2 text-left text-sm text-fg hover:bg-hover"
-                    onClick={() => {
-                      setAction(item.key);
-                      setOpen(false);
-                    }}
-                  >
-                    {item.label}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
+      <ErrorNote error={retry.error ?? restore.error ?? dismiss.error ?? rename.error} />
+      {action === 'rename' && (
+        <div className={PANEL}>
+          <p className="mb-2 text-sm font-medium">Rename file</p>
+          <TitleInput title={file.title} onCancel={() => setAction(null)} onSave={(title) => rename.mutate(title)} />
         </div>
       )}
-      <ErrorNote error={restore.error ?? dismiss.error} />
       {action === 'move' && (
         <div className={PANEL}>
           <MoveForm

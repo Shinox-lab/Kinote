@@ -39,6 +39,44 @@ test('a file uploaded from the add menu is read, indexed and listed in the sideb
   await expect(page.getByRole('status', { name: 'File status: Indexed · v1' })).toBeVisible();
 });
 
+test('the file identity, rail, rename and the Info sheet below 1200', async ({ browser, request }) => {
+  const world = await seedWorld(request, { reviewRequired: false });
+  const id = await uploadViaApi(
+    request,
+    world,
+    world.owner,
+    textFile('Policy.txt', 'text/plain', `A policy file ${world.suffix}.\nSecond line.`)
+  );
+  await waitForFileBadge(request, world, world.owner, id, /^Indexed/);
+
+  const page = await openAs(browser, world, world.owner);
+  await page.goto(`/w/${world.slug}/f/${id}`);
+  await expect(page.getByRole('heading', { name: 'Policy.txt', level: 1 })).toBeVisible();
+  await expect(page.getByText(/TXT ·/)).toBeVisible();
+  await expect(treeLink(page, 'Policy.txt')).toContainText('TXT');
+
+  await expect(page.getByRole('tab', { name: /^Details/ })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByRole('tabpanel', { name: 'Details' })).toContainText('TXT');
+  await page.getByRole('tab', { name: /^Versions/ }).click();
+  await expect(page.getByRole('list', { name: 'Versions' })).toContainText('Version 1');
+
+  await page.getByRole('button', { name: 'File actions' }).click();
+  await expect(page.getByRole('button', { name: /^Replace file/ })).toBeVisible();
+  await page.getByRole('button', { name: /^Rename/ }).click();
+  await page.getByLabel('New title').fill('Policies 2026.txt');
+  await page.getByLabel('New title').press('Enter');
+  await expect(page.getByRole('heading', { name: 'Policies 2026.txt', level: 1 })).toBeVisible();
+  await expect(treeLink(page, 'Policies 2026.txt')).toBeVisible();
+
+  await page.setViewportSize({ width: 1100, height: 900 });
+  await page.getByRole('button', { name: 'Info' }).click();
+  const sheet = page.getByRole('dialog', { name: 'File information' });
+  await expect(sheet).toBeVisible();
+  await expect(sheet.getByRole('tab', { name: /^Chunks/ })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(sheet).toHaveCount(0);
+});
+
 test('a replacement waits for review while the old version keeps answering search', async ({ browser, request }) => {
   const world = await seedWorld(request, { reviewRequired: true });
   const reviewer = await addMember(request, world, 'Rita Reviewer', 'reviewer');
@@ -62,6 +100,7 @@ test('a replacement waits for review while the old version keeps answering searc
   const replacement = fakePdf('Policy.pdf', `${world.suffix}-2`, `The ${next} rule replaces it.`);
   await page.getByLabel('Choose the replacement file').setInputFiles(replacement);
   await expect(page.getByRole('status', { name: 'File status: Indexed · v1, v2 awaiting approval' })).toBeVisible();
+  await page.getByRole('tab', { name: /^Versions/ }).click();
   await expect(page.getByRole('list', { name: 'Versions' }).getByRole('listitem')).toHaveCount(2);
   // Search always ranks something (it is hybrid), so look at what it returns rather than at whether it returns.
   const waiting = await searchPassages(request, world, world.owner, next);
@@ -101,11 +140,12 @@ test('a reviewer reads the text of a waiting file, approves it, and the chunk in
 
   await page.goto(`/w/${world.slug}/f/${id}`);
   await expect(page.getByRole('status', { name: /File status: Indexed/ })).toBeVisible({ timeout: 30_000 });
-  await page.getByRole('button', { name: 'Show search chunks' }).click();
+  await page.getByRole('tab', { name: /^Chunks/ }).click();
   const chunks = page.getByRole('list', { name: 'Chunks' });
   await expect(chunks).toContainText(sentence);
   await expect(chunks).toContainText('Page 2');
-  await expect(page.getByText('Indexed · 2 pages', { exact: false })).toBeVisible();
+  await expect(page.getByText('Indexed · 2 chunks', { exact: false })).toBeVisible();
+  await expect(page.getByText(/2 pages/).first()).toBeVisible();
 });
 
 test('text and image files open in place', async ({ browser, request }) => {
@@ -223,6 +263,7 @@ test('a Word document opens as text; a corrupt one falls back to a download and 
   await expect(preview.getByRole('button', { name: 'Download Broken.docx' })).toBeVisible();
   // The rest of the screen still works.
   await expect(page.getByRole('heading', { name: 'Broken.docx', level: 1 })).toBeVisible();
+  await page.getByRole('tab', { name: /^Versions/ }).click();
   await expect(page.getByRole('list', { name: 'Versions' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'File actions' })).toBeVisible();
 });
@@ -281,7 +322,8 @@ test('a PDF opens on the page a search result points to, and a slide deck as tex
   const preview = page.getByRole('region', { name: 'Preview' });
   const input = preview.getByRole('textbox', { name: 'Page number' });
   await expect(input).toHaveValue('3');
-  await expect(preview.getByText('of 4', { exact: true })).toBeVisible();
+  await expect(preview.getByText('/ 4', { exact: true })).toBeVisible();
+  await expect(preview.getByRole('button', { name: 'Fit' })).toHaveAttribute('aria-pressed', 'true');
   await preview.getByRole('button', { name: 'Next page' }).click();
   await expect(input).toHaveValue('4');
   await expect(preview.getByRole('button', { name: 'Next page' })).toBeDisabled();

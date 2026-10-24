@@ -13,6 +13,7 @@
   --page: #fcfbf9;
   --sidebar: #f5f2ed;
   --surface: #ffffff;
+  --file-mat: #f1ede7;
   --line: #e8e2d9;
   --fg: #24211d;
   --muted: #6b645b;
@@ -77,6 +78,7 @@
   color-scheme: dark;
   --page: #1a1713;
   --sidebar: #141210;
+  --file-mat: #211d18;
   --surface: #221e19;
   --line: #302a23;
   --fg: #ece6dd;
@@ -142,6 +144,7 @@
 @theme inline {
   --color-page: var(--page);
   --color-sidebar: var(--sidebar);
+  --color-file-mat: var(--file-mat);
   --color-surface: var(--surface);
   --color-line: var(--line);
   --color-fg: var(--fg);
