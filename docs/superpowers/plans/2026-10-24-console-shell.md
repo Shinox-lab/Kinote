@@ -163,7 +163,7 @@ Create `e2e/shell.spec.ts`:
 
 ```ts
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { addMember, call, openAs, seedWorld } from './support.js';
+import { addMember, call, openAs, seedWorld, uploadViaApi } from './support.js';
 
 const sidebar = (page: Page): Locator => page.getByRole('complementary', { name: 'Sidebar' });
 
@@ -303,6 +303,32 @@ test('the page breadcrumb and menu live in the top bar', async ({ browser, reque
   await expect(banner.getByRole('button', { name: 'Page actions' })).toBeVisible();
   // No second breadcrumb in the document column.
   await expect(page.getByRole('navigation', { name: 'Breadcrumb' })).toHaveCount(1);
+
+  // The file's breadcrumb and menu use the same bar.
+  const fileId = await uploadViaApi(request, world, world.owner, {
+    name: 'notes.md',
+    mimeType: 'text/markdown',
+    buffer: Buffer.from('# Notes'),
+  });
+  await page.goto(`/w/${world.slug}/f/${fileId}`);
+  await expect(page.getByRole('banner').getByRole('navigation', { name: 'Breadcrumb' })).toBeVisible();
+  await expect(page.getByRole('banner').getByRole('button', { name: 'File actions' })).toBeVisible();
+});
+
+test('a long title keeps the page menu in reach', async ({ browser, request }) => {
+  const world = await seedWorld(request, { reviewRequired: false });
+  const title = 'A very long page title that keeps going and going until the sidebar and the top bar have to truncate it';
+  const pageId = await call<{ id: string }>(request, '/pages', {
+    account: world.owner,
+    tenantId: world.tenantId,
+    method: 'POST',
+    data: { space_id: world.spaceId, title, slug: `long-${world.suffix}`, parent_id: null, markdown: 'Long title.' },
+  });
+  const page = await openAs(browser, world, world.owner);
+  await page.goto(`/w/${world.slug}/p/${pageId}`);
+
+  await expect(page.getByRole('banner').getByRole('button', { name: 'Page actions' })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
 ```
 
@@ -320,7 +346,7 @@ import type { ReactNode } from 'react';
 
 export function AppTopBar({ crumbs, right }: { crumbs: ReactNode; right?: ReactNode }) {
   return (
-    <header role="banner" className="sticky top-0 z-20 mb-4 flex h-11 items-center gap-3 border-b border-line bg-page/95 backdrop-blur">
+    <header role="banner" className="sticky top-0 z-20 mb-4 flex h-11 items-center gap-3 border-b border-line bg-page">
       <div className="min-w-0 flex-1">{crumbs}</div>
       {right && <div className="flex shrink-0 items-center gap-2">{right}</div>}
     </header>
