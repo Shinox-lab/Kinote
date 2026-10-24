@@ -5,6 +5,7 @@ import {
   editorOf,
   expectConnected,
   openAs,
+  runPageAction,
   seedWorld,
   typeAtEnd,
   type Account,
@@ -168,7 +169,7 @@ test('updates show what others did, and your own changes read "You"; typing show
   }).toPass({ timeout: 30_000 });
 
   // Eli publishes; the owner's Updates names Eli, Eli's own reads "You".
-  await b.getByRole('button', { name: 'Index now' }).click();
+  await runPageAction(b, 'Index now');
   await expect(async () => {
     await a.reload();
     await expect(sidebar(a).getByRole('region', { name: 'Updates' })).toContainText('Eli Editor published v1 of Notes', {

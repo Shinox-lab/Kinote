@@ -139,6 +139,12 @@ export async function createPageInSpace(page: Page, world: World, title: string)
   return page.url().split('/p/')[1]!;
 }
 
+/** Opens the page's status chip and runs one of its actions (Index now, Submit for review). */
+export async function runPageAction(page: Page, name: 'Index now' | 'Submit for review'): Promise<void> {
+  await page.getByRole('button', { name: 'Page status and actions' }).click();
+  await page.getByRole('dialog', { name: 'Page status and actions' }).getByRole('button', { name, exact: true }).click();
+}
+
 /** Types at the end of the document (the cursor goes to the last block first). */
 export async function typeAtEnd(page: Page, text: string): Promise<void> {
   await editorOf(page).click();

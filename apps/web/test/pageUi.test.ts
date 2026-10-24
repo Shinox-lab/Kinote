@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
-import { closeHistory, getHistoryOpenFor, openHistory, subscribeHistory } from '../src/lib/pageUi.js';
+import { closeHistory, getHistoryOpenFor, getHistoryTab, openHistory, subscribeHistory } from '../src/lib/pageUi.js';
 
 afterEach(() => closeHistory());
 
@@ -10,6 +10,13 @@ describe('history drawer state', () => {
     expect(getHistoryOpenFor()).toBe('page-1');
     closeHistory();
     expect(getHistoryOpenFor()).toBeNull();
+  });
+
+  test('remembers the requested tab', () => {
+    openHistory('page-1', 'changes');
+    expect(getHistoryTab()).toBe('changes');
+    openHistory('page-2');
+    expect(getHistoryTab()).toBe('versions');
   });
 
   test('opening for another page replaces the first', () => {

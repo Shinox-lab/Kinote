@@ -3,16 +3,14 @@ import { Link, useParams } from '@tanstack/react-router';
 import { usePageChanges, useRefresh, useSpaceTree, useWorkspace } from '../lib/queries.js';
 import { closeHistory, openHistory, useHistoryOpen } from '../lib/pageUi.js';
 import { usePageView } from '../lib/usePageView.js';
-import { ancestorIds, blockHighlightCss } from '../lib/wiki.js';
+import { ancestorIds, blockHighlightCss, visibleChanges } from '../lib/wiki.js';
 import { AppTopBar } from '../components/AppTopBar.js';
-import { Badge } from '../components/Badge.js';
 import { Editor } from '../components/Editor.js';
 import { HistoryDrawer } from '../components/HistoryDrawer.js';
 import { LifecycleMenu } from '../components/LifecycleMenu.js';
 import { PageHeader } from '../components/PageHeader.js';
-import { PageActions } from '../components/PageActions.js';
-import { useSidebarColumn } from '../components/sidebar/SidebarContext.js';
-import { Button, ErrorNote, Loading } from '../components/ui.js';
+import { PageStatus } from '../components/PageStatus.js';
+import { ErrorNote, Loading } from '../components/ui.js';
 
 const CRUMB = 'min-w-0 max-w-[12rem] truncate rounded px-1 py-0.5 text-muted hover:bg-hover hover:text-fg';
 
@@ -75,10 +73,9 @@ export function PagePage() {
   const { tenant } = useWorkspace();
   const { pageId } = useParams({ from: '/w/$tenantSlug/p/$pageId' });
   const refresh = useRefresh();
-  const { page, error, isPending, spaces, archived, controls, reload, changed } = usePageView(pageId);
+  const { page, error, isPending, spaces, space, archived, controls, reload, changed } = usePageView(pageId);
   const { data: entries } = usePageChanges(pageId);
   const historyOpen = useHistoryOpen(pageId);
-  const sidebarColumn = useSidebarColumn();
 
   // The drawer belongs to this page: leaving it closes the drawer.
   useEffect(() => () => closeHistory(), [pageId]);
@@ -110,20 +107,19 @@ export function PagePage() {
           canEdit={controls.move}
           meta={
             <div className="flex flex-wrap items-center gap-2">
-              <Badge badge={page.badge} />
+              <PageStatus
+                page={page}
+                changedCount={visibleChanges(entries ?? []).length}
+                controls={controls}
+                canReview={space?.myRole === 'reviewer' || space?.myRole === 'admin'}
+                tenantSlug={tenant.slug}
+                onChanged={changed}
+                onHistory={(tab) => openHistory(pageId, tab)}
+              />
               {archived && <span className="rounded-full bg-hover px-2 py-0.5 text-xs text-muted">Archived</span>}
             </div>
           }
         />
-        {/* With no sidebar column the page carries its own actions; otherwise they are in the sidebar. */}
-        {!sidebarColumn && (
-          <div className="flex flex-wrap items-start gap-2">
-            <PageActions page={page} controls={controls} onChanged={changed} />
-            <Button variant="secondary" aria-haspopup="dialog" onClick={() => openHistory(pageId)}>
-              History
-            </Button>
-          </div>
-        )}
         {/* A failed refetch keeps the last page on screen and says so. */}
         <ErrorNote error={error} />
         <Editor key={pageId} pageId={pageId} archived={archived} onSynced={reload} />

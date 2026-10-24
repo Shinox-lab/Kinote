@@ -14,11 +14,14 @@ export function PageActions({
   controls,
   onChanged,
   stacked = false,
+  compact = false,
 }: {
   page: PageDetails;
   controls: PageControls;
   onChanged: () => void;
   stacked?: boolean;
+  /** Just the one action the chip shows beside the status (Index now/Submit, or Retry). */
+  compact?: boolean;
 }) {
   const snapshot = useMutation({ mutationFn: () => api.snapshot(page.id), onSettled: onChanged });
   const retry = useMutation({ mutationFn: (versionId: string) => api.retryVersion(versionId), onSettled: onChanged });
@@ -30,6 +33,24 @@ export function PageActions({
   // Retry targets the version that failed: the page's latest one (the badge says "Index failed" only for it).
   const failed = page.latestVersion;
   const width = stacked ? 'w-full' : '';
+
+  if (compact) {
+    const retryAction = controls.retry && failed;
+    if (!retryAction && !controls.primary) return null;
+    return (
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => (retryAction ? retry.mutate(failed!.id) : snapshot.mutate())}
+          disabled={busy}
+          className="inline-flex h-7 items-center rounded-md bg-accent px-2.5 text-xs font-medium text-accent-fg hover:opacity-90 disabled:opacity-50"
+        >
+          {retryAction ? 'Retry' : controls.primary}
+        </button>
+        <ErrorNote error={snapshot.error ?? retry.error} />
+      </div>
+    );
+  }
 
   if (!controls.primary && !(controls.retry && failed) && !(controls.restoreIndexed && page.indexedVersion)) return null;
   return (

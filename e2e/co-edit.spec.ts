@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { badgeOf, editorOf, expectConnected, PASSWORD, uniqueSuffix } from './support.js';
+import { badgeOf, editorOf, expectConnected, PASSWORD, runPageAction, uniqueSuffix } from './support.js';
 
 
 const CITE = /\(v1, updated \d{4}-\d{2}-\d{2}\)/;
@@ -105,7 +105,7 @@ test('two editors and a reviewer: co-edit, hold until approval, index, cite v1',
     await expectConnected(a);
     await editorOf(a).click();
     await a.keyboard.type('Public holidays follow the national calendar.');
-    await a.getByRole('button', { name: 'Index now' }).click();
+    await runPageAction(a, 'Index now');
     await expect(async () => {
       await a.reload();
       await expect(badgeOf(a)).toHaveText('Indexed · v1', { timeout: 2_000 });
@@ -142,7 +142,7 @@ test('two editors and a reviewer: co-edit, hold until approval, index, cite v1',
   });
 
   await test.step('A submits for review: held, not indexed, and A cannot approve', async () => {
-    await a.getByRole('button', { name: 'Submit for review' }).click();
+    await runPageAction(a, 'Submit for review');
     await expect(badgeOf(a)).toHaveText('Saved · not indexed (awaiting approval)');
 
     // The submitted version waits in the queue, and A, who wrote it, may not approve it.

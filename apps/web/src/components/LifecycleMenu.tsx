@@ -5,9 +5,10 @@ import { api } from '../lib/api.js';
 import type { PageControls } from '../lib/wiki.js';
 import { MoreIcon } from './icons.js';
 import { Confirm, MoveForm, PANEL } from './lifecycle.js';
+import { TitleInput } from './sidebar/TitleInput.js';
 import { Button, ErrorNote } from './ui.js';
 
-type Action = 'move' | 'withdraw' | 'archive';
+type Action = 'rename' | 'move' | 'withdraw' | 'archive';
 
 /**
  * The page's lifecycle actions: move, withdraw, archive (and restoring an archived
@@ -29,7 +30,16 @@ export function LifecycleMenu({
   const [action, setAction] = useState<Action | null>(null);
 
   const restore = useMutation({ mutationFn: () => api.restorePage(page.id), onSuccess: onChanged });
+  const rename = useMutation({
+    mutationFn: (title: string) => api.renamePage(page.id, title),
+    onSuccess: () => {
+      setAction(null);
+      setOpen(false);
+      onChanged();
+    },
+  });
   const items: { key: Action; label: string; show: boolean }[] = [
+    { key: 'rename', label: 'Rename…', show: controls.move },
     { key: 'move', label: 'Move…', show: controls.move },
     { key: 'withdraw', label: 'Withdraw from index…', show: controls.withdraw },
     { key: 'archive', label: 'Archive…', show: controls.archive },
@@ -94,6 +104,13 @@ export function LifecycleMenu({
               ))}
             </ul>
           )}
+        </div>
+      )}
+      {action === 'rename' && (
+        <div className={PANEL}>
+          <p className="mb-2 text-sm font-medium">Rename page</p>
+          <TitleInput title={page.title} onCancel={() => setAction(null)} onSave={(title) => rename.mutate(title)} />
+          <ErrorNote error={rename.error} />
         </div>
       )}
       {action === 'move' && (

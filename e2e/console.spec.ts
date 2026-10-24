@@ -8,6 +8,7 @@ import {
   call,
   createPageInSpace,
   openAs,
+  runPageAction,
   seedWorld,
   typeAtEnd,
   type Account,
@@ -36,7 +37,7 @@ const queue = (page: Page) => page.getByRole('list', { name: 'Changes waiting fo
 /** Types into the page and submits it for review; the badge then reads "awaiting approval". */
 async function writeAndSubmit(page: Page, text: string): Promise<void> {
   await typeAtEnd(page, text);
-  await page.getByRole('button', { name: 'Submit for review' }).click();
+  await runPageAction(page, 'Submit for review');
   await expect(badgeOf(page)).toHaveText('Saved · not indexed (awaiting approval)');
 }
 
@@ -126,9 +127,13 @@ test('history drawer: compare two versions, restore with confirmation, Escape re
   await call(request, `/versions/${second.id}/approve`, { account: rae, tenantId: world.tenantId, method: 'POST' });
 
   await edPage.reload();
-  const historyButton = edPage.getByRole('button', { name: 'History' });
+  const historyButton = edPage.getByRole('button', { name: 'Page status and actions' });
   await historyButton.focus();
   await historyButton.click();
+  await edPage
+    .getByRole('dialog', { name: 'Page status and actions' })
+    .getByRole('button', { name: 'History' })
+    .click();
   const drawer = edPage.getByRole('dialog', { name: 'Page history' });
   await expect(drawer).toBeVisible();
   await expect(drawer).toBeFocused();
@@ -168,7 +173,7 @@ test('history drawer: compare two versions, restore with confirmation, Escape re
     expect(latest).toMatchObject({ number: 3, reason: 'restore' });
   });
 
-  await test.step('Escape closes the drawer and focus returns to the History button', async () => {
+  await test.step('Escape closes the drawer and focus returns to the status chip', async () => {
     await edPage.keyboard.press('Escape');
     await expect(drawer).toHaveCount(0);
     await expect(historyButton).toBeFocused();

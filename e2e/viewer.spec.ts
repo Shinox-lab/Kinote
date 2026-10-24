@@ -10,7 +10,12 @@ test('a viewer sees the page read-only, without Submit', async ({ browser, reque
   const pageId = await createPageInSpace(owner, world, 'Leave policy');
   await typeAtEnd(owner, 'Employees get twenty days of leave.');
   await expect(editorOf(owner)).toContainText('twenty days of leave');
-  await expect(owner.getByRole('button', { name: 'Submit for review' })).toBeVisible();
+  await owner.getByRole('button', { name: 'Page status and actions' }).click();
+  await expect(
+    owner
+      .getByRole('dialog', { name: 'Page status and actions' })
+      .getByRole('button', { name: 'Submit for review' })
+  ).toBeVisible();
 
   const page = await openAs(browser, world, viewer);
   await page.goto(`/w/${world.slug}/p/${pageId}`);

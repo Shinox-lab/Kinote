@@ -1,19 +1,27 @@
 import { useSyncExternalStore } from 'react';
 
-// Which page's history drawer is open. The History button lives in the sidebar
-// and the drawer in the page screen, so the state is shared here, outside React.
+// Which page's history drawer is open, and which tab it should show. The
+// status chip lives in the page screen, so the state is shared here, outside React.
 
-let openFor: string | null = null;
+export type HistoryTab = 'versions' | 'changes';
+interface OpenHistory {
+  pageId: string;
+  tab: HistoryTab;
+}
+
+let openFor: OpenHistory | null = null;
 const listeners = new Set<() => void>();
 
-function set(next: string | null): void {
-  if (openFor === next) return;
+function set(next: OpenHistory | null): void {
+  if (openFor?.pageId === next?.pageId && openFor?.tab === next?.tab) return;
   openFor = next;
   for (const l of [...listeners]) l();
 }
 
-export const getHistoryOpenFor = (): string | null => openFor;
-export const openHistory = (pageId: string): void => set(pageId);
+export const getHistoryOpenFor = (): string | null => openFor?.pageId ?? null;
+export const getHistoryTab = (): HistoryTab => openFor?.tab ?? 'versions';
+export const openHistory = (pageId: string, tab: HistoryTab = 'versions'): void =>
+  set({ pageId, tab });
 export const closeHistory = (): void => set(null);
 
 export function subscribeHistory(listener: () => void): () => void {
@@ -23,5 +31,14 @@ export function subscribeHistory(listener: () => void): () => void {
 
 /** Whether the history drawer is open for this page. */
 export function useHistoryOpen(pageId: string): boolean {
-  return useSyncExternalStore(subscribeHistory, () => openFor === pageId, () => false);
+  return useSyncExternalStore(subscribeHistory, () => openFor?.pageId === pageId, () => false);
+}
+
+/** The tab the drawer should open on for this page (null when it is closed). */
+export function useHistoryTab(pageId: string): HistoryTab | null {
+  return useSyncExternalStore(
+    subscribeHistory,
+    () => (openFor?.pageId === pageId ? openFor.tab : null),
+    () => null
+  );
 }
