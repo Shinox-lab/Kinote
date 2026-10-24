@@ -23,6 +23,14 @@ export interface LivePage {
   reconnect: () => void;
 }
 
+interface Connection {
+  pageId: string;
+  live: Live | null;
+  access: 'read' | 'write';
+  state: ConnectionState;
+  error: unknown;
+}
+
 /**
  * The page's live connection: fetches a collab token, opens one Hocuspocus
  * provider and shares it with the editor and the presence strip. The provider
@@ -30,13 +38,20 @@ export interface LivePage {
  * a few times, and the provider/doc are destroyed on unmount or page change.
  * The awareness carries the person's id and name (BlockNote already carries
  * their name and colour for the cursors).
+ *
+ * The connection is tied to its page id: until the new page's provider exists
+ * the hook returns no live document, so a navigation can never paint or edit
+ * the previous page under the new page's title.
  */
 export function useLivePage(pageId: string, onSynced: () => void): LivePage {
   const { tenant } = useWorkspace();
-  const [live, setLive] = useState<Live | null>(null);
-  const [access, setAccess] = useState<'read' | 'write'>('read');
-  const [state, setState] = useState<ConnectionState>('connecting');
-  const [error, setError] = useState<unknown>(null);
+  const [conn, setConn] = useState<Connection>({
+    pageId,
+    live: null,
+    access: 'read',
+    state: 'connecting',
+    error: null,
+  });
   const [attempt, setAttempt] = useState(0);
   const reconnect = useRef<() => void>(() => {});
   // Always the latest callback, without restarting the connection when it changes.
@@ -50,25 +65,23 @@ export function useLivePage(pageId: string, onSynced: () => void): LivePage {
     let timer: ReturnType<typeof setTimeout> | undefined;
     let provider: HocuspocusProvider | undefined;
     const ydoc = new Y.Doc();
-    setLive(null);
-    setAccess('read');
-    setState('connecting');
-    setError(null);
+    setConn({ pageId, live: null, access: 'read', state: 'connecting', error: null });
 
     (async () => {
       let first;
       try {
         first = await api.collabToken(pageId);
       } catch (err) {
-        if (!cancelled) setError(err);
+        if (!cancelled) setConn((c) => (c.pageId === pageId ? { ...c, error: err } : c));
         return;
       }
-      if (cancelled) return;
-      setAccess(first.access);
+      if (cancelled || !first) return;
+      setConn((c) => (c.pageId === pageId ? { ...c, access: first.access } : c));
 
       const status = { socket: 'connecting' as 'connecting' | 'connected' | 'disconnected', synced: false, authFailed: false };
       let failures = 0;
-      const publish = () => setState(connectionState(status));
+      const publish = () =>
+        setConn((c) => (c.pageId === pageId ? { ...c, state: connectionState(status) } : c));
       // The token fetched above serves the first connect; every later connect fetches its own.
       let primed: string | null = first.token;
 
@@ -83,7 +96,7 @@ export function useLivePage(pageId: string, onSynced: () => void): LivePage {
             return token;
           }
           const fresh = await api.collabToken(pageId);
-          if (!cancelled) setAccess(fresh.access);
+          if (!cancelled) setConn((c) => (c.pageId === pageId ? { ...c, access: fresh.access } : c));
           return fresh.token;
         },
         onStatus: ({ status: s }) => {
@@ -125,7 +138,7 @@ export function useLivePage(pageId: string, onSynced: () => void): LivePage {
         socket.disconnect();
         void socket.connect();
       };
-      setLive({ ydoc, provider: p });
+      setConn((c) => (c.pageId === pageId ? { ...c, live: { ydoc, provider: p } } : c));
     })();
 
     return () => {
@@ -133,17 +146,17 @@ export function useLivePage(pageId: string, onSynced: () => void): LivePage {
       clearTimeout(timer);
       provider?.destroy();
       ydoc.destroy();
-      setLive(null);
+      setConn((c) => (c.pageId === pageId ? { ...c, live: null } : c));
     };
   }, [pageId, tenant.id, attempt]);
 
+  const current = conn.pageId === pageId ? conn : null;
   return {
-    live,
-    access,
-    state,
-    error,
+    live: current?.live ?? null,
+    access: current?.access ?? 'read',
+    state: current?.state ?? 'connecting',
+    error: current?.error ?? null,
     retry: () => {
-      setError(null);
       setAttempt((n) => n + 1);
     },
     reconnect: () => reconnect.current(),

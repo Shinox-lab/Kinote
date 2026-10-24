@@ -325,7 +325,10 @@ const graphemeSegmenter = new Intl.Segmenter(undefined, { granularity: 'grapheme
 export const IconSchema = z
   .string()
   .max(16)
-  .refine((s) => [...graphemeSegmenter.segment(s)].length === 1, 'a single emoji');
+  .refine(
+    (s) => [...graphemeSegmenter.segment(s)].length === 1 && /\p{Extended_Pictographic}/u.test(s),
+    'a single emoji'
+  );
 export type Icon = z.infer<typeof IconSchema>;
 
 /**

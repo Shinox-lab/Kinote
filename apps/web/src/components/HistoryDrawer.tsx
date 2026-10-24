@@ -172,6 +172,7 @@ export function HistoryDrawer({
   const titleId = useId();
   const tabsId = useId();
   const [tab, setTab] = useState<HistoryTab>(initialTab);
+  const tabRefs = useRef<Record<HistoryTab, HTMLButtonElement | null>>({ versions: null, changes: null });
   const dialog = useRef<HTMLDivElement>(null);
   const refresh = useRefresh();
   const { data: versions, error, isPending } = usePageVersions(pageId, true);
@@ -260,12 +261,37 @@ export function HistoryDrawer({
           ).map(([value, label]) => (
             <button
               key={value}
+              ref={(element) => {
+                tabRefs.current[value] = element;
+              }}
               type="button"
               role="tab"
               id={`${tabsId}-${value}-tab`}
               aria-selected={tab === value}
-              aria-controls={`${tabsId}-${value}-panel`}
+              aria-controls={tab === value ? `${tabsId}-${value}-panel` : undefined}
+              tabIndex={tab === value ? 0 : -1}
               onClick={() => setTab(value)}
+              onKeyDown={(event) => {
+                if (
+                  event.key !== 'ArrowLeft' &&
+                  event.key !== 'ArrowRight' &&
+                  event.key !== 'Home' &&
+                  event.key !== 'End'
+                ) {
+                  return;
+                }
+                event.preventDefault();
+                const next: HistoryTab =
+                  event.key === 'Home'
+                    ? 'versions'
+                    : event.key === 'End'
+                      ? 'changes'
+                      : value === 'versions'
+                        ? 'changes'
+                        : 'versions';
+                setTab(next);
+                tabRefs.current[next]?.focus();
+              }}
               className={`-mb-px border-b-2 px-3 py-2 text-sm font-medium ${
                 tab === value ? 'border-accent text-fg' : 'border-transparent text-muted hover:text-fg'
               }`}

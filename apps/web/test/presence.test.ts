@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { initials, presencePeople, presenceTint } from '../src/lib/presence.js';
+import { initials, presencePeople, presenceStrip, presenceTint } from '../src/lib/presence.js';
 
 describe('presencePeople', () => {
   test('reads the id/name we set, falls back to BlockNote\'s user, dedupes and excludes the self', () => {
@@ -14,6 +14,14 @@ describe('presencePeople', () => {
       expect.objectContaining({ id: 'client-4', name: 'Legacy' }),
     ]);
     expect(presencePeople(states, 'ada')).toHaveLength(2);
+  });
+
+  test('shows three faces and counts the rest', () => {
+    const people = ['a', 'b', 'c', 'd', 'e'].map((id) => ({ id, name: id, ...presenceTint(id) }));
+    const { shown, more } = presenceStrip(people);
+    expect(shown.map((p) => p.id)).toEqual(['a', 'b', 'c']);
+    expect(more).toBe(2);
+    expect(presenceStrip([]).more).toBe(0);
   });
 
   test('a person keeps the same tint, from the six design slots', () => {

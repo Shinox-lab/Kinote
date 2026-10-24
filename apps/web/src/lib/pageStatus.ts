@@ -38,7 +38,10 @@ export function pageStatus(page: PageStatusInput, changedCount: number): PageSta
   if (page.liveChangedSinceSnapshot) {
     return {
       state: 'changed',
-      label: `${changedCount} unindexed ${changedCount === 1 ? 'change' : 'changes'}`,
+      label:
+        changedCount === 0
+          ? 'Unindexed changes'
+          : `${changedCount} unindexed ${changedCount === 1 ? 'change' : 'changes'}`,
       tone: 'warn',
       indexedAt,
     };

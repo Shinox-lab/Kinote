@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useId, useReducer, useRef, useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import type { PageDetails } from '@living-wiki/contracts';
 import { pageStatus, relativeTime, type PageStatusTone } from '../lib/pageStatus.js';
@@ -52,14 +52,31 @@ export function PageStatus({
   const popoverId = useId();
   const info = pageStatus(page, changedCount);
   const pendingReview = info.state === 'review';
+  const [, tick] = useReducer((n: number) => n + 1, 0);
+
+  // The relative time is read when it is shown, and again every minute, so an open tab does not freeze "2h ago".
+  useEffect(() => {
+    const timer = setInterval(tick, 60_000);
+    return () => clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     if (!open) return;
     const onPointerDown = (event: PointerEvent) => {
       if (!wrapper.current?.contains(event.target as Node)) setOpen(false);
     };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.stopPropagation();
+      setOpen(false);
+      trigger.current?.focus();
+    };
     document.addEventListener('pointerdown', onPointerDown);
-    return () => document.removeEventListener('pointerdown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
   }, [open]);
 
   function openTab(tab: HistoryTab) {
@@ -70,16 +87,7 @@ export function PageStatus({
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <div
-        ref={wrapper}
-        className="relative flex items-center gap-2"
-        onKeyDown={(event) => {
-          if (event.key !== 'Escape' || !open) return;
-          event.stopPropagation();
-          setOpen(false);
-          trigger.current?.focus();
-        }}
-      >
+      <div ref={wrapper} className="relative flex items-center gap-2">
         <button
           ref={trigger}
           type="button"
@@ -99,7 +107,9 @@ export function PageStatus({
           </span>
         </button>
         {info.indexedAt !== null && (
-          <span className="text-[11.8px] text-muted">{relativeTime(info.indexedAt)}</span>
+          <time dateTime={info.indexedAt} className="text-[11.8px] text-muted">
+            {relativeTime(info.indexedAt)}
+          </time>
         )}
 
         {open && (
@@ -115,7 +125,9 @@ export function PageStatus({
                 {info.label}
               </span>
               {info.indexedAt !== null && (
-                <span className="ml-auto text-muted">{relativeTime(info.indexedAt)}</span>
+                <time dateTime={info.indexedAt} className="ml-auto text-muted">
+                  {relativeTime(info.indexedAt)}
+                </time>
               )}
             </div>
             <PageActions page={page} controls={controls} onChanged={onChanged} stacked />

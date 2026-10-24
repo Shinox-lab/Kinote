@@ -23,6 +23,12 @@ export function presenceTint(id: string): { accent: string; tint: string } {
   return { accent: `var(--author-${slot})`, tint: `var(--author-${slot}-tint)` };
 }
 
+/** The three faces the strip shows, and how many more are behind +N. */
+export function presenceStrip(people: readonly PresencePerson[], limit = 3): { shown: PresencePerson[]; more: number } {
+  const shown = people.slice(0, limit);
+  return { shown, more: people.length - shown.length };
+}
+
 /** "Ada Lovelace" reads AL; one name reads A; no name reads ?. */
 export function initials(name: string | undefined): string {
   const words = (name ?? '').trim().split(/\s+/).filter(Boolean);

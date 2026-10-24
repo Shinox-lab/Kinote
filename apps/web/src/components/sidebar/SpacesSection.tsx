@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type DragEvent, type MouseEvent } from 're
 import { useParams } from '@tanstack/react-router';
 import { useMutation } from '@tanstack/react-query';
 import type { SpaceResponse } from '@living-wiki/contracts';
+import { isKnownIcon } from '../../lib/emoji.js';
 import { useUploads } from '../../lib/useUploads.js';
 import { loadExpanded, saveExpanded } from '../../lib/sidebar.js';
 import { useFile, usePage, useRefresh, useSpaceTree, useSpaces, useWorkspace } from '../../lib/queries.js';
@@ -160,7 +161,7 @@ function PageNode({
             <span className="flex size-5 shrink-0 items-center justify-center text-base text-muted">
               {node.kind === 'file' ? (
                 <FileIcon />
-              ) : node.icon ? (
+              ) : isKnownIcon(node.icon) ? (
                 <span aria-hidden="true">{node.icon}</span>
               ) : (
                 <PageIcon />

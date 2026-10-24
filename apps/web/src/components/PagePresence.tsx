@@ -1,6 +1,6 @@
 import { useEffect, useReducer } from 'react';
 import type { ConnectionState } from '../lib/collab.js';
-import { initials, presencePeople } from '../lib/presence.js';
+import { initials, presencePeople, presenceStrip } from '../lib/presence.js';
 import { loadSession } from '../lib/session.js';
 import type { Live } from '../lib/useLivePage.js';
 
@@ -41,8 +41,7 @@ export function PagePresence({
 
   const selfId = loadSession()?.user.id ?? null;
   const people = awareness ? presencePeople(awareness.getStates(), selfId) : [];
-  const shown = people.slice(0, 3);
-  const more = people.length - shown.length;
+  const { shown, more } = presenceStrip(people);
 
   return (
     <div className="flex items-center gap-1.5">

@@ -4,6 +4,7 @@ import { usePageChanges, useRefresh, useSpaceTree, useWorkspace } from '../lib/q
 import { closeHistory, openHistory, useHistoryOpen, useHistoryTab } from '../lib/pageUi.js';
 import { usePageView } from '../lib/usePageView.js';
 import { useLivePage } from '../lib/useLivePage.js';
+import { loadSession } from '../lib/session.js';
 import { ancestorIds, blockHighlightCss, visibleChanges } from '../lib/wiki.js';
 import { AppTopBar } from '../components/AppTopBar.js';
 import { Editor } from '../components/Editor.js';
@@ -80,6 +81,11 @@ export function PagePage() {
   const historyOpen = useHistoryOpen(pageId);
   const historyTab = useHistoryTab(pageId);
   const livePage = useLivePage(pageId, reload);
+  const selfId = loadSession()?.user.id ?? null;
+  const authored = page?.latestVersion?.createdByType === 'user' && page.latestVersion.createdBy === selfId;
+  const canReview =
+    (space?.myRole === 'reviewer' || space?.myRole === 'admin') &&
+    (space?.allowSelfApproval === true || !authored);
 
   // The drawer belongs to this page: leaving it closes the drawer.
   useEffect(() => () => closeHistory(), [pageId]);
@@ -120,7 +126,7 @@ export function PagePage() {
                 page={page}
                 changedCount={visibleChanges(entries ?? []).length}
                 controls={controls}
-                canReview={space?.myRole === 'reviewer' || space?.myRole === 'admin'}
+                canReview={canReview}
                 tenantSlug={tenant.slug}
                 onChanged={changed}
                 onHistory={(tab) => openHistory(pageId, tab)}

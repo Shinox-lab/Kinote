@@ -2,8 +2,11 @@ import { expect, test } from '@playwright/test';
 import {
   addMember,
   badgeOf,
+  call,
   createPageInSpace,
+  expectConnected,
   openAs,
+  runPageAction,
   seedWorld,
   typeAtEnd,
   type Account,
@@ -25,9 +28,9 @@ test.beforeAll(async ({ playwright }, info) => {
   await request.dispose();
 });
 
-test('the page icon: pick, show in the header and tree, keep on reload, clear', async ({ browser }) => {
+test('the page icon: pick, show in the header and tree, keep on reload, clear', async ({ browser, request }) => {
   const page = await openAs(browser, world, ed);
-  await createPageInSpace(page, world, 'Launch notes');
+  const pageId = await createPageInSpace(page, world, 'Launch notes');
   pagePath = new URL(page.url()).pathname;
 
   const workspace = page.getByRole('navigation', { name: 'Workspace' });
@@ -38,6 +41,7 @@ test('the page icon: pick, show in the header and tree, keep on reload, clear', 
   await page.getByRole('button', { name: 'Use 🚀' }).click();
 
   await expect(page.getByRole('button', { name: 'Change page icon' })).toHaveText('🚀');
+  await expect(page.getByRole('button', { name: 'Change page icon' })).toBeFocused();
   await expect(treeLink).toContainText('🚀');
 
   await page.reload();
@@ -63,7 +67,25 @@ test('the page icon: pick, show in the header and tree, keep on reload, clear', 
   await page.getByRole('button', { name: 'Change page icon' }).click();
   await page.getByRole('button', { name: 'Remove' }).click();
   await expect(page.getByRole('button', { name: 'Change page icon' })).not.toHaveText('🚀');
+  await expect(page.getByRole('button', { name: 'Change page icon' })).toBeFocused();
   await expect(treeLink).not.toContainText('🚀');
+
+  // An emoji the picker does not know is stored but renders as no icon.
+  await call(request, `/pages/${pageId}`, {
+    account: ed,
+    tenantId: world.tenantId,
+    method: 'PATCH',
+    data: { icon: '🦄' },
+  });
+  await page.reload();
+  await expect(page.getByRole('button', { name: 'Change page icon' })).not.toHaveText('🦄');
+  await expect(treeLink).not.toContainText('🦄');
+  await call(request, `/pages/${pageId}`, {
+    account: ed,
+    tenantId: world.tenantId,
+    method: 'PATCH',
+    data: { icon: null },
+  });
 });
 
 test('a viewer sees the page icon but cannot change it', async ({ browser }) => {
@@ -113,8 +135,11 @@ test('the status chip, its actions and the page menu; no On this page panel', as
   const changeDrawer = page.getByRole('dialog', { name: 'Page history' });
   await expect(changeDrawer.getByRole('tab', { name: 'Changes' })).toHaveAttribute('aria-selected', 'true');
   await expect(changeDrawer.getByRole('list', { name: 'Changed blocks' })).toContainText('Status notes content');
-  await changeDrawer.getByRole('tab', { name: 'Versions' }).click();
+  const changesTab = changeDrawer.getByRole('tab', { name: 'Changes' });
+  await changesTab.focus();
+  await changesTab.press('ArrowRight');
   await expect(changeDrawer.getByRole('tab', { name: 'Versions' })).toHaveAttribute('aria-selected', 'true');
+  await expect(changeDrawer.getByRole('tab', { name: 'Versions' })).toBeFocused();
   await expect(changeDrawer).toContainText('This page has no saved versions yet.');
   await page.keyboard.press('Escape');
   await expect(changeDrawer).toHaveCount(0);
@@ -158,4 +183,53 @@ test('the status chip, its actions and the page menu; no On this page panel', as
 
   await ownerPage.getByRole('button', { name: 'Restore page' }).click();
   await expect(ownerPage.getByRole('button', { name: 'Restore page' })).toHaveCount(0);
+});
+
+test('the page type scale: line-height, quiet headings, hairline tables and readable code', async ({ browser, request }) => {
+  const created = await call<{ id: string }>(request, '/pages', {
+    account: ed,
+    tenantId: world.tenantId,
+    method: 'POST',
+    data: {
+      space_id: world.spaceId,
+      title: 'Typographic specimen',
+      slug: 'typographic-specimen',
+      markdown:
+        '## A section\n\nBody text.\n\n> A quote.\n\n| Term | Meaning |\n| --- | --- |\n| Alpha | First |\n\n```ts\nconst answer = 42;\n```\n',
+    },
+  });
+  const page = await openAs(browser, world, ed);
+  await page.goto(`/w/${world.slug}/p/${created.id}`);
+  await expectConnected(page);
+
+  const heading = page.locator('.bn-block-content[data-content-type="heading"][data-level="2"]').first();
+  await expect(heading).toHaveCSS('font-size', '19px');
+  await expect(heading).toHaveCSS('font-weight', '600');
+
+  const paragraph = page.locator('.bn-block-content[data-content-type="paragraph"]').first();
+  await expect(paragraph).toHaveCSS('font-size', '15.5px');
+  await expect(paragraph).toHaveCSS('line-height', /^26\./);
+
+  const quote = page.locator('.bn-block-content[data-content-type="quote"] blockquote').first();
+  await expect(quote).toHaveCSS('border-left-width', '2px');
+
+  const cell = page.locator('.bn-block-content[data-content-type="table"] td').first();
+  await expect(cell).toHaveCSS('border-top-width', '0px');
+  await expect(cell).toHaveCSS('border-bottom-width', '1px');
+  const headCell = page.locator('.bn-block-content[data-content-type="table"] th').first();
+  await expect(headCell).toHaveCSS('text-transform', 'uppercase');
+
+  // Index it first: the newly created blocks wear the changed-block wash until the snapshot is indexed.
+  await runPageAction(page, 'Index now');
+  await expect(async () => {
+    await expect(badgeOf(page)).toHaveText('Indexed · v1', { timeout: 2_000 });
+  }).toPass({ timeout: 30_000 });
+
+  const code = page.locator('.bn-block-content[data-content-type="codeBlock"]').first();
+  await expect(code).toHaveCSS('background-color', 'rgb(245, 242, 237)');
+  await expect(code.locator('pre')).toHaveCSS('color', 'rgb(36, 33, 29)');
+
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await expect(code).toHaveCSS('background-color', 'rgb(20, 18, 16)');
+  await expect(code.locator('pre')).toHaveCSS('color', 'rgb(236, 230, 221)');
 });

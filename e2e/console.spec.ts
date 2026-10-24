@@ -57,6 +57,8 @@ test('review queue: Approve and Reject states, lazy diff', async ({ browser, req
   const raePage = await openAs(browser, world, rae);
   await createPageInSpace(raePage, world, 'Rae notes');
   await writeAndSubmit(raePage, 'Quarterly planning notes for the platform team.');
+  await expect(raePage.getByText('Waiting for a reviewer')).toBeVisible();
+  await expect(raePage.getByRole('link', { name: 'Review', exact: true })).toHaveCount(0);
 
   const diffRequests: Request[] = [];
   raePage.on('request', (r) => {
@@ -64,7 +66,7 @@ test('review queue: Approve and Reject states, lazy diff', async ({ browser, req
   });
 
   await raePage.goto(`/w/${world.slug}/p/${edPageId}`);
-  await expect(raePage.getByRole('link', { name: 'Review' })).toBeVisible();
+  await expect(raePage.getByRole('link', { name: 'Review', exact: true })).toBeVisible();
 
   await raePage.goto(`/w/${world.slug}/reviews`);
   const own = queue(raePage).getByRole('listitem').filter({ hasText: 'Rae notes' });

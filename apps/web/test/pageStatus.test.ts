@@ -45,6 +45,7 @@ describe('pageStatus', () => {
     const info = pageStatus(page({ badge: 'Saved · not indexed', liveChangedSinceSnapshot: true }), 3);
     expect(info).toMatchObject({ state: 'changed', label: '3 unindexed changes', tone: 'warn' });
     expect(pageStatus(page({ liveChangedSinceSnapshot: true }), 1).label).toBe('1 unindexed change');
+    expect(pageStatus(page({ liveChangedSinceSnapshot: true }), 0).label).toBe('Unindexed changes');
   });
 
   test('in review wins over changed and uses the review tint', () => {

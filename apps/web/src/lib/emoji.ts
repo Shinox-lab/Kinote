@@ -49,3 +49,8 @@ export const PAGE_ICONS = [
   '📗',
   '📘',
 ] as const;
+
+/** True for one of the curated glyphs; any other stored value falls back to the page glyph. */
+export function isKnownIcon(icon: string | null | undefined): icon is (typeof PAGE_ICONS)[number] {
+  return icon != null && (PAGE_ICONS as readonly string[]).includes(icon);
+}

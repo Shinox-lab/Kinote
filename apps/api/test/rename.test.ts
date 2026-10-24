@@ -132,6 +132,24 @@ describe('renaming a page or a file', () => {
     expect(await auditTypes(w.tenant.id)).toContain('page.renamed');
   });
 
+  test('a title and an icon change in one request', async () => {
+    const w = await setup();
+    const res = await renamePage(w.editor.headers, w.page.id, { title: 'Renamed with an icon', icon: '🚀' });
+    expect(res.statusCode, res.body).toBe(200);
+    expect(res.json()).toMatchObject({ title: 'Renamed with an icon', icon: '🚀' });
+    expect(await liveTitle(w.tenant.id, w.page.id)).toBe('Renamed with an icon');
+
+    const details = await app.inject({
+      method: 'GET',
+      url: `/api/v1/pages/${w.page.id}`,
+      headers: w.editor.headers,
+    });
+    expect(details.statusCode, details.body).toBe(200);
+    expect(details.json()).toMatchObject({ title: 'Renamed with an icon', icon: '🚀' });
+    expect(await treeTitle(w, w.page.id)).toBe('Renamed with an icon');
+    expect(await auditTypes(w.tenant.id)).toContain('page.renamed');
+  });
+
   test('a viewer cannot rename a page (403) and the title stays', async () => {
     const w = await setup();
     const res = await renamePage(w.viewer.headers, w.page.id, { title: 'Not yours' });

@@ -5,7 +5,6 @@ import { Sidebar } from '../components/sidebar/Sidebar.js';
 import { OpenSidebarButton } from '../components/sidebar/OpenSidebarButton.js';
 import {
   ShellChromeContext,
-  SidebarColumnContext,
   TopBarPresenceContext,
 } from '../components/sidebar/SidebarContext.js';
 import {
@@ -108,9 +107,7 @@ function Shell() {
               </div>
             )}
             <main className="mx-auto w-full max-w-[1188px] px-5 py-6 md:px-7">
-              <SidebarColumnContext.Provider value={column}>
-                <Outlet />
-              </SidebarColumnContext.Provider>
+              <Outlet />
             </main>
           </div>
 

@@ -121,9 +121,11 @@ describe('a page emoji icon', () => {
     expect(family.statusCode, family.body).toBe(200);
     expect(family.json().icon).toBe('👨‍👩‍👧‍👦');
 
-    const invalid = await update(w.editor.headers, w.page.id, { icon: 'ab' });
-    expect(invalid.statusCode).toBe(400);
-    expect(invalid.json().error).toBe('validation_failed');
+    for (const icon of ['ab', 'a', 'a'.repeat(17)]) {
+      const invalid = await update(w.editor.headers, w.page.id, { icon });
+      expect(invalid.statusCode, icon).toBe(400);
+      expect(invalid.json().error).toBe('validation_failed');
+    }
 
     const empty = await update(w.editor.headers, w.page.id, {});
     expect(empty.statusCode).toBe(400);

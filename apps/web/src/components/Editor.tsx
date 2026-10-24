@@ -3,6 +3,7 @@ import { useCreateBlockNote } from '@blocknote/react';
 import { BlockNoteView } from '@blocknote/mantine';
 import '@blocknote/core/fonts/inter.css';
 import '@blocknote/mantine/style.css';
+import '../editor.css';
 import { useResolvedTheme } from '../lib/useResolvedTheme.js';
 import { loadSession } from '../lib/session.js';
 import type { Live } from '../lib/useLivePage.js';

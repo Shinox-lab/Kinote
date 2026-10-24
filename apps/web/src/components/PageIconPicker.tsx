@@ -2,7 +2,7 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { PageDetails, TreeResponse } from '@living-wiki/contracts';
 import { api } from '../lib/api.js';
-import { PAGE_ICONS } from '../lib/emoji.js';
+import { isKnownIcon, PAGE_ICONS } from '../lib/emoji.js';
 import { useWorkspace } from '../lib/queries.js';
 import { PageIcon } from './icons.js';
 import { ErrorNote } from './ui.js';
@@ -59,7 +59,10 @@ export function PageIconPicker({
       if (context.previousPage !== undefined) queryClient.setQueryData(pageKey, context.previousPage);
       for (const [key, data] of context.previousTrees) queryClient.setQueryData(key, data);
     },
-    onSuccess: () => setOpen(false),
+    onSuccess: () => {
+      setOpen(false);
+      trigger.current?.focus();
+    },
     onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: pageKey });
       void queryClient.invalidateQueries({ queryKey: ['t', tenant.id, 'tree'] });
@@ -76,25 +79,29 @@ export function PageIconPicker({
     return () => document.removeEventListener('pointerdown', onPointerDown);
   }, [open]);
 
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.stopPropagation();
+      setOpen(false);
+      trigger.current?.focus();
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [open]);
+
+  const known = isKnownIcon(icon) ? icon : null;
   const shown = (
-    <span aria-hidden="true" className={icon === null ? 'text-muted' : undefined}>
-      {icon ?? <PageIcon />}
+    <span aria-hidden="true" className={known === null ? 'text-muted' : undefined}>
+      {known ?? <PageIcon />}
     </span>
   );
 
   if (!canEdit) return <span className="flex size-[38px] items-center justify-center text-[30px] leading-none">{shown}</span>;
 
   return (
-    <div
-      ref={wrapper}
-      className="relative"
-      onKeyDown={(event) => {
-        if (event.key !== 'Escape' || !open) return;
-        event.stopPropagation();
-        setOpen(false);
-        trigger.current?.focus();
-      }}
-    >
+    <div ref={wrapper} className="relative">
       <button
         ref={trigger}
         type="button"
@@ -120,11 +127,11 @@ export function PageIconPicker({
                 key={emoji}
                 type="button"
                 aria-label={`Use ${emoji}`}
-                aria-pressed={icon === emoji}
+                aria-pressed={known === emoji}
                 disabled={save.isPending}
                 onClick={() => save.mutate(emoji)}
                 className={`flex size-9 items-center justify-center rounded text-xl leading-none hover:bg-hover disabled:opacity-60 ${
-                  icon === emoji ? 'bg-active' : ''
+                  known === emoji ? 'bg-active' : ''
                 }`}
               >
                 <span aria-hidden="true">{emoji}</span>
