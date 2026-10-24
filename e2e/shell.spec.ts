@@ -1,5 +1,5 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { addMember, call, openAs, seedWorld, uploadViaApi } from './support.js';
+import { addMember, call, editorOf, openAs, seedWorld, uploadViaApi } from './support.js';
 
 const sidebar = (page: Page): Locator => page.getByRole('complementary', { name: 'Sidebar' });
 
@@ -84,4 +84,57 @@ test('a long title keeps the page menu in reach', async ({ browser, request }) =
 
   await expect(page.getByRole('banner').getByRole('button', { name: 'Page actions' })).toBeVisible();
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+});
+
+test('the top-bar breadcrumb stays one line with long nested names', async ({ browser, request }) => {
+  const world = await seedWorld(request, { reviewRequired: false });
+  const long = (name: string) => `${name} with a long name that has to truncate in the bar`;
+  const mk = async (title: string, slug: string, parentId: string | null) =>
+    (
+      await call<{ id: string }>(request, '/pages', {
+        account: world.owner,
+        tenantId: world.tenantId,
+        method: 'POST',
+        data: { space_id: world.spaceId, title, slug, parent_id: parentId, markdown: `${title} text.` },
+      })
+    ).id;
+  const a = await mk(long('Parent A'), `pa-${world.suffix}`, null);
+  const b = await mk(long('Parent B'), `pb-${world.suffix}`, a);
+  const c = await mk(long('Parent C'), `pc-${world.suffix}`, b);
+  const child = await mk(long('Child'), `child-${world.suffix}`, c);
+  const page = await openAs(browser, world, world.owner);
+
+  for (const width of [1024, 768]) {
+    await page.setViewportSize({ width, height: 800 });
+    await page.goto(`/w/${world.slug}/p/${child}`);
+    const nav = page.getByRole('banner').getByRole('navigation', { name: 'Breadcrumb' });
+    await expect(nav).toBeVisible();
+    const box = await nav.boundingBox();
+    expect(box?.height, `breadcrumb at ${width}`).toBeLessThanOrEqual(30);
+    await expect(page.getByRole('banner').getByRole('button', { name: 'Page actions' })).toBeVisible();
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  }
+});
+
+test('the collapsed sidebar reopens from the sticky top bar after scrolling', async ({ browser, request }) => {
+  const world = await seedWorld(request, { reviewRequired: false });
+  const markdown = Array.from({ length: 80 }, (_, i) => `Paragraph ${i + 1}: the page has to be long enough to scroll.`).join('\n\n');
+  const { id: pageId } = await call<{ id: string }>(request, '/pages', {
+    account: world.owner,
+    tenantId: world.tenantId,
+    method: 'POST',
+    data: { space_id: world.spaceId, title: 'Long page', slug: `long-page-${world.suffix}`, parent_id: null, markdown },
+  });
+  const page = await openAs(browser, world, world.owner);
+  await page.setViewportSize({ width: 1000, height: 600 });
+  await page.goto(`/w/${world.slug}/p/${pageId}`);
+  await expect(editorOf(page)).toContainText('Paragraph 80');
+
+  const open = page.getByRole('banner').getByRole('button', { name: 'Open sidebar' });
+  await expect(open).toBeVisible();
+  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+  await expect(open).toBeInViewport();
+  await open.click();
+  await expect(page.getByRole('dialog', { name: 'Sidebar' })).toBeVisible();
 });

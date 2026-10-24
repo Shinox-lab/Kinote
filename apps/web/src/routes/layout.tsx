@@ -1,9 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { Outlet, useRouterState } from '@tanstack/react-router';
-import { MenuIcon, SidebarIcon } from '../components/icons.js';
 import { UploadPanel } from '../components/sidebar/UploadPanel.js';
 import { Sidebar } from '../components/sidebar/Sidebar.js';
-import { SidebarColumnContext } from '../components/sidebar/SidebarContext.js';
+import { OpenSidebarButton } from '../components/sidebar/OpenSidebarButton.js';
+import {
+  ShellChromeContext,
+  SidebarColumnContext,
+  TopBarPresenceContext,
+} from '../components/sidebar/SidebarContext.js';
 import {
   SIDEBAR_BREAKPOINT_PX,
   isCollapseShortcut,
@@ -33,6 +37,7 @@ function Shell() {
   const isDesktop = useMediaQuery(`(min-width: ${SIDEBAR_BREAKPOINT_PX}px)`);
   const [collapsed, setCollapsed] = useState(() => loadCollapsed());
   const [slideOver, setSlideOver] = useState(false);
+  const [topBar, setTopBar] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
   const pathname = useRouterState({ select: (s) => s.location.pathname });
 
@@ -43,6 +48,11 @@ function Shell() {
   function toggleCollapsed(next: boolean) {
     setCollapsed(next);
     saveCollapsed(next);
+  }
+
+  function openSidebar() {
+    if (isDesktop) toggleCollapsed(false);
+    else setSlideOver(true);
   }
 
   useEffect(() => {
@@ -57,61 +67,57 @@ function Shell() {
   }, [isDesktop, collapsed]);
 
   const column = isDesktop && !collapsed;
+  const chrome = { column, isDesktop, slideOver, openSidebar };
 
   return (
-    <div className="flex min-h-screen">
-      {column && (
-        <aside aria-label="Sidebar" className="sticky top-0 h-screen w-[252px] shrink-0 border-r border-line bg-sidebar">
-          <Sidebar onCollapse={() => toggleCollapsed(true)} />
-        </aside>
-      )}
+    <ShellChromeContext.Provider value={chrome}>
+      <TopBarPresenceContext.Provider value={setTopBar}>
+        <div className="flex min-h-screen">
+          {column && (
+            <aside aria-label="Sidebar" className="sticky top-0 h-screen w-[252px] shrink-0 border-r border-line bg-sidebar">
+              <Sidebar onCollapse={() => toggleCollapsed(true)} />
+            </aside>
+          )}
 
-      {!isDesktop && slideOver && (
-        <div className="fixed inset-0 z-40 flex">
-          <div
-            ref={panelRef}
-            role="dialog"
-            aria-modal="true"
-            aria-label="Sidebar"
-            tabIndex={-1}
-            className="h-full w-[330px] max-w-[85vw] border-r border-line bg-sidebar shadow-pop"
-          >
-            <Sidebar />
+          {!isDesktop && slideOver && (
+            <div className="fixed inset-0 z-40 flex">
+              <div
+                ref={panelRef}
+                role="dialog"
+                aria-modal="true"
+                aria-label="Sidebar"
+                tabIndex={-1}
+                className="h-full w-[330px] max-w-[85vw] border-r border-line bg-sidebar shadow-pop"
+              >
+                <Sidebar />
+              </div>
+              <button
+                type="button"
+                aria-label="Close sidebar"
+                tabIndex={-1}
+                className="flex-1 bg-overlay"
+                onClick={() => setSlideOver(false)}
+              />
+            </div>
+          )}
+
+          <div className="min-w-0 flex-1">
+            {!column && !topBar && (
+              <div className="px-3 pt-3">
+                <OpenSidebarButton />
+              </div>
+            )}
+            <main className="mx-auto w-full max-w-[1188px] px-5 py-6 md:px-7">
+              <SidebarColumnContext.Provider value={column}>
+                <Outlet />
+              </SidebarColumnContext.Provider>
+            </main>
           </div>
-          <button
-            type="button"
-            aria-label="Close sidebar"
-            tabIndex={-1}
-            className="flex-1 bg-overlay"
-            onClick={() => setSlideOver(false)}
-          />
+
+          {/* The sidebar holds the upload panel; with it hidden, the panel floats so progress and refusals stay visible. */}
+          {!column && !slideOver && <UploadPanel floating />}
         </div>
-      )}
-
-      <div className="min-w-0 flex-1">
-        {!column && (
-          <div className="px-3 pt-3">
-            <button
-              type="button"
-              aria-label="Open sidebar"
-              title="Open sidebar (Ctrl+\)"
-              aria-expanded={isDesktop ? false : slideOver}
-              onClick={() => (isDesktop ? toggleCollapsed(false) : setSlideOver(true))}
-              className="flex size-8 items-center justify-center rounded-md text-lg text-muted hover:bg-hover"
-            >
-              {isDesktop ? <SidebarIcon /> : <MenuIcon />}
-            </button>
-          </div>
-        )}
-        <main className="mx-auto w-full max-w-[1188px] px-5 py-6 md:px-7">
-          <SidebarColumnContext.Provider value={column}>
-            <Outlet />
-          </SidebarColumnContext.Provider>
-        </main>
-      </div>
-
-      {/* The sidebar holds the upload panel; with it hidden, the panel floats so progress and refusals stay visible. */}
-      {!column && !slideOver && <UploadPanel floating />}
-    </div>
+      </TopBarPresenceContext.Provider>
+    </ShellChromeContext.Provider>
   );
 }

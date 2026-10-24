@@ -13,7 +13,7 @@ import { PageActions } from '../components/PageActions.js';
 import { useSidebarColumn } from '../components/sidebar/SidebarContext.js';
 import { Button, ErrorNote, Loading } from '../components/ui.js';
 
-const CRUMB = 'max-w-[12rem] truncate rounded px-1 py-0.5 text-muted hover:bg-hover hover:text-fg';
+const CRUMB = 'min-w-0 max-w-[12rem] truncate rounded px-1 py-0.5 text-muted hover:bg-hover hover:text-fg';
 
 /** The page's place in the workspace: its space, each parent page, then this page's title. */
 function Breadcrumb({
@@ -36,9 +36,9 @@ function Breadcrumb({
     .filter((n): n is NonNullable<typeof n> => n !== undefined);
   return (
     <nav aria-label="Breadcrumb" className="min-w-0 text-sm">
-      <ol className="flex flex-wrap items-center gap-0.5">
+      <ol className="flex min-w-0 items-center gap-0.5">
         {space && (
-          <li className="flex items-center gap-0.5">
+          <li className="flex min-w-0 items-center gap-0.5">
             <Link to="/w/$tenantSlug/s/$spaceSlug" params={{ tenantSlug, spaceSlug: space.slug }} className={CRUMB}>
               {space.name}
             </Link>
@@ -46,7 +46,7 @@ function Breadcrumb({
         )}
         {parents.map((p) => (
           <li key={p.id} className="flex items-center gap-0.5">
-            <span aria-hidden="true" className="text-muted">
+            <span aria-hidden="true" className="shrink-0 text-muted">
               /
             </span>
             <Link to="/w/$tenantSlug/p/$pageId" params={{ tenantSlug, pageId: p.id }} className={CRUMB}>
@@ -54,13 +54,13 @@ function Breadcrumb({
             </Link>
           </li>
         ))}
-        <li className="flex items-center gap-0.5">
+        <li className="flex min-w-0 items-center gap-0.5">
           {(space || parents.length > 0) && (
-            <span aria-hidden="true" className="text-muted">
+            <span aria-hidden="true" className="shrink-0 text-muted">
               /
             </span>
           )}
-          <span aria-current="page" className="max-w-[18rem] truncate px-1 py-0.5 font-medium text-fg">
+          <span aria-current="page" className="min-w-0 max-w-[18rem] truncate px-1 py-0.5 font-medium text-fg">
             {title}
           </span>
         </li>
