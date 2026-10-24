@@ -105,12 +105,46 @@ describe.each([
 
   test('declares every token the console uses', () => {
     for (const name of [
-      'page', 'sidebar', 'surface', 'line', 'fg', 'muted', 'hover', 'active',
-      'accent', 'accent-fg', 'accent-text', 'danger', 'success',
+      'page', 'sidebar', 'surface', 'line', 'fg', 'muted', 'faint', 'hover', 'active',
+      'accent', 'accent-fg', 'accent-text', 'accent-soft', 'danger', 'success',
+      'ok-bg', 'ok-line', 'ok-text', 'ok-dot',
+      'warn-bg', 'warn-line', 'warn-text', 'warn-dot',
+      'review-bg', 'review-line', 'review-text', 'review-dot',
+      'bad-bg', 'bad-line', 'bad-text', 'bad-dot',
+      'diff-changed-bg', 'diff-changed-line',
+      'diff-added-bg', 'diff-added-line',
+      'diff-removed-bg', 'diff-removed-line',
       'dot-failed', 'dot-review', 'dot-editing',
       ...AUTHORS.map((i) => `author-${i}`),
     ]) {
       expect(t[name], `--${name}`).toBeTruthy();
+    }
+  });
+
+  const BASES = {
+    light: {
+      page: '#fcfbf9', sidebar: '#f5f2ed', surface: '#ffffff', line: '#e8e2d9',
+      fg: '#24211d', muted: '#6b645b', faint: '#8d857b',
+      accent: '#6550c9', 'accent-fg': '#ffffff', 'accent-text': '#5b43c7', 'accent-soft': '#ece6fa',
+      success: '#2b7355', danger: '#9c3a30',
+    },
+    dark: {
+      page: '#1a1713', sidebar: '#141210', surface: '#221e19', line: '#302a23',
+      fg: '#ece6dd', muted: '#a79c8e', faint: '#7c7266',
+      accent: '#a08cff', 'accent-fg': '#1a1713', 'accent-text': '#c8b9ff', 'accent-soft': '#2c2542',
+      success: '#6cc39b', danger: '#e58a80',
+    },
+  } as const;
+
+  test('the design base values are the palette', () => {
+    for (const [name, value] of Object.entries(BASES[_name as 'light' | 'dark'])) {
+      expect(t[name], `--${name}`).toBe(value);
+    }
+  });
+
+  test('status chip text reads on its fill (4.5:1)', () => {
+    for (const [text, bg] of [['ok-text', 'ok-bg'], ['warn-text', 'warn-bg'], ['review-text', 'review-bg'], ['bad-text', 'bad-bg']] as const) {
+      expect(contrastRatio(t[text]!, t[bg]!), `${text} on ${bg}`).toBeGreaterThanOrEqual(4.5);
     }
   });
 
