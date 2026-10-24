@@ -158,7 +158,13 @@ function PageNode({
             }}
           >
             <span className="flex size-5 shrink-0 items-center justify-center text-base text-muted">
-              {node.kind === 'file' ? <FileIcon /> : <PageIcon />}
+              {node.kind === 'file' ? (
+                <FileIcon />
+              ) : node.icon ? (
+                <span aria-hidden="true">{node.icon}</span>
+              ) : (
+                <PageIcon />
+              )}
             </span>
             <span className="truncate">{node.title}</span>
             <span className="ml-auto flex items-center">

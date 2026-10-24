@@ -9,6 +9,7 @@ import { Badge } from '../components/Badge.js';
 import { Editor } from '../components/Editor.js';
 import { HistoryDrawer } from '../components/HistoryDrawer.js';
 import { LifecycleMenu } from '../components/LifecycleMenu.js';
+import { PageHeader } from '../components/PageHeader.js';
 import { PageActions } from '../components/PageActions.js';
 import { useSidebarColumn } from '../components/sidebar/SidebarContext.js';
 import { Button, ErrorNote, Loading } from '../components/ui.js';
@@ -104,11 +105,16 @@ export function PagePage() {
       <article className="mx-auto flex w-full max-w-[720px] flex-col gap-4 pt-4">
         {/* The changed blocks wear their author's colour here, as in the sidebar's list. */}
         <style>{blockHighlightCss(entries ?? [])}</style>
-        <header className="flex flex-wrap items-center gap-2">
-          <Badge badge={page.badge} />
-          {archived && <span className="rounded-full bg-hover px-2 py-0.5 text-xs text-muted">Archived</span>}
-        </header>
-        <h1 className="text-4xl font-bold leading-tight tracking-tight">{page.title}</h1>
+        <PageHeader
+          page={page}
+          canEdit={controls.move}
+          meta={
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge badge={page.badge} />
+              {archived && <span className="rounded-full bg-hover px-2 py-0.5 text-xs text-muted">Archived</span>}
+            </div>
+          }
+        />
         {/* With no sidebar column the page carries its own actions; otherwise they are in the sidebar. */}
         {!sidebarColumn && (
           <div className="flex flex-wrap items-start gap-2">
