@@ -197,7 +197,10 @@ export const blockActivity = pgTable(
     actorId: uuid('actor_id').notNull(),
     changedAt: timestamp('changed_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [uniqueIndex('block_activity_page_block_idx').on(t.tenantId, t.pageId, t.blockId)]
+  (t) => [
+    uniqueIndex('block_activity_page_block_idx').on(t.tenantId, t.pageId, t.blockId),
+    index('block_activity_actor_idx').on(t.tenantId, t.actorType, t.actorId, t.changedAt),
+  ]
 );
 
 /**

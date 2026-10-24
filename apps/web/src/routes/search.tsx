@@ -1,22 +1,26 @@
-import { useState } from 'react';
-import { useMutation } from '@tanstack/react-query';
-import type { AskResponse } from '@living-wiki/contracts';
+import { useEffect, useState, type ReactNode } from 'react';
+import { useNavigate, useSearch } from '@tanstack/react-router';
+import { useQuery } from '@tanstack/react-query';
+import type { AskCitation, AskResponse, SearchPassage } from '@living-wiki/contracts';
 import { api } from '../lib/api.js';
 import { useSpaces, useWorkspace } from '../lib/queries.js';
 import { answerSegments, headingLine, queryAllows } from '../lib/search.js';
+import { isKnownIcon } from '../lib/emoji.js';
+import { AppTopBar } from '../components/AppTopBar.js';
 import { DocumentLink } from '../components/DocumentLink.js';
-import { Button, Card, ErrorNote, Loading, SelectField, TextField } from '../components/ui.js';
+import { FileTypeTile } from '../components/FileTypeTile.js';
+import { PageIcon, SearchIcon, SparkleIcon } from '../components/icons.js';
+import { ErrorNote, Loading } from '../components/ui.js';
 
-const ALL_SPACES = '';
+const RESULT_FIRST = 6;
 
-/** A link to what a passage or citation came from: a page, or a file opened on the page the text is on. */
 function SourceLink({
   target,
   children,
   className,
 }: {
   target: { documentId: string; documentKind: 'page' | 'file'; pageFrom: number | null };
-  children: string;
+  children: ReactNode;
   className: string;
 }) {
   const { tenant } = useWorkspace();
@@ -33,125 +37,247 @@ function SourceLink({
   );
 }
 
-/** The answer as plain text; a `[citeAs]` marker in it becomes a numbered link to the cited page. */
-function Answer({ answer }: { answer: AskResponse }) {
+/** The opt-in answer above the results: its text, numbered citation links, and the sources with a quote each. */
+function Answer({
+  answer,
+  spaces,
+}: {
+  answer: AskResponse;
+  spaces: { id: string; name: string }[];
+}) {
   const segments = answerSegments(answer.answer, answer.citations);
+  const spaceName = (citation: AskCitation) => spaces.find((s) => s.id === citation.spaceId)?.name ?? '';
   return (
-    <Card title="Answer">
-      <div className="flex flex-col gap-3">
-        <p className="whitespace-pre-wrap break-words text-sm">
-          {segments.map((s, i) =>
-            s.type === 'text' ? (
-              s.text
-            ) : (
-              <SourceLink key={i} target={s.citation} className="font-medium text-accent-text hover:underline">
-                {`[${answer.citations.indexOf(s.citation) + 1}]`}
-              </SourceLink>
-            )
+    <section aria-label="Answer" className="flex flex-col gap-3 rounded-lg border border-review-line bg-review-bg p-4">
+      <h2 className="text-xs font-semibold uppercase tracking-wide text-review-text">
+        Answer · from {answer.citations.length} {answer.citations.length === 1 ? 'passage' : 'passages'}
+      </h2>
+      {answer.foundRelevant ? (
+        <>
+          <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-fg">
+            {segments.map((segment, index) =>
+              segment.type === 'text' ? (
+                segment.text
+              ) : (
+                <SourceLink key={index} target={segment.citation} className="font-medium text-accent-text hover:underline">
+                  {`[${answer.citations.indexOf(segment.citation) + 1}]`}
+                </SourceLink>
+              )
+            )}
+          </p>
+          {answer.citations.length > 0 && (
+            <div>
+              <h3 className="mb-1 text-xs font-semibold text-fg">Sources</h3>
+              <ol aria-label="Sources" className="flex flex-col gap-2">
+                {answer.citations.map((citation, index) => (
+                  <li key={citation.chunkId} className="text-xs">
+                    <span className="text-muted">[{index + 1}] </span>
+                    <SourceLink target={citation} className="font-medium text-accent-text hover:underline">
+                      {citation.documentTitle}
+                    </SourceLink>
+                    {spaceName(citation) && <span className="text-muted"> · {spaceName(citation)}</span>}
+                    <p className="mt-0.5 line-clamp-1 break-words text-muted">{citation.quote}</p>
+                  </li>
+                ))}
+              </ol>
+            </div>
           )}
-        </p>
-        {!answer.foundRelevant && <p className="text-sm text-muted">No answer was found in the pages you can read.</p>}
-        {answer.citations.length > 0 && (
-          <div>
-            <h3 className="mb-1 text-sm font-semibold">Sources</h3>
-            <ol aria-label="Sources" className="flex flex-col gap-2">
-              {answer.citations.map((c, i) => (
-                <li key={c.chunkId} className="text-sm">
-                  <span className="text-muted">[{i + 1}] </span>
-                  <SourceLink target={c} className="font-medium text-accent-text hover:underline">
-                    {c.citeAs}
-                  </SourceLink>
-                  <p className="mt-0.5 whitespace-pre-wrap break-words text-xs text-muted">{c.quote}</p>
-                </li>
-              ))}
-            </ol>
-          </div>
-        )}
-      </div>
-    </Card>
+        </>
+      ) : (
+        <p className="text-sm text-fg">No answer was found in the pages you can read.</p>
+      )}
+    </section>
   );
 }
 
-/** `/w/$tenantSlug/search`: passages that match a query, and an answer built from them with its citations. */
-export function SearchPage() {
-  const { data: spaces = [] } = useSpaces();
-  const [query, setQuery] = useState('');
-  const [spaceId, setSpaceId] = useState(ALL_SPACES);
-  const search = useMutation({ mutationFn: (body: Parameters<typeof api.search>[0]) => api.search(body) });
-  const ask = useMutation({ mutationFn: (body: Parameters<typeof api.ask>[0]) => api.ask(body) });
+function ResultRow({ passage, spaceName }: { passage: SearchPassage; spaceName: string }) {
+  const { tenant } = useWorkspace();
+  const where =
+    passage.documentKind === 'file'
+      ? passage.pageFrom !== null
+        ? `Page ${passage.pageFrom}`
+        : 'File'
+      : passage.headingPath.length > 0
+        ? headingLine(passage.headingPath)
+        : 'Start of the page';
+  return (
+    <li>
+      <DocumentLink
+        tenantSlug={tenant.slug}
+        kind={passage.documentKind}
+        id={passage.documentId}
+        page={passage.pageFrom}
+        className="flex items-start gap-3 rounded-md px-1 py-3 hover:bg-hover"
+      >
+        <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center text-base leading-none text-muted">
+          {passage.documentKind === 'file' ? (
+            <FileTypeTile name={passage.versionTitle} size={20} />
+          ) : isKnownIcon(passage.icon) ? (
+            <span aria-hidden="true">{passage.icon}</span>
+          ) : (
+            <PageIcon />
+          )}
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="flex flex-wrap items-baseline gap-x-2">
+            <span className="text-[13px] font-semibold text-fg">{passage.versionTitle}</span>
+            <span className="text-[10.5px] text-muted">{spaceName}</span>
+          </span>
+          <span className="mt-0.5 line-clamp-2 block whitespace-pre-wrap break-words text-[12.5px] leading-snug text-fg">
+            {passage.text}
+          </span>
+          <span className="mt-1 block text-[10.5px] text-muted">
+            {where} · v{passage.versionNumber}
+          </span>
+        </span>
+      </DocumentLink>
+    </li>
+  );
+}
 
-  const allows = queryAllows(query);
-  const filter = spaceId === ALL_SPACES ? {} : { space_ids: [spaceId] };
-  const busy = search.isPending || ask.isPending;
-  const options = [
-    { value: ALL_SPACES, label: 'All spaces' },
+/** `/w/$tenantSlug/search`: a shareable semantic search, with an optional cited answer above the rows. */
+export function SearchPage() {
+  const { tenant } = useWorkspace();
+  const { data: spaces = [] } = useSpaces();
+  const params = useSearch({ from: '/w/$tenantSlug/search' });
+  const navigate = useNavigate();
+  const q = params.q ?? '';
+  const spaceId = params.space ?? '';
+  const [draft, setDraft] = useState(q);
+  const [answerWanted, setAnswerWanted] = useState(false);
+  const [showAll, setShowAll] = useState(false);
+  const allows = queryAllows(q);
+
+  useEffect(() => setDraft(q), [q]);
+  useEffect(() => {
+    setAnswerWanted(false);
+    setShowAll(false);
+  }, [q, spaceId]);
+
+  const filter = spaceId === '' ? {} : { space_ids: [spaceId] };
+  const search = useQuery({
+    queryKey: ['t', tenant.id, 'search', q, spaceId],
+    queryFn: () => api.search({ query: q.trim(), limit: 50, ...filter }),
+    enabled: q.trim() !== '' && allows.search,
+  });
+  const ask = useQuery({
+    queryKey: ['t', tenant.id, 'ask', q, spaceId],
+    queryFn: () => api.ask({ question: q.trim(), ...filter }),
+    enabled: answerWanted && q.trim() !== '' && allows.ask,
+  });
+
+  const scopes = [
+    { value: '', label: 'All spaces' },
     ...spaces.filter((s) => s.archivedAt === null).map((s) => ({ value: s.id, label: s.name })),
   ];
 
+  function go(nextQuery: string, nextSpace: string) {
+    navigate({
+      to: '/w/$tenantSlug/search',
+      params: { tenantSlug: tenant.slug },
+      search: {
+        ...(nextQuery.trim() !== '' ? { q: nextQuery.trim() } : {}),
+        ...(nextSpace !== '' ? { space: nextSpace } : {}),
+      },
+    });
+  }
+
+  const passages = search.data?.passages ?? [];
+  const visible = showAll ? passages : passages.slice(0, RESULT_FIRST);
+  const documentCount = new Set(passages.map((p) => p.documentId)).size;
+
   return (
-    <div className="flex flex-col gap-4">
-      <h1 className="text-xl font-semibold">Search</h1>
-      <form
-        className="flex flex-col gap-3"
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (allows.search && !busy) search.mutate({ query: query.trim(), ...filter });
-        }}
-      >
-        <TextField
-          label="Search or ask a question"
-          value={query}
-          onChange={setQuery}
-          hint="Search takes up to 500 characters, Ask up to 1000."
-        />
-        <div className="w-56">
-          <SelectField label="Filter by space" value={spaceId} options={options} onChange={setSpaceId} />
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button type="submit" disabled={!allows.search || busy}>
-            Search
-          </Button>
-          <Button
-            variant="secondary"
-            disabled={!allows.ask || busy}
-            onClick={() => ask.mutate({ question: query.trim(), ...filter })}
-          >
-            Ask
-          </Button>
-        </div>
-      </form>
-
-      {ask.isPending && <Loading what="answer" />}
-      <ErrorNote error={ask.error} />
-      {ask.data && !ask.isPending && <Answer answer={ask.data} />}
-
-      {search.isPending && <Loading what="results" />}
-      <ErrorNote error={search.error} />
-      {search.data && !search.isPending && (
-        <section aria-label="Search results" className="flex flex-col gap-3">
-          <h2 className="text-base font-semibold">Results for &ldquo;{search.variables?.query}&rdquo;</h2>
-          {search.data.passages.length === 0 ? (
-            <p className="text-sm text-muted">No passages matched.</p>
-          ) : (
-            <ul className="flex flex-col gap-3">
-              {search.data.passages.map((p) => (
-                <li key={p.chunkId}>
-                  <Card>
-                    <div className="flex flex-col gap-1">
-                      <SourceLink target={p} className="text-base font-semibold text-accent-text hover:underline">
-                        {p.versionTitle}
-                      </SourceLink>
-                      {p.headingPath.length > 0 && <p className="text-xs text-muted">{headingLine(p.headingPath)}</p>}
-                      <p className="line-clamp-4 whitespace-pre-wrap break-words text-sm">{p.text}</p>
-                      <p className="text-xs text-muted">{p.citeAs}</p>
-                    </div>
-                  </Card>
-                </li>
+    <>
+      <AppTopBar crumbs={<span className="text-sm font-medium text-fg">Search</span>} />
+      <div className="mx-auto flex w-full max-w-[820px] flex-col gap-4">
+        <form
+          role="search"
+          className="relative w-full"
+          onSubmit={(event) => {
+            event.preventDefault();
+            go(draft, spaceId);
+          }}
+        >
+          <span aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted">
+            <SearchIcon />
+          </span>
+          <input
+            type="search"
+            aria-label="Search pages and files"
+            placeholder="Search pages and files"
+            maxLength={500}
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            className="h-[46px] w-full rounded-lg border border-line bg-surface py-0 pl-10 pr-40 text-sm text-fg placeholder:text-muted focus:border-accent focus:outline-none"
+          />
+          <label className="absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-1 rounded-md border border-line bg-page px-2 py-1 text-xs text-muted">
+            <span className="sr-only">Scope</span>
+            <select
+              aria-label="Scope"
+              value={spaceId}
+              onChange={(event) => go(draft, event.target.value)}
+              className="max-w-[8.5rem] appearance-none bg-transparent text-xs text-fg outline-none"
+            >
+              {scopes.map((scope) => (
+                <option key={scope.value} value={scope.value}>
+                  {scope.label}
+                </option>
               ))}
-            </ul>
-          )}
-        </section>
-      )}
-    </div>
+            </select>
+            <span aria-hidden="true">⌄</span>
+          </label>
+        </form>
+
+        {ask.isFetching && <Loading what="answer" />}
+        <ErrorNote error={ask.error} />
+        {answerWanted && ask.data && <Answer answer={ask.data} spaces={spaces} />}
+
+        {search.isPending && q.trim() !== '' && <Loading what="results" />}
+        <ErrorNote error={search.error} />
+        {search.data && q.trim() !== '' && (
+          <>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-xs text-muted">
+                {passages.length} {passages.length === 1 ? 'passage' : 'passages'} · {documentCount}{' '}
+                {documentCount === 1 ? 'page' : 'pages'}
+              </p>
+              <button
+                type="button"
+                onClick={() => setAnswerWanted(true)}
+                disabled={!allows.ask || ask.isFetching}
+                className="inline-flex items-center gap-1.5 rounded-md bg-accent-soft px-2.5 py-1.5 text-xs font-medium text-accent-text hover:opacity-90 disabled:opacity-50"
+              >
+                <SparkleIcon />
+                Get an answer
+              </button>
+            </div>
+            {passages.length === 0 ? (
+              <p className="text-sm text-muted">No passages matched.</p>
+            ) : (
+              <section aria-label="Search results" className="flex flex-col gap-1">
+                <ul aria-label="Search results" className="flex flex-col divide-y divide-line">
+                  {visible.map((passage) => (
+                    <ResultRow
+                      key={passage.chunkId}
+                      passage={passage}
+                      spaceName={spaces.find((s) => s.id === passage.spaceId)?.name ?? ''}
+                    />
+                  ))}
+                </ul>
+                {passages.length > RESULT_FIRST && !showAll && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAll(true)}
+                    className="self-start px-1 py-2 text-xs font-medium text-accent-text hover:underline"
+                  >
+                    Show more
+                  </button>
+                )}
+              </section>
+            )}
+          </>
+        )}
+      </div>
+    </>
   );
 }

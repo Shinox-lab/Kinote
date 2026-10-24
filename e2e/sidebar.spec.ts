@@ -55,7 +55,9 @@ test('the tree: open a space, open a page from it, see its status dot and the re
   // Nothing is fetched or shown until the space is opened.
   await expect(side.getByRole('link', { name: 'HR', exact: true })).toHaveCount(0);
   await side.getByRole('button', { name: 'Expand Docs' }).click();
-  await side.getByRole('button', { name: 'Expand HR' }).click();
+  const hrToggle = side.getByRole('button', { name: /^(Expand|Collapse) HR$/ });
+  await expect(hrToggle).toBeVisible();
+  if ((await hrToggle.getAttribute('aria-expanded')) === 'false') await hrToggle.click();
   // The tree row's name starts with the title; an Updates row starts with who did it.
   const row = side.getByRole('link', { name: /^Leave policy/ });
   // A page held for review wears the amber dot, named in words.
@@ -171,20 +173,20 @@ test('updates show what others did, and your own changes read "You"; typing show
   // Eli publishes; the owner's Updates names Eli, Eli's own reads "You".
   await runPageAction(b, 'Index now');
   await expect(async () => {
-    await a.reload();
-    await expect(sidebar(a).getByRole('region', { name: 'Updates' })).toContainText('Eli Editor published v1 of Notes', {
+    await a.goto(`/w/${world.slug}`);
+    await expect(a.getByRole('region', { name: 'Updates' })).toContainText('Eli Editor published v1 of Notes', {
       timeout: 2_000,
     });
   }).toPass({ timeout: 30_000 });
   await expect(async () => {
-    await b.reload();
-    await expect(sidebar(b).getByRole('region', { name: 'Updates' })).toContainText('You published v1 of Notes', {
+    await b.goto(`/w/${world.slug}`);
+    await expect(b.getByRole('region', { name: 'Updates' })).toContainText('You published v1 of Notes', {
       timeout: 2_000,
     });
   }).toPass({ timeout: 30_000 });
 
   // The update is a link to the page.
-  await sidebar(a).getByRole('region', { name: 'Updates' }).getByRole('link', { name: /Notes/ }).click();
+  await a.getByRole('region', { name: 'Updates' }).getByRole('link', { name: /Notes/ }).click();
   await a.waitForURL(new RegExp(`/p/${notes}$`));
 });
 
@@ -209,8 +211,8 @@ test("someone else's Inbox page is in neither the tree nor Updates, but the crea
   const owner = await openAs(browser, world, world.owner);
   await owner.goto(`/w/${world.slug}`);
   await expect(async () => {
-    await owner.reload();
-    await expect(sidebar(owner).getByRole('region', { name: 'Updates' })).toContainText('Private note', { timeout: 2_000 });
+    await owner.goto(`/w/${world.slug}`);
+    await expect(owner.getByRole('region', { name: 'Updates' })).toContainText('Private note', { timeout: 2_000 });
   }).toPass({ timeout: 30_000 });
   await sidebar(owner).getByRole('button', { name: 'Expand Inbox' }).click();
   await expect(sidebar(owner).getByRole('link', { name: 'Private note' })).toBeVisible();
@@ -222,7 +224,7 @@ test("someone else's Inbox page is in neither the tree nor Updates, but the crea
 
   const viewer = await openAs(browser, world, vera);
   await viewer.goto(`/w/${world.slug}`);
-  const updates = sidebar(viewer).getByRole('region', { name: 'Updates' });
+  const updates = viewer.getByRole('region', { name: 'Updates' });
   await expect(updates).toContainText('Shared page');
   await sidebar(viewer).getByRole('button', { name: 'Expand Inbox' }).click();
   await expect(sidebar(viewer).getByText('No pages yet')).toBeVisible();
@@ -340,19 +342,16 @@ test('the page being read stays visible when its space was closed and the person
 
   const page = await openAs(browser, world, world.owner);
   await page.goto(`/w/${world.slug}/p/${first}`);
+  await expectConnected(page);
   const side = sidebar(page);
-  const updates = side.getByRole('region', { name: 'Updates' });
-  await expect(async () => {
-    await page.reload();
-    await expect(updates).toContainText('published v1 of Second page', { timeout: 2_000 });
-  }).toPass({ timeout: 30_000 });
+  await expect(side.getByRole('link', { name: /^First page/ })).toHaveAttribute('aria-current', 'page');
 
-  // Close the space, then follow an Updates link to another page in it (no reload).
+  // Close the space, then open a sibling directly: the tree reopens around the page being read.
   await side.getByRole('button', { name: 'Collapse Docs' }).click();
   await expect(side.getByRole('link', { name: /^First page/ })).toHaveCount(0);
-  await updates.getByRole('link', { name: /Second page/ }).click();
-  await page.waitForURL(new RegExp(`/p/${second}$`));
+  await page.goto(`/w/${world.slug}/p/${second}`);
   await expect(side.getByRole('link', { name: /^Second page/ })).toHaveAttribute('aria-current', 'page');
+  await expect(side.getByRole('button', { name: 'Collapse Docs' })).toBeVisible();
 });
 
 test('on a touch screen the add-page button is visible without hovering', async ({ browser, request }) => {

@@ -14,10 +14,14 @@ export function DropZone({
   target,
   onFiles,
   children,
+  buttonVariant = 'secondary',
+  align = 'start',
 }: {
   target: string;
   onFiles: (files: File[]) => void;
   children: ReactNode;
+  buttonVariant?: 'primary' | 'secondary';
+  align?: 'start' | 'end';
 }) {
   const [over, setOver] = useState(false);
   const depth = useRef(0);
@@ -49,8 +53,8 @@ export function DropZone({
         if (files.length > 0) onFiles(files);
       }}
     >
-      <div className="flex items-center gap-3">
-        <Button variant="secondary" onClick={() => input.current?.click()}>
+      <div className={`flex flex-wrap items-center gap-3 ${align === 'end' ? 'justify-end' : ''}`}>
+        <Button variant={buttonVariant} onClick={() => input.current?.click()}>
           Upload files
         </Button>
         <p className="text-sm text-muted" aria-live="polite">

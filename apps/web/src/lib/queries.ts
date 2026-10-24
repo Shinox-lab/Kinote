@@ -112,7 +112,16 @@ export function usePageChanges(pageId: string) {
 /** How often the Updates feed asks again while the tab is visible. */
 export const UPDATES_POLL_MS = 30_000;
 
-/** The workspace's recent changes for the sidebar: asked again on focus and on a timer, never trusted from cache. */
+/** The caller's Continue cards: pages they changed and files they uploaded, newest first. */
+export function useRecent(limit = 3) {
+  return useQuery({
+    queryKey: useTenantKey('recent', String(limit)),
+    queryFn: () => api.recent(limit),
+    staleTime: 0,
+  });
+}
+
+/** The workspace's recent changes for Home: asked again on focus and on a timer, never trusted from cache. */
 export function useUpdates(limit: number) {
   return useQuery({
     queryKey: useTenantKey('updates', limit),

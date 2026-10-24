@@ -195,12 +195,12 @@ test('citations link to the cited page', async ({ browser, request }) => {
 
   const page = await openAs(browser, world, rae);
   await page.goto(`/w/${world.slug}/search`);
-  await page.getByLabel('Search or ask a question').fill('annual leave');
+  await page.getByLabel('Search pages and files').fill('annual leave');
 
-  await test.step('a search result links to its page and shows the citation', async () => {
-    await page.getByRole('button', { name: 'Search', exact: true }).click();
+  await test.step('a search result links to its page and shows the version', async () => {
+    await page.getByLabel('Search pages and files').press('Enter');
     const results = page.getByRole('region', { name: 'Search results' });
-    await expect(results).toContainText(/\(v2, updated \d{4}-\d{2}-\d{2}\)/);
+    await expect(results).toContainText('v2');
     await results.getByRole('link', { name: 'Leave policy' }).first().click();
     await page.waitForURL(`**/w/${world.slug}/p/${edPageId}`);
     await expect(page.getByRole('heading', { name: 'Leave policy' })).toBeVisible();
@@ -208,11 +208,12 @@ test('citations link to the cited page', async ({ browser, request }) => {
 
   await test.step('Ask cites its sources, and each source links to the page', async () => {
     await page.goto(`/w/${world.slug}/search`);
-    await page.getByLabel('Search or ask a question').fill('annual leave');
-    await page.getByRole('button', { name: 'Ask', exact: true }).click();
-    const sources = page.getByRole('list', { name: 'Sources' });
+    await page.getByLabel('Search pages and files').fill('annual leave');
+    await page.getByLabel('Search pages and files').press('Enter');
+    await page.getByRole('button', { name: 'Get an answer' }).click();
+    const sources = page.getByRole('region', { name: 'Answer' }).getByRole('list', { name: 'Sources' });
     const source = sources.getByRole('link').first();
-    await expect(source).toHaveText(/^Leave policy \(v2, updated \d{4}-\d{2}-\d{2}\)$/);
+    await expect(source).toHaveText('Leave policy');
     await expect(source).toHaveAttribute('href', `/w/${world.slug}/p/${edPageId}`);
     // The numbered marker inside the answer goes to the same page.
     const marker = page.getByRole('link', { name: '[1]' });

@@ -144,7 +144,7 @@ test('a reviewer reads the text of a waiting file, approves it, and the chunk in
   const chunks = page.getByRole('list', { name: 'Chunks' });
   await expect(chunks).toContainText(sentence);
   await expect(chunks).toContainText('Page 2');
-  await expect(page.getByText('Indexed · 2 chunks', { exact: false })).toBeVisible();
+  await expect(page.getByText(/chunks · 2 pages/)).toBeVisible();
   await expect(page.getByText(/2 pages/).first()).toBeVisible();
 });
 
@@ -374,8 +374,8 @@ test('a search result for a file opens it on the page the text is on', async ({ 
 
   const page = await openAs(browser, world, world.owner);
   await page.goto(`/w/${world.slug}/search`);
-  await page.getByLabel('Search or ask a question').fill(`quokka${world.suffix}`);
-  await page.getByRole('button', { name: 'Search', exact: true }).click();
+  await page.getByLabel('Search pages and files').fill(`quokka${world.suffix}`);
+  await page.getByLabel('Search pages and files').press('Enter');
   const link = page.getByRole('main').getByRole('link', { name: 'Long report.pdf' }).first();
   await expect(link).toBeVisible();
   const href = await link.getAttribute('href');

@@ -19,6 +19,7 @@ import { GroupsPage } from './routes/admin/groups.js';
 import { MembersPage } from './routes/admin/members.js';
 import { SpacesPage } from './routes/admin/spaces.js';
 import { parseFileSearch } from './lib/documentLink.js';
+import { parseSearchSearch } from './lib/search.js';
 import { WorkspaceLayout } from './routes/layout.js';
 import { ReviewsPage } from './routes/reviews.js';
 import { SearchPage } from './routes/search.js';
@@ -163,6 +164,7 @@ const reviewsRoute = createRoute({
 const searchRoute = createRoute({
   getParentRoute: () => workspaceRoute,
   path: 'search',
+  validateSearch: parseSearchSearch,
   component: SearchPage,
 });
 

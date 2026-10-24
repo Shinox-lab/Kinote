@@ -12,6 +12,8 @@ const cite = (n: number, citeAs: string): AskCitation => ({
   chunkId: uuid(200 + n),
   blockIds: [],
   documentKind: 'page',
+  documentTitle: 'Leave policy',
+  spaceId: uuid(300 + n),
   pageFrom: null,
   pageTo: null,
   quote: 'q',

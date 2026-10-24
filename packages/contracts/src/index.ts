@@ -512,6 +512,29 @@ export type UpdateItem = z.infer<typeof UpdateItemSchema>;
 export const UpdatesResponseSchema = z.array(UpdateItemSchema);
 
 /**
+ * A page the caller last changed or a file the caller uploaded, for Home's
+ * Continue cards. `at` is the last block change or the upload time.
+ */
+export const RecentItemSchema = z.object({
+  id: z.string().uuid(),
+  kind: z.enum(['page', 'file']),
+  title: z.string(),
+  icon: z.string().nullable(),
+  spaceId: z.string().uuid(),
+  spaceName: z.string(),
+  at: z.string().datetime(),
+});
+export type RecentItem = z.infer<typeof RecentItemSchema>;
+
+/** Reply of GET /api/v1/recent. */
+export const RecentResponseSchema = z.array(RecentItemSchema);
+export type RecentResponse = z.infer<typeof RecentResponseSchema>;
+
+export const RecentQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(10).default(3),
+});
+
+/**
  * Reply of GET /api/v1/versions/:id: the summary plus the stored markdown (the
  * reviewed form), the stored BlockNote blocks and who contributed. Never
  * carries the Yjs snapshot bytes.
@@ -636,6 +659,8 @@ export const SearchPassageSchema = z.object({
   versionId: z.string().uuid(),
   versionNumber: z.number().int(),
   versionTitle: z.string(),
+  spaceId: z.string().uuid(),
+  icon: z.string().nullable(),
   text: z.string(),
   headingPath: z.array(z.string()),
   blockIds: z.array(z.string()),
@@ -662,6 +687,8 @@ export const AskCitationSchema = z.object({
   chunkId: z.string().uuid(),
   blockIds: z.array(z.string()),
   documentKind: z.enum(['page', 'file']),
+  documentTitle: z.string(),
+  spaceId: z.string().uuid(),
   pageFrom: z.number().int().nullable(),
   pageTo: z.number().int().nullable(),
   quote: z.string(),

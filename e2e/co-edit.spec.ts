@@ -164,13 +164,13 @@ test('two editors and a reviewer: co-edit, hold until approval, index, cite v1',
     // Inside <main> only: the sidebar's page tree links to the held page by design.
     const heldLink = a.getByRole('main').locator(`a[href="/w/${slug}/p/${pageId}"]`);
     await a.goto(`/w/${slug}/search`);
-    await a.getByLabel('Search or ask a question').fill(text.a);
-    await a.getByRole('button', { name: 'Search', exact: true }).click();
+    await a.getByLabel('Search pages and files').fill(text.a);
+    await a.getByLabel('Search pages and files').press('Enter');
     const results = a.getByRole('region', { name: 'Search results' });
     await expect(results.getByRole('link', { name: 'Holiday calendar' })).toBeVisible();
     await expect(heldLink).toHaveCount(0);
-    await a.getByRole('button', { name: 'Ask', exact: true }).click();
-    await expect(a.getByRole('list', { name: 'Sources' }).getByRole('link', { name: /^Holiday calendar / })).toBeVisible();
+    await a.getByRole('button', { name: 'Get an answer' }).click();
+    await expect(a.getByRole('region', { name: 'Answer' }).getByRole('link', { name: 'Holiday calendar' })).toBeVisible();
     await expect(heldLink).toHaveCount(0);
   });
 
@@ -193,22 +193,22 @@ test('two editors and a reviewer: co-edit, hold until approval, index, cite v1',
     }).toPass({ timeout: 30_000 });
 
     await a.goto(`/w/${slug}/search`);
-    await a.getByLabel('Search or ask a question').fill(text.a);
-    await a.getByRole('button', { name: 'Search', exact: true }).click();
+    await a.getByLabel('Search pages and files').fill(text.a);
+    await a.getByLabel('Search pages and files').press('Enter');
     const results = a.getByRole('region', { name: 'Search results' });
     await expect(results.getByRole('link', { name: 'Leave policy' })).toBeVisible();
     await expect(results).toContainText(text.a);
-    await expect(results).toContainText(CITE);
+    await expect(results).toContainText('v1');
     // The selector that found nothing while the page was held finds it now,
     // so its count of 0 above was a real absence, not a selector that never matches.
     const indexedLink = a.getByRole('main').locator(`a[href="/w/${slug}/p/${pageId}"]`);
     expect(await indexedLink.count()).toBeGreaterThanOrEqual(1);
 
-    await a.getByRole('button', { name: 'Ask', exact: true }).click();
-    const sources = a.getByRole('list', { name: 'Sources' });
-    await expect(sources.getByRole('link', { name: /^Holiday calendar / })).toBeVisible();
-    const citation = sources.getByRole('link', { name: /^Leave policy / });
-    await expect(citation).toHaveText(new RegExp(`^Leave policy ${CITE.source}$`));
+    await a.getByRole('button', { name: 'Get an answer' }).click();
+    const sources = a.getByRole('region', { name: 'Answer' }).getByRole('list', { name: 'Sources' });
+    await expect(sources.getByRole('link', { name: 'Holiday calendar' })).toBeVisible();
+    const citation = sources.getByRole('link', { name: 'Leave policy' });
+    await expect(citation).toHaveText('Leave policy');
     await citation.click();
     await a.waitForURL(`**/w/${slug}/p/${pageId}`);
     await expect(badgeOf(a)).toHaveText('Indexed · v1');

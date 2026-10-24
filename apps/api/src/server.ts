@@ -35,6 +35,7 @@ import {
   CollabTokenResponseSchema,
   ReviewListSchema,
   UpdatesResponseSchema,
+  RecentResponseSchema,
   RetryVersionResponseSchema,
   UploadFileResponseSchema,
   SourcePutResponseSchema,
@@ -116,6 +117,7 @@ import {
   withdrawFile,
 } from './routes/files.js';
 import { listUpdates } from './routes/updates.js';
+import { listRecent } from './routes/recent.js';
 import { authRoutes, type AuthRateLimit } from './routes/auth.js';
 import { requireSession, resolveActor, resolveSourceActor, type AuthSession, type SourceActor } from './auth/actor.js';
 import { registerErrorHandler } from './errors.js';
@@ -599,6 +601,10 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
 
   app.get('/api/v1/updates', async (req, reply) => {
     return reply.send(parseReply(UpdatesResponseSchema, await listUpdates(actorOf(req), req.query)));
+  });
+
+  app.get('/api/v1/recent', async (req, reply) => {
+    return reply.send(parseReply(RecentResponseSchema, await listRecent(actorOf(req), req.query)));
   });
 
   app.get('/api/v1/reviews', async (req, reply) => {

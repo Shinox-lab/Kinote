@@ -50,6 +50,12 @@ export const SettingsIcon = (p: IconProps) => (
     <path d="M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21M5.6 5.6l1.8 1.8M16.6 16.6l1.8 1.8M18.4 5.6l-1.8 1.8M7.4 16.6l-1.8 1.8" />
   </Icon>
 );
+export const SparkleIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M12 3.5 13.6 9l5.4 1.6-5.4 1.6L12 17.5l-1.6-5.3L5 10.6 10.4 9 12 3.5Z" />
+    <path d="M18.5 16.5 19.2 19l2.3.7-2.3.7-.7 2.3-.7-2.3-2.3-.7 2.3-.7.7-2.5Z" />
+  </Icon>
+);
 export const ChevronRightIcon = (p: IconProps) => (
   <Icon {...p}>
     <path d="m9 6 6 6-6 6" />

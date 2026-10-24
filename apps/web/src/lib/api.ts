@@ -21,6 +21,7 @@ import {
   MemberSchema,
   PageDetailsSchema,
   PageSummarySchema,
+  RecentResponseSchema,
   RetryVersionResponseSchema,
   ReviewListSchema,
   UpdatesResponseSchema,
@@ -273,6 +274,7 @@ export const api = {
   reviewQueue: (spaceId?: string) =>
     request(`/api/v1/reviews${spaceId ? `?space_id=${e(spaceId)}` : ''}`, ReviewListSchema),
   updates: (limit = 8) => request(`/api/v1/updates?limit=${limit}`, UpdatesResponseSchema),
+  recent: (limit = 3) => request(`/api/v1/recent?limit=${limit}`, RecentResponseSchema),
   approveVersion: (id: string, body: ApproveVersionRequest = {}) =>
     request(`/api/v1/versions/${e(id)}/approve`, VersionSummarySchema, send('POST', body)),
   rejectVersion: (id: string, body: RejectVersionRequest) =>

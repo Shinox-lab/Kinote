@@ -6,7 +6,6 @@ import { AccountRow } from './AccountRow.js';
 import { ROW, ROW_ACTIVE, RowContent } from './NavRow.js';
 import { UploadPanel } from './UploadPanel.js';
 import { SpacesSection } from './SpacesSection.js';
-import { UpdatesSection } from './UpdatesSection.js';
 import { WorkspaceMenu } from './WorkspaceMenu.js';
 
 /**
@@ -84,7 +83,6 @@ export function Sidebar({ onCollapse }: { onCollapse?: () => void }) {
             </li>
           )}
         </ul>
-        <UpdatesSection />
         {/* Keyed by workspace: another workspace starts from its own remembered state, not this one's. */}
         <SpacesSection key={tenant.id} />
       </nav>

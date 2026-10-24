@@ -33,6 +33,13 @@ export function answerSegments(answer: string, citations: readonly AskCitation[]
   return segments;
 }
 
+/** The Search screen's shareable params: the query and one space. */
+export function parseSearchSearch(search: Record<string, unknown>): { q?: string; space?: string } {
+  const q = typeof search.q === 'string' && search.q.trim() !== '' ? search.q.slice(0, SEARCH_MAX) : undefined;
+  const space = typeof search.space === 'string' && search.space !== '' ? search.space : undefined;
+  return { ...(q !== undefined ? { q } : {}), ...(space !== undefined ? { space } : {}) };
+}
+
 /** A passage's heading path as one line; empty when the passage has none. */
 export function headingLine(path: readonly string[]): string {
   return path.join(' › ');

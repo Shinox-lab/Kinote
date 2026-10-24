@@ -1,0 +1,1 @@
+CREATE INDEX "block_activity_actor_idx" ON "block_activity" USING btree ("tenant_id","actor_type","actor_id","changed_at");

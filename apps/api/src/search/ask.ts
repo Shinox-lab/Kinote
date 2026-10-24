@@ -39,6 +39,8 @@ export async function askWiki(
     chunkId: p.chunkId,
     blockIds: p.blockIds,
     documentKind: p.documentKind,
+    documentTitle: p.versionTitle,
+    spaceId: p.spaceId,
     pageFrom: p.pageFrom,
     pageTo: p.pageTo,
     quote: p.text.slice(0, 300),
