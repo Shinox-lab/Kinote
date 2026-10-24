@@ -3,8 +3,10 @@ import { useMutation } from '@tanstack/react-query';
 import type { VersionListItem } from '@living-wiki/contracts';
 import { api } from '../lib/api.js';
 import { defaultComparison, versionReasonLabel, versionStatusLabel, versionWho, whenLabel } from '../lib/history.js';
+import type { HistoryTab } from '../lib/pageUi.js';
 import { useComparison, usePageVersions, useRefresh } from '../lib/queries.js';
 import { loadSession } from '../lib/session.js';
+import { ChangesList } from './ChangesList.js';
 import { DiffView } from './DiffView.js';
 import { Button, ErrorNote, Loading, SelectField } from './ui.js';
 
@@ -156,15 +158,20 @@ function RestoreConfirm({ pageId, number, onDone, onCancel }: { pageId: string; 
 export function HistoryDrawer({
   pageId,
   canRestore,
+  initialTab = 'versions',
   onClose,
   onRestored,
 }: {
   pageId: string;
   canRestore: boolean;
+  /** Which tab the chip asked for; the drawer mounts fresh each time it opens. */
+  initialTab?: HistoryTab;
   onClose: () => void;
   onRestored: () => void;
 }) {
   const titleId = useId();
+  const tabsId = useId();
+  const [tab, setTab] = useState<HistoryTab>(initialTab);
   const dialog = useRef<HTMLDivElement>(null);
   const refresh = useRefresh();
   const { data: versions, error, isPending } = usePageVersions(pageId, true);
@@ -244,44 +251,76 @@ export function HistoryDrawer({
             Close
           </Button>
         </div>
-        {isPending ? (
-          <Loading what="history" />
-        ) : error ? (
-          <ErrorNote error={error} />
-        ) : versions.length === 0 ? (
-          <p className="text-sm text-muted">This page has no saved versions yet.</p>
+        <div role="tablist" aria-label="Page history views" className="flex gap-1 border-b border-line">
+          {(
+            [
+              ['versions', 'Versions'],
+              ['changes', 'Changes'],
+            ] as const
+          ).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              role="tab"
+              id={`${tabsId}-${value}-tab`}
+              aria-selected={tab === value}
+              aria-controls={`${tabsId}-${value}-panel`}
+              onClick={() => setTab(value)}
+              className={`-mb-px border-b-2 px-3 py-2 text-sm font-medium ${
+                tab === value ? 'border-accent text-fg' : 'border-transparent text-muted hover:text-fg'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {tab === 'changes' ? (
+          <div role="tabpanel" id={`${tabsId}-changes-panel`} aria-labelledby={`${tabsId}-changes-tab`}>
+            <ChangesList pageId={pageId} />
+          </div>
         ) : (
-          <>
-            <ul aria-label="Versions" className="divide-y divide-line">
-              {versions.map((v) => (
-                <VersionRow
-                  key={v.id}
-                  version={v}
-                  canRestore={canRestore}
-                  onRestore={() => setRestoring(v.number)}
-                  restoreRef={(button) => {
-                    if (button) restoreButtons.current.set(v.number, button);
-                    else restoreButtons.current.delete(v.number);
-                  }}
-                >
-                  {restoring === v.number && (
-                    <RestoreConfirm
-                      key={v.number}
-                      pageId={pageId}
-                      number={v.number}
-                      onCancel={() => setRestoring(null)}
-                      onDone={() => {
-                        setRestoring(null);
-                        void refresh('versions', pageId);
-                        onRestored();
+          <div role="tabpanel" id={`${tabsId}-versions-panel`} aria-labelledby={`${tabsId}-versions-tab`} className="flex flex-col gap-4">
+            {isPending ? (
+              <Loading what="history" />
+            ) : error ? (
+              <ErrorNote error={error} />
+            ) : versions.length === 0 ? (
+              <p className="text-sm text-muted">This page has no saved versions yet.</p>
+            ) : (
+              <>
+                <ul aria-label="Versions" className="divide-y divide-line">
+                  {versions.map((v) => (
+                    <VersionRow
+                      key={v.id}
+                      version={v}
+                      canRestore={canRestore}
+                      onRestore={() => setRestoring(v.number)}
+                      restoreRef={(button) => {
+                        if (button) restoreButtons.current.set(v.number, button);
+                        else restoreButtons.current.delete(v.number);
                       }}
-                    />
-                  )}
-                </VersionRow>
-              ))}
-            </ul>
-            {versions.length >= 2 && <Compare pageId={pageId} versions={versions} />}
-          </>
+                    >
+                      {restoring === v.number && (
+                        <RestoreConfirm
+                          key={v.number}
+                          pageId={pageId}
+                          number={v.number}
+                          onCancel={() => setRestoring(null)}
+                          onDone={() => {
+                            setRestoring(null);
+                            void refresh('versions', pageId);
+                            onRestored();
+                          }}
+                        />
+                      )}
+                    </VersionRow>
+                  ))}
+                </ul>
+                {versions.length >= 2 && <Compare pageId={pageId} versions={versions} />}
+              </>
+            )}
+          </div>
         )}
       </div>
     </>

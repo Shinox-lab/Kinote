@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { Link, useParams } from '@tanstack/react-router';
 import { usePageChanges, useRefresh, useSpaceTree, useWorkspace } from '../lib/queries.js';
-import { closeHistory, openHistory, useHistoryOpen } from '../lib/pageUi.js';
+import { closeHistory, openHistory, useHistoryOpen, useHistoryTab } from '../lib/pageUi.js';
 import { usePageView } from '../lib/usePageView.js';
 import { ancestorIds, blockHighlightCss, visibleChanges } from '../lib/wiki.js';
 import { AppTopBar } from '../components/AppTopBar.js';
@@ -76,6 +76,7 @@ export function PagePage() {
   const { page, error, isPending, spaces, space, archived, controls, reload, changed } = usePageView(pageId);
   const { data: entries } = usePageChanges(pageId);
   const historyOpen = useHistoryOpen(pageId);
+  const historyTab = useHistoryTab(pageId);
 
   // The drawer belongs to this page: leaving it closes the drawer.
   useEffect(() => () => closeHistory(), [pageId]);
@@ -124,7 +125,13 @@ export function PagePage() {
         <ErrorNote error={error} />
         <Editor key={pageId} pageId={pageId} archived={archived} onSynced={reload} />
         {historyOpen && (
-          <HistoryDrawer pageId={pageId} canRestore={controls.restoreVersion} onClose={closeHistory} onRestored={changed} />
+          <HistoryDrawer
+            pageId={pageId}
+            canRestore={controls.restoreVersion}
+            initialTab={historyTab ?? 'versions'}
+            onClose={closeHistory}
+            onRestored={changed}
+          />
         )}
       </article>
     </>

@@ -72,6 +72,20 @@ test('the status chip, its actions and the page menu; no On this page panel', as
 
   await typeAtEnd(page, 'Status notes content.');
   await expect(chip).toContainText('unindexed change');
+
+  await chip.click();
+  const changePopover = page.getByRole('dialog', { name: 'Page status and actions' });
+  await changePopover.getByRole('button', { name: /^Changes/ }).click();
+  const changeDrawer = page.getByRole('dialog', { name: 'Page history' });
+  await expect(changeDrawer.getByRole('tab', { name: 'Changes' })).toHaveAttribute('aria-selected', 'true');
+  await expect(changeDrawer.getByRole('list', { name: 'Changed blocks' })).toContainText('Status notes content');
+  await changeDrawer.getByRole('tab', { name: 'Versions' }).click();
+  await expect(changeDrawer.getByRole('tab', { name: 'Versions' })).toHaveAttribute('aria-selected', 'true');
+  await expect(changeDrawer).toContainText('This page has no saved versions yet.');
+  await page.keyboard.press('Escape');
+  await expect(changeDrawer).toHaveCount(0);
+  await expect(chip).toBeFocused();
+
   await page.getByRole('button', { name: 'Index now' }).click();
   await expect(async () => {
     await expect(badgeOf(page)).toHaveText('Indexed · v1', { timeout: 2_000 });
@@ -83,8 +97,11 @@ test('the status chip, its actions and the page menu; no On this page panel', as
   await expect(popover.getByRole('button', { name: 'Index now' })).toBeVisible();
   await expect(popover.getByRole('button', { name: 'History' })).toBeVisible();
   await expect(popover.getByRole('button', { name: 'Changes (0)' })).toBeVisible();
+  await popover.getByRole('button', { name: 'History' }).click();
+  const historyDrawer = page.getByRole('dialog', { name: 'Page history' });
+  await expect(historyDrawer.getByRole('tab', { name: 'Versions' })).toHaveAttribute('aria-selected', 'true');
   await page.keyboard.press('Escape');
-  await expect(popover).toHaveCount(0);
+  await expect(historyDrawer).toHaveCount(0);
   await expect(chip).toBeFocused();
   await expect(page.getByText('On this page')).toHaveCount(0);
 
