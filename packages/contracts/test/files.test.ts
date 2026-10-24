@@ -44,7 +44,7 @@ describe('file contracts', () => {
 
   it('needs the unchanged flag on an upload reply', () => {
     const document = {
-      id, spaceId: id, parentId: null, position: 'a0', title: 'a.pdf', archivedAt: null, indexedVersionId: null,
+      id, spaceId: id, parentId: null, position: 'a0', title: 'a.pdf', icon: null, archivedAt: null, indexedVersionId: null,
     };
     expect(UploadFileResponseSchema.safeParse({ document, version }).success).toBe(false);
     expect(UploadFileResponseSchema.safeParse({ document, version, unchanged: false }).success).toBe(true);

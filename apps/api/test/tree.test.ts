@@ -152,6 +152,7 @@ describe('tree, archived list, space archive, page restore', () => {
       assert.equal(byId.get(zed)!.position, 'a0');
       assert.deepEqual(Object.keys(byId.get(zed)!).sort(), [
         'attention',
+        'icon',
         'id',
         'kind',
         'parentId',
@@ -297,6 +298,7 @@ describe('tree, archived list, space archive, page restore', () => {
         for (const n of asViewer) {
           assert.deepEqual(Object.keys(n).sort(), [
             'attention',
+            'icon',
             'id',
             'kind',
             'parentId',

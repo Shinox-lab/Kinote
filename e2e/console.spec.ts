@@ -62,6 +62,10 @@ test('review queue: Approve and Reject states, lazy diff', async ({ browser, req
   raePage.on('request', (r) => {
     if (/\/versions\/[^/]+\/diff/.test(r.url())) diffRequests.push(r);
   });
+
+  await raePage.goto(`/w/${world.slug}/p/${edPageId}`);
+  await expect(raePage.getByRole('link', { name: 'Review' })).toBeVisible();
+
   await raePage.goto(`/w/${world.slug}/reviews`);
   const own = queue(raePage).getByRole('listitem').filter({ hasText: 'Rae notes' });
   const others = queue(raePage).getByRole('listitem').filter({ hasText: 'Leave policy' });

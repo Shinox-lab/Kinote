@@ -44,6 +44,22 @@ test('the page icon: pick, show in the header and tree, keep on reload, clear', 
   await expect(page.getByRole('button', { name: 'Change page icon' })).toHaveText('🚀');
   await expect(treeLink).toContainText('🚀');
 
+  // A failed save puts the old icon back in the header and the tree.
+  await page.route('**/api/v1/pages/*', async (route) => {
+    if (route.request().method() === 'PATCH') {
+      await route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'internal_error' }) });
+    } else {
+      await route.continue();
+    }
+  });
+  await page.getByRole('button', { name: 'Change page icon' }).click();
+  await page.getByRole('button', { name: 'Use 🌱' }).click();
+  await expect(page.getByRole('alert')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Change page icon' })).toHaveText('🚀');
+  await expect(treeLink).toContainText('🚀');
+  await page.keyboard.press('Escape');
+  await page.unroute('**/api/v1/pages/*');
+
   await page.getByRole('button', { name: 'Change page icon' }).click();
   await page.getByRole('button', { name: 'Remove' }).click();
   await expect(page.getByRole('button', { name: 'Change page icon' })).not.toHaveText('🚀');

@@ -182,7 +182,7 @@ describe('reply contracts', () => {
       { space_id: space.id, title: 'Handbook', slug: 'handbook', markdown: 'Laptops arrive on day one.' },
       201
     );
-    expect(Object.keys(page).sort()).toEqual(['id', 'parentId', 'slug', 'spaceId', 'title']);
+    expect(Object.keys(page).sort()).toEqual(['icon', 'id', 'parentId', 'slug', 'spaceId', 'title']);
     await call(TreeResponseSchema, 'GET', `/api/v1/spaces/${space.id}/tree`, headers);
     await call(TreeResponseSchema, 'GET', `/api/v1/spaces/${space.id}/archived`, headers);
     await call(PageDetailsSchema, 'GET', `/api/v1/pages/${page.id}`, headers);
