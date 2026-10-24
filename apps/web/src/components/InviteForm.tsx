@@ -68,9 +68,12 @@ export function InviteForm({ onInvited }: { onInvited: () => void }) {
           />
         </div>
         <Button type="submit" disabled={invite.isPending}>
-          {invite.isPending ? 'Inviting…' : 'Create invite'}
+          {invite.isPending ? 'Creating…' : 'Create link'}
         </Button>
       </form>
+      <p className="mt-2 text-xs text-muted">
+        Creates a one-time link for that email. It expires in 7 days — you send it yourself.
+      </p>
       <div className="mt-3">
         <ErrorNote error={invite.error} />
       </div>

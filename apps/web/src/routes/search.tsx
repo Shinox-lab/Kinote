@@ -208,9 +208,9 @@ export function SearchPage() {
             maxLength={500}
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
-            className="h-[46px] w-full rounded-lg border border-line bg-surface py-0 pl-10 pr-40 text-sm text-fg placeholder:text-muted focus:border-accent focus:outline-none"
+            className="h-[46px] w-full rounded-lg border border-line bg-surface py-0 pl-10 pr-3 text-sm text-fg placeholder:text-muted focus:border-accent focus:outline-none md:pr-40"
           />
-          <label className="absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-1 rounded-md border border-line bg-page px-2 py-1 text-xs text-muted">
+          <label className="mt-2 flex w-fit items-center gap-1 rounded-md border border-line bg-page px-2 py-1 text-xs text-muted md:absolute md:right-2 md:top-1/2 md:mt-0 md:-translate-y-1/2">
             <span className="sr-only">Scope</span>
             <select
               aria-label="Scope"

@@ -96,6 +96,6 @@
 /* On a phone there is no gutter for the side handles: keep the text wide. */
 @media (max-width: 767px) {
   .bn-container .bn-editor {
-    padding-inline: 4px;
+    padding-inline: 0;
   }
 }

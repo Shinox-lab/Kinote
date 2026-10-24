@@ -21,8 +21,10 @@ test('an admin adds a source and a token, sees the token once, and a script can 
   await page.goto(`/w/${world.slug}/admin/sources`);
   await expect(page.getByRole('link', { name: 'Sources' })).toBeVisible();
 
-  await page.getByLabel('Source name').fill('Reports bot');
   await page.getByRole('button', { name: 'Add source' }).click();
+  const form = page.locator('form').filter({ has: page.getByRole('heading', { name: 'Add a source' }) });
+  await form.getByLabel('Source name').fill('Reports bot');
+  await form.getByRole('button', { name: 'Add source' }).click();
   const panel = page.getByRole('region', { name: 'Source Reports bot' });
   await expect(panel).toContainText('Delivers to Docs');
   await expect(panel).toContainText('Not trusted');
@@ -42,6 +44,7 @@ test('an admin adds a source and a token, sees the token once, and a script can 
   expect(await page.content()).not.toContain(token);
   await page.reload();
   expect(await page.content()).not.toContain(token);
+  await page.getByRole('list', { name: 'Sources' }).getByRole('button', { name: /Reports bot/ }).click();
   const row = page.getByRole('list', { name: 'Tokens of Reports bot' }).getByRole('listitem');
   await expect(row).toContainText('nightly export');
   await expect(row).toContainText(`${token.split('.')[1]!.slice(0, 8)}…`);
@@ -55,9 +58,10 @@ test('an admin adds a source and a token, sees the token once, and a script can 
   await page.goto(`/w/${world.slug}`);
   await expandSpace(page, 'Docs');
   await expect(treeLink(page, 'Q3.pdf')).toBeVisible();
-  await expect(sidebar(page)).toContainText('System · Reports bot');
+  await expect(page.getByRole('region', { name: 'Updates' })).toContainText('System · Reports bot');
   // And the token has been used.
   await page.goto(`/w/${world.slug}/admin/sources`);
+  await page.getByRole('list', { name: 'Sources' }).getByRole('button', { name: /Reports bot/ }).click();
   await expect(page.getByRole('list', { name: 'Tokens of Reports bot' })).toContainText('Used');
 });
 
@@ -98,6 +102,7 @@ test('a synced file: new versions, removal at the source, dismissing it, and a r
 
   // Revoking the token in the console stops the script at once.
   await page.goto(`/w/${world.slug}/admin/sources`);
+  await page.getByRole('list', { name: 'Sources' }).getByRole('button', { name: /Wiki sync/ }).click();
   const tokens = page.getByRole('list', { name: 'Tokens of Wiki sync' });
   await tokens.getByRole('button', { name: 'Revoke e2e' }).click();
   await tokens.getByRole('button', { name: 'Confirm revoking e2e' }).click();

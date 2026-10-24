@@ -27,13 +27,17 @@ export function SpaceCard({ space }: { space: SpaceResponse }) {
   });
 
   return (
-    <li className="py-4">
+    <section aria-label={`Settings for ${space.name}`} className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center gap-2">
-        <h3 className="text-sm font-semibold">{space.name}</h3>
+        <h2 className="text-base font-semibold text-fg">{space.name}</h2>
         <span className="text-xs text-muted">/{space.slug}</span>
-        {space.kind === 'inbox' && <span className="rounded bg-hover px-1.5 text-xs">Inbox</span>}
-        {archived && <span className="rounded bg-dot-review/15 px-1.5 text-xs text-fg">Archived</span>}
+        {space.kind === 'inbox' && <span className="rounded-full bg-hover px-2 py-0.5 text-xs text-fg">Personal</span>}
+        {space.reviewRequired && space.kind !== 'inbox' && (
+          <span className="rounded-full bg-warn-bg px-2 py-0.5 text-xs text-warn-text">Review required</span>
+        )}
+        {archived && <span className="rounded-full bg-hover px-2 py-0.5 text-xs text-fg">Archived</span>}
       </div>
+      <p className="text-xs text-muted">URL slug /{space.slug}</p>
       {!archived && (
         <div className="mt-3 flex flex-col gap-3">
           <form
@@ -47,7 +51,7 @@ export function SpaceCard({ space }: { space: SpaceResponse }) {
               <TextField label="Name" value={name} onChange={setName} required />
             </div>
             <Button type="submit" variant="secondary" disabled={update.isPending || name.trim() === space.name}>
-              Rename
+              Save changes
             </Button>
           </form>
           <div className="flex flex-wrap gap-x-6 gap-y-2">
@@ -88,6 +92,6 @@ export function SpaceCard({ space }: { space: SpaceResponse }) {
           {showGrants && <SpaceGrants spaceId={space.id} />}
         </div>
       )}
-    </li>
+    </section>
   );
 }

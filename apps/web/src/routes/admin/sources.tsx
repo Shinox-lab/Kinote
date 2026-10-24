@@ -7,7 +7,7 @@ import { lastUsedLabel, sourceStatusLabel, tokenState } from '../../lib/sources.
 import { relativeTime } from '../../lib/updates.js';
 import { whenLabel } from '../../lib/history.js';
 import { SourceTokenModal } from '../../components/SourceTokenModal.js';
-import { Button, Card, Checkbox, ErrorNote, Loading, SelectField, TextField } from '../../components/ui.js';
+import { Button, Checkbox, ErrorNote, Loading, SelectField, TextField } from '../../components/ui.js';
 
 const TRUSTED_HINT =
   'Files from this source skip review unless the space requires it. Leave off unless you control what the script sends. Applies to files read from now on.';
@@ -15,7 +15,7 @@ const TRUSTED_HINT =
 /** Spaces a script may deliver into: not the Inbox (it belongs to one person) and not archived. */
 const targets = (spaces: readonly SpaceResponse[]) => spaces.filter((s) => s.kind !== 'inbox' && s.archivedAt === null);
 
-function CreateSourceForm({ spaces }: { spaces: readonly SpaceResponse[] }) {
+function CreateSourceForm({ spaces, onCreated }: { spaces: readonly SpaceResponse[]; onCreated: (source: Source) => void }) {
   const refresh = useRefresh();
   const options = targets(spaces);
   const [name, setName] = useState('');
@@ -23,9 +23,10 @@ function CreateSourceForm({ spaces }: { spaces: readonly SpaceResponse[] }) {
   const chosen = options.some((s) => s.id === spaceId) ? spaceId : (options[0]?.id ?? '');
   const create = useMutation({
     mutationFn: () => api.createSource({ name: name.trim(), target_space_id: chosen }),
-    onSuccess: () => {
+    onSuccess: (source) => {
       setName('');
-      return refresh('sources');
+      void refresh('sources');
+      onCreated(source);
     },
   });
   const submit = (e: FormEvent) => {
@@ -33,23 +34,22 @@ function CreateSourceForm({ spaces }: { spaces: readonly SpaceResponse[] }) {
     create.mutate();
   };
   return (
-    <Card title="Add a source">
-      <form onSubmit={submit} className="flex flex-col gap-3">
-        <div className="flex flex-wrap items-end gap-3">
-          <div className="min-w-56 flex-1">
-            <TextField label="Source name" value={name} onChange={setName} required hint="Shown to people as “System · name” on the files it sends." />
-          </div>
-          <div className="min-w-56">
-            <SelectField label="Files go to space" value={chosen} options={options.map((s) => ({ value: s.id, label: s.name }))} onChange={setSpaceId} />
-          </div>
-          <Button type="submit" disabled={create.isPending || name.trim() === '' || chosen === ''}>
-            Add source
-          </Button>
+    <form onSubmit={submit} className="flex flex-col gap-3">
+      <h2 className="text-base font-semibold text-fg">Add a source</h2>
+      <div className="flex flex-wrap items-end gap-3">
+        <div className="min-w-56 flex-1">
+          <TextField label="Source name" value={name} onChange={setName} required hint="Shown to people as “System · name” on the files it sends." />
         </div>
-        {options.length === 0 && <p className="text-sm text-muted">Create a space first: a source cannot deliver into the Inbox.</p>}
-        <ErrorNote error={create.error} />
-      </form>
-    </Card>
+        <div className="min-w-56">
+          <SelectField label="Files go to space" value={chosen} options={options.map((s) => ({ value: s.id, label: s.name }))} onChange={setSpaceId} />
+        </div>
+        <Button type="submit" disabled={create.isPending || name.trim() === '' || chosen === ''}>
+          Add source
+        </Button>
+      </div>
+      {options.length === 0 && <p className="text-sm text-muted">Create a space first: a source cannot deliver into the Inbox.</p>}
+      <ErrorNote error={create.error} />
+    </form>
   );
 }
 
@@ -159,9 +159,7 @@ function SourcePanel({ source, spaces, onIssued }: { source: Source; spaces: rea
     : [{ value: source.targetSpaceId, label: source.targetSpaceName }, ...options.map((s) => ({ value: s.id, label: s.name }))];
 
   return (
-    <li>
-      <Card>
-        <section aria-label={`Source ${source.name}`} className="flex flex-col gap-4">
+    <section aria-label={`Source ${source.name}`} className="flex flex-col gap-4">
           <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
             <h2 className="text-base font-semibold">{source.name}</h2>
             <span className={`rounded-full px-2 py-0.5 text-xs ${source.status === 'active' ? 'bg-success-bg text-success' : 'bg-hover text-muted'}`}>
@@ -225,36 +223,106 @@ function SourcePanel({ source, spaces, onIssued }: { source: Source; spaces: rea
             )}
             <NewTokenForm source={source} onIssued={(token) => onIssued(source, token)} />
           </div>
-        </section>
-      </Card>
-    </li>
+    </section>
   );
 }
 
-/** `/w/$tenantSlug/admin/sources`: the scripts that send files here, and the tokens they use. */
+/** `/w/$tenantSlug/admin/sources`: rows of sources, and the selected source's tokens in a docked pane. */
 export function SourcesPage() {
   const { data: sources, error, isPending } = useSources();
   const { data: spaces = [] } = useSpaces();
+  const [selected, setSelected] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
   // The one-time token, held only while its dialog is open.
   const [issued, setIssued] = useState<{ sourceName: string; token: string } | null>(null);
+  const current = sources?.find((source) => source.id === selected) ?? null;
+  const now = new Date();
 
   return (
-    <div className="flex flex-col gap-5">
-      <p className="text-sm text-muted">
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm text-muted">
+          {sources?.length ?? 0} {sources?.length === 1 ? 'source' : 'sources'}
+        </p>
+        <Button
+          onClick={() => {
+            setCreating(true);
+            setSelected(null);
+          }}
+          disabled={creating}
+        >
+          Add source
+        </Button>
+      </div>
+      <p className="text-xs text-muted">
         A source is a script or tool that sends files into one space through the upload API. Each source has its own tokens.
       </p>
-      <CreateSourceForm spaces={spaces} />
       <ErrorNote error={error} />
       {isPending ? (
         <Loading what="sources" />
-      ) : sources && sources.length === 0 ? (
-        <p className="text-sm text-muted">No sources yet.</p>
       ) : (
-        <ul aria-label="Sources" className="flex flex-col gap-4">
-          {sources?.map((s) => (
-            <SourcePanel key={s.id} source={s} spaces={spaces} onIssued={(src, token) => setIssued({ sourceName: src.name, token })} />
-          ))}
-        </ul>
+        <div className="grid gap-5 min-[1200px]:grid-cols-[minmax(0,1fr)_440px] min-[1200px]:items-start">
+          <ul aria-label="Sources" className="flex flex-col">
+            {sources?.length === 0 && !creating && <li className="py-2 text-sm text-muted">No sources yet.</li>}
+            {sources?.map((source) => {
+              const active = source.id === selected;
+              return (
+                <li key={source.id} className="border-b border-line last:border-0">
+                  <button
+                    type="button"
+                    aria-current={active ? 'true' : undefined}
+                    onClick={() => {
+                      setCreating(false);
+                      setSelected(source.id);
+                    }}
+                    className={`flex w-full flex-col gap-0.5 rounded-md px-2 py-3 text-left ${active ? 'bg-active' : 'hover:bg-hover'}`}
+                  >
+                    <span className="flex flex-wrap items-baseline gap-x-2">
+                      <span className={`size-1.5 rounded-full ${source.status === 'active' ? 'bg-success' : 'bg-muted'}`} aria-hidden="true" />
+                      <span className="text-sm font-medium text-fg">{source.name}</span>
+                      <span className="text-xs text-muted">{source.targetSpaceName}</span>
+                    </span>
+                    <span className="text-[10.5px] text-muted">
+                      {sourceStatusLabel(source)} · {source.itemCount} {source.itemCount === 1 ? 'file' : 'files'} ·{' '}
+                      {source.lastSyncAt ? `Last sync ${relativeTime(source.lastSyncAt, now)}` : 'Never synced'} ·{' '}
+                      {source.trusted ? 'Trusted' : 'Not trusted'}
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+
+          {(creating || current) && (
+            <div className="fixed inset-0 z-30 overflow-y-auto bg-surface p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] min-[1200px]:static min-[1200px]:z-auto min-[1200px]:rounded-lg min-[1200px]:border min-[1200px]:border-line min-[1200px]:p-4">
+              <button
+                type="button"
+                onClick={() => {
+                  setCreating(false);
+                  setSelected(null);
+                }}
+                className="mb-3 rounded-md px-1 py-1 text-xs font-medium text-accent-text hover:underline min-[1200px]:hidden"
+              >
+                Close
+              </button>
+              {creating ? (
+                <CreateSourceForm
+                  spaces={spaces}
+                  onCreated={(source) => {
+                    setCreating(false);
+                    setSelected(source.id);
+                  }}
+                />
+              ) : current ? (
+                <SourcePanel
+                  source={current}
+                  spaces={spaces}
+                  onIssued={(source, token) => setIssued({ sourceName: source.name, token })}
+                />
+              ) : null}
+            </div>
+          )}
+        </div>
       )}
       {issued && <SourceTokenModal sourceName={issued.sourceName} token={issued.token} onClose={() => setIssued(null)} />}
     </div>

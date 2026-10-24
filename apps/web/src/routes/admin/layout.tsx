@@ -1,43 +1,51 @@
 import { Link, Outlet } from '@tanstack/react-router';
 import { adminScreens } from '../../lib/console.js';
 import { useWorkspace } from '../../lib/queries.js';
+import { AppTopBar } from '../../components/AppTopBar.js';
 import { Card } from '../../components/ui.js';
 
-const TAB = 'rounded-md px-3 py-1.5 text-sm font-medium text-fg hover:bg-hover';
-
-/** `/w/$tenantSlug/admin`: tabs for the admin screens, or a plain "no access" state for other roles. */
+/** `/w/$tenantSlug/admin`: the Settings frame: top bar, one line about the workspace, and underline tabs. */
 export function AdminLayout() {
   const { tenant, role } = useWorkspace();
   const screens = adminScreens(role);
 
   if (screens.length === 0) {
     return (
-      <Card title="You don't have access">
-        <p className="text-sm text-fg">
-          Only owners and admins of this workspace can manage members, groups, spaces and sources. Ask an owner or admin if you
-          need a change.
-        </p>
-      </Card>
+      <>
+        <AppTopBar crumbs={<span className="text-sm font-medium text-fg">Settings</span>} />
+        <Card title="You don't have access">
+          <p className="text-sm text-fg">
+            Only owners and admins of this workspace can manage members, groups, spaces and sources. Ask an owner or admin if you
+            need a change.
+          </p>
+        </Card>
+      </>
     );
   }
 
   return (
-    <div className="flex flex-col gap-5">
-      <h1 className="text-xl font-semibold">Administration</h1>
-      <nav aria-label="Administration" className="flex gap-1 border-b border-line pb-2">
-        {screens.map((screen) => (
-          <Link
-            key={screen.to}
-            to={screen.to}
-            params={{ tenantSlug: tenant.slug }}
-            className={TAB}
-            activeProps={{ className: `${TAB} bg-active` }}
-          >
-            {screen.label}
-          </Link>
-        ))}
-      </nav>
-      <Outlet />
-    </div>
+    <>
+      <AppTopBar crumbs={<span className="text-sm font-medium text-fg">Settings</span>} />
+      <div className="mx-auto flex w-full max-w-[820px] flex-col gap-5">
+        <header className="flex flex-col gap-1">
+          <h1 className="text-2xl font-semibold tracking-tight text-fg">Settings</h1>
+          <p className="text-sm text-muted">Members, spaces and sources for {tenant.name}.</p>
+        </header>
+        <nav aria-label="Settings" className="flex gap-5 overflow-x-auto border-b border-line">
+          {screens.map((screen) => (
+            <Link
+              key={screen.to}
+              to={screen.to}
+              params={{ tenantSlug: tenant.slug }}
+              className="-mb-px shrink-0 border-b-2 border-transparent px-1 py-2.5 text-sm font-medium text-muted hover:text-fg"
+              activeProps={{ className: '-mb-px shrink-0 border-b-2 border-accent px-1 py-2.5 text-sm font-medium text-fg' }}
+            >
+              {screen.label}
+            </Link>
+          ))}
+        </nav>
+        <Outlet />
+      </div>
+    </>
   );
 }

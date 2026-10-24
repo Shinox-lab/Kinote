@@ -25,3 +25,8 @@ export function approveBlockedReason(item: Pick<ReviewItem, 'canApprove'>): stri
 export function fileMeta(item: Pick<ReviewItem, 'file'>): string | null {
   return item.file ? `${mimeLabel(item.file.mimeType)} · ${formatBytes(item.file.sizeBytes)}` : null;
 }
+
+/** The Reviews screen's phone detail param: `?review=<version id>`. */
+export function parseReviewSearch(search: Record<string, unknown>): { review?: string } {
+  return typeof search.review === 'string' && search.review !== '' ? { review: search.review } : {};
+}

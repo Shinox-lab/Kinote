@@ -1,9 +1,11 @@
 import { useEffect, useId, useState } from 'react';
+import { useNavigate, useSearch } from '@tanstack/react-router';
 import { useMutation } from '@tanstack/react-query';
 import type { ReviewItem } from '@living-wiki/contracts';
 import { api, errorMessage } from '../lib/api.js';
 import { diffSummary } from '../lib/diff.js';
 import { relativeTime } from '../lib/updates.js';
+import { useMediaQuery } from '../lib/useMediaQuery.js';
 import { useRefresh, useReviews, useSpaces, useVersionDiff, useWorkspace } from '../lib/queries.js';
 import { REJECT_NOTE_MAX, approveBlockedReason, fileMeta, rejectNoteState } from '../lib/review.js';
 import { AppTopBar } from '../components/AppTopBar.js';
@@ -172,7 +174,7 @@ function ReviewDetail({ item, now, onResult }: { item: ReviewItem; now: Date; on
         <FileReviewPreview versionId={version.id} title={item.document.title} autoOpen />
       )}
 
-      <footer className="sticky bottom-0 z-10 mt-2 flex flex-col gap-2 border-t border-line bg-page/95 py-3 backdrop-blur">
+      <footer className="sticky bottom-0 z-10 mt-2 flex flex-col gap-2 border-t border-line bg-page/95 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur">
         {rejecting && (
           <RejectForm
             onSubmit={(note) => reject.mutate(note)}
@@ -202,14 +204,61 @@ function ReviewDetail({ item, now, onResult }: { item: ReviewItem; now: Date; on
   );
 }
 
+/** The queue list, shared by the desktop two-pane and the phone's queue-only view. */
+function ReviewQueue({
+  items,
+  selectedId,
+  now,
+  onSelect,
+}: {
+  items: ReviewItem[];
+  selectedId: string | null;
+  now: Date;
+  onSelect: (item: ReviewItem) => void;
+}) {
+  return (
+    <aside aria-label="Review queue" className="flex flex-col gap-2">
+      <ul aria-label="Changes waiting for review" className="flex flex-col gap-1">
+        {items.map((item) => {
+          const active = item.version.id === selectedId;
+          return (
+            <li key={item.version.id}>
+              <button
+                type="button"
+                aria-current={active ? 'true' : undefined}
+                onClick={() => onSelect(item)}
+                className={`flex w-full flex-col gap-0.5 rounded-md border px-3 py-2 text-left ${
+                  active ? 'border-accent bg-active' : 'border-transparent hover:bg-hover'
+                }`}
+              >
+                <span className="truncate text-[13px] font-semibold text-fg">{item.document.title}</span>
+                <span className="truncate text-[11px] text-muted">
+                  {item.document.spaceName} · Version {item.version.number}
+                </span>
+                <span className="text-[10.5px] text-faint">{ago(item.version.createdAt, now)}</span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+      {items.length === 1 && <p className="px-2 text-xs text-muted">Nothing else waiting</p>}
+    </aside>
+  );
+}
+
 /** `/w/$tenantSlug/reviews`: the queue on the left, the selected version's full or changed document on the right. */
 export function ReviewsPage() {
+  const { tenant } = useWorkspace();
   const { data: spaces = [] } = useSpaces();
+  const params = useSearch({ from: '/w/$tenantSlug/reviews' });
+  const navigate = useNavigate();
+  const wide = useMediaQuery('(min-width: 1200px)');
   const [spaceId, setSpaceId] = useState(ALL_SPACES);
   const { data: items, error, isPending } = useReviews(spaceId === ALL_SPACES ? undefined : spaceId);
   const [selected, setSelected] = useState<string | null>(null);
   const [notice, setNotice] = useState<Notice | null>(null);
   const now = new Date();
+  const reviewId = params.review ?? null;
 
   useEffect(() => {
     if (!items) return;
@@ -221,8 +270,26 @@ export function ReviewsPage() {
     { value: ALL_SPACES, label: 'All spaces' },
     ...spaces.filter((s) => s.archivedAt === null).map((s) => ({ value: s.id, label: s.name })),
   ];
-  const current = items?.find((item) => item.version.id === selected) ?? null;
+  const selectedId = wide ? selected : reviewId;
+  const current = items?.find((item) => item.version.id === selectedId) ?? null;
   const waiting = items?.length ?? 0;
+
+  function select(item: ReviewItem) {
+    setNotice(null);
+    if (wide) {
+      setSelected(item.version.id);
+      return;
+    }
+    navigate({
+      to: '/w/$tenantSlug/reviews',
+      params: { tenantSlug: tenant.slug },
+      search: { review: item.version.id },
+    });
+  }
+
+  function backToQueue() {
+    navigate({ to: '/w/$tenantSlug/reviews', params: { tenantSlug: tenant.slug }, search: {} });
+  }
 
   return (
     <>
@@ -231,9 +298,7 @@ export function ReviewsPage() {
         <header className="flex flex-wrap items-end justify-between gap-3">
           <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
             <h1 className="text-xl font-semibold text-fg">Reviews</h1>
-            <p className="text-xs text-muted">
-              {waiting} {waiting === 1 ? 'waiting' : 'waiting'}
-            </p>
+            <p className="text-xs text-muted">{waiting} waiting</p>
           </div>
           <label className="flex items-center gap-2 text-xs text-muted">
             <span className="sr-only">Scope</span>
@@ -276,50 +341,31 @@ export function ReviewsPage() {
             </span>
             <p className="text-sm text-muted">Nothing is waiting for your review.</p>
           </div>
-        ) : (
-          items && (
+        ) : items ? (
+          wide ? (
             <div className="grid gap-5 min-[1200px]:grid-cols-[280px_minmax(0,1fr)]">
-              <aside aria-label="Review queue" className="flex flex-col gap-2">
-                <ul aria-label="Changes waiting for review" className="flex flex-col gap-1">
-                  {items.map((item) => {
-                    const active = item.version.id === selected;
-                    return (
-                      <li key={item.version.id}>
-                        <button
-                          type="button"
-                          aria-current={active ? 'true' : undefined}
-                          onClick={() => {
-                            setSelected(item.version.id);
-                            setNotice(null);
-                          }}
-                          className={`flex w-full flex-col gap-0.5 rounded-md border px-3 py-2 text-left ${
-                            active ? 'border-accent bg-active' : 'border-transparent hover:bg-hover'
-                          }`}
-                        >
-                          <span className="truncate text-[13px] font-semibold text-fg">{item.document.title}</span>
-                          <span className="truncate text-[11px] text-muted">
-                            {item.document.spaceName} · Version {item.version.number}
-                          </span>
-                          <span className="text-[10.5px] text-faint">{ago(item.version.createdAt, now)}</span>
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
-                {items.length === 1 && <p className="px-2 text-xs text-muted">Nothing else waiting</p>}
-              </aside>
-
-              {current && (
-                <ReviewDetail
-                  key={current.version.id}
-                  item={current}
-                  now={now}
-                  onResult={setNotice}
-                />
+              <ReviewQueue items={items} selectedId={selectedId} now={now} onSelect={select} />
+              {current && <ReviewDetail key={current.version.id} item={current} now={now} onResult={setNotice} />}
+            </div>
+          ) : reviewId ? (
+            <div className="flex flex-col gap-3">
+              <button
+                type="button"
+                onClick={backToQueue}
+                className="self-start rounded-md px-1 py-1 text-xs font-medium text-accent-text hover:underline"
+              >
+                ← Back to reviews
+              </button>
+              {current ? (
+                <ReviewDetail key={current.version.id} item={current} now={now} onResult={setNotice} />
+              ) : (
+                <p className="text-sm text-muted">That review has left the queue.</p>
               )}
             </div>
+          ) : (
+            <ReviewQueue items={items} selectedId={selectedId} now={now} onSelect={select} />
           )
-        )}
+        ) : null}
       </div>
     </>
   );

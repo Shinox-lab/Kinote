@@ -18,7 +18,7 @@ export function PageHeader({
   return (
     <header className="flex flex-col gap-2">
       <PageIconPicker pageId={page.id} icon={page.icon} canEdit={canEdit} />
-      <h1 className="break-words text-[2.125rem] font-semibold leading-[1.12] tracking-[-0.024em] text-fg">
+      <h1 className="break-words text-[26px] font-semibold leading-[1.12] tracking-[-0.024em] md:text-[2.125rem] text-fg">
         {page.title}
       </h1>
       {meta}

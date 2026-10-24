@@ -233,3 +233,24 @@ test('the page type scale: line-height, quiet headings, hairline tables and read
   await expect(code).toHaveCSS('background-color', 'rgb(20, 18, 16)');
   await expect(code.locator('pre')).toHaveCSS('color', 'rgb(236, 230, 221)');
 });
+
+test('the page on a phone: 26px title, 30px emoji, no visible index button, no editor gutter', async ({ browser }) => {
+  const page = await openAs(browser, world, ed);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await createPageInSpace(page, world, 'Phone notes');
+
+  await expect(page.getByRole('heading', { level: 1, name: 'Phone notes' })).toHaveCSS('font-size', '26px');
+  await expect(page.getByRole('button', { name: 'Change page icon' })).toHaveCSS('width', '30px');
+  await expect(page.getByRole('banner')).toHaveCSS('height', '48px');
+  await expect(page.locator('.bn-editor')).toHaveCSS('padding-left', '0px');
+  await expect(page.getByRole('button', { name: 'Page actions' })).toBeVisible();
+
+  const chip = page.getByRole('button', { name: 'Page status and actions' });
+  await typeAtEnd(page, 'Phone content.');
+  await expect(chip).toContainText('unindexed change');
+  await expect(page.getByRole('button', { name: 'Index now' })).toHaveCount(0);
+  await chip.click();
+  await expect(
+    page.getByRole('dialog', { name: 'Page status and actions' }).getByRole('button', { name: 'Index now' })
+  ).toBeVisible();
+});

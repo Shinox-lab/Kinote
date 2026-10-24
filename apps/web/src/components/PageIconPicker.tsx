@@ -98,7 +98,7 @@ export function PageIconPicker({
     </span>
   );
 
-  if (!canEdit) return <span className="flex size-[38px] items-center justify-center text-[30px] leading-none">{shown}</span>;
+  if (!canEdit) return <span className="flex size-[30px] items-center justify-center text-[24px] leading-none md:size-[38px] md:text-[30px]">{shown}</span>;
 
   return (
     <div ref={wrapper} className="relative">
@@ -110,7 +110,7 @@ export function PageIconPicker({
         aria-expanded={open}
         aria-controls={popoverId}
         onClick={() => setOpen((value) => !value)}
-        className="flex size-[38px] items-center justify-center rounded-lg text-[30px] leading-none text-fg hover:bg-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+        className="flex size-[30px] items-center justify-center rounded-lg text-[24px] leading-none text-fg hover:bg-hover md:size-[38px] md:text-[30px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
       >
         {shown}
       </button>

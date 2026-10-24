@@ -21,7 +21,7 @@ export function AppTopBar({ crumbs, right }: { crumbs: ReactNode; right?: ReactN
   return (
     <header
       role="banner"
-      className="sticky top-0 z-20 -mt-6 flex h-11 items-center gap-3 border-b border-line bg-page"
+      className="sticky top-0 z-20 -mt-6 flex h-12 items-center gap-3 border-b border-line bg-page md:h-11"
     >
       {!column && <OpenSidebarButton />}
       <div className="min-w-0 flex-1">{crumbs}</div>

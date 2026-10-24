@@ -152,7 +152,9 @@ export function PageStatus({
       </div>
 
       {(info.state === 'changed' || info.state === 'failed') && (
-        <PageActions page={page} controls={controls} onChanged={onChanged} compact />
+        <span className="hidden md:inline-flex">
+          <PageActions page={page} controls={controls} onChanged={onChanged} compact />
+        </span>
       )}
       {pendingReview && canReview && (
         <Link

@@ -242,7 +242,7 @@ export function HistoryDrawer({
         aria-modal="true"
         aria-labelledby={titleId}
         tabIndex={-1}
-        className="fixed inset-y-0 right-0 z-30 flex w-full max-w-lg flex-col gap-4 overflow-y-auto border-l border-line bg-surface p-5 shadow-pop outline-none"
+        className="fixed inset-y-0 right-0 z-30 flex w-full max-w-lg flex-col gap-4 overflow-y-auto border-l border-line bg-surface p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] shadow-pop outline-none"
       >
         <div className="flex items-center justify-between gap-3">
           <h2 id={titleId} className="text-base font-semibold">

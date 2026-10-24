@@ -198,7 +198,7 @@ export function FilePage() {
             {shown && controls.download && (
               <Button
                 variant="secondary"
-                className="h-8 px-2.5 py-1 text-xs"
+                className="h-8 px-2.5 py-1 text-xs max-md:hidden"
                 onClick={() => save.mutate()}
                 disabled={save.isPending}
               >
@@ -211,6 +211,7 @@ export function FilePage() {
                 spaces={spaces}
                 controls={controls}
                 onReplace={() => picker.current?.click()}
+                onDownload={() => save.mutate()}
                 onChanged={changed}
               />
             )}
@@ -303,7 +304,7 @@ export function FilePage() {
             aria-modal="true"
             aria-label="File information"
             tabIndex={-1}
-            className="absolute inset-y-0 right-0 w-[330px] max-w-[90vw] overflow-y-auto border-l border-line bg-surface p-4 shadow-pop outline-none"
+            className="absolute inset-y-0 right-0 w-[330px] max-w-[90vw] overflow-y-auto border-l border-line bg-surface p-4 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-pop outline-none"
           >
             {info}
           </div>

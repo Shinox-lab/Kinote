@@ -19,6 +19,7 @@ import { GroupsPage } from './routes/admin/groups.js';
 import { MembersPage } from './routes/admin/members.js';
 import { SpacesPage } from './routes/admin/spaces.js';
 import { parseFileSearch } from './lib/documentLink.js';
+import { parseReviewSearch } from './lib/review.js';
 import { parseSearchSearch } from './lib/search.js';
 import { WorkspaceLayout } from './routes/layout.js';
 import { ReviewsPage } from './routes/reviews.js';
@@ -158,6 +159,7 @@ const fileRoute = createRoute({
 const reviewsRoute = createRoute({
   getParentRoute: () => workspaceRoute,
   path: 'reviews',
+  validateSearch: parseReviewSearch,
   component: ReviewsPage,
 });
 

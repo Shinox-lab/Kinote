@@ -30,8 +30,9 @@ async function signUp(page: Page, name: string, email: string, redirect?: string
 /** Creates an invitation on the Members screen and returns its accept link. */
 async function invite(admin: Page, slug: string, email: string): Promise<string> {
   await admin.goto(`/w/${slug}/admin/members`);
+  await admin.getByRole('button', { name: 'Invite someone' }).click();
   await admin.getByLabel('Email').fill(email);
-  await admin.getByRole('button', { name: 'Create invite' }).click();
+  await admin.getByRole('button', { name: 'Create link' }).click();
   const link = admin.getByLabel('Accept link');
   await expect(link).toHaveValue(/\/accept-invite\//);
   return link.inputValue();
@@ -68,11 +69,12 @@ test('two editors and a reviewer: co-edit, hold until approval, index, cite v1',
     await a.waitForURL(`**/w/${slug}`);
 
     await a.goto(`/w/${slug}/admin/spaces`);
-    const form = a.locator('section').filter({ has: a.getByRole('heading', { name: 'Create a space' }) });
+    await a.getByRole('button', { name: 'New space' }).click();
+    const form = a.locator('form').filter({ has: a.getByRole('heading', { name: 'Create a space' }) });
     await form.getByLabel('Name').fill('Docs');
     await form.getByLabel('Changes need review').check();
     await form.getByRole('button', { name: 'Create space' }).click();
-    await expect(a.getByRole('heading', { name: 'Docs', level: 3 })).toBeVisible();
+    await expect(a.getByRole('region', { name: 'Settings for Docs' })).toBeVisible();
   });
 
   await test.step('A invites B and R; they accept in their own contexts', async () => {
@@ -85,7 +87,8 @@ test('two editors and a reviewer: co-edit, hold until approval, index, cite v1',
   await test.step('A grants B editor and R reviewer on Docs', async () => {
     // A fresh load: the member list is read again, so B and R are in it.
     await a.goto(`/w/${slug}/admin/spaces`);
-    const docs = a.getByRole('listitem').filter({ has: a.getByRole('heading', { name: 'Docs', level: 3 }) });
+    await a.getByRole('list', { name: 'Spaces' }).getByRole('button', { name: /^Docs/ }).click();
+    const docs = a.getByRole('region', { name: 'Settings for Docs' });
     await docs.getByRole('button', { name: 'Manage access' }).click();
     for (const [name, email, role] of [['Bea', emails.b, 'editor'], ['Rae', emails.r, 'reviewer']] as const) {
       await docs.getByLabel('Person', { exact: true }).selectOption({ label: `${name} (${email})` });

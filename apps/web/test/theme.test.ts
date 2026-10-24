@@ -105,7 +105,7 @@ describe.each([
 
   test('declares every token the console uses', () => {
     for (const name of [
-      'page', 'sidebar', 'surface', 'line', 'fg', 'muted', 'faint', 'hover', 'active',
+      'page', 'sidebar', 'surface', 'file-mat', 'line', 'fg', 'muted', 'faint', 'hover', 'active',
       'accent', 'accent-fg', 'accent-text', 'accent-soft', 'danger', 'success',
       'ok-bg', 'ok-line', 'ok-text', 'ok-dot',
       'warn-bg', 'warn-line', 'warn-text', 'warn-dot',
@@ -123,13 +123,13 @@ describe.each([
 
   const BASES = {
     light: {
-      page: '#fcfbf9', sidebar: '#f5f2ed', surface: '#ffffff', line: '#e8e2d9',
+      page: '#fcfbf9', sidebar: '#f5f2ed', surface: '#ffffff', 'file-mat': '#f1ede7', line: '#e8e2d9',
       fg: '#24211d', muted: '#6b645b', faint: '#8d857b',
       accent: '#6550c9', 'accent-fg': '#ffffff', 'accent-text': '#5b43c7', 'accent-soft': '#ece6fa',
       success: '#2b7355', danger: '#9c3a30',
     },
     dark: {
-      page: '#1a1713', sidebar: '#141210', surface: '#221e19', line: '#302a23',
+      page: '#1a1713', sidebar: '#141210', surface: '#221e19', 'file-mat': '#211d18', line: '#302a23',
       fg: '#ece6dd', muted: '#a79c8e', faint: '#7c7266',
       accent: '#a08cff', 'accent-fg': '#1a1713', 'accent-text': '#c8b9ff', 'accent-soft': '#2c2542',
       success: '#6cc39b', danger: '#e58a80',
@@ -149,7 +149,7 @@ describe.each([
   });
 
   test('body and muted text read on the page, the sidebar and a surface (4.5:1)', () => {
-    for (const bg of ['page', 'sidebar', 'surface']) {
+    for (const bg of ['page', 'sidebar', 'surface', 'file-mat']) {
       expect(contrastRatio(t.fg!, t[bg]!), `fg on ${bg}`).toBeGreaterThanOrEqual(4.5);
       expect(contrastRatio(t.muted!, t[bg]!), `muted on ${bg}`).toBeGreaterThanOrEqual(4.5);
       expect(contrastRatio(t['accent-text']!, t[bg]!), `accent-text on ${bg}`).toBeGreaterThanOrEqual(4.5);

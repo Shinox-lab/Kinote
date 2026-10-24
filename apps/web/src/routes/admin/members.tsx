@@ -1,17 +1,24 @@
-import { useState } from 'react';
+import { useId, useRef, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import type { Member, TenantRole } from '@living-wiki/contracts';
 import { api } from '../../lib/api.js';
 import { TENANT_ROLES, canChangeRole } from '../../lib/console.js';
 import { useMembers, useRefresh, useWorkspace } from '../../lib/queries.js';
+import { initials } from '../../lib/presence.js';
 import { loadSession } from '../../lib/session.js';
-import { Button, Card, ErrorNote, Loading, SelectField } from '../../components/ui.js';
+import { authorColor } from '../../lib/wiki.js';
+import { MoreIcon } from '../../components/icons.js';
 import { InviteForm } from '../../components/InviteForm.js';
+import { Button, ErrorNote, Loading } from '../../components/ui.js';
 
 function MemberRow({ member, actorRole, isSelf }: { member: Member; actorRole: TenantRole; isSelf: boolean }) {
   const refresh = useRefresh();
   const [confirming, setConfirming] = useState(false);
+  const [menu, setMenu] = useState(false);
   const locked = isSelf || !canChangeRole(actorRole, member.role);
+  const color = authorColor(member.userId);
+  const rowId = useId();
+  const more = useRef<HTMLButtonElement>(null);
 
   const changeRole = useMutation({
     mutationFn: (role: TenantRole) => api.changeMemberRole(member.userId, { role }),
@@ -21,43 +28,84 @@ function MemberRow({ member, actorRole, isSelf }: { member: Member; actorRole: T
     mutationFn: () => api.removeMember(member.userId),
     onSettled: () => {
       setConfirming(false);
+      setMenu(false);
       return refresh('members');
     },
   });
 
   return (
-    <li className="flex flex-wrap items-center gap-3 py-3">
-      <div className="min-w-48 flex-1">
-        <p className="text-sm font-medium">
+    <li className="flex flex-wrap items-center gap-3 border-b border-line py-3 last:border-0">
+      <span
+        aria-hidden="true"
+        className="flex size-8 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold"
+        style={{ backgroundColor: color.tint, color: color.accent }}
+      >
+        {initials(member.name)}
+      </span>
+      <div className="min-w-44 flex-1">
+        <p className="text-sm font-medium text-fg">
           {member.name}
-          {isSelf && <span className="ml-2 text-xs text-muted">(you)</span>}
+          {isSelf && <span className="ml-2 text-xs text-muted">you</span>}
         </p>
-        <p className="text-sm text-muted">{member.email}</p>
+        <p className="text-xs text-muted">{member.email}</p>
       </div>
-      <div className="w-36">
-        <SelectField
-          compact
-          label={`Role of ${member.name}`}
+      {member.role === 'owner' ? (
+        <span className="inline-flex items-center gap-1 rounded-full border border-line px-2 py-0.5 text-xs text-muted">
+          <span aria-hidden="true">🔒</span> Owner
+        </span>
+      ) : (
+        <select
+          aria-label={`Role of ${member.name}`}
           value={member.role}
           disabled={locked || changeRole.isPending}
-          options={TENANT_ROLES.map((r) => ({ value: r, label: r }))}
-          onChange={(role) => changeRole.mutate(role)}
-        />
-      </div>
-      {confirming ? (
-        <div className="flex gap-2">
-          <Button variant="danger" onClick={() => remove.mutate()} disabled={remove.isPending}>
-            Confirm remove
-          </Button>
-          <Button variant="secondary" onClick={() => setConfirming(false)}>
-            Cancel
-          </Button>
-        </div>
-      ) : (
-        <Button variant="secondary" onClick={() => setConfirming(true)} disabled={locked}>
-          Remove
-        </Button>
+          onChange={(event) => changeRole.mutate(event.target.value as TenantRole)}
+          className="h-7 rounded-full border border-line bg-page px-2 text-xs text-fg disabled:opacity-70"
+        >
+          {TENANT_ROLES.filter((role) => role !== 'owner').map((role) => (
+            <option key={role} value={role}>
+              {role}
+            </option>
+          ))}
+        </select>
       )}
+      <div className="relative">
+        <button
+          ref={more}
+          type="button"
+          aria-label={`Actions for ${member.name}`}
+          aria-haspopup="true"
+          aria-expanded={menu}
+          aria-controls={rowId}
+          disabled={locked}
+          onClick={() => setMenu((value) => !value)}
+          className="flex size-7 items-center justify-center rounded text-muted hover:bg-hover disabled:opacity-40"
+        >
+          <MoreIcon />
+        </button>
+        {menu && (
+          <div id={rowId} className="absolute right-0 top-full z-20 mt-1 w-48 rounded-lg border border-line bg-surface p-1 shadow-pop">
+            {confirming ? (
+              <div className="flex flex-col gap-1 p-1">
+                <p className="text-xs text-muted">Remove {member.name} from the workspace?</p>
+                <Button variant="danger" onClick={() => remove.mutate()} disabled={remove.isPending}>
+                  Remove
+                </Button>
+                <Button variant="secondary" onClick={() => setConfirming(false)}>
+                  Cancel
+                </Button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                className="w-full rounded px-2 py-1.5 text-left text-sm text-danger hover:bg-hover"
+                onClick={() => setConfirming(true)}
+              >
+                Remove…
+              </button>
+            )}
+          </div>
+        )}
+      </div>
       <div className="w-full empty:hidden">
         <ErrorNote error={changeRole.error ?? remove.error} />
       </div>
@@ -67,25 +115,34 @@ function MemberRow({ member, actorRole, isSelf }: { member: Member; actorRole: T
 
 /** `/w/$tenantSlug/admin/members`: who is in the workspace, their roles, and invitations. */
 export function MembersPage() {
-  const { role } = useWorkspace();
+  const { role, tenant } = useWorkspace();
   const refresh = useRefresh();
   const { data: members, error, isPending } = useMembers();
   const selfId = loadSession()?.user.id;
+  const [inviting, setInviting] = useState(false);
 
   return (
     <div className="flex flex-col gap-5">
-      <InviteForm onInvited={() => void refresh('members')} />
-      <Card title="Members">
-        {isPending && <Loading what="members" />}
-        <ErrorNote error={error} />
-        {members && (
-          <ul className="divide-y divide-line">
-            {members.map((m) => (
-              <MemberRow key={m.userId} member={m} actorRole={role} isSelf={m.userId === selfId} />
-            ))}
-          </ul>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm text-muted">
+          {members?.length ?? 0} {members?.length === 1 ? 'person' : 'people'} in this workspace
+        </p>
+        {!inviting && (
+          <Button onClick={() => setInviting(true)}>Invite someone</Button>
         )}
-      </Card>
+      </div>
+      {inviting && (
+        <InviteForm onInvited={() => void refresh('members')} />
+      )}
+      {isPending && <Loading what="members" />}
+      <ErrorNote error={error} />
+      {members && (
+        <ul aria-label={`Members of ${tenant.name}`} className="flex flex-col">
+          {members.map((member) => (
+            <MemberRow key={member.userId} member={member} actorRole={role} isSelf={member.userId === selfId} />
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

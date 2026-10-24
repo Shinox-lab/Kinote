@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import type { FileDetails, SpaceResponse } from '@living-wiki/contracts';
 import { api } from '../lib/api.js';
+import { useMediaQuery } from '../lib/useMediaQuery.js';
 import type { FileControls } from '../lib/fileUi.js';
 import { MoreIcon } from './icons.js';
 import { Confirm, MoveForm, PANEL } from './lifecycle.js';
@@ -20,16 +21,20 @@ export function FileMenu({
   spaces,
   controls,
   onReplace,
+  onDownload,
   onChanged,
 }: {
   file: FileDetails;
   spaces: SpaceResponse[];
   controls: FileControls;
   onReplace: () => void;
+  /** The phone puts Download in this menu; the desktop keeps it in the top bar. */
+  onDownload?: () => void;
   onChanged: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [action, setAction] = useState<Action | null>(null);
+  const phone = useMediaQuery('(max-width: 767px)');
   const restore = useMutation({ mutationFn: () => api.restoreFile(file.id), onSuccess: onChanged });
   const dismiss = useMutation({ mutationFn: () => api.dismissRemoval(file.id), onSuccess: onChanged });
   const retry = useMutation({
@@ -54,7 +59,14 @@ export function FileMenu({
     done();
   };
 
-  const items: { key: string; label: string; show: boolean; run: () => void }[] = [
+  const items: { key: string; label: string; show: boolean; run: () => void; phoneOnly?: boolean }[] = [
+    {
+      key: 'download',
+      label: 'Download',
+      show: controls.download && onDownload !== undefined,
+      run: () => onDownload?.(),
+      phoneOnly: true,
+    },
     { key: 'replace', label: 'Replace file…', show: controls.replace, run: onReplace },
     { key: 'rename', label: 'Rename…', show: controls.replace, run: () => setAction('rename') },
     { key: 'retry', label: 'Retry indexing', show: controls.retry && file.latestVersion !== null, run: () => retry.mutate() },
@@ -64,7 +76,7 @@ export function FileMenu({
     { key: 'restore', label: 'Restore file', show: controls.restore, run: () => restore.mutate() },
     { key: 'dismiss', label: 'Dismiss removed file', show: controls.dismissRemoval, run: () => dismiss.mutate() },
   ];
-  const shown = items.filter((item) => item.show);
+  const shown = items.filter((item) => item.show && (!item.phoneOnly || phone));
 
   const select = (run: () => void) => {
     setOpen(false);
@@ -94,7 +106,7 @@ export function FileMenu({
           className="absolute right-0 top-full z-20 mt-1 w-56 rounded-lg border border-line bg-surface p-1 shadow-pop"
         >
           {shown.map((item) => (
-            <li key={item.key}>
+            <li key={item.key} className={item.phoneOnly ? 'md:hidden' : undefined}>
               <button
                 type="button"
                 className="w-full rounded px-3 py-2 text-left text-sm text-fg hover:bg-hover disabled:opacity-50"
