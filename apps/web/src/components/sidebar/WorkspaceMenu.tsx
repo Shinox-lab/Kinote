@@ -40,7 +40,7 @@ export function WorkspaceMenu() {
       <button
         ref={buttonRef}
         type="button"
-        className={`${ROW} font-semibold`}
+        className={`${ROW} font-medium`}
         aria-expanded={open}
         aria-controls={listId}
         onClick={() => setOpen((v) => !v)}

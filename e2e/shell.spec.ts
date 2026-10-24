@@ -26,3 +26,17 @@ test('a member sees the tree but no Settings link', async ({ browser, request })
   await expect(sidebar(page).getByRole('list', { name: 'Main' }).getByRole('link', { name: 'Home' })).toBeVisible();
   await expect(sidebar(page).getByRole('link', { name: 'Settings & members' })).toHaveCount(0);
 });
+
+test('the sidebar is a column on a desktop and a slide-over below 1024', async ({ browser, request }) => {
+  const world = await seedWorld(request, { reviewRequired: false });
+  const page = await openAs(browser, world, world.owner);
+  await page.setViewportSize({ width: 1100, height: 800 });
+  await page.goto(`/w/${world.slug}`);
+  await expect(sidebar(page)).toHaveCount(1);
+  await expect(page.getByRole('button', { name: 'Open sidebar' })).toHaveCount(0);
+
+  await page.setViewportSize({ width: 1000, height: 800 });
+  await expect(sidebar(page)).toHaveCount(0);
+  await page.getByRole('button', { name: 'Open sidebar' }).click();
+  await expect(page.getByRole('dialog', { name: 'Sidebar' })).toBeVisible();
+});

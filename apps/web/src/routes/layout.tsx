@@ -61,7 +61,7 @@ function Shell() {
   return (
     <div className="flex min-h-screen">
       {column && (
-        <aside aria-label="Sidebar" className="sticky top-0 h-screen w-64 shrink-0 border-r border-line bg-sidebar">
+        <aside aria-label="Sidebar" className="sticky top-0 h-screen w-[252px] shrink-0 border-r border-line bg-sidebar">
           <Sidebar onCollapse={() => toggleCollapsed(true)} />
         </aside>
       )}
@@ -74,7 +74,7 @@ function Shell() {
             aria-modal="true"
             aria-label="Sidebar"
             tabIndex={-1}
-            className="h-full w-72 max-w-[85vw] border-r border-line bg-sidebar shadow-pop"
+            className="h-full w-[330px] max-w-[85vw] border-r border-line bg-sidebar shadow-pop"
           >
             <Sidebar />
           </div>
@@ -103,7 +103,7 @@ function Shell() {
             </button>
           </div>
         )}
-        <main className="mx-auto w-full max-w-5xl px-4 py-6 md:px-8">
+        <main className="mx-auto w-full max-w-[1188px] px-5 py-6 md:px-7">
           <SidebarColumnContext.Provider value={column}>
             <Outlet />
           </SidebarColumnContext.Provider>

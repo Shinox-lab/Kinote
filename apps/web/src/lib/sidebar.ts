@@ -3,7 +3,7 @@
 
 export const COLLAPSED_KEY = 'lw-sidebar-collapsed';
 /** Below this width the sidebar is a slide-over instead of a column. */
-export const SIDEBAR_BREAKPOINT_PX = 768;
+export const SIDEBAR_BREAKPOINT_PX = 1024;
 
 type ReadStorage = Pick<Storage, 'getItem'> | undefined;
 type WriteStorage = Pick<Storage, 'setItem'> | undefined;
