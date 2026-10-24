@@ -7,6 +7,7 @@ import { saveVersion } from '../lib/download.js';
 import { fileBanner, fileControls, formatBytes, publishedVersionId } from '../lib/fileUi.js';
 import { useFile, useFileVersions, useRefresh, useSpaces, useSpaceTree, useWorkspace } from '../lib/queries.js';
 import { ancestorIds, type BadgeTone } from '../lib/wiki.js';
+import { AppTopBar } from '../components/AppTopBar.js';
 import { ChunkInspector } from '../components/ChunkInspector.js';
 import { FileViewer } from '../viewers/FileViewer.js';
 import { Badge } from '../components/Badge.js';
@@ -133,10 +134,10 @@ export function FilePage() {
 
   return (
     <div className="flex flex-col gap-5">
-      <div className="flex items-start justify-between gap-3">
-        <Breadcrumb file={file} tenantSlug={tenant.slug} />
-        {role && space && <FileMenu file={file} spaces={spaces} controls={controls} onChanged={changed} />}
-      </div>
+      <AppTopBar
+        crumbs={<Breadcrumb file={file} tenantSlug={tenant.slug} />}
+        right={role && space ? <FileMenu file={file} spaces={spaces} controls={controls} onChanged={changed} /> : undefined}
+      />
 
       {/* The name and the state of the file, at the top. */}
       <header className="flex flex-col gap-2">

@@ -1,5 +1,5 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { addMember, openAs, seedWorld } from './support.js';
+import { addMember, call, openAs, seedWorld, uploadViaApi } from './support.js';
 
 const sidebar = (page: Page): Locator => page.getByRole('complementary', { name: 'Sidebar' });
 
@@ -39,4 +39,48 @@ test('the sidebar is a column on a desktop and a slide-over below 1024', async (
   await expect(sidebar(page)).toHaveCount(0);
   await page.getByRole('button', { name: 'Open sidebar' }).click();
   await expect(page.getByRole('dialog', { name: 'Sidebar' })).toBeVisible();
+});
+
+test('the page breadcrumb and menu live in the top bar', async ({ browser, request }) => {
+  const world = await seedWorld(request, { reviewRequired: false });
+  const { id: pageId } = await call<{ id: string }>(request, '/pages', {
+    account: world.owner,
+    tenantId: world.tenantId,
+    method: 'POST',
+    data: { space_id: world.spaceId, title: 'Notes', slug: `notes-${world.suffix}`, parent_id: null, markdown: 'Notes text.' },
+  });
+  const page = await openAs(browser, world, world.owner);
+  await page.goto(`/w/${world.slug}/p/${pageId}`);
+
+  const banner = page.getByRole('banner');
+  await expect(banner.getByRole('navigation', { name: 'Breadcrumb' })).toBeVisible();
+  await expect(banner.getByRole('button', { name: 'Page actions' })).toBeVisible();
+  // No second breadcrumb in the document column.
+  await expect(page.getByRole('navigation', { name: 'Breadcrumb' })).toHaveCount(1);
+
+  // The file's breadcrumb and menu use the same bar.
+  const fileId = await uploadViaApi(request, world, world.owner, {
+    name: 'notes.md',
+    mimeType: 'text/markdown',
+    buffer: Buffer.from('# Notes'),
+  });
+  await page.goto(`/w/${world.slug}/f/${fileId}`);
+  await expect(page.getByRole('banner').getByRole('navigation', { name: 'Breadcrumb' })).toBeVisible();
+  await expect(page.getByRole('banner').getByRole('button', { name: 'File actions' })).toBeVisible();
+});
+
+test('a long title keeps the page menu in reach', async ({ browser, request }) => {
+  const world = await seedWorld(request, { reviewRequired: false });
+  const title = 'A very long page title that keeps going and going until the sidebar and the top bar have to truncate it';
+  const { id: pageId } = await call<{ id: string }>(request, '/pages', {
+    account: world.owner,
+    tenantId: world.tenantId,
+    method: 'POST',
+    data: { space_id: world.spaceId, title, slug: `long-${world.suffix}`, parent_id: null, markdown: 'Long title.' },
+  });
+  const page = await openAs(browser, world, world.owner);
+  await page.goto(`/w/${world.slug}/p/${pageId}`);
+
+  await expect(page.getByRole('banner').getByRole('button', { name: 'Page actions' })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
