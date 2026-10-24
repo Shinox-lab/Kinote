@@ -57,6 +57,7 @@ import {
   type SignInRequest,
   type SignUpRequest,
   type UpdateMemberRoleRequest,
+  type UpdatePageRequest,
   type UpdateSpaceSettings,
   type UpsertSpaceGrant,
 } from '@living-wiki/contracts';
@@ -249,6 +250,8 @@ export const api = {
   getPage: (id: string) => request(`/api/v1/pages/${e(id)}`, PageDetailsSchema),
   movePage: (id: string, body: MovePageRequest) =>
     request(`/api/v1/pages/${e(id)}/move`, DocumentSummarySchema, send('POST', body)),
+  updatePage: (id: string, body: UpdatePageRequest) =>
+    request(`/api/v1/pages/${e(id)}`, DocumentSummarySchema, send('PATCH', body)),
   renamePage: (id: string, title: string) =>
     request(`/api/v1/pages/${e(id)}`, DocumentSummarySchema, send('PATCH', { title })),
   archivePage: (id: string) => request(`/api/v1/pages/${e(id)}/archive`, DocumentSummarySchema, send('POST')),

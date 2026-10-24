@@ -316,6 +316,32 @@ export const UpdateTitleRequestSchema = z.object({
 });
 export type UpdateTitleRequest = z.input<typeof UpdateTitleRequestSchema>;
 
+/**
+ * A page's emoji identity: exactly one grapheme after segmentation, at most
+ * 16 UTF-16 units. The picker offers a curated set, but the API accepts any
+ * single emoji so an older page is never lost. Null clears it.
+ */
+const graphemeSegmenter = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
+export const IconSchema = z
+  .string()
+  .max(16)
+  .refine((s) => [...graphemeSegmenter.segment(s)].length === 1, 'a single emoji');
+export type Icon = z.infer<typeof IconSchema>;
+
+/**
+ * Body of PATCH /api/v1/pages/:id: a new title, a new icon (null clears) or
+ * both; at least one field is required. The title follows the same bound as
+ * creation. A title change also updates the live collab document.
+ */
+export const UpdatePageRequestSchema = z
+  .object({
+    title: z.string().trim().min(1).max(200).optional(),
+    icon: IconSchema.nullable().optional(),
+  })
+  .refine((v) => v.title !== undefined || v.icon !== undefined, 'title or icon is required');
+export type UpdatePageRequest = z.input<typeof UpdatePageRequestSchema>;
+
+
 export const RejectVersionRequestSchema = z.object({
   review_note: z.string().trim().min(1).max(300),
 });
@@ -360,6 +386,7 @@ export const PageSummarySchema = z.object({
   parentId: z.string().uuid().nullable(),
   title: z.string(),
   slug: z.string(),
+  icon: z.string().nullable(),
 });
 export type PageSummary = z.infer<typeof PageSummarySchema>;
 
@@ -373,6 +400,7 @@ export const DocumentSummarySchema = z.object({
   parentId: z.string().uuid().nullable(),
   position: z.string(),
   title: z.string(),
+  icon: z.string().nullable(),
   archivedAt: z.string().datetime().nullable(),
   indexedVersionId: z.string().uuid().nullable(),
 });
@@ -398,6 +426,7 @@ export const PageDetailsSchema = z.object({
   parentId: z.string().uuid().nullable(),
   title: z.string(),
   slug: z.string(),
+  icon: z.string().nullable(),
   badge: z.string(),
   liveMarkdown: z.string(),
   // BlockNote blocks: every one has an id and a type; the rest (props, content, children) passes through.
@@ -567,6 +596,7 @@ export const TreeNodeSchema = z.object({
   position: z.string(),
   kind: z.enum(['page', 'file']),
   title: z.string(),
+  icon: z.string().nullable(),
   slug: z.string().nullable(),
   attention: AttentionSchema,
 });

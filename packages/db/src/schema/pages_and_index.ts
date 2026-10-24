@@ -66,6 +66,7 @@ export const documents = pgTable('documents', {
   position: text('position').notNull().default('a0'),
   kind: text('kind', { enum: ['page', 'file'] }).notNull(),
   title: text('title').notNull(),
+  icon: text('icon'),
   sourceId: uuid('source_id').references(() => sources.id),
   externalId: text('external_id'),
   placement: text('placement', { enum: ['pinned', 'synced'] }).notNull().default('pinned'),

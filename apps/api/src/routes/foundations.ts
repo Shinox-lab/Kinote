@@ -276,6 +276,7 @@ async function listTreeNodes(
         position: documents.position,
         kind: documents.kind,
         title: documents.title,
+        icon: documents.icon,
         slug: pages.slug,
         liveChangedSinceSnapshot: pages.liveChangedSinceSnapshot,
         liveUpdatedAt: pages.liveUpdatedAt,
@@ -334,6 +335,7 @@ async function listTreeNodes(
         position: r.position,
         kind: r.kind,
         title: r.title,
+        icon: r.icon,
         slug: r.slug,
         // Archived documents carry no dot; a file's dot comes from its latest version alone.
         attention: archived

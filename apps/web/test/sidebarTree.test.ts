@@ -3,7 +3,7 @@ import type { TreeNode } from '@living-wiki/contracts';
 import { ancestorIds, attentionLabel, buildTree, canCreatePages, expandedFor } from '../src/lib/wiki.js';
 
 function node(id: string, parentId: string | null, attention: TreeNode['attention'] = null): TreeNode {
-  return { id, parentId, position: 'a0', kind: 'page', title: id, slug: id, attention };
+  return { id, parentId, position: 'a0', kind: 'page', title: id, icon: null, slug: id, attention };
 }
 
 // root -> mid -> leaf, plus a second root with a child.

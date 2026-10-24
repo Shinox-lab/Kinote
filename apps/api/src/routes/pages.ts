@@ -27,7 +27,7 @@ import {
   RejectVersionRequestSchema,
   CompareQuerySchema,
   RestoreVersionParamsSchema,
-  UpdateTitleRequestSchema,
+  UpdatePageRequestSchema,
   AppError,
   type CollabTokenResponse,
   type DocumentSummary,
@@ -116,6 +116,7 @@ export function toDocumentSummary(row: DocumentRow): DocumentSummary {
     parentId: row.parentId,
     position: row.position,
     title: row.title,
+    icon: row.icon,
     archivedAt: row.archivedAt?.toISOString() ?? null,
     indexedVersionId: row.indexedVersionId,
   };
@@ -197,6 +198,7 @@ export async function createPage(actor: Actor, input: unknown): Promise<PageSumm
       parentId: doc.parentId,
       title: doc.title,
       slug: page.slug,
+      icon: doc.icon,
     };
   });
 }
@@ -263,6 +265,7 @@ export async function getPageDetails(actor: Actor, pageId: string): Promise<Page
       parentId: doc.parentId,
       title: liveTitle,
       slug: page.slug,
+      icon: doc.icon,
       badge,
       liveMarkdown,
       liveBlocks,
@@ -1024,8 +1027,9 @@ export async function renamePage(
   collab?: CollabClient
 ): Promise<DocumentSummary> {
   assertValidUuid(pageId, 'page_not_found');
-  const parsed = UpdateTitleRequestSchema.parse(input);
-  if (!collab) throw new AppError('internal_error');
+  const parsed = UpdatePageRequestSchema.parse(input);
+  const hasTitle = parsed.title !== undefined;
+  if (hasTitle && !collab) throw new AppError('internal_error');
 
   // Access and state first, in their own short transaction (no lock held while
   // collab works on the same row).
@@ -1039,18 +1043,23 @@ export async function renamePage(
     if (doc.archivedAt) throw new AppError('page_archived');
   });
 
-  await collab.setTitle({
-    tenantId: actor.tenantId,
-    pageId,
-    title: parsed.title,
-    actor: { type: actor.principalType === 'agent' ? 'agent' : 'user', id: actor.principalId },
-  });
+  if (hasTitle) {
+    await collab!.setTitle({
+      tenantId: actor.tenantId,
+      pageId,
+      title: parsed.title!,
+      actor: { type: actor.principalType === 'agent' ? 'agent' : 'user', id: actor.principalId },
+    });
+  }
 
   return withTenantTx(actor.tenantId, async (tx) => {
     const doc = await lockPage(tx, actor.tenantId, pageId);
     const [updated] = await tx
       .update(documents)
-      .set({ title: parsed.title })
+      .set({
+        ...(hasTitle ? { title: parsed.title } : {}),
+        ...(parsed.icon !== undefined ? { icon: parsed.icon } : {}),
+      })
       .where(and(eq(documents.tenantId, actor.tenantId), eq(documents.id, pageId)))
       .returning();
     await writeAuditEvent(tx, {
@@ -1060,7 +1069,11 @@ export async function renamePage(
       actorId: actor.principalId,
       subjectType: 'page',
       subjectId: pageId,
-      payload: { previousTitle: doc.title, title: parsed.title },
+      payload: {
+        previousTitle: doc.title,
+        title: updated.title,
+        ...(parsed.icon !== undefined ? { icon: parsed.icon } : {}),
+      },
     });
     return toDocumentSummary(updated);
   });
