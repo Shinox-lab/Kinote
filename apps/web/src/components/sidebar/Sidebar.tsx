@@ -1,7 +1,7 @@
 import { Link } from '@tanstack/react-router';
 import { adminScreens } from '../../lib/console.js';
 import { useReviews, useWorkspace } from '../../lib/queries.js';
-import { SearchIcon, SettingsIcon, SidebarIcon, ReviewsIcon } from '../icons.js';
+import { HomeIcon, SearchIcon, SettingsIcon, SidebarIcon, ReviewsIcon } from '../icons.js';
 import { AccountRow } from './AccountRow.js';
 import { ROW, ROW_ACTIVE, RowContent } from './NavRow.js';
 import { UploadPanel } from './UploadPanel.js';
@@ -40,13 +40,24 @@ export function Sidebar({ onCollapse }: { onCollapse?: () => void }) {
       </div>
 
       <nav aria-label="Workspace" className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-        <ul className="flex flex-col gap-px pt-1">
+        <ul aria-label="Main" className="flex flex-col gap-px pt-1">
+          <li>
+            <Link
+              to="/w/$tenantSlug"
+              params={{ tenantSlug: tenant.slug }}
+              className={ROW}
+              activeProps={{ className: ROW_ACTIVE, 'aria-current': 'page' }}
+              activeOptions={{ exact: true }}
+            >
+              <RowContent icon={<HomeIcon />} label="Home" />
+            </Link>
+          </li>
           <li>
             <Link
               to="/w/$tenantSlug/search"
               params={{ tenantSlug: tenant.slug }}
               className={ROW}
-              activeProps={{ className: ROW_ACTIVE }}
+              activeProps={{ className: ROW_ACTIVE, 'aria-current': 'page' }}
             >
               <RowContent icon={<SearchIcon />} label="Search" />
             </Link>
@@ -56,7 +67,7 @@ export function Sidebar({ onCollapse }: { onCollapse?: () => void }) {
               to="/w/$tenantSlug/reviews"
               params={{ tenantSlug: tenant.slug }}
               className={ROW}
-              activeProps={{ className: ROW_ACTIVE }}
+              activeProps={{ className: ROW_ACTIVE, 'aria-current': 'page' }}
             >
               <RowContent icon={<ReviewsIcon />} label="Reviews" count={waiting?.length ?? 0} countLabel="waiting" />
             </Link>
@@ -67,7 +78,7 @@ export function Sidebar({ onCollapse }: { onCollapse?: () => void }) {
                 to={screens[0]!.to}
                 params={{ tenantSlug: tenant.slug }}
                 className={ROW}
-                activeProps={{ className: ROW_ACTIVE }}
+                activeProps={{ className: ROW_ACTIVE, 'aria-current': 'page' }}
               >
                 <RowContent icon={<SettingsIcon />} label="Settings & members" />
               </Link>

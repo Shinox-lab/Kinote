@@ -25,6 +25,13 @@ function Icon({ children, ...rest }: IconProps) {
   );
 }
 
+export const HomeIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M3.5 10.5 12 3.5l8.5 7" />
+    <path d="M5.5 9.5V20h13V9.5" />
+    <path d="M10 20v-5h4v5" />
+  </Icon>
+);
 export const SearchIcon = (p: IconProps) => (
   <Icon {...p}>
     <circle cx="11" cy="11" r="7" />
