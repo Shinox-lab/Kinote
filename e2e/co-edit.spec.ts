@@ -122,6 +122,8 @@ test('two editors and a reviewer: co-edit, hold until approval, index, cite v1',
 
     await b.goto(`/w/${slug}/p/${pageId}`);
     await expectConnected(b);
+    await expect(a.getByTitle('Bea')).toBeVisible();
+    await expect(b.getByTitle('Ada')).toBeVisible();
 
     // A first block both can see, then each types in a block of their own, key by key, together.
     await editorOf(a).click();

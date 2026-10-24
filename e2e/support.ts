@@ -121,7 +121,7 @@ export function editorOf(page: Page): Locator {
 }
 
 export async function expectConnected(page: Page): Promise<void> {
-  await expect(page.getByRole('status').filter({ hasText: 'Connected' })).toBeVisible();
+  await expect(page.getByRole('status', { name: 'Presence: connected' })).toBeVisible();
 }
 
 /** The page's badge, exactly as the server wrote it. */

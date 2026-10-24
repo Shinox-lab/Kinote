@@ -3,6 +3,7 @@ import { Link, useParams } from '@tanstack/react-router';
 import { usePageChanges, useRefresh, useSpaceTree, useWorkspace } from '../lib/queries.js';
 import { closeHistory, openHistory, useHistoryOpen, useHistoryTab } from '../lib/pageUi.js';
 import { usePageView } from '../lib/usePageView.js';
+import { useLivePage } from '../lib/useLivePage.js';
 import { ancestorIds, blockHighlightCss, visibleChanges } from '../lib/wiki.js';
 import { AppTopBar } from '../components/AppTopBar.js';
 import { Editor } from '../components/Editor.js';
@@ -10,6 +11,7 @@ import { HistoryDrawer } from '../components/HistoryDrawer.js';
 import { LifecycleMenu } from '../components/LifecycleMenu.js';
 import { PageHeader } from '../components/PageHeader.js';
 import { PageStatus } from '../components/PageStatus.js';
+import { PagePresence } from '../components/PagePresence.js';
 import { ErrorNote, Loading } from '../components/ui.js';
 
 const CRUMB = 'min-w-0 max-w-[12rem] truncate rounded px-1 py-0.5 text-muted hover:bg-hover hover:text-fg';
@@ -77,6 +79,7 @@ export function PagePage() {
   const { data: entries } = usePageChanges(pageId);
   const historyOpen = useHistoryOpen(pageId);
   const historyTab = useHistoryTab(pageId);
+  const livePage = useLivePage(pageId, reload);
 
   // The drawer belongs to this page: leaving it closes the drawer.
   useEffect(() => () => closeHistory(), [pageId]);
@@ -98,7 +101,12 @@ export function PagePage() {
     <>
       <AppTopBar
         crumbs={<Breadcrumb pageId={pageId} spaceId={page.spaceId} tenantSlug={tenant.slug} title={page.title} />}
-        right={<LifecycleMenu page={page} spaces={spaces} controls={controls} onChanged={changed} />}
+        right={
+          <>
+            <PagePresence live={livePage.live} state={livePage.state} onReconnect={livePage.reconnect} />
+            <LifecycleMenu page={page} spaces={spaces} controls={controls} onChanged={changed} />
+          </>
+        }
       />
       <article className="mx-auto flex w-full max-w-[720px] flex-col gap-4 pt-4">
         {/* The changed blocks wear their author's colour here, as in the sidebar's list. */}
@@ -123,7 +131,14 @@ export function PagePage() {
         />
         {/* A failed refetch keeps the last page on screen and says so. */}
         <ErrorNote error={error} />
-        <Editor key={pageId} pageId={pageId} archived={archived} onSynced={reload} />
+        <Editor
+          key={pageId}
+          live={livePage.live}
+          access={livePage.access}
+          archived={archived}
+          error={livePage.error}
+          retry={livePage.retry}
+        />
         {historyOpen && (
           <HistoryDrawer
             pageId={pageId}

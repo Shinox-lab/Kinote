@@ -120,7 +120,7 @@ test('history drawer: compare two versions, restore with confirmation, Escape re
   // A second version, approved: Ed edits and submits, Rae approves through the api.
   const edPage = await openAs(browser, world, ed);
   await edPage.goto(`/w/${world.slug}/p/${edPageId}`);
-  await expect(edPage.getByRole('status').filter({ hasText: 'Connected' })).toBeVisible();
+  await expect(edPage.getByRole('status', { name: 'Presence: connected' })).toBeVisible();
   await writeAndSubmit(edPage, ' Part-timers accrue leave pro rata.');
   await expect.poll(async () => (await versionsOf(request, ed, edPageId))[0]).toMatchObject({ number: 2, status: 'pending_review' });
   const second = (await versionsOf(request, ed, edPageId))[0]!;
