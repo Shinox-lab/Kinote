@@ -16,6 +16,7 @@ import {
 } from '@living-wiki/contracts';
 import { requireSpaceRole, assertValidUuid, isTenantAdmin, type Actor } from '@living-wiki/core';
 import { canApprove, type SpaceRow } from '../pages/approval.js';
+import { resolveActorNames } from '../people.js';
 import { versionSummaryColumns, toVersionSummary } from './pages.js';
 
 /**
@@ -144,11 +145,19 @@ export async function listReviewQueue(actor: Actor, query: unknown): Promise<Rev
       byVersion.set(c.versionId, list);
     }
 
+    const creators = await resolveActorNames(
+      tx,
+      actor.tenantId,
+      visible.map((r) => ({ type: r.createdByType, id: r.createdBy }))
+    );
     const items = visible.map((r) => {
       const space = reviewable.get(r.spaceId)!;
       const contributors = byVersion.get(r.id) ?? [];
       return {
-        version: toVersionSummary(r),
+        version: {
+          ...toVersionSummary(r),
+          createdByName: creators.get(`${r.createdByType}:${r.createdBy}`) ?? 'Former member',
+        },
         document: {
           id: r.documentId,
           title: r.title,

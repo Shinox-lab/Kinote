@@ -71,50 +71,63 @@ test('review queue: Approve and Reject states, lazy diff', async ({ browser, req
   await raePage.goto(`/w/${world.slug}/reviews`);
   const own = queue(raePage).getByRole('listitem').filter({ hasText: 'Rae notes' });
   const others = queue(raePage).getByRole('listitem').filter({ hasText: 'Leave policy' });
+  const detail = raePage.getByRole('region', { name: 'Review detail' });
 
   await test.step('Approve is off for the reviewer\'s own change, and says why', async () => {
-    await expect(own.getByRole('button', { name: 'Approve' })).toBeDisabled();
-    await expect(own).toContainText("You can't approve this change");
-    await expect(others.getByRole('button', { name: 'Approve' })).toBeEnabled();
+    await own.getByRole('button').click();
+    await expect(detail.getByRole('button', { name: 'Approve' })).toBeDisabled();
+    await expect(detail).toContainText('You proposed this change');
+    await others.getByRole('button').click();
+    await expect(detail.getByRole('button', { name: 'Approve' })).toBeEnabled();
   });
 
-  await test.step('the block diff is fetched only when an item is expanded', async () => {
-    expect(diffRequests).toHaveLength(0);
-    const toggle = own.getByRole('button', { name: 'Show changes' });
-    await toggle.click();
-    const diff = own.getByRole('list', { name: 'Changes in version 1 of Rae notes' });
+  await test.step('one lazy diff per selected item; full document and changes only', async () => {
+    // The first item and the two selected above have each fetched their own diff once, and only once.
+    expect(new Set(diffRequests.map((r) => r.url())).size).toBe(2);
+    const before = diffRequests.length;
+    await own.getByRole('button').click();
+    const full = detail.getByRole('list', { name: 'Full document of Rae notes' });
+    await expect(full).toContainText('Quarterly planning notes');
+    await expect(full).toContainText('Added');
+    await expect(detail.getByRole('button', { name: 'Full document' })).toHaveAttribute('aria-pressed', 'true');
+    expect(diffRequests.length).toBe(before);
+
+    await detail.getByRole('button', { name: 'Changes only' }).click();
+    const diff = detail.getByRole('list', { name: 'Changes in version 1 of Rae notes' });
     await expect(diff).toContainText('Added');
     await expect(diff).toContainText('Quarterly planning notes');
-    await expect(own.getByRole('button', { name: 'Hide changes' })).toHaveAttribute('aria-expanded', 'true');
-    expect(diffRequests).toHaveLength(1);
-    await own.getByRole('button', { name: 'Hide changes' }).click();
-    await expect(diff).toBeHidden();
-    expect(diffRequests).toHaveLength(1);
+    await others.getByRole('button').click();
+    await expect(detail.getByRole('list', { name: 'Full document of Leave policy' })).toContainText('Employees');
+    await own.getByRole('button').click();
+    await expect(detail.getByRole('button', { name: 'Full document' })).toHaveAttribute('aria-pressed', 'true');
+    expect(diffRequests.length).toBe(before);
   });
 
   await test.step('Reject stays off until the note is 1 to 300 characters', async () => {
-    await own.getByRole('button', { name: /^Reject/ }).click();
-    const reject = own.getByRole('button', { name: 'Reject change' });
-    const note = own.getByLabel('Why is this change rejected?');
+    await detail.getByRole('button', { name: /^Reject/ }).click();
+    const reject = detail.getByRole('button', { name: 'Reject change' });
+    const note = detail.getByLabel('Why is this change rejected?');
     await expect(reject).toBeDisabled();
     await note.fill('   \n  ');
     await expect(reject).toBeDisabled();
-    await expect(own).toContainText('0 / 300 characters (a note is required)');
+    await expect(detail).toContainText('0 / 300 characters (a note is required)');
     await note.fill('x'.repeat(301));
     await expect(reject).toBeDisabled();
-    await expect(own).toContainText('301 / 300 characters (too long)');
+    await expect(detail).toContainText('301 / 300 characters (too long)');
     await note.fill('x'.repeat(300));
     await expect(reject).toBeEnabled();
     await note.fill('  needs sources  ');
     await expect(reject).toBeEnabled();
-    await expect(own).toContainText('13 / 300 characters');
-    await own.getByRole('button', { name: 'Cancel' }).click();
+    await expect(detail).toContainText('13 / 300 characters');
+    await detail.getByRole('button', { name: 'Cancel' }).click();
     await expect(reject).toHaveCount(0);
   });
 
   await test.step('another reviewer approves: the item leaves the queue', async () => {
-    await others.getByRole('button', { name: 'Approve' }).click();
+    await others.getByRole('button').click();
+    await detail.getByRole('button', { name: 'Approve' }).click();
     await expect(others).toHaveCount(0);
+    await expect(raePage.getByRole('status')).toContainText('Approved version 1 of Leave policy.');
     // The version is no longer waiting, whatever the worker has done since.
     await expect.poll(async () => (await versionsOf(request, ed, edPageId))[0]?.status).not.toBe('pending_review');
   });

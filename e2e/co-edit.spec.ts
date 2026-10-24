@@ -151,9 +151,10 @@ test('two editors and a reviewer: co-edit, hold until approval, index, cite v1',
     await a.goto(`/w/${slug}/reviews`);
     const item = a.getByRole('list', { name: 'Changes waiting for review' }).getByRole('listitem').filter({ hasText: 'Leave policy' });
     await expect(item).toContainText('Version 1');
-    await expect(item).toContainText('Awaiting review');
-    await expect(item.getByRole('button', { name: 'Approve' })).toBeDisabled();
-    await expect(item).toContainText("You can't approve this change");
+    await item.getByRole('button').click();
+    const detail = a.getByRole('region', { name: 'Review detail' });
+    await expect(detail.getByRole('button', { name: 'Approve' })).toBeDisabled();
+    await expect(detail).toContainText('You proposed this change');
 
     // Held: no version is indexed yet, and the version waits for review.
     const held = await pageState(a, pageId);
@@ -177,8 +178,10 @@ test('two editors and a reviewer: co-edit, hold until approval, index, cite v1',
   await test.step('R approves', async () => {
     await r.goto(`/w/${slug}/reviews`);
     const item = r.getByRole('list', { name: 'Changes waiting for review' }).getByRole('listitem').filter({ hasText: 'Leave policy' });
-    await expect(item.getByRole('button', { name: 'Approve' })).toBeEnabled();
-    await item.getByRole('button', { name: 'Approve' }).click();
+    await item.getByRole('button').click();
+    const detail = r.getByRole('region', { name: 'Review detail' });
+    await expect(detail.getByRole('button', { name: 'Approve' })).toBeEnabled();
+    await detail.getByRole('button', { name: 'Approve' }).click();
     await expect(r.getByText('Nothing is waiting for your review.')).toBeVisible();
   });
 

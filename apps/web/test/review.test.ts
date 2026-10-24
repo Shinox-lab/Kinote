@@ -29,8 +29,8 @@ describe('approveBlockedReason', () => {
 
   test('is a plain sentence about the authorship rule otherwise', () => {
     const reason = approveBlockedReason(item(false));
-    expect(reason).toMatch(/can.t approve/i);
-    expect(reason).toMatch(/self-approval/i);
+    expect(reason).toMatch(/You proposed this change/);
+    expect(reason).toMatch(/someone who didn.t write it/);
   });
 });
 

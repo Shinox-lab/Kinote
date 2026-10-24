@@ -38,7 +38,7 @@ describe('diffBlocks (real BlockNote blocks)', () => {
     const diff = diffBlocks(before, after, activity);
     expect(diff.map((d) => d.blockId)).toEqual(before.map((b) => b.id));
     expect(diff.map((d) => d.change)).toEqual(['unchanged', 'unchanged', 'unchanged', 'unchanged']);
-    expect(diff[1]).toEqual({ blockId: before[1]!.id, change: 'unchanged', after: 'First paragraph.' });
+    expect(diff[1]).toEqual({ blockId: before[1]!.id, change: 'unchanged', type: 'paragraph', depth: 0, after: 'First paragraph.' });
     expect(diff.some((d) => d.author)).toBe(false);
     expect(diff.some((d) => d.before !== undefined)).toBe(false);
   });
@@ -54,6 +54,8 @@ describe('diffBlocks (real BlockNote blocks)', () => {
     expect(find(diff, after[2]!.id)).toEqual({
       blockId: after[2]!.id,
       change: 'changed',
+      type: 'paragraph',
+      depth: 0,
       before: 'Second paragraph.',
       after: 'Second paragraph, edited.',
       author: { type: 'user', id: 'user-a' },
@@ -96,6 +98,8 @@ describe('diffBlocks (real BlockNote blocks)', () => {
     expect(find(diff, 'new-block-id')).toEqual({
       blockId: 'new-block-id',
       change: 'added',
+      type: 'paragraph',
+      depth: 0,
       after: 'Brand new.',
       author: { type: 'agent', id: 'user-a' },
     });
@@ -114,7 +118,7 @@ describe('diffBlocks (real BlockNote blocks)', () => {
       before[3]!.id,
     ]);
     expect(diff.map((d) => d.change)).toEqual(['unchanged', 'unchanged', 'removed', 'unchanged']);
-    expect(diff[2]).toEqual({ blockId: before[2]!.id, change: 'removed', before: 'Second paragraph.' });
+    expect(diff[2]).toEqual({ blockId: before[2]!.id, change: 'removed', type: 'paragraph', depth: 0, before: 'Second paragraph.' });
   });
 
   test('a removed first block comes first; consecutive removals keep their order', async () => {
@@ -242,6 +246,8 @@ describe('version history, changes and compare routes', () => {
     expect(body[1]).toEqual({
       blockId: v1Blocks[1]!.id,
       change: 'changed',
+      type: 'paragraph',
+      depth: 0,
       before: 'Second paragraph.',
       after: 'Second paragraph. A was here',
       // /changes alone names its authors (exact names: changesNames.test.ts).

@@ -18,7 +18,7 @@ export function rejectNoteState(note: string): { length: number; valid: boolean 
 export function approveBlockedReason(item: Pick<ReviewItem, 'canApprove'>): string | null {
   return item.canApprove
     ? null
-    : "You can't approve this change. A change needs a reviewer other than the people who made it, unless the space allows self-approval.";
+    : "You proposed this change — approve needs someone who didn't write it.";
 }
 
 /** "PDF · 2.4 MB" for a file item of the queue; null for a page. */

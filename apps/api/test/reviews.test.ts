@@ -158,6 +158,7 @@ describe('review queue: GET /api/v1/reviews', () => {
     expect(Object.keys(item.version).sort()).toEqual([
       'createdAt',
       'createdBy',
+      'createdByName',
       'createdByType',
       'error',
       'id',

@@ -130,12 +130,13 @@ test('a reviewer reads the text of a waiting file, approves it, and the chunk in
   const page = await openAs(browser, world, reviewer);
   await page.goto(`/w/${world.slug}/reviews`);
   const item = page.getByRole('list', { name: 'Changes waiting for review' }).getByRole('listitem').filter({ hasText: 'Handbook.pdf' });
-  await expect(item).toContainText('PDF ·');
-  await expect(item.getByRole('button', { name: 'Show changes' })).toHaveCount(0);
-  await item.getByRole('button', { name: 'Show text' }).click();
-  await expect(item.getByText(sentence)).toBeVisible();
-  await expect(item).toContainText('2 pages');
-  await item.getByRole('button', { name: 'Approve' }).click();
+  await item.getByRole('button').click();
+  const detail = page.getByRole('region', { name: 'Review detail' });
+  await expect(detail).toContainText('PDF ·');
+  await expect(detail.getByRole('button', { name: 'Show changes' })).toHaveCount(0);
+  await expect(detail.getByText(sentence)).toBeVisible();
+  await expect(detail).toContainText('2 pages');
+  await detail.getByRole('button', { name: 'Approve' }).click();
   await expect(item).toHaveCount(0);
 
   await page.goto(`/w/${world.slug}/f/${id}`);

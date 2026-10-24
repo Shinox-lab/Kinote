@@ -455,7 +455,10 @@ export const ReviewQuerySchema = z.object({
  * whether the asking actor may approve it (the same rule approve enforces).
  */
 export const ReviewItemSchema = z.object({
-  version: VersionSummarySchema,
+  version: VersionSummarySchema.extend({
+    /** The creator's display name (System for a connector, Former member for someone who left). */
+    createdByName: z.string(),
+  }),
   document: z.object({
     id: z.string().uuid(),
     title: z.string(),
@@ -558,6 +561,12 @@ export type VersionDetail = z.infer<typeof VersionDetailSchema>;
 export const BlockDiffEntrySchema = z.object({
   blockId: z.string(),
   change: z.enum(['added', 'removed', 'changed', 'unchanged']),
+  /** The block type of the side the entry describes (after; before for removed). */
+  type: z.string(),
+  /** Heading level, headings only. */
+  level: z.number().int().optional(),
+  /** Nesting depth, 0 at the top. */
+  depth: z.number().int().nonnegative().optional(),
   before: z.string().optional(),
   after: z.string().optional(),
   author: z

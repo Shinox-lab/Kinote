@@ -4,16 +4,26 @@ import { useVersionChunks } from '../lib/queries.js';
 import { Button, ErrorNote, Loading } from './ui.js';
 
 /** The first lines of the text read from a file waiting for review, fetched when first opened. */
-export function FileReviewPreview({ versionId, title }: { versionId: string; title: string }) {
-  const [open, setOpen] = useState(false);
+export function FileReviewPreview({
+  versionId,
+  title,
+  autoOpen = false,
+}: {
+  versionId: string;
+  title: string;
+  autoOpen?: boolean;
+}) {
+  const [open, setOpen] = useState(autoOpen);
   const panel = useId();
   const { data, error, isPending } = useVersionChunks(versionId, open);
 
   return (
     <div className="flex flex-col gap-2">
-      <Button variant="secondary" className="self-start" aria-expanded={open} aria-controls={panel} onClick={() => setOpen((v) => !v)}>
-        {open ? 'Hide text' : 'Show text'}
-      </Button>
+      {!autoOpen && (
+        <Button variant="secondary" className="self-start" aria-expanded={open} aria-controls={panel} onClick={() => setOpen((v) => !v)}>
+          {open ? 'Hide text' : 'Show text'}
+        </Button>
+      )}
       <div id={panel} hidden={!open}>
         {open &&
           (error ? (

@@ -61,7 +61,14 @@ export function diffBlocks(
     }
   }
   const removedEntries = (key: string): BlockDiffEntry[] =>
-    (removedAfter.get(key) ?? []).map((b) => ({ blockId: b.id, change: 'removed', before: b.text }));
+    (removedAfter.get(key) ?? []).map((b) => ({
+      blockId: b.id,
+      change: 'removed',
+      type: b.type,
+      ...(b.level !== undefined ? { level: b.level } : {}),
+      depth: b.depth,
+      before: b.text,
+    }));
 
   const out: BlockDiffEntry[] = [...removedEntries('')];
   const seen = new Set<string>();
@@ -70,12 +77,17 @@ export function diffBlocks(
     seen.add(b.id);
     const old = beforeById.get(b.id);
     let entry: BlockDiffEntry;
+    const shape = {
+      type: b.type,
+      ...(b.level !== undefined ? { level: b.level } : {}),
+      depth: b.depth,
+    };
     if (!old) {
-      entry = { blockId: b.id, change: 'added', after: b.text };
+      entry = { blockId: b.id, change: 'added', ...shape, after: b.text };
     } else if (sameContent(old, b)) {
-      entry = { blockId: b.id, change: 'unchanged', after: b.text };
+      entry = { blockId: b.id, change: 'unchanged', ...shape, after: b.text };
     } else {
-      entry = { blockId: b.id, change: 'changed', before: old.text, after: b.text };
+      entry = { blockId: b.id, change: 'changed', ...shape, before: old.text, after: b.text };
     }
     if (entry.change === 'added' || entry.change === 'changed') {
       const author = authorOf(b.id);
