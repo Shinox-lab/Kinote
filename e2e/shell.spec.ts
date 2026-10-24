@@ -54,6 +54,7 @@ test('the page breadcrumb and menu live in the top bar', async ({ browser, reque
 
   const banner = page.getByRole('banner');
   await expect(banner.getByRole('navigation', { name: 'Breadcrumb' })).toBeVisible();
+  await expect(banner.getByRole('navigation', { name: 'Breadcrumb' })).toContainText('Notes');
   await expect(banner.getByRole('button', { name: 'Page actions' })).toBeVisible();
   // No second breadcrumb in the document column.
   await expect(page.getByRole('navigation', { name: 'Breadcrumb' })).toHaveCount(1);

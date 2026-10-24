@@ -15,8 +15,18 @@ import { Button, ErrorNote, Loading } from '../components/ui.js';
 
 const CRUMB = 'max-w-[12rem] truncate rounded px-1 py-0.5 text-muted hover:bg-hover hover:text-fg';
 
-/** The page's place in the workspace: its space, then each parent page, as links. */
-function Breadcrumb({ pageId, spaceId, tenantSlug }: { pageId: string; spaceId: string; tenantSlug: string }) {
+/** The page's place in the workspace: its space, each parent page, then this page's title. */
+function Breadcrumb({
+  pageId,
+  spaceId,
+  tenantSlug,
+  title,
+}: {
+  pageId: string;
+  spaceId: string;
+  tenantSlug: string;
+  title: string;
+}) {
   const { spaces } = usePageView(pageId);
   const { data: tree } = useSpaceTree(spaceId);
   const space = spaces.find((s) => s.id === spaceId);
@@ -44,6 +54,16 @@ function Breadcrumb({ pageId, spaceId, tenantSlug }: { pageId: string; spaceId: 
             </Link>
           </li>
         ))}
+        <li className="flex items-center gap-0.5">
+          {(space || parents.length > 0) && (
+            <span aria-hidden="true" className="text-muted">
+              /
+            </span>
+          )}
+          <span aria-current="page" className="max-w-[18rem] truncate px-1 py-0.5 font-medium text-fg">
+            {title}
+          </span>
+        </li>
       </ol>
     </nav>
   );
@@ -78,7 +98,7 @@ export function PagePage() {
   return (
     <>
       <AppTopBar
-        crumbs={<Breadcrumb pageId={pageId} spaceId={page.spaceId} tenantSlug={tenant.slug} />}
+        crumbs={<Breadcrumb pageId={pageId} spaceId={page.spaceId} tenantSlug={tenant.slug} title={page.title} />}
         right={<LifecycleMenu page={page} spaces={spaces} controls={controls} onChanged={changed} />}
       />
       <article className="mx-auto flex w-full max-w-[720px] flex-col gap-4 pt-4">

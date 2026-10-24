@@ -54,6 +54,16 @@ function Breadcrumb({ file, tenantSlug }: { file: FileDetails; tenantSlug: strin
             </DocumentLink>
           </li>
         ))}
+        <li className="flex items-center gap-0.5">
+          {(space || parents.length > 0) && (
+            <span aria-hidden="true" className="text-muted">
+              /
+            </span>
+          )}
+          <span aria-current="page" className="max-w-[18rem] truncate px-1 py-0.5 font-medium text-fg">
+            {file.title}
+          </span>
+        </li>
       </ol>
     </nav>
   );
