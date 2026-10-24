@@ -147,6 +147,10 @@ export function FilePage() {
     mutationFn: (form: FormData) => api.replaceFile(fileId, form),
     onSettled: changed,
   });
+  const retry = useMutation({
+    mutationFn: (versionId: string) => api.retryVersion(versionId),
+    onSettled: changed,
+  });
   const save = useMutation({ mutationFn: () => saveVersion(shown!.id, shown!.fileName) });
 
   if (isPending) return <Loading what="file" />;
@@ -180,6 +184,7 @@ export function FilePage() {
     hasPublished: file.indexedVersion !== null,
     role,
   });
+  const failedId = file.latestVersion?.id;
   const type = fileType(file.title, shown?.mimeType ?? latest?.mimeType);
   const info = (
     <FileRail
@@ -259,11 +264,18 @@ export function FilePage() {
 
       {controls.managedBy && <p className="text-sm text-muted">Kept in sync by a source: replace it there.</p>}
       {banner && (
-        <p role="note" className={`rounded-md border px-3 py-2 text-sm ${BANNER_TONE[banner.tone]}`}>
-          {banner.text}
-        </p>
+        <div className={`flex flex-wrap items-center justify-between gap-3 rounded-md border px-3 py-2 ${BANNER_TONE[banner.tone]}`}>
+          <p role="note" className="text-sm">
+            {banner.text}
+          </p>
+          {controls.retry && failedId && (
+            <Button variant="secondary" onClick={() => retry.mutate(failedId)} disabled={retry.isPending}>
+              {retry.isPending ? 'Retrying…' : 'Retry'}
+            </Button>
+          )}
+        </div>
       )}
-      <ErrorNote error={save.error ?? replace.error} />
+      <ErrorNote error={save.error ?? replace.error ?? retry.error} />
       {replace.data?.unchanged && (
         <p role="status" className="text-sm text-muted">
           That is the same file that is already here.

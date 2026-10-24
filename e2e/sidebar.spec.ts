@@ -116,6 +116,38 @@ test('a page is renamed from the sidebar: right-click, rename, Enter', async ({ 
   await expect(side.getByRole('link', { name: /^Old name/ })).toHaveCount(0);
 });
 
+test('a page is archived from the sidebar: right-click, Archive, confirm', async ({ browser, request }) => {
+  const world = await seedWorld(request, { reviewRequired: false });
+  await makePage(request, world, world.owner, 'Old notes', 'old-notes');
+  const page = await openAs(browser, world, world.owner);
+  await page.goto(`/w/${world.slug}`);
+  const side = sidebar(page);
+  await side.getByRole('button', { name: 'Expand Docs' }).click();
+
+  await side.getByRole('link', { name: /^Old notes/ }).click({ button: 'right' });
+  await side.getByRole('menuitem', { name: 'Archive…' }).click();
+  await page.getByRole('button', { name: 'Archive page' }).click();
+
+  await expect(side.getByRole('link', { name: /^Old notes/ })).toHaveCount(0);
+});
+
+test('a space is archived from the sidebar: right-click, Archive space, confirm', async ({ browser, request }) => {
+  const world = await seedWorld(request, { reviewRequired: false });
+  const page = await openAs(browser, world, world.owner);
+  await page.goto(`/w/${world.slug}`);
+  const side = sidebar(page);
+
+  const name = `Empty ${world.suffix}`;
+  await side.getByRole('button', { name: 'New space' }).click();
+  await page.getByLabel('New space name').fill(name);
+  await page.keyboard.press('Enter');
+  await side.getByRole('button', { name: new RegExp(`^(Expand|Collapse) ${name}$`) }).click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'Archive space…' }).click();
+  await page.getByRole('button', { name: 'Archive space' }).click();
+
+  await expect(side.getByRole('button', { name: new RegExp(`^(Expand|Collapse) ${name}$`) })).toHaveCount(0);
+});
+
 test('a space is made from the sidebar', async ({ browser, request }) => {
   const world = await seedWorld(request, { reviewRequired: false });
   const page = await openAs(browser, world, world.owner);

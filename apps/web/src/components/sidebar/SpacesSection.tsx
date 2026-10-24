@@ -13,6 +13,7 @@ import { canAdminister } from '../../lib/console.js';
 import { BookIcon, ChevronDownIcon, ChevronRightIcon, InboxIcon, PageIcon, PlusIcon } from '../icons.js';
 import { AddMenu } from '../AddMenu.js';
 import { DocumentLink } from '../DocumentLink.js';
+import { Confirm } from '../lifecycle.js';
 import { AttentionDot } from './AttentionDot.js';
 import { ContextMenu, ContextMenuItem } from './ContextMenu.js';
 import { NewPageRow } from './NewPageRow.js';
@@ -26,8 +27,25 @@ type Adding = { spaceId: string; parentId: string | null } | null;
 /** The row being renamed, and the name it has now. */
 type Renaming = { id: string; kind: 'page' | 'file'; title: string } | null;
 
+/** A row the context menu can act on: a page, a file, or a whole space. */
+type MenuTarget = {
+  id: string;
+  kind: 'page' | 'file' | 'space';
+  title: string;
+  canRename: boolean;
+  canArchive: boolean;
+};
+
 /** The row whose menu is open, and where the pointer was. */
-type Menu = { id: string; kind: 'page' | 'file'; title: string; canRename: boolean; x: number; y: number } | null;
+type Menu = (MenuTarget & { x: number; y: number }) | null;
+
+function archiveText(node: MenuTarget): string {
+  if (node.kind === 'space') {
+    return `“${node.title}” leaves the sidebar. Every document in the space must be archived first.`;
+  }
+  const page = node.kind === 'page' ? ' A page with live child pages cannot be archived.' : '';
+  return `“${node.title}” leaves the tree and search.${page}`;
+}
 
 /** What is being dragged: a page or a file. */
 interface Dragged {
@@ -71,7 +89,7 @@ interface TreeActions {
   /** Saves a new name for a row. */
   saveRename: (node: Dragged & { title: string }) => void;
   /** Opens the row's menu where the pointer was. */
-  openMenu: (e: MouseEvent, node: Dragged & { title: string; canRename: boolean }) => void;
+  openMenu: (e: MouseEvent, node: MenuTarget) => void;
   /** Moves the dragged document under (or into) the target. */
   drop: (e: DragEvent, target: { spaceId: string; parentId: string | null }) => void;
 }
@@ -90,6 +108,7 @@ function PageNode({
   spaceId,
   tenantSlug,
   canAdd,
+  canArchive,
   expanded,
   toggle,
   adding,
@@ -101,6 +120,7 @@ function PageNode({
   spaceId: string;
   tenantSlug: string;
   canAdd: boolean;
+  canArchive: boolean;
   expanded: ReadonlySet<string>;
   toggle: (id: string) => void;
   adding: Adding;
@@ -155,8 +175,15 @@ function PageNode({
               e.dataTransfer.effectAllowed = 'move';
             }}
             onContextMenu={(e) => {
+              if (!canAdd && !canArchive) return;
               e.preventDefault();
-              actions.openMenu(e, { id: node.id, kind: node.kind, title: node.title, canRename: canAdd });
+              actions.openMenu(e, {
+                id: node.id,
+                kind: node.kind,
+                title: node.title,
+                canRename: canAdd,
+                canArchive,
+              });
             }}
           >
             <span className="flex size-5 shrink-0 items-center justify-center text-base text-muted">
@@ -199,6 +226,7 @@ function PageNode({
               spaceId={spaceId}
               tenantSlug={tenantSlug}
               canAdd={canAdd}
+              canArchive={canArchive}
               expanded={expanded}
               toggle={toggle}
               adding={adding}
@@ -256,6 +284,8 @@ function SpaceNode({
   const { enqueue } = useUploads();
   const items = nodes ? buildTree(nodes) : [];
   const canAdd = canCreatePages(space.myRole);
+  const canArchiveDocuments = space.myRole === 'admin';
+  const canArchiveSpace = canArchiveDocuments && space.kind !== 'inbox';
 
   // Opening a page reveals it: its parents open once per page, and the person can close them again.
   const revealedFor = useRef<string | undefined>(undefined);
@@ -284,6 +314,17 @@ function SpaceNode({
           aria-label={`${open ? 'Collapse' : 'Expand'} ${space.name}`}
           aria-expanded={open}
           onClick={() => toggle(space.id)}
+          onContextMenu={(e) => {
+            if (!canArchiveSpace) return;
+            e.preventDefault();
+            actions.openMenu(e, {
+              id: space.id,
+              kind: 'space',
+              title: space.name,
+              canRename: false,
+              canArchive: true,
+            });
+          }}
           className={`${ROW} min-w-0 flex-1 ${active ? ROW_ACTIVE : ''}`}
         >
           <span className="flex size-5 shrink-0 items-center justify-center text-base text-muted" aria-hidden="true">
@@ -328,6 +369,7 @@ function SpaceNode({
               spaceId={space.id}
               tenantSlug={tenantSlug}
               canAdd={canAdd}
+              canArchive={canArchiveDocuments}
               expanded={expanded}
               toggle={toggle}
               adding={adding}
@@ -360,9 +402,26 @@ export function SpacesSection() {
   const [adding, setAdding] = useState<Adding>(null);
   const [renaming, setRenaming] = useState<Renaming>(null);
   const [menu, setMenu] = useState<Menu>(null);
+  const [archiving, setArchiving] = useState<Menu>(null);
   const [creatingSpace, setCreatingSpace] = useState(false);
+  const archiveDialog = useRef<HTMLDivElement>(null);
 
   useEffect(() => saveExpanded(tenant.id, expanded), [tenant.id, expanded]);
+
+  // The archive confirmation is a modal: Escape and a click outside dismiss it, and Cancel takes the focus
+  // so a stray Enter cannot delete anything.
+  useEffect(() => {
+    if (!archiving) return;
+    const buttons = archiveDialog.current?.querySelectorAll<HTMLButtonElement>('button');
+    buttons?.[buttons.length - 1]?.focus();
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key !== 'Escape') return;
+      e.preventDefault();
+      setArchiving(null);
+    }
+    document.addEventListener('keydown', onKeyDown, true);
+    return () => document.removeEventListener('keydown', onKeyDown, true);
+  }, [archiving]);
 
   const open = spaces.filter((s) => s.archivedAt === null);
   // The space being read: the page's, or the one named in the address.
@@ -490,12 +549,64 @@ export function SpacesSection() {
             <ContextMenuItem
               label="Rename"
               onSelect={() => {
-                setRenaming({ id: menu.id, kind: menu.kind, title: menu.title });
+                setRenaming({ id: menu.id, kind: menu.kind as 'page' | 'file', title: menu.title });
+                setMenu(null);
+              }}
+            />
+          )}
+          {menu.canArchive && (
+            <ContextMenuItem
+              label={menu.kind === 'space' ? 'Archive space…' : 'Archive…'}
+              danger
+              onSelect={() => {
+                setArchiving(menu);
                 setMenu(null);
               }}
             />
           )}
         </ContextMenu>
+      )}
+      {archiving && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-overlay p-4"
+          onClick={() => setArchiving(null)}
+        >
+          <div
+            ref={archiveDialog}
+            role="dialog"
+            aria-modal="true"
+            aria-label={`Archive ${archiving.title}`}
+            className="w-full max-w-sm rounded-lg border border-line bg-surface p-4 shadow-pop"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <p className="mb-3 text-sm font-medium">
+              {archiving.kind === 'space' ? 'Archive space' : `Archive ${archiving.kind}`}
+            </p>
+            <Confirm
+              text={archiveText(archiving)}
+              label={archiving.kind === 'space' ? 'Archive space' : `Archive ${archiving.kind}`}
+              run={async () => {
+                const node = archiving;
+                const result =
+                  node.kind === 'space'
+                    ? await api.archiveSpace(node.id)
+                    : node.kind === 'page'
+                      ? await api.archivePage(node.id)
+                      : await api.archiveFile(node.id);
+                setArchiving(null);
+                void refresh('tree');
+                void refresh('archived');
+                void refresh('spaces');
+                void refresh('updates');
+                void refresh('reviews');
+                void refresh('recent');
+                if (node.kind !== 'space') void refresh(node.kind, node.id);
+                return result;
+              }}
+              onCancel={() => setArchiving(null)}
+            />
+          </div>
+        </div>
       )}
     </>
   );

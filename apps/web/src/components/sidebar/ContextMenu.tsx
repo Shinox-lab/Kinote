@@ -1,6 +1,6 @@
 import { useEffect, useRef, type ReactNode } from 'react';
 
-const ITEM = 'block w-full rounded px-2 py-1.5 text-left text-sm text-fg hover:bg-hover focus-visible:bg-hover';
+const ITEM = 'block w-full rounded px-2 py-1.5 text-left text-sm hover:bg-hover focus-visible:bg-hover';
 
 /**
  * The menu a right-click opens: a small list of actions where the pointer was.
@@ -49,17 +49,31 @@ export function ContextMenu({
       role="menu"
       aria-label={label}
       style={{ left: `${x}px`, top: `${y}px` }}
-      className="fixed z-50 w-44 rounded-md border border-line bg-surface p-1 shadow-pop"
+      className="fixed z-50 w-52 rounded-md border border-line bg-surface p-1 shadow-pop"
     >
+      <p className="truncate px-2 pb-1 pt-0.5 text-[10.5px] font-medium uppercase tracking-wide text-muted">{label}</p>
       {children}
     </div>
   );
 }
 
-/** One action of a {@link ContextMenu}. */
-export function ContextMenuItem({ label, onSelect }: { label: string; onSelect: () => void }) {
+/** One action of a {@link ContextMenu}. `danger` marks a destructive action, like archiving. */
+export function ContextMenuItem({
+  label,
+  onSelect,
+  danger = false,
+}: {
+  label: string;
+  onSelect: () => void;
+  danger?: boolean;
+}) {
   return (
-    <button type="button" role="menuitem" className={ITEM} onClick={onSelect}>
+    <button
+      type="button"
+      role="menuitem"
+      className={`${ITEM} ${danger ? 'text-danger hover:bg-danger-bg focus-visible:bg-danger-bg' : 'text-fg'}`}
+      onClick={onSelect}
+    >
       {label}
     </button>
   );

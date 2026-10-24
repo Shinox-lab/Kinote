@@ -33,7 +33,9 @@ export default function PdfViewer({ bytes, page }: { bytes: ArrayBuffer; page?: 
     openPdf<PDFDocumentProxy>(
       async () => {
         const [pdfjs, worker] = await Promise.all([import('pdfjs-dist'), import('pdfjs-dist/build/pdf.worker.min.mjs?url')]);
-        pdfjs.GlobalWorkerOptions.workerSrc = worker.default;
+        // `v=2` busts the copy nginx used to serve as application/octet-stream: the worker's own
+        // name is content-hashed, so a browser would otherwise keep the unusable cached response.
+        pdfjs.GlobalWorkerOptions.workerSrc = `${worker.default}?v=2`;
         return () =>
           pdfjs.getDocument({ data: new Uint8Array(bytes.slice(0)), disableAutoFetch: true, useSystemFonts: false });
       },
