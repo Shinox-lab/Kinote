@@ -28,7 +28,7 @@ export type IndexVersionResult =
 
 /**
  * Rows per multi-row INSERT. Each row binds about a dozen parameters (the
- * halfvec travels as one text literal of ~1536 numbers), so 100 rows stay far
+ * halfvec travels as one text literal of ~2560 numbers), so 100 rows stay far
  * below Postgres's 65535-parameter limit and keep a statement to ~1.5 MB.
  */
 const INSERT_BATCH_ROWS = 100;

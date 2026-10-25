@@ -254,7 +254,7 @@ export const chunks = pgTable(
     text: text('text').notNull(),
     tokenCount: integer('token_count').notNull(),
     contentHash: text('content_hash').notNull(),
-    embedding: halfvec(1536)('embedding').notNull(),
+    embedding: halfvec(2560)('embedding').notNull(),
     embeddingModel: text('embedding_model').notNull(),
     /**
      * `"{createdByType}:{createdBy}"` of the document while its space is the
@@ -280,7 +280,7 @@ export const embeddingCache = pgTable(
       .references(() => tenants.id),
     model: text('model').notNull(),
     contentHash: text('content_hash').notNull(),
-    embedding: halfvec(1536)('embedding').notNull(),
+    embedding: halfvec(2560)('embedding').notNull(),
   },
   (t) => [uniqueIndex('embedding_cache_lookup_idx').on(t.tenantId, t.model, t.contentHash)]
 );

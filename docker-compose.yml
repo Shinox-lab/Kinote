@@ -30,7 +30,6 @@ x-app-env: &app-env
   AUTH_RATE_LIMIT_MAX: ${AUTH_RATE_LIMIT_MAX:-10}
   LOG_LEVEL: ${LOG_LEVEL:-info}
   EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-deterministic}
-  EMBEDDING_DIMENSIONS: "1536"
   # MinIO is the bundled default; set S3_ENDPOINT to a vetted external store in
   # production (the minio service still runs but is unused by the app).
   S3_ENDPOINT: ${S3_ENDPOINT:-http://minio:9000}

@@ -21,7 +21,7 @@ import { fileURLToPath } from 'node:url';
 import { build, createLogger, preview, type PreviewServer } from 'vite';
 import { assertEmbeddingDimensions, closeDb } from '@living-wiki/db';
 import { createTestDb } from '@living-wiki/db/testing';
-import { FakeExtractor, defaultEmbeddingProvider } from '@living-wiki/core';
+import { EMBEDDING_DIMENSIONS, FakeExtractor, defaultEmbeddingProvider } from '@living-wiki/core';
 import { InMemoryObjectStorage, loadConfig } from '@living-wiki/shared';
 import { buildApiServer } from '../../apps/api/src/server.js';
 import { HttpCollabClient } from '../../apps/api/src/collab/client.js';
@@ -50,22 +50,22 @@ const webPort = port('E2E_WEB_PORT', 15173);
 // The secrets only live as long as this process.
 process.env.COLLAB_TOKEN_SECRET ??= 'e2e-collab-token-secret-0123456789abcdef';
 const internalSecret = process.env.INTERNAL_SECRET ?? 'e2e-internal-secret-0123456789abcdef0123456789';
-// Honours EMBEDDING_PROVIDER and EMBEDDING_DIMENSIONS exactly like the services.
+// Honours EMBEDDING_PROVIDER exactly like the services; the index width is fixed.
 const config = loadConfig({
   ...process.env,
   DATABASE_URL: 'pglite',
   INTERNAL_SECRET: internalSecret,
   EMBEDDING_PROVIDER: process.env.EMBEDDING_PROVIDER ?? 'deterministic',
 });
-if (defaultEmbeddingProvider.dimensions !== config.EMBEDDING_DIMENSIONS) {
+if (defaultEmbeddingProvider.dimensions !== EMBEDDING_DIMENSIONS) {
   throw new Error(
     `Embedding provider "${defaultEmbeddingProvider.model}" produces ${defaultEmbeddingProvider.dimensions}-dimension ` +
-      `vectors but EMBEDDING_DIMENSIONS is ${config.EMBEDDING_DIMENSIONS}.`
+      `vectors but the index is halfvec(${EMBEDDING_DIMENSIONS}).`
   );
 }
 
 const { db } = await createTestDb();
-await assertEmbeddingDimensions(db, config.EMBEDDING_DIMENSIONS);
+await assertEmbeddingDimensions(db, EMBEDDING_DIMENSIONS);
 
 const collab = createCollabServer({
   collabTokenSecret: process.env.COLLAB_TOKEN_SECRET,

@@ -1,4 +1,5 @@
 import { assertEmbeddingDimensions, closeDb, initDb } from '@living-wiki/db';
+import { EMBEDDING_DIMENSIONS } from '@living-wiki/core';
 import { createObjectStorage, loadConfig } from '@living-wiki/shared';
 import { buildApiServer } from './server.js';
 import { HttpCollabClient } from './collab/client.js';
@@ -6,7 +7,7 @@ import { HttpCollabClient } from './collab/client.js';
 async function main(): Promise<void> {
   const config = loadConfig();
   const db = initDb({ url: config.DATABASE_URL });
-  await assertEmbeddingDimensions(db, config.EMBEDDING_DIMENSIONS);
+  await assertEmbeddingDimensions(db, EMBEDDING_DIMENSIONS);
 
   const storage = createObjectStorage(config);
   await storage.ensureBucket();

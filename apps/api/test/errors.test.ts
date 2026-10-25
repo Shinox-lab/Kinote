@@ -243,6 +243,8 @@ describe('error model', () => {
       quota_exceeded: 429,
       rate_limited: 429,
       embedding_unavailable: 503,
+      search_unavailable: 503,
+      llm_unavailable: 503,
       extractor_unavailable: 503,
       source_unavailable: 503,
       internal_error: 500,

@@ -15,7 +15,7 @@ import {
   withTenantTx,
 } from '../src/index.js';
 
-const DIMS = 1536;
+const DIMS = 2560;
 const pattern = (): number[] => Array.from({ length: DIMS }, (_, i) => ((i % 17) - 8) / 16);
 
 beforeEach(async () => {
@@ -84,7 +84,7 @@ describe('halfvec round trip through Drizzle', () => {
     return { tenantId, spaceId, documentId, versionId };
   }
 
-  it('chunks.embedding reads back as number[] of length 1536', async () => {
+  it('chunks.embedding reads back as number[] of length 2560', async () => {
     const s = await seedVersion();
     const embedding = pattern();
     await withTenantTx(s.tenantId, (tx) =>
@@ -112,7 +112,7 @@ describe('halfvec round trip through Drizzle', () => {
     expectClose(row.embedding, embedding);
   });
 
-  it('embedding_cache.embedding reads back as number[] of length 1536', async () => {
+  it('embedding_cache.embedding reads back as number[] of length 2560', async () => {
     const s = await seedVersion();
     const embedding = new Array<number>(DIMS).fill(0.25);
     await withTenantTx(s.tenantId, (tx) =>
@@ -130,13 +130,13 @@ describe('halfvec round trip through Drizzle', () => {
 
 describe('assertEmbeddingDimensions', () => {
   it('resolves when the declared dimension matches', async () => {
-    await expect(assertEmbeddingDimensions(getDb(), 1536)).resolves.toBeUndefined();
+    await expect(assertEmbeddingDimensions(getDb(), 2560)).resolves.toBeUndefined();
   });
 
   it('rejects naming the declared type and the expected dimension', async () => {
     const err = await assertEmbeddingDimensions(getDb(), 768).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(Error);
-    expect((err as Error).message).toContain('halfvec(1536)');
+    expect((err as Error).message).toContain('halfvec(2560)');
     expect((err as Error).message).toContain('768');
   });
 });

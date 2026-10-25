@@ -1,5 +1,6 @@
 import { test, describe, beforeAll, afterAll } from 'vitest';
 import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -157,6 +158,45 @@ describe('migration chain', () => {
     assert.equal(tsv[0]!.data_type, 'tsvector');
     assert.equal(tsv[0]!.is_generated, 'ALWAYS');
     assert.match(tsv[0]!.generation_expression, /to_tsvector\('simple'::regconfig, text\)/);
+  });
+
+  test('the 2560 reindex step requeues each indexed version once', async () => {
+    const tenantId = randomUUID();
+    const spaceId = randomUUID();
+    const documentId = randomUUID();
+    const versionId = randomUUID();
+    const actor = randomUUID();
+
+    await client.exec(`
+      INSERT INTO tenants (id, name, slug) VALUES ('${tenantId}', 't', 't-${tenantId}');
+      INSERT INTO spaces (id, tenant_id, name, slug, created_by)
+        VALUES ('${spaceId}', '${tenantId}', 's', 's', '${actor}');
+      INSERT INTO documents (id, tenant_id, space_id, kind, title, created_by_type, created_by)
+        VALUES ('${documentId}', '${tenantId}', '${spaceId}', 'page', 'Doc', 'user', '${actor}');
+      INSERT INTO versions
+        (id, tenant_id, document_id, number, title, status, content_hash, reason, created_by_type, created_by)
+        VALUES ('${versionId}', '${tenantId}', '${documentId}', 1, 'Doc', 'indexed', 'h', 'quiet', 'user', '${actor}');
+      DROP INDEX chunks_embedding_hnsw_idx;
+    `);
+
+    const sqlText = fs.readFileSync(
+      path.join(MIGRATIONS_DIR, '0018_embedding_2560_reindex.sql'),
+      'utf8'
+    );
+    await client.exec(sqlText.replaceAll('--> statement-breakpoint', ''));
+
+    const versions = await rows<{ status: string }>(
+      `SELECT status FROM versions WHERE id = '${versionId}'`
+    );
+    assert.equal(versions[0]!.status, 'indexing');
+
+    const jobs = await rows<{ idempotency_key: string; payload: { versionId: string }; status: string }>(
+      `SELECT idempotency_key, payload, status FROM jobs WHERE tenant_id = '${tenantId}'`
+    );
+    assert.equal(jobs.length, 1);
+    assert.equal(jobs[0]!.idempotency_key, `index:${versionId}`);
+    assert.equal(jobs[0]!.payload.versionId, versionId);
+    assert.equal(jobs[0]!.status, 'queued');
   });
 
   test('no migration file contains a password', () => {

@@ -1,3 +1,6 @@
+/** The one index width this release supports. The database columns are halfvec(2560). */
+export const EMBEDDING_DIMENSIONS = 2560;
+
 export interface EmbeddingProvider {
   readonly model: string;
   readonly dimensions: number;
@@ -6,12 +9,12 @@ export interface EmbeddingProvider {
 
 /**
  * Deterministic token-aware embedding provider for repeatable local and CI evaluation.
- * Produces L2-normalized vectors in halfvec(1536) space so semantically overlapping queries
+ * Produces L2-normalized vectors in halfvec(2560) space so semantically overlapping queries
  * and chunks rank naturally via cosine distance (<=>).
  */
 export class DeterministicEmbeddingProvider implements EmbeddingProvider {
-  readonly model = 'living-wiki-deterministic-1536-v1';
-  readonly dimensions = 1536;
+  readonly model = 'living-wiki-deterministic-2560-v1';
+  readonly dimensions = EMBEDDING_DIMENSIONS;
   public callCount = 0;
 
   async embed(texts: string[]): Promise<number[][]> {

@@ -18,8 +18,8 @@ import {
 /** An embedding provider whose service is always down, failing with `message`. */
 function failingProvider(message: string): EmbeddingProvider {
   return {
-    model: 'living-wiki-deterministic-1536-v1',
-    dimensions: 1536,
+    model: 'living-wiki-deterministic-2560-v1',
+    dimensions: 2560,
     async embed() {
       throw new Error(message);
     },
@@ -275,8 +275,8 @@ describe('failed versions and retry', () => {
     const { tenant, v1 } = ctx;
     // Not an AppError: the provider answers with the wrong number of vectors.
     const wrongCount: EmbeddingProvider = {
-      model: 'living-wiki-deterministic-1536-v1',
-      dimensions: 1536,
+      model: 'living-wiki-deterministic-2560-v1',
+      dimensions: 2560,
       async embed() {
         return [];
       },

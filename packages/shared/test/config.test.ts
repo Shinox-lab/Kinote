@@ -13,6 +13,7 @@ describe('loadConfig: auth rate limit and embeddings', () => {
     expect(config.AUTH_RATE_LIMIT_MAX).toBe(DEFAULT_AUTH_RATE_LIMIT_MAX);
     expect(DEFAULT_AUTH_RATE_LIMIT_MAX).toBe(10);
     expect(config.EMBEDDING_PROVIDER).toBe('deterministic');
+    expect('EMBEDDING_DIMENSIONS' in config).toBe(false);
   });
 
   it('reads AUTH_RATE_LIMIT_MAX and EMBEDDING_PROVIDER from the environment', () => {

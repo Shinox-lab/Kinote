@@ -119,8 +119,8 @@ describe('indexVersion for file versions', () => {
     await indexVersion({ tenantId: seed.tenantId, versionId: v1.id }, new DeterministicEmbeddingProvider(), { storage });
     const v2 = await ready(seed, 'handbook.pdf', pdf(section([], 1, 'A completely different sentence.')));
     const down: EmbeddingProvider = {
-      model: 'living-wiki-deterministic-1536-v1',
-      dimensions: 1536,
+      model: 'living-wiki-deterministic-2560-v1',
+      dimensions: 2560,
       embed: async () => {
         throw new Error('down');
       },

@@ -2,9 +2,9 @@ import { sql } from 'drizzle-orm';
 import { rowsOf, type Db } from './client.js';
 
 /**
- * Start-up guard: the `chunks.embedding` column is declared `halfvec(n)` by a
- * migration, so a changed EMBEDDING_DIMENSIONS needs a migration too. Fails
- * fast (naming the declared type) instead of at the first insert.
+ * Start-up guard: the `chunks.embedding` column is declared `halfvec(2560)` by
+ * the migration chain. Fails fast (naming the declared type) instead of at the
+ * first insert.
  */
 export async function assertEmbeddingDimensions(db: Db, expected: number): Promise<void> {
   const result = await db.execute(sql`
@@ -22,8 +22,8 @@ export async function assertEmbeddingDimensions(db: Db, expected: number): Promi
   }
   if (declared !== `halfvec(${expected})`) {
     throw new Error(
-      `chunks.embedding is ${declared} but EMBEDDING_DIMENSIONS=${expected}; ` +
-        `change the column with a migration or fix the configuration.`
+      `chunks.embedding is ${declared} but the index expects halfvec(${expected}); ` +
+        `run the 2560 migration.`
     );
   }
 }

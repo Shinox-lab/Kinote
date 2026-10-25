@@ -21,6 +21,7 @@ export {
   type RawChunk,
 } from './indexing/chunkPage.js';
 export {
+  EMBEDDING_DIMENSIONS,
   DeterministicEmbeddingProvider,
   defaultEmbeddingProvider,
   type EmbeddingProvider,

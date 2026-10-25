@@ -72,12 +72,12 @@ describe('indexVersion embedding cache hit', () => {
     expect(rows[0].blockIds).toEqual([blocks[0].id]);
     expect(rows[0].text).toBe('# Policy\n\nRemote work is allowed three days per week.');
     expect(Array.isArray(rows[0].embedding)).toBe(true);
-    expect(rows[0].embedding).toHaveLength(1536);
+    expect(rows[0].embedding).toHaveLength(2560);
 
     const cache = await withTenantTx(tenantId, (tx) =>
       tx.select().from(embeddingCache).where(eq(embeddingCache.tenantId, tenantId))
     );
     expect(cache).toHaveLength(1);
-    expect(cache[0].embedding).toHaveLength(1536);
+    expect(cache[0].embedding).toHaveLength(2560);
   });
 });

@@ -46,7 +46,6 @@ export const ConfigSchema = z.object({
   /** pino level of the api's log (stdout). Request headers and bodies are never logged. */
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
   EMBEDDING_PROVIDER: z.enum(['deterministic']).default('deterministic'),
-  EMBEDDING_DIMENSIONS: z.coerce.number().int().positive().max(4000).default(1536),
   S3_ENDPOINT: z.string().min(1).optional(),
   S3_BUCKET: z.string().min(1).optional(),
   S3_ACCESS_KEY: z.string().min(1).optional(),

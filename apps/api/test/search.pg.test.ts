@@ -22,7 +22,7 @@ import {
 const APP_URL = process.env.TEST_DATABASE_URL;
 const OWNER_URL = process.env.TEST_DATABASE_MIGRATE_URL;
 
-const DIMS = 1536;
+const DIMS = 2560;
 const CHUNKS_PER_SPACE = 500;
 
 /** A random unit vector as a halfvec text literal. */
