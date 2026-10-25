@@ -53,6 +53,36 @@ describe('loadConfig: auth rate limit and embeddings', () => {
       })
     ).toThrow(/EMBEDDING_MODEL/);
   });
+
+  it('defaults Ask to the deterministic provider with bounded settings', () => {
+    const config = loadConfig(base);
+    expect(config.ASK_PROVIDER).toBe('deterministic');
+    expect(config.ASK_TIMEOUT_MS).toBe(60_000);
+    expect(config.ASK_MAX_TOKENS).toBe(800);
+  });
+
+  it('accepts the OpenAI-compatible Ask provider with a base URL and model', () => {
+    const config = loadConfig({
+      ...base,
+      ASK_PROVIDER: 'openai',
+      ASK_BASE_URL: 'https://chat.example/v1',
+      ASK_MODEL: 'Qwen/Qwen3-8B',
+    });
+    expect(config.ASK_PROVIDER).toBe('openai');
+    expect(config.ASK_API_KEY).toBeUndefined();
+    expect(config.ASK_MAX_TOKENS).toBe(800);
+  });
+
+  it('requires the base URL and model for the OpenAI-compatible Ask provider', () => {
+    expect(() => loadConfig({ ...base, ASK_PROVIDER: 'openai' })).toThrow(/ASK_BASE_URL/);
+    expect(() =>
+      loadConfig({
+        ...base,
+        ASK_PROVIDER: 'openai',
+        ASK_BASE_URL: 'https://chat.example/v1',
+      })
+    ).toThrow(/ASK_MODEL/);
+  });
 });
 
 describe('loadConfig: logging', () => {

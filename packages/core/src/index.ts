@@ -30,6 +30,14 @@ export {
   type EmbeddingProvider,
 } from './embedding.js';
 export {
+  DeterministicAnswerProvider,
+  NO_RELEVANT_ANSWER,
+  OpenAIAnswerProvider,
+  createAnswerProvider,
+  defaultAnswerProvider,
+  type AnswerProvider,
+} from './answer.js';
+export {
   detectFileType,
   listZipEntries,
   cleanFileName,

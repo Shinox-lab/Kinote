@@ -50,8 +50,10 @@ import {
 } from '@living-wiki/contracts';
 import {
   getReadableSpaceIds,
+  defaultAnswerProvider,
   defaultEmbeddingProvider,
   type Actor,
+  type AnswerProvider,
   type EmbeddingProvider,
 } from '@living-wiki/core';
 import {
@@ -156,6 +158,8 @@ export interface ApiServerOptions {
   maxUploadBytes?: number;
   /** Embeddings for search and Ask queries. Default: the deterministic test provider. */
   embeddingProvider?: EmbeddingProvider;
+  /** Answers for Ask. Default: the deterministic quoted-passage provider. */
+  answerProvider?: AnswerProvider;
 }
 
 const DEFAULT_MAX_UPLOAD_BYTES = 52_428_800;
@@ -193,6 +197,7 @@ function sessionOf(req: FastifyRequest): AuthSession {
 
 export function buildApiServer(opts: ApiServerOptions = {}) {
   const embeddingProvider = opts.embeddingProvider ?? defaultEmbeddingProvider;
+  const answerProvider = opts.answerProvider ?? defaultAnswerProvider;
   const app = Fastify({
     logger: fastifyLogger(opts.logger),
     trustProxy: trustProxyOption(opts.trustProxy),
@@ -675,7 +680,15 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
       const effectiveSpaces = parsed.space_ids
         ? readableSpaceIds.filter((id) => parsed.space_ids!.includes(id))
         : readableSpaceIds;
-      return askWiki(tx, actor, effectiveSpaces, inboxSpaceId, parsed.question, queryEmbedding);
+      return askWiki(
+        tx,
+        actor,
+        effectiveSpaces,
+        inboxSpaceId,
+        parsed.question,
+        queryEmbedding,
+        answerProvider
+      );
     });
     return reply.send(parseReply(AskResponseSchema, res));
   });

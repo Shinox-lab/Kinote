@@ -52,6 +52,12 @@ export const ConfigSchema = z.object({
   EMBEDDING_BATCH_SIZE: z.coerce.number().int().positive().max(2048).default(64),
   EMBEDDING_TIMEOUT_MS: z.coerce.number().int().positive().max(120_000).default(30_000),
   EMBEDDING_QUERY_INSTRUCTION: z.string().min(1).optional(),
+  ASK_PROVIDER: z.enum(['deterministic', 'openai']).default('deterministic'),
+  ASK_BASE_URL: z.string().url().optional(),
+  ASK_API_KEY: z.string().min(1).optional(),
+  ASK_MODEL: z.string().min(1).optional(),
+  ASK_TIMEOUT_MS: z.coerce.number().int().positive().max(120_000).default(60_000),
+  ASK_MAX_TOKENS: z.coerce.number().int().positive().max(8192).default(800),
   S3_ENDPOINT: z.string().min(1).optional(),
   S3_BUCKET: z.string().min(1).optional(),
   S3_ACCESS_KEY: z.string().min(1).optional(),
@@ -90,6 +96,22 @@ export const ConfigSchema = z.object({
         code: z.ZodIssueCode.custom,
         path: ['EMBEDDING_MODEL'],
         message: 'is required when EMBEDDING_PROVIDER is openai',
+      });
+    }
+  }
+  if (value.ASK_PROVIDER === 'openai') {
+    if (!value.ASK_BASE_URL) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['ASK_BASE_URL'],
+        message: 'is required when ASK_PROVIDER is openai',
+      });
+    }
+    if (!value.ASK_MODEL) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['ASK_MODEL'],
+        message: 'is required when ASK_PROVIDER is openai',
       });
     }
   }

@@ -1,6 +1,10 @@
 import type { DbTransaction } from '@living-wiki/db';
-import type { Actor } from '@living-wiki/core';
-import type { AskResponse, SearchPassage } from '@living-wiki/contracts';
+import {
+  defaultAnswerProvider,
+  type Actor,
+  type AnswerProvider,
+} from '@living-wiki/core';
+import { AppError, type AskResponse, type SearchPassage } from '@living-wiki/contracts';
 import { searchWiki } from './hybridSearch.js';
 
 export async function askWiki(
@@ -9,7 +13,8 @@ export async function askWiki(
   readableSpaceIds: string[],
   inboxSpaceId: string,
   question: string,
-  queryEmbedding: number[]
+  queryEmbedding: number[],
+  answerProvider: AnswerProvider = defaultAnswerProvider
 ): Promise<AskResponse> {
   // Rule 20: Retrieved text is data, not instructions. Passages are treated strictly as quotes.
   const passages: SearchPassage[] = await searchWiki(
@@ -30,7 +35,17 @@ export async function askWiki(
     };
   }
 
-  const top = passages[0];
+  let result;
+  try {
+    result = await answerProvider.answer({ question, passages });
+  } catch (err) {
+    if (err instanceof AppError) throw err;
+    throw new AppError('llm_unavailable');
+  }
+  if (!result.foundRelevant) {
+    return { answer: result.answer, foundRelevant: false, citations: [] };
+  }
+
   const citations = passages.map((p) => ({
     citeAs: p.citeAs,
     documentId: p.documentId,
@@ -46,9 +61,8 @@ export async function askWiki(
     quote: p.text.slice(0, 300),
   }));
 
-  const summaryLines = passages.map((p) => `${p.text} [${p.citeAs}]`);
   return {
-    answer: `Based on indexed wiki sources (${top.citeAs}): ${summaryLines.join(' — ')}`,
+    answer: result.answer,
     foundRelevant: true,
     citations,
   };
