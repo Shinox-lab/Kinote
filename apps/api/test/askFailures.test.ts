@@ -36,7 +36,11 @@ const countingApp = buildTestApp({ answerProvider: counting });
 const embeddingApp = buildTestApp({ embeddingProvider: embeddingDown, answerProvider: counting });
 useTestDb();
 
-async function indexedPage(app: ReturnType<typeof buildTestApp>, headers: Record<string, string>) {
+async function indexedPage(
+  app: ReturnType<typeof buildTestApp>,
+  headers: Record<string, string>,
+  tenant: string
+) {
   const spaceRes = await app.inject({
     method: 'POST',
     url: '/api/v1/spaces',
@@ -64,7 +68,7 @@ async function indexedPage(app: ReturnType<typeof buildTestApp>, headers: Record
     headers,
   });
   expect(snap.statusCode).toBe(201);
-  await runPendingJobsForTenant(tenantId, { embeddingProvider: defaultEmbeddingProvider });
+  await runPendingJobsForTenant(tenant, { embeddingProvider: defaultEmbeddingProvider });
 }
 
 let tenantId: string;
@@ -79,7 +83,7 @@ beforeEach(async () => {
 
 describe('Ask failures', () => {
   test('a model failure is 503 llm_unavailable', async () => {
-    await indexedPage(failingApp, headers);
+    await indexedPage(failingApp, headers, tenantId);
     const res = await failingApp.inject({
       method: 'POST',
       url: '/api/v1/ask',
@@ -117,5 +121,41 @@ describe('Ask failures', () => {
     expect(res.statusCode).toBe(503);
     expect(res.json().error).toBe('search_unavailable');
     expect(answerCalls).toBe(0);
+  });
+
+  test('a slow model does not hold the database transaction', async () => {
+    let started!: () => void;
+    let release!: () => void;
+    const providerStarted = new Promise<void>((resolve) => (started = resolve));
+    const modelDone = new Promise<void>((resolve) => (release = resolve));
+    const slow: AnswerProvider = {
+      async answer() {
+        started();
+        await modelDone;
+        return { answer: 'done', foundRelevant: true };
+      },
+    };
+    const slowApp = buildTestApp({ answerProvider: slow });
+    const ctx = await bootstrapTenant(slowApp, { name: 'Slow model', slug: 'slow-model' });
+    await indexedPage(slowApp, ctx.headers, ctx.tenant.id);
+
+    const askPromise = slowApp.inject({
+      method: 'POST',
+      url: '/api/v1/ask',
+      headers: ctx.headers,
+      payload: { question: 'When do laptops arrive?' },
+    });
+    await providerStarted;
+
+    const spaces = await Promise.race([
+      slowApp.inject({ method: 'GET', url: '/api/v1/spaces', headers: ctx.headers }),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('database was blocked by the model call')), 1000)
+      ),
+    ]);
+    expect(spaces.statusCode).toBe(200);
+
+    release();
+    expect((await askPromise).statusCode).toBe(200);
   });
 });

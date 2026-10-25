@@ -194,8 +194,8 @@ enqueues nothing and simply leaves an empty 2560 index.
 - **Ask provider unit tests:** prompt contains only retrieved passages and their
   citations; no-answer sentence maps to `foundRelevant: false`; malformed/empty
   answer and timeout map to `llm_unavailable`.
-- **Config tests:** 2560 default; 4000 max; `openai` requires base URL and
-  model; deterministic works without either.
+- **Config tests:** fixed 2560 with no dimension setting; `openai` requires
+  base URL and model; deterministic works without either.
 - **API tests:** Ask returns 503 `llm_unavailable` when the injected answer
   provider fails, and Search/Ask return 503 `search_unavailable` when the
   injected embedding provider fails; the deterministic provider still passes

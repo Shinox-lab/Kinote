@@ -155,6 +155,10 @@ may use different hosts. A key is optional for a local endpoint without auth.
 `EMBEDDING_BATCH_SIZE` (default 64), `EMBEDDING_TIMEOUT_MS` (30000),
 `ASK_TIMEOUT_MS` (60000) and `ASK_MAX_TOKENS` (800) are the other bounds.
 
+**Data egress:** indexing sends each chunk's text to the embedding endpoint,
+and Ask sends the question plus the retrieved passages to the chat endpoint.
+Use a self-hosted or approved provider for sensitive wiki content.
+
 The local stack and `pnpm e2e` keep `deterministic` for both providers, so no
 network credentials are needed for tests.
 
@@ -169,6 +173,20 @@ the final embedding provider before the migrate service runs**, or the index
 will be rebuilt with the deterministic provider. Changing the model after
 that requires rebuilding the derived index again; this release has no
 automatic model-switch command.
+
+This migration is a maintenance window, not an online migration. Stop the old
+writers first, then let the one-shot `migrate` service finish before the new
+api and worker start:
+
+```sh
+docker compose stop api worker
+docker compose up -d --build
+```
+
+The migration locks `versions` before the chunks table, the same order an
+index job uses, so an in-flight writer cannot deadlock it. The worker—not the
+one-shot `migrate` service—drains the reindex jobs. Do not run an old 1536
+api or worker during the window.
 
 Search and Ask make a synchronous query-embedding call. If it fails, both
 return `503 search_unavailable`. If the Ask model itself fails, Ask returns

@@ -160,6 +160,74 @@ describe('migration chain', () => {
     assert.match(tsv[0]!.generation_expression, /to_tsvector\('simple'::regconfig, text\)/);
   });
 
+  test('a seeded 1536 database clears old vectors and rebuilds the index at 2560', async () => {
+    const legacy = new PGlite({ extensions: { vector } });
+    try {
+      const files = fs
+        .readdirSync(MIGRATIONS_DIR)
+        .filter((file) => file.endsWith('.sql'))
+        .sort();
+      const apply = async (file: string) => {
+        const sql = fs
+          .readFileSync(path.join(MIGRATIONS_DIR, file), 'utf8')
+          .replaceAll('--> statement-breakpoint', '');
+        await legacy.exec(sql);
+      };
+
+      for (const file of files.filter((file) => file < '0016')) await apply(file);
+
+      await legacy.exec(`
+        INSERT INTO tenants (id, name, slug) VALUES
+          ('11111111-1111-1111-1111-111111111111', 'legacy', 'legacy');
+        INSERT INTO spaces (id, tenant_id, name, slug, created_by) VALUES
+          ('22222222-2222-2222-2222-222222222222', '11111111-1111-1111-1111-111111111111', 'Docs', 'docs', '33333333-3333-3333-3333-333333333333');
+        INSERT INTO documents (id, tenant_id, space_id, kind, title, latest_version_id, indexed_version_id, created_by_type, created_by) VALUES
+          ('44444444-4444-4444-4444-444444444444', '11111111-1111-1111-1111-111111111111', '22222222-2222-2222-2222-222222222222', 'page', 'Old page', '55555555-5555-5555-5555-555555555555', '55555555-5555-5555-5555-555555555555', 'user', '33333333-3333-3333-3333-333333333333');
+        INSERT INTO versions (id, tenant_id, document_id, number, title, status, content_hash, reason, created_by_type, created_by) VALUES
+          ('55555555-5555-5555-5555-555555555555', '11111111-1111-1111-1111-111111111111', '44444444-4444-4444-4444-444444444444', 1, 'Old page', 'indexed', 'h', 'quiet', 'user', '33333333-3333-3333-3333-333333333333');
+        INSERT INTO chunks (tenant_id, space_id, document_id, version_id, ordinal, heading_path, block_ids, text, token_count, content_hash, embedding, embedding_model) VALUES
+          ('11111111-1111-1111-1111-111111111111', '22222222-2222-2222-2222-222222222222', '44444444-4444-4444-4444-444444444444', '55555555-5555-5555-5555-555555555555', 0, '{}', '{}', 'old text', 2, 'c', ('[' || array_to_string(array_fill(0.1::real, ARRAY[1536]), ',') || ']')::halfvec(1536), 'old-model');
+        INSERT INTO embedding_cache (tenant_id, model, content_hash, embedding) VALUES
+          ('11111111-1111-1111-1111-111111111111', 'old-model', 'c', ('[' || array_to_string(array_fill(0.1::real, ARRAY[1536]), ',') || ']')::halfvec(1536));
+      `);
+
+      for (const file of files.filter((file) => file >= '0016')) await apply(file);
+
+      const dimension = async (table: string) =>
+        (
+          await legacy.query<{ type: string }>(
+            `SELECT format_type(atttypid, atttypmod) AS type
+               FROM pg_attribute
+              WHERE attrelid = '${table}'::regclass AND attname = 'embedding'`
+          )
+        ).rows[0]!.type;
+      assert.equal(await dimension('chunks'), 'halfvec(2560)');
+      assert.equal(await dimension('embedding_cache'), 'halfvec(2560)');
+
+      const counts = await legacy.query<{ chunks: number; cache: number; versions: number; jobs: number }>(`
+        SELECT
+          (SELECT count(*)::int FROM chunks) AS chunks,
+          (SELECT count(*)::int FROM embedding_cache) AS cache,
+          (SELECT count(*)::int FROM versions) AS versions,
+          (SELECT count(*)::int FROM jobs WHERE queue = 'version.index') AS jobs
+      `);
+      assert.deepEqual(counts.rows[0], { chunks: 0, cache: 0, versions: 1, jobs: 1 });
+
+      const status = await legacy.query<{ status: string }>(
+        `SELECT status FROM versions WHERE id = '55555555-5555-5555-5555-555555555555'`
+      );
+      assert.equal(status.rows[0]!.status, 'indexing');
+      const index = await legacy.query<{ indexname: string }>(
+        `SELECT indexname FROM pg_indexes
+          WHERE schemaname = 'public' AND tablename = 'chunks'
+            AND indexname = 'chunks_embedding_hnsw_idx'`
+      );
+      assert.equal(index.rows.length, 1);
+    } finally {
+      await legacy.close();
+    }
+  });
+
   test('the 2560 reindex step requeues each indexed version once', async () => {
     const tenantId = randomUUID();
     const spaceId = randomUUID();

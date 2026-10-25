@@ -2,7 +2,11 @@ import { describe, test, beforeEach, afterEach, vi } from 'vitest';
 import assert from 'node:assert/strict';
 import { and, eq } from 'drizzle-orm';
 import { withTenantTx, versions, jobs, auditEvents, type Job } from '@living-wiki/db';
-import { UnavailableExtractor, type EmbeddingProvider } from '@living-wiki/core';
+import {
+  OpenAIEmbeddingProvider,
+  UnavailableExtractor,
+  type EmbeddingProvider,
+} from '@living-wiki/core';
 import { InMemoryObjectStorage } from '@living-wiki/shared';
 import { runPendingJobsForTenant } from '../../worker/src/runner.js';
 import { handlers } from '../../worker/src/registry.js';
@@ -243,6 +247,29 @@ describe('failed versions and retry', () => {
     assert.equal(unreadable.json().error, 'version_not_found');
 
     assert.equal((await loadVersion(tenant.id, v1.id)).status, 'failed');
+  });
+
+  test('an HTTP 401 keeps its neutral cause and does not promise a retry', async () => {
+    const { tenant, v1 } = ctx;
+    const provider = new OpenAIEmbeddingProvider({
+      baseUrl: 'https://models.example/v1',
+      model: 'test-model',
+      batchSize: 64,
+      timeoutMs: 1000,
+      fetchImpl: async () =>
+        new Response(JSON.stringify({ error: 'bad key' }), {
+          status: 401,
+          headers: { 'content-type': 'application/json' },
+        }),
+    });
+    const job = await runUntilDeadLetter(tenant.id, v1.id, provider);
+    assert.equal(job.attempts, 5);
+
+    const row = await loadVersion(tenant.id, v1.id);
+    assert.equal(row.status, 'failed');
+    assert.match(row.error ?? '', /401/);
+    assert.equal(row.error!.includes('retry automatically'), false);
+    assert.equal(row.error!.includes('bad key'), false);
   });
 
   test('a provider error containing NUL still ends with the version failed', async () => {

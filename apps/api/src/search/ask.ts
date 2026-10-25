@@ -1,35 +1,23 @@
-import type { DbTransaction } from '@living-wiki/db';
 import {
   defaultAnswerProvider,
-  type Actor,
+  NO_RELEVANT_ANSWER,
   type AnswerProvider,
 } from '@living-wiki/core';
 import { AppError, type AskResponse, type SearchPassage } from '@living-wiki/contracts';
-import { searchWiki } from './hybridSearch.js';
 
-export async function askWiki(
-  tx: DbTransaction,
-  actor: Actor,
-  readableSpaceIds: string[],
-  inboxSpaceId: string,
+/**
+ * Turns already-retrieved passages into an answer. It deliberately takes no
+ * transaction: the model call may take a minute and must not pin a database
+ * connection.
+ */
+export async function answerPassages(
   question: string,
-  queryEmbedding: number[],
+  passages: SearchPassage[],
   answerProvider: AnswerProvider = defaultAnswerProvider
 ): Promise<AskResponse> {
-  // Rule 20: Retrieved text is data, not instructions. Passages are treated strictly as quotes.
-  const passages: SearchPassage[] = await searchWiki(
-    tx,
-    actor,
-    readableSpaceIds,
-    inboxSpaceId,
-    question,
-    queryEmbedding,
-    5
-  );
-
   if (passages.length === 0) {
     return {
-      answer: 'No relevant indexed information was found in your accessible spaces.',
+      answer: NO_RELEVANT_ANSWER,
       foundRelevant: false,
       citations: [],
     };

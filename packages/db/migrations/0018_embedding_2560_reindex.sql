@@ -3,6 +3,9 @@
 -- the versions that were searchable before the migration. Each job is keyed
 -- exactly like a normal index job, so an existing completed/dead-lettered row
 -- is revived instead of duplicated.
+-- Keep the same version-first lock order as 0016.
+LOCK TABLE versions IN ACCESS EXCLUSIVE MODE;
+--> statement-breakpoint
 CREATE INDEX "chunks_embedding_hnsw_idx"
   ON "chunks" USING hnsw ("embedding" halfvec_cosine_ops);
 --> statement-breakpoint

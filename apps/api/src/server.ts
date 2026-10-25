@@ -126,7 +126,7 @@ import { requireSession, resolveActor, resolveSourceActor, type AuthSession, typ
 import { registerErrorHandler } from './errors.js';
 import { parseReply } from './reply.js';
 import { searchWiki } from './search/hybridSearch.js';
-import { askWiki } from './search/ask.js';
+import { answerPassages } from './search/ask.js';
 import type { CollabClient } from './collab/client.js';
 import { fastifyLogger, type ApiLoggerOptions } from './logger.js';
 
@@ -675,21 +675,22 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
       throw new AppError('search_unavailable');
     }
 
-    const res = await withTenantTx(actor.tenantId, async (tx) => {
+    const passages = await withTenantTx(actor.tenantId, async (tx) => {
       const { readableSpaceIds, inboxSpaceId } = await getReadableSpaceIds(tx, actor);
       const effectiveSpaces = parsed.space_ids
         ? readableSpaceIds.filter((id) => parsed.space_ids!.includes(id))
         : readableSpaceIds;
-      return askWiki(
+      return searchWiki(
         tx,
         actor,
         effectiveSpaces,
         inboxSpaceId,
         parsed.question,
         queryEmbedding,
-        answerProvider
+        5
       );
     });
+    const res = await answerPassages(parsed.question, passages, answerProvider);
     return reply.send(parseReply(AskResponseSchema, res));
   });
 

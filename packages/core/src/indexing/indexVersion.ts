@@ -123,6 +123,9 @@ export async function indexVersion(
     try {
       vectors = await provider.embed(texts);
     } catch (err) {
+      // Preserve the provider's neutral cause (for example a 401 or a
+      // timeout) instead of nesting one contract sentence inside another.
+      if (err instanceof AppError && err.code === 'embedding_unavailable') throw err;
       const unavailable = new AppError('embedding_unavailable');
       unavailable.cause = err;
       throw unavailable;
