@@ -22,10 +22,36 @@ describe('loadConfig: auth rate limit and embeddings', () => {
   });
 
   it('refuses a provider it does not know and a limit that is not a positive number', () => {
-    expect(() => loadConfig({ ...base, EMBEDDING_PROVIDER: 'openai' })).toThrow(/EMBEDDING_PROVIDER/);
+    expect(() => loadConfig({ ...base, EMBEDDING_PROVIDER: 'anthropic' })).toThrow(/EMBEDDING_PROVIDER/);
     expect(() => loadConfig({ ...base, AUTH_RATE_LIMIT_MAX: '0' })).toThrow(/AUTH_RATE_LIMIT_MAX/);
     expect(() => loadConfig({ ...base, AUTH_RATE_LIMIT_MAX: '100001' })).toThrow(/AUTH_RATE_LIMIT_MAX/);
     expect(loadConfig({ ...base, AUTH_RATE_LIMIT_MAX: '100000' }).AUTH_RATE_LIMIT_MAX).toBe(100_000);
+  });
+
+  it('accepts the OpenAI-compatible embedding provider with a base URL and model', () => {
+    const config = loadConfig({
+      ...base,
+      EMBEDDING_PROVIDER: 'openai',
+      EMBEDDING_BASE_URL: 'https://models.example/v1',
+      EMBEDDING_MODEL: 'Qwen/Qwen3-Embedding-8B',
+    });
+    expect(config.EMBEDDING_PROVIDER).toBe('openai');
+    expect(config.EMBEDDING_API_KEY).toBeUndefined();
+    expect(config.EMBEDDING_BATCH_SIZE).toBe(64);
+    expect(config.EMBEDDING_TIMEOUT_MS).toBe(30_000);
+  });
+
+  it('requires the base URL and model for the OpenAI-compatible provider', () => {
+    expect(() =>
+      loadConfig({ ...base, EMBEDDING_PROVIDER: 'openai' })
+    ).toThrow(/EMBEDDING_BASE_URL/);
+    expect(() =>
+      loadConfig({
+        ...base,
+        EMBEDDING_PROVIDER: 'openai',
+        EMBEDDING_BASE_URL: 'https://models.example/v1',
+      })
+    ).toThrow(/EMBEDDING_MODEL/);
   });
 });
 

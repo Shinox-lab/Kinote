@@ -1,5 +1,5 @@
 import { assertEmbeddingDimensions, closeDb, initDb } from '@living-wiki/db';
-import { createExtractor, defaultEmbeddingProvider, EMBEDDING_DIMENSIONS } from '@living-wiki/core';
+import { createEmbeddingProvider, createExtractor, EMBEDDING_DIMENSIONS } from '@living-wiki/core';
 import { createObjectStorage, loadConfig } from '@living-wiki/shared';
 import { runWorkerLoop } from './runner.js';
 
@@ -7,7 +7,7 @@ const POLL_INTERVAL_MS = 1000;
 
 async function main(): Promise<void> {
   const config = loadConfig();
-  const provider = defaultEmbeddingProvider;
+  const provider = createEmbeddingProvider(config);
   if (provider.dimensions !== EMBEDDING_DIMENSIONS) {
     throw new Error(
       `Embedding provider "${provider.model}" produces ${provider.dimensions}-dimension vectors ` +

@@ -1,5 +1,5 @@
 import { assertEmbeddingDimensions, closeDb, initDb } from '@living-wiki/db';
-import { EMBEDDING_DIMENSIONS } from '@living-wiki/core';
+import { createEmbeddingProvider, EMBEDDING_DIMENSIONS } from '@living-wiki/core';
 import { createObjectStorage, loadConfig } from '@living-wiki/shared';
 import { buildApiServer } from './server.js';
 import { HttpCollabClient } from './collab/client.js';
@@ -12,8 +12,10 @@ async function main(): Promise<void> {
   const storage = createObjectStorage(config);
   await storage.ensureBucket();
 
+  const embeddingProvider = createEmbeddingProvider(config);
   const app = buildApiServer({
     storage,
+    embeddingProvider,
     maxUploadBytes: config.MAX_UPLOAD_BYTES,
     logger: { level: config.LOG_LEVEL },
     trustProxy: config.TRUST_PROXY,

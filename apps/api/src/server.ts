@@ -52,6 +52,7 @@ import {
   getReadableSpaceIds,
   defaultEmbeddingProvider,
   type Actor,
+  type EmbeddingProvider,
 } from '@living-wiki/core';
 import {
   createTenantWithInbox,
@@ -153,6 +154,8 @@ export interface ApiServerOptions {
   storage?: ObjectStorage;
   /** Largest upload in bytes (default 50 MB; MAX_UPLOAD_BYTES in config). */
   maxUploadBytes?: number;
+  /** Embeddings for search and Ask queries. Default: the deterministic test provider. */
+  embeddingProvider?: EmbeddingProvider;
 }
 
 const DEFAULT_MAX_UPLOAD_BYTES = 52_428_800;
@@ -189,6 +192,7 @@ function sessionOf(req: FastifyRequest): AuthSession {
 }
 
 export function buildApiServer(opts: ApiServerOptions = {}) {
+  const embeddingProvider = opts.embeddingProvider ?? defaultEmbeddingProvider;
   const app = Fastify({
     logger: fastifyLogger(opts.logger),
     trustProxy: trustProxyOption(opts.trustProxy),
@@ -631,7 +635,12 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
   app.post('/api/v1/search', async (req, reply) => {
     const actor = actorOf(req);
     const parsed = SearchRequestSchema.parse(req.body);
-    const [queryEmbedding] = await defaultEmbeddingProvider.embed([parsed.query]);
+    let queryEmbedding: number[];
+    try {
+      [queryEmbedding] = await embeddingProvider.embed([parsed.query], 'query');
+    } catch {
+      throw new AppError('search_unavailable');
+    }
 
     const res = await withTenantTx(actor.tenantId, async (tx) => {
       const { readableSpaceIds, inboxSpaceId } = await getReadableSpaceIds(tx, actor);
@@ -654,7 +663,12 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
   app.post('/api/v1/ask', async (req, reply) => {
     const actor = actorOf(req);
     const parsed = AskRequestSchema.parse(req.body);
-    const [queryEmbedding] = await defaultEmbeddingProvider.embed([parsed.question]);
+    let queryEmbedding: number[];
+    try {
+      [queryEmbedding] = await embeddingProvider.embed([parsed.question], 'query');
+    } catch {
+      throw new AppError('search_unavailable');
+    }
 
     const res = await withTenantTx(actor.tenantId, async (tx) => {
       const { readableSpaceIds, inboxSpaceId } = await getReadableSpaceIds(tx, actor);

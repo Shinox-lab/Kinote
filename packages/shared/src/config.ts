@@ -45,7 +45,13 @@ export const ConfigSchema = z.object({
   AUTH_RATE_LIMIT_MAX: z.coerce.number().int().positive().max(100_000).default(DEFAULT_AUTH_RATE_LIMIT_MAX),
   /** pino level of the api's log (stdout). Request headers and bodies are never logged. */
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
-  EMBEDDING_PROVIDER: z.enum(['deterministic']).default('deterministic'),
+  EMBEDDING_PROVIDER: z.enum(['deterministic', 'openai']).default('deterministic'),
+  EMBEDDING_BASE_URL: z.string().url().optional(),
+  EMBEDDING_API_KEY: z.string().min(1).optional(),
+  EMBEDDING_MODEL: z.string().min(1).optional(),
+  EMBEDDING_BATCH_SIZE: z.coerce.number().int().positive().max(2048).default(64),
+  EMBEDDING_TIMEOUT_MS: z.coerce.number().int().positive().max(120_000).default(30_000),
+  EMBEDDING_QUERY_INSTRUCTION: z.string().min(1).optional(),
   S3_ENDPOINT: z.string().min(1).optional(),
   S3_BUCKET: z.string().min(1).optional(),
   S3_ACCESS_KEY: z.string().min(1).optional(),
@@ -70,6 +76,22 @@ export const ConfigSchema = z.object({
       path: ['EXTRACTOR_URL'],
       message: 'is required when EXTRACTOR_MODE is http',
     });
+  }
+  if (value.EMBEDDING_PROVIDER === 'openai') {
+    if (!value.EMBEDDING_BASE_URL) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['EMBEDDING_BASE_URL'],
+        message: 'is required when EMBEDDING_PROVIDER is openai',
+      });
+    }
+    if (!value.EMBEDDING_MODEL) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['EMBEDDING_MODEL'],
+        message: 'is required when EMBEDDING_PROVIDER is openai',
+      });
+    }
   }
 });
 

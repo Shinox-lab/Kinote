@@ -23,7 +23,10 @@ export {
 export {
   EMBEDDING_DIMENSIONS,
   DeterministicEmbeddingProvider,
+  OpenAIEmbeddingProvider,
+  createEmbeddingProvider,
   defaultEmbeddingProvider,
+  type EmbeddingKind,
   type EmbeddingProvider,
 } from './embedding.js';
 export {
