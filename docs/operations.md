@@ -122,6 +122,64 @@ the e2e suite; Coolify routes only the web domain to container port 80. For a
 hard split, remove the `ports:` entries from `postgres`, `minio`, `api` and
 `collab`; the web does not need them.
 
+## Model providers
+
+The index is fixed at **2560 dimensions**. There is no `EMBEDDING_DIMENSIONS`
+setting in this release: `chunks.embedding` and `embedding_cache.embedding`
+are both `halfvec(2560)`.
+
+Set `EMBEDDING_PROVIDER=openai` with an OpenAI-compatible embeddings server:
+
+```sh
+EMBEDDING_PROVIDER=openai
+EMBEDDING_BASE_URL=https://your-host/v1
+EMBEDDING_API_KEY=...
+EMBEDDING_MODEL=Qwen/Qwen3-Embedding-8B
+# Optional Qwen query-side instruction:
+EMBEDDING_QUERY_INSTRUCTION=Given a wiki search query, retrieve relevant passages that answer the query
+```
+
+Set `ASK_PROVIDER=openai` for a generated answer from an OpenAI-compatible
+chat server:
+
+```sh
+ASK_PROVIDER=openai
+ASK_BASE_URL=https://your-host/v1
+ASK_API_KEY=...
+ASK_MODEL=...
+```
+
+Each base URL ends at the API root: the embedding client appends
+`/embeddings`, the Ask client appends `/chat/completions`. The two providers
+may use different hosts. A key is optional for a local endpoint without auth.
+`EMBEDDING_BATCH_SIZE` (default 64), `EMBEDDING_TIMEOUT_MS` (30000),
+`ASK_TIMEOUT_MS` (60000) and `ASK_MAX_TOKENS` (800) are the other bounds.
+
+The local stack and `pnpm e2e` keep `deterministic` for both providers, so no
+network credentials are needed for tests.
+
+### The 2560 migration
+
+Migrations `0016`–`0018` drop the old HNSW index, truncate the derived
+`chunks` and `embedding_cache`, change both columns to `halfvec(2560)`,
+recreate the index, mark every indexed version `indexing`, and enqueue one
+`version.index` job for it. Pages, files, versions and audit history are kept;
+search is empty for a document until its reindex job completes. **Configure
+the final embedding provider before the migrate service runs**, or the index
+will be rebuilt with the deterministic provider. Changing the model after
+that requires rebuilding the derived index again; this release has no
+automatic model-switch command.
+
+Search and Ask make a synchronous query-embedding call. If it fails, both
+return `503 search_unavailable`. If the Ask model itself fails, Ask returns
+`503 llm_unavailable`; there is no extractive fallback. Search results remain
+available beside the error.
+
+The real Qwen endpoint and chat model need the deployment's own base URLs,
+model IDs and keys. The fake-HTTP provider tests cover request shape,
+batching, dimensions, timeouts and error mapping; the deployment live check
+is a paraphrase search plus an Ask answer with the passage citation.
+
 ## Behind a reverse proxy
 
 The api keys the sign-up and sign-in rate limit on the client IP. Behind a
@@ -160,11 +218,11 @@ pnpm e2e         # compose stack (infra/e2e.sh), then playwright test
 pnpm e2e:local   # no Docker: e2e/harness/local-stack.ts, stopped again afterwards
 ```
 
-`pnpm e2e` exports `EMBEDDING_PROVIDER=deterministic` (the only provider
-`loadConfig` accepts, passed through to the containers by docker-compose.yml),
-`AUTH_RATE_LIMIT_MAX=1000` (the specs sign up more accounts than the default 10 a
-minute allows) and `EXTRACTOR_MODE=fake` (the suite's files carry a
-`FAKE-EXTRACT` line), runs `pnpm stack:up`, starts `api`, `collab` and `worker`
+`pnpm e2e` exports `EMBEDDING_PROVIDER=deterministic` and
+`ASK_PROVIDER=deterministic` (passed through to the containers by
+docker-compose.yml), `AUTH_RATE_LIMIT_MAX=1000` (the specs sign up more accounts
+than the default 10 a minute allows) and `EXTRACTOR_MODE=fake` (the suite's files
+carry a `FAKE-EXTRACT` line), runs `pnpm stack:up`, starts `api`, `collab` and `worker`
 with `docker compose up -d --build --no-deps`, waits for them, and runs the
 specs; Playwright serves the console with `vite dev` on 5173 against 8787 and
 1234. This is the one place Vite serves the console; the production app is the

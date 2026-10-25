@@ -13,6 +13,7 @@ cd "$(dirname "$0")/.."
 
 # The suite signs up more accounts than the default 10 a minute allows.
 export EMBEDDING_PROVIDER=deterministic
+export ASK_PROVIDER=deterministic
 export AUTH_RATE_LIMIT_MAX="${AUTH_RATE_LIMIT_MAX:-1000}"
 # The compose e2e uses the fake extractor: its files carry a FAKE-EXTRACT line.
 export EXTRACTOR_MODE=fake
