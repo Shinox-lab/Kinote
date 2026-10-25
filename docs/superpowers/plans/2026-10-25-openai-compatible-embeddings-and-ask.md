@@ -62,16 +62,16 @@
 - Consumes: existing `AppError`, `ErrorCodeSchema`, `ERROR_SENTENCES`, `ERROR_STATUS`, `assertEmbeddingDimensions`.
 - Produces: `EMBEDDING_DIMENSIONS = 2560` from `@living-wiki/core`; `search_unavailable` and `llm_unavailable` error codes at 503.
 
-- [ ] **Step 1: Write the failing error and dimension tests**
+- [x] **Step 1: Write the failing error and dimension tests**
 
 In `apps/api/test/errors.test.ts`, add `search_unavailable: 503` and `llm_unavailable: 503` to the pinned expected map. In `packages/db/test/halfvec.test.ts`, change `DIMS` to `2560`, change the two round-trip names/assertions to 2560, and make `assertEmbeddingDimensions` test 2560 and a mismatching 768. In `packages/shared/test/config.test.ts`, change the default provider assertions to expect no `EMBEDDING_DIMENSIONS` key and 2560 where a dimension is still asserted.
 
-- [ ] **Step 2: Run the tests and verify the failures**
+- [x] **Step 2: Run the tests and verify the failures**
 
 Run: `pnpm vitest run apps/api/test/errors.test.ts packages/db/test/halfvec.test.ts packages/shared/test/config.test.ts`
 Expected: FAIL for the missing error codes and the 1536/2560 dimension mismatch.
 
-- [ ] **Step 3: Add the contract errors and fixed constant**
+- [x] **Step 3: Add the contract errors and fixed constant**
 
 In `packages/contracts/src/errors.ts` add `search_unavailable` with
 `Search is temporarily unavailable. Please try again.` and `llm_unavailable`
@@ -82,11 +82,11 @@ status 503. In `packages/core/src/embedding.ts` export
 `living-wiki-deterministic-2560-v1`. Export the constant from
 `packages/core/src/index.ts`.
 
-- [ ] **Step 4: Remove the dimension setting and update callers**
+- [x] **Step 4: Remove the dimension setting and update callers**
 
 Remove `EMBEDDING_DIMENSIONS` from `ConfigSchema`, `packages/shared/test/config.test.ts`, `.env.example` and `docker-compose.yml`. Change `apps/api/src/main.ts`, `apps/worker/src/main.ts` and `e2e/harness/local-stack.ts` to import and use `EMBEDDING_DIMENSIONS` from `@living-wiki/core`. Update `packages/db/test/client.test.ts` to stop asserting the removed config key.
 
-- [ ] **Step 5: Create the three-step migration**
+- [x] **Step 5: Create the three-step migration**
 
 Create `0016_embedding_2560_reset.sql`:
 
@@ -130,13 +130,13 @@ ON CONFLICT (tenant_id, queue, idempotency_key) DO UPDATE SET
 Add its journal entry (`idx` 18). Update every remaining 1536 assertion in the
 listed tests to 2560 (leave the byte-size assertions in web tests alone).
 
-- [ ] **Step 6: Run the focused tests and the migration suite**
+- [x] **Step 6: Run the focused tests and the migration suite**
 
 Run: `pnpm vitest run apps/api/test/errors.test.ts packages/db/test/halfvec.test.ts packages/db/test/migrations.test.ts packages/shared/test/config.test.ts packages/core/test/indexVersion.cacheHit.test.ts packages/core/test/indexVersion.files.test.ts apps/api/test/retry.test.ts`
 Expected: PASS. Verify `psql`/PGlite reports `halfvec(2560)` and one HNSW
 index.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add packages apps e2e .env.example docker-compose.yml
@@ -163,7 +163,7 @@ git commit -m "feat: move the index to fixed 2560 dimensions"
 - Produces: `OpenAIEmbeddingProvider`, `createEmbeddingProvider(config)`, `embed(texts, kind?: 'document' | 'query')`, and `ApiServerOptions.embeddingProvider?: EmbeddingProvider`.
 - Consumes: `EMBEDDING_DIMENSIONS`, `AppError('search_unavailable')`, `AppError('embedding_unavailable')`.
 
-- [ ] **Step 1: Write the failing provider/config tests**
+- [x] **Step 1: Write the failing provider/config tests**
 
 In `packages/shared/test/config.test.ts`, replace the old assertion that
 `EMBEDDING_PROVIDER=openai` is rejected. Add cases for
@@ -183,12 +183,12 @@ In `apps/api/test/providerFailures.test.ts`, build the app with an embedding
 provider whose `embed` throws, bootstrap a tenant, and assert `POST /search`
 and `POST /ask` return 503 `search_unavailable` with the contract sentence.
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `pnpm vitest run packages/shared/test/config.test.ts packages/core/test/embedding.openai.test.ts apps/api/test/providerFailures.test.ts`
 Expected: FAIL for missing config fields, provider and error mapping.
 
-- [ ] **Step 3: Add the config fields and validation**
+- [x] **Step 3: Add the config fields and validation**
 
 Add to `ConfigSchema`:
 
@@ -205,7 +205,7 @@ EMBEDDING_QUERY_INSTRUCTION: z.string().min(1).optional(),
 In `superRefine`, require `EMBEDDING_BASE_URL` and `EMBEDDING_MODEL` when the
 provider is `openai`, with issues naming those variables.
 
-- [ ] **Step 4: Implement the provider and factory**
+- [x] **Step 4: Implement the provider and factory**
 
 In `packages/core/src/embedding.ts`:
 
@@ -222,7 +222,7 @@ In `packages/core/src/embedding.ts`:
 - add `createEmbeddingProvider(config)` returning deterministic or the HTTP
   provider.
 
-- [ ] **Step 5: Wire the worker and API**
+- [x] **Step 5: Wire the worker and API**
 
 `apps/worker/src/main.ts` uses `createEmbeddingProvider(config)`. Add
 `embeddingProvider?: EmbeddingProvider` to `ApiServerOptions`; default to
@@ -231,12 +231,12 @@ In `packages/core/src/embedding.ts`:
 configured provider from `apps/api/src/main.ts`. Keep `e2e/harness/local-stack.ts`
 on the deterministic default.
 
-- [ ] **Step 6: Run the focused tests**
+- [x] **Step 6: Run the focused tests**
 
 Run: `pnpm vitest run packages/shared/test/config.test.ts packages/core/test/embedding.openai.test.ts apps/api/test/providerFailures.test.ts apps/api/test/search.test.ts apps/api/test/searchFiles.test.ts`
 Expected: PASS.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add packages apps e2e
@@ -262,7 +262,7 @@ git commit -m "feat: add an OpenAI-compatible embedding provider"
 - Produces: `AnswerProvider`, `DeterministicAnswerProvider`, `OpenAIAnswerProvider`, `createAnswerProvider(config)`, `defaultAnswerProvider`, and `ApiServerOptions.answerProvider?: AnswerProvider`.
 - Consumes: `SearchPassage`, `AskResponse`, `AppError('llm_unavailable')`, `AppError('search_unavailable')`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 In `packages/shared/test/config.test.ts`, add `ASK_PROVIDER` (`deterministic` |
 `openai`), `ASK_BASE_URL`, `ASK_API_KEY`, `ASK_MODEL`, `ASK_TIMEOUT_MS`
@@ -283,12 +283,12 @@ still returns `search_unavailable`. Add a no-passage case with a counting
 answer provider: `POST /ask` against an empty tenant returns
 `foundRelevant: false` and the provider call count stays 0.
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `pnpm vitest run packages/shared/test/config.test.ts packages/core/test/answer.openai.test.ts apps/api/test/askFailures.test.ts`
 Expected: FAIL for missing config, provider and route wiring.
 
-- [ ] **Step 3: Implement the answer providers**
+- [x] **Step 3: Implement the answer providers**
 
 `packages/core/src/answer.ts`:
 
@@ -313,7 +313,7 @@ export interface AnswerProvider {
   Map every failure to `AppError('llm_unavailable')` with a neutral cause.
 - `createAnswerProvider(config)` returns deterministic or HTTP.
 
-- [ ] **Step 4: Wire `askWiki` and the server**
+- [x] **Step 4: Wire `askWiki` and the server**
 
 Change `askWiki` to accept an optional `answerProvider` (default
 `defaultAnswerProvider`). Keep the current no-passage short circuit. Build
@@ -322,12 +322,12 @@ for a false result. Add `answerProvider?: AnswerProvider` to
 `ApiServerOptions`, default it, and pass it from the `/ask` route. The API
 `main.ts` creates it from config.
 
-- [ ] **Step 5: Run the focused tests**
+- [x] **Step 5: Run the focused tests**
 
 Run: `pnpm vitest run packages/shared/test/config.test.ts packages/core/test/answer.openai.test.ts apps/api/test/askFailures.test.ts apps/api/test/search.test.ts apps/api/test/searchFiles.test.ts apps/api/test/slice-0-1.test.ts`
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add packages apps
@@ -349,7 +349,7 @@ git commit -m "feat: generate Ask answers through an OpenAI-compatible model"
 - Consumes: all config names and behavior from Tasks 1–3.
 - Produces: a deployable compose stack and documented provider setup.
 
-- [ ] **Step 1: Add the deployment settings**
+- [x] **Step 1: Add the deployment settings**
 
 Add the following to the shared app environment in `docker-compose.yml`:
 
@@ -377,24 +377,24 @@ export. Add a `docs/operations.md` “Model providers” section covering both
 base URL shapes, the 2560 rule, the 2560 migration/reindex behavior, and the
 fact that a failed Ask is a 503, not a fallback.
 
-- [ ] **Step 2: Run the full unit and type gates**
+- [x] **Step 2: Run the full unit and type gates**
 
 Run: `pnpm typecheck && pnpm test`
 Expected: PASS; no `1536` left in the embedding schema/provider tests.
 
-- [ ] **Step 3: Run the local end-to-end and web build**
+- [x] **Step 3: Run the local end-to-end and web build**
 
 Run: `pnpm e2e:local && pnpm web:build`
 Expected: PASS; Ask still works with the deterministic provider.
 
-- [ ] **Step 4: Run the real-Postgres suite without touching the app database**
+- [x] **Step 4: Run the real-Postgres suite without touching the app database**
 
 Create a temporary database on the compose Postgres, apply migrations with
 `DATABASE_MIGRATE_URL`, point `TEST_DATABASE_URL`/`TEST_DATABASE_MIGRATE_URL` at
 it, run `pnpm test:pg`, then drop it. Expected: PASS, including the 2560
 `halfvec` and HNSW assertions.
 
-- [ ] **Step 5: Verify the migration against a copy, not the live volume**
+- [x] **Step 5: Verify the migration against a copy, not the live volume**
 
 Create a scratch database, copy the current schema, run the migration and
 confirm `chunks.embedding`/`embedding_cache.embedding` are `halfvec(2560)`, the
@@ -402,7 +402,7 @@ HNSW index exists, and each previously indexed version has one queued
 `version.index` job. Do not run the migration on the live stack until the Qwen
 embedding endpoint is configured.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add .env.example docker-compose.yml infra/e2e.sh docs
