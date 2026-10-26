@@ -31,6 +31,30 @@ async function captures(request: APIRequestContext, account: Account = world.own
   return call<CaptureRow[]>(request, '/captures', { account, tenantId: world.tenantId });
 }
 
+/** Sends a capture through the API and waits until the engine has finished with it. */
+async function captureVia(request: APIRequestContext, text: string, pageId?: string): Promise<string> {
+  const as = { account: world.owner, tenantId: world.tenantId };
+  const created = await call<CaptureRow>(request, '/captures', {
+    ...as,
+    method: 'POST',
+    data: { text, ...(pageId ? { scope_page_id: pageId } : {}) },
+  });
+  await expect
+    .poll(async () => (await call<CaptureDetailRow>(request, `/captures/${created.id}`, as)).capture.status, { timeout: 15_000 })
+    .not.toMatch(/^(queued|routing)$/);
+  return created.id;
+}
+
+/** The live page's editor text. */
+async function pageText(browser: Browser, pageId: string): Promise<string> {
+  const page = await openAs(browser, world, world.owner);
+  await page.goto(`/w/${world.slug}/p/${pageId}`);
+  await expect(page.getByRole('status', { name: 'Presence: connected' })).toBeVisible();
+  const text = (await page.getByRole('textbox').first().innerText()).replace(/\s+/g, ' ');
+  await page.context().close();
+  return text;
+}
+
 async function openCapture(browser: Browser, query = ''): Promise<Page> {
   const page = await openAs(browser, world, world.owner);
   await page.goto(`/w/${world.slug}/capture${query}`);
@@ -109,5 +133,56 @@ test.describe('Capture page', () => {
     const card = page.getByRole('article').filter({ hasText: 'Which Aisha do you mean?' }).first();
     await card.getByRole('button', { name: 'Aisha Rahman' }).click();
     await expect(card.getByText('You answered: Aisha Rahman')).toBeVisible();
+  });
+
+  test('undo shows what was undone', async ({ browser, request }) => {
+    const target = await indexedPage(request, 'Undo billing', 'Billing uses Stripe.');
+    await captureVia(request, 'Billing moved to Adyen.', target);
+    expect(await pageText(browser, target)).toContain('Billing moved to Adyen.');
+
+    const page = await openCapture(browser);
+    const card = page.getByRole('article').first();
+    await card.getByRole('region', { name: 'Undo billing' }).getByRole('button', { name: 'Undo', exact: true }).click();
+    await expect(page.getByRole('status').filter({ hasText: 'Undid 1 change.' })).toBeVisible();
+    expect(await pageText(browser, target)).toContain('Billing uses Stripe.');
+  });
+
+  test('wrong page moves the fact', async ({ browser, request }) => {
+    const from = await indexedPage(request, 'Move billing', 'Billing uses Stripe.');
+    const to = await indexedPage(request, 'Runbook Moves', 'Page the on-call.');
+    await captureVia(request, 'Billing has a new dashboard.', from);
+
+    const page = await openCapture(browser);
+    const card = page.getByRole('article').first();
+    await card.getByRole('button', { name: 'Wrong page → move to…' }).click();
+    await card.getByLabel('Find a page').fill('Runbook Moves');
+    await card.getByRole('button', { name: 'Runbook Moves' }).click();
+    await expect.poll(() => pageText(browser, to), { timeout: 20_000 }).toContain('Billing has a new dashboard.');
+    expect(await pageText(browser, from)).not.toContain('Billing has a new dashboard.');
+  });
+
+  test('a fact nobody can place waits in Needs a home and can be placed', async ({ browser, request }) => {
+    const scope = await indexedPage(request, 'Lunch scope', 'Billing uses Stripe.');
+    const to = await indexedPage(request, 'Runbook Places', 'Page the on-call.');
+    await captureVia(request, 'Lunch is at noon.', scope);
+
+    const page = await openCapture(browser);
+    const home = page.getByRole('region', { name: 'Needs a home' });
+    const item = home.getByRole('listitem').filter({ hasText: 'Lunch is at noon.' }).first();
+    await item.getByRole('button', { name: 'Place…' }).click();
+    await item.getByLabel('Find a page').fill('Runbook Places');
+    await item.getByRole('button', { name: 'Runbook Places' }).click();
+    await expect(home.getByText('Lunch is at noon.')).toHaveCount(0, { timeout: 10_000 });
+    await expect.poll(() => pageText(browser, to), { timeout: 20_000 }).toContain('Lunch is at noon.');
+  });
+
+  test('dismiss removes it from Needs a home', async ({ browser, request }) => {
+    const scope = await indexedPage(request, 'Dismiss scope', 'Billing uses Stripe.');
+    await captureVia(request, 'The coffee machine is broken.', scope);
+    const page = await openCapture(browser);
+    const home = page.getByRole('region', { name: 'Needs a home' });
+    const item = home.getByRole('listitem').filter({ hasText: 'The coffee machine is broken.' });
+    await item.getByRole('button', { name: 'Dismiss' }).click();
+    await expect(home.getByText('The coffee machine is broken.')).toHaveCount(0);
   });
 });

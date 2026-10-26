@@ -2,6 +2,7 @@ import { useSearch } from '@tanstack/react-router';
 import { AppTopBar } from '../components/AppTopBar.js';
 import { CaptureBox } from '../components/capture/CaptureBox.js';
 import { CaptureCard } from '../components/capture/CaptureCard.js';
+import { NeedsHome } from '../components/capture/NeedsHome.js';
 import { ErrorNote, Loading } from '../components/ui.js';
 import { useCaptures } from '../lib/queries.js';
 
@@ -18,6 +19,7 @@ export function CapturePage() {
           <p className="text-sm text-muted">Anything you send is split into facts and filed on the right pages, with a receipt you can undo.</p>
         </header>
         <CaptureBox key={`${preset.space ?? ''}:${preset.page ?? ''}`} preset={preset} />
+        <NeedsHome />
         <ErrorNote error={error} />
         {isPending ? (
           <Loading what="captures" />
