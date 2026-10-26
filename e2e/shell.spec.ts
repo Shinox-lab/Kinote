@@ -3,13 +3,13 @@ import { addMember, call, editorOf, openAs, seedWorld, uploadViaApi } from './su
 
 const sidebar = (page: Page): Locator => page.getByRole('complementary', { name: 'Sidebar' });
 
-test('the sidebar leads with Home, then Search, Reviews and Settings', async ({ browser, request }) => {
+test('the sidebar leads with Home, then Capture, Search, Reviews and Settings', async ({ browser, request }) => {
   const world = await seedWorld(request, { reviewRequired: false });
   const page = await openAs(browser, world, world.owner);
   await page.goto(`/w/${world.slug}`);
 
   const main = sidebar(page).getByRole('list', { name: 'Main' });
-  await expect(main.getByRole('link')).toHaveText(['Home', 'Search', 'Reviews', 'Settings & members']);
+  await expect(main.getByRole('link')).toHaveText(['Home', 'Capture', 'Search', 'Reviews', 'Settings & members']);
   await expect(main.getByRole('link', { name: 'Home' })).toHaveAttribute('aria-current', 'page');
 
   await main.getByRole('link', { name: 'Search' }).click();

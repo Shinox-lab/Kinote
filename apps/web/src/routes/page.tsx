@@ -110,6 +110,16 @@ export function PagePage() {
         right={
           <>
             <PagePresence live={livePage.live} state={livePage.state} onReconnect={livePage.reconnect} />
+            {controls.move && !archived && (
+              <Link
+                to="/w/$tenantSlug/capture"
+                params={{ tenantSlug: tenant.slug }}
+                search={{ page: pageId }}
+                className="rounded-md px-2 py-1 text-xs font-medium text-muted hover:bg-hover hover:text-fg max-md:min-h-11"
+              >
+                Capture here
+              </Link>
+            )}
             <LifecycleMenu page={page} spaces={spaces} controls={controls} onChanged={changed} />
           </>
         }

@@ -97,6 +97,8 @@ const worker = runWorkerLoop({
   storage,
   extractor,
   maxExtractedChars: config.MAX_EXTRACTED_CHARS,
+  // Routed captures change live pages through collab, as the api's restore does.
+  collab: new HttpCollabClient(`http://${HOST}:${collabPort}`, internalSecret),
 });
 
 // The console, built fresh so the specs run against the production bundle; vite.config.ts

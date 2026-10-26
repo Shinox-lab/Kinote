@@ -44,6 +44,12 @@ export const ReviewsIcon = (p: IconProps) => (
     <rect x="4" y="4" width="16" height="16" rx="3" />
   </Icon>
 );
+export const CaptureIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M4 13.5V18a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4.5" />
+    <path d="M12 4v10M8 10l4 4 4-4" />
+  </Icon>
+);
 export const SettingsIcon = (p: IconProps) => (
   <Icon {...p}>
     <circle cx="12" cy="12" r="3" />

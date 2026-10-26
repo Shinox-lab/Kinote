@@ -131,6 +131,16 @@ export function SpacePage() {
         <h1 className="text-xl font-semibold">{space.name}</h1>
         {archived && <span className="rounded bg-dot-review/15 px-1.5 text-xs text-fg">Archived</span>}
         <span className="text-sm text-muted">Your role: {space.myRole}</span>
+        {canCreate && space.kind !== 'inbox' && (
+          <Link
+            to="/w/$tenantSlug/capture"
+            params={{ tenantSlug: tenant.slug }}
+            search={{ space: space.id }}
+            className="text-sm font-medium text-accent-text hover:underline"
+          >
+            Capture here
+          </Link>
+        )}
       </div>
       <Card title="Pages">
         {treeError ? (

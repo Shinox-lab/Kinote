@@ -1,7 +1,7 @@
 import { Link } from '@tanstack/react-router';
 import { adminScreens } from '../../lib/console.js';
 import { useReviews, useWorkspace } from '../../lib/queries.js';
-import { HomeIcon, SearchIcon, SettingsIcon, SidebarIcon, ReviewsIcon } from '../icons.js';
+import { CaptureIcon, HomeIcon, SearchIcon, SettingsIcon, SidebarIcon, ReviewsIcon } from '../icons.js';
 import { AccountRow } from './AccountRow.js';
 import { ROW, ROW_ACTIVE, RowContent } from './NavRow.js';
 import { UploadPanel } from './UploadPanel.js';
@@ -48,6 +48,16 @@ export function Sidebar({ onCollapse }: { onCollapse?: () => void }) {
               activeOptions={{ exact: true }}
             >
               <RowContent icon={<HomeIcon />} label="Home" />
+            </Link>
+          </li>
+          <li>
+            <Link
+              to="/w/$tenantSlug/capture"
+              params={{ tenantSlug: tenant.slug }}
+              className={ROW}
+              activeProps={{ className: ROW_ACTIVE, 'aria-current': 'page' }}
+            >
+              <RowContent icon={<CaptureIcon />} label="Capture" />
             </Link>
           </li>
           <li>
