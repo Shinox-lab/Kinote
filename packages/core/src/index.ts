@@ -112,7 +112,7 @@ export {
   type ChunkFilter,
 } from './search/hybridSearch.js';
 export { senderActor, senderAccess, type SenderAccess } from './routing/access.js';
-export { readLiveBlocks, blockText, blockMarkdown, markdownBlocks } from './routing/liveBlocks.js';
+export { readLiveBlocks, blockText, blockMarkdown, markdownBlocks, encodeBlocksYDoc } from './routing/liveBlocks.js';
 export {
   planCapture,
   ROUTING,
@@ -123,3 +123,12 @@ export {
   type PlanFactInput,
   type PlannedFact,
 } from './routing/plan.js';
+export { ensureRouterAgent } from './routing/routerAgent.js';
+export {
+  routeCapture,
+  applyPlannedFacts,
+  failCapture,
+  ROUTING_LEASE_SECONDS,
+  QUESTION_TTL_DAYS,
+  type RouteDeps,
+} from './routing/apply.js';

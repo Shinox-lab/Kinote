@@ -5,7 +5,7 @@ import {
   createPlacementModel,
   EMBEDDING_DIMENSIONS,
 } from '@living-wiki/core';
-import { createObjectStorage, loadConfig } from '@living-wiki/shared';
+import { HttpCollabClient, createObjectStorage, loadConfig } from '@living-wiki/shared';
 import { runWorkerLoop } from './runner.js';
 
 const POLL_INTERVAL_MS = 1000;
@@ -40,6 +40,7 @@ async function main(): Promise<void> {
       extractor,
       maxExtractedChars: config.MAX_EXTRACTED_CHARS,
       placementModel: createPlacementModel(config),
+      collab: new HttpCollabClient(config.COLLAB_INTERNAL_URL, config.INTERNAL_SECRET),
     });
   } finally {
     await closeDb();

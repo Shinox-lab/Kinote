@@ -9,7 +9,7 @@ import {
   type EmbeddingProvider,
 } from '@living-wiki/core';
 import { InMemoryObjectStorage } from '@living-wiki/shared';
-import { runPendingJobsForTenant } from '../../worker/src/runner.js';
+import { runPendingJobsForTenant, unavailableCollab } from '../../worker/src/runner.js';
 import { handlers } from '../../worker/src/registry.js';
 import { ERROR_SENTENCES } from '@living-wiki/contracts';
 import {
@@ -375,6 +375,7 @@ describe('failed versions and retry', () => {
       extractor: new UnavailableExtractor(),
       maxExtractedChars: 1000,
       placementModel: defaultPlacementModel,
+      collab: unavailableCollab,
     });
 
     const logged = warn.mock.calls.map((args) => args.join(' '));

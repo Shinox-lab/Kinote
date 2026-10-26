@@ -43,3 +43,10 @@ export async function blockMarkdown(block: BlockLike): Promise<string> {
 export async function markdownBlocks(markdown: string): Promise<BlockLike[]> {
   return (await editor.tryParseMarkdownToBlocks(markdown)) as BlockLike[];
 }
+
+/** A new page's stored Yjs state: `blocks` under `title`. */
+export function encodeBlocksYDoc(title: string, blocks: BlockLike[]): Buffer {
+  const doc = editor.blocksToYDoc(blocks as any, 'document-store');
+  doc.getMap('meta').set('title', title);
+  return Buffer.from(Y.encodeStateAsUpdate(doc));
+}

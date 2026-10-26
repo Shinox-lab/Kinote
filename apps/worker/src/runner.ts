@@ -15,10 +15,29 @@ import {
   UnavailableExtractor,
   type EmbeddingProvider,
   type Extractor,
-  type PlacementModel,
+  type RoutingModel,
 } from '@living-wiki/core';
-import { InMemoryObjectStorage, type ObjectStorage } from '@living-wiki/shared';
+import { InMemoryObjectStorage, type CollabClient, type ObjectStorage } from '@living-wiki/shared';
 import { handlers as defaultHandlers, type JobContext, type JobHandler } from './registry.js';
+
+/** The collab client when none is configured: every call fails, so a routing job retries. */
+export const unavailableCollab: CollabClient = {
+  async flush() {
+    throw new AppError('internal_error');
+  },
+  async replaceBlocks() {
+    throw new AppError('internal_error');
+  },
+  async applyBlockOps() {
+    throw new AppError('internal_error');
+  },
+  async setTitle() {
+    throw new AppError('internal_error');
+  },
+  async revoke() {
+    throw new AppError('internal_error');
+  },
+};
 
 /** Seconds a claimed job stays leased before another worker may reclaim it. */
 export const LEASE_SECONDS = 300;
@@ -44,7 +63,9 @@ export interface RunnerOptions {
   /** Default 2 000 000 characters. */
   maxExtractedChars?: number;
   /** Default: the deterministic placement model. */
-  placementModel?: PlacementModel;
+  placementModel?: RoutingModel;
+  /** Default: a client that refuses every call (routing captures needs a real one). */
+  collab?: CollabClient;
   /** Overrides the queue registry (tests). */
   handlers?: Record<string, JobHandler>;
   /** Stops between jobs and passes; claimed jobs not yet started are released. */
@@ -93,6 +114,7 @@ export async function runPendingJobsForTenant(
     extractor: o.extractor ?? new UnavailableExtractor(),
     maxExtractedChars: o.maxExtractedChars ?? DEFAULT_MAX_EXTRACTED_CHARS,
     placementModel: o.placementModel ?? defaultPlacementModel,
+    collab: o.collab ?? unavailableCollab,
   };
   const limit = o.limit ?? DEFAULT_LIMIT;
   const fixedNow = o.now;
@@ -256,7 +278,8 @@ export async function runWorkerLoop(o: {
   storage?: ObjectStorage;
   extractor?: Extractor;
   maxExtractedChars?: number;
-  placementModel?: PlacementModel;
+  placementModel?: RoutingModel;
+  collab?: CollabClient;
   handlers?: Record<string, JobHandler>;
 }): Promise<void> {
   while (!o.signal.aborted) {
@@ -275,6 +298,7 @@ export async function runWorkerLoop(o: {
           extractor: o.extractor,
           maxExtractedChars: o.maxExtractedChars,
           placementModel: o.placementModel,
+          collab: o.collab,
           handlers: o.handlers,
           signal: o.signal,
         });

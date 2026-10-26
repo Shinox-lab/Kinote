@@ -7,11 +7,14 @@ import {
   extractVersion,
   buildPageCard,
   extractVersionEntities,
+  routeCapture,
+  failCapture,
   type EmbeddingProvider,
   type Extractor,
-  type PlacementModel,
+  type RoutingModel,
 } from '@living-wiki/core';
-import type { ObjectStorage } from '@living-wiki/shared';
+import { enqueueJob } from '@living-wiki/db';
+import type { CollabClient, ObjectStorage } from '@living-wiki/shared';
 
 /** Longest `versions.error` stored for a failed version. */
 const MAX_VERSION_ERROR_LENGTH = 500;
@@ -72,8 +75,19 @@ export interface JobContext {
   extractor: Extractor;
   /** Most characters of text one file may yield. */
   maxExtractedChars: number;
-  /** Writes page cards and extracts the entity graph. */
-  placementModel: PlacementModel;
+  /** Writes page cards, extracts the entity graph and routes captures. */
+  placementModel: RoutingModel;
+  /** Changes live pages (routed edits go through collab). */
+  collab: CollabClient;
+}
+
+/** How long a capture waits before trying again when another is being routed (R13). */
+export const CAPTURE_BUSY_RETRY_MS = 10_000;
+
+function captureIdOf(job: Job): string {
+  const payload = job.payload as { captureId?: unknown };
+  if (typeof payload.captureId !== 'string') throw new NonRetryableError('capture.route job without a captureId');
+  return payload.captureId;
 }
 
 function versionIdOf(job: Job): string {
@@ -94,6 +108,34 @@ export interface JobHandler {
 }
 
 export const handlers: Record<string, JobHandler> = {
+  /**
+   * Routes one capture into edits. One capture of a tenant at a time: when
+   * another holds the tenant's routing lease the job is put back for
+   * CAPTURE_BUSY_RETRY_MS later (a rerun of the same job, not a failure).
+   */
+  'capture.route': {
+    async run(job, ctx) {
+      const captureId = captureIdOf(job);
+      const result = await routeCapture(
+        { tenantId: job.tenantId, captureId, holder: `job:${job.id}` },
+        { model: ctx.placementModel, embedder: ctx.embeddingProvider, collab: ctx.collab, now: ctx.now }
+      );
+      if (result === 'busy') {
+        await withTenantTx(job.tenantId, (tx) =>
+          enqueueJob(tx, {
+            tenantId: job.tenantId,
+            queue: 'capture.route',
+            idempotencyKey: job.idempotencyKey,
+            payload: job.payload as Record<string, unknown>,
+            runAt: new Date(Date.now() + CAPTURE_BUSY_RETRY_MS),
+          })
+        );
+      }
+    },
+    async onDeadLetter(job, error) {
+      await failCapture(job.tenantId, captureIdOf(job), failureDetail(error));
+    },
+  },
   /**
    * The page card of an indexed page. No onDeadLetter: a card that cannot be
    * built never changes the version's status; the dead-lettered job is shown
