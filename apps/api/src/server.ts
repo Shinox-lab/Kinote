@@ -8,6 +8,9 @@ import {
   AskRequestSchema,
   AppError,
   CreateTenantResponseSchema,
+  CaptureSummarySchema,
+  CaptureListSchema,
+  CaptureDetailSchema,
   InviteMemberResponseSchema,
   AcceptInvitationResponseSchema,
   SpaceSchema,
@@ -103,6 +106,7 @@ import {
   getVersionDiff,
 } from './routes/pages.js';
 import { listReviewQueue } from './routes/reviews.js';
+import { answerCapture, createCapture, getCapture, listCaptures } from './routes/captures.js';
 import {
   archiveFile,
   dismissRemoval,
@@ -615,6 +619,24 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
 
   app.get('/api/v1/recent', async (req, reply) => {
     return reply.send(parseReply(RecentResponseSchema, await listRecent(actorOf(req), req.query)));
+  });
+
+  app.post('/api/v1/captures', async (req, reply) => {
+    return reply.status(201).send(parseReply(CaptureSummarySchema, await createCapture(actorOf(req), req.body)));
+  });
+
+  app.get('/api/v1/captures', async (req, reply) => {
+    return reply.send(parseReply(CaptureListSchema, await listCaptures(actorOf(req), req.query)));
+  });
+
+  app.get('/api/v1/captures/:id', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    return reply.send(parseReply(CaptureDetailSchema, await getCapture(actorOf(req), id)));
+  });
+
+  app.post('/api/v1/captures/:id/answer', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    return reply.send(parseReply(CaptureDetailSchema, await answerCapture(actorOf(req), id, req.body)));
   });
 
   app.get('/api/v1/reviews', async (req, reply) => {

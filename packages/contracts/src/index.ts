@@ -1047,3 +1047,111 @@ export const VersionTextSchema = z.object({
   sections: z.array(ExtractedSectionSchema),
 });
 export type VersionText = z.infer<typeof VersionTextSchema>;
+
+// ---------------------------------------------------------------------------
+// Routing engine: captures, receipts and suggestions
+// ---------------------------------------------------------------------------
+
+/** Longest capture text accepted (`capture_too_long` above it). */
+export const MAX_CAPTURE_CHARS = 20_000;
+
+export const CreateCaptureRequestSchema = z.object({
+  text: z.string().trim().min(1),
+  scope_space_id: z.string().uuid().optional(),
+  scope_page_id: z.string().uuid().optional(),
+});
+
+export const CaptureSummarySchema = z.object({
+  id: z.string().uuid(),
+  senderType: z.enum(['user', 'agent']),
+  senderId: z.string().uuid(),
+  channel: z.enum(['console', 'mcp']),
+  text: z.string(),
+  scopeSpaceId: z.string().uuid().nullable(),
+  scopePageId: z.string().uuid().nullable(),
+  status: z.enum(['queued', 'routing', 'waiting_for_answer', 'done', 'failed']),
+  error: z.string().nullable(),
+  createdAt: z.string(),
+  finishedAt: z.string().nullable(),
+});
+export type CaptureSummary = z.infer<typeof CaptureSummarySchema>;
+export const CaptureListSchema = z.array(CaptureSummarySchema);
+
+export const CaptureListQuerySchema = z.object({ before: z.string().datetime().optional() });
+
+export const CaptureMessageSchema = z.object({
+  id: z.string().uuid(),
+  author: z.enum(['engine', 'sender']),
+  body: z.string(),
+  options: z.array(z.object({ entityId: z.string().uuid(), label: z.string() })).nullable(),
+  answersMessageId: z.string().uuid().nullable(),
+  choice: z.string().nullable(),
+  createdAt: z.string(),
+});
+
+export const SuggestionSummarySchema = z.object({
+  id: z.string().uuid(),
+  documentId: z.string().uuid(),
+  kind: z.enum(['remove', 'replace', 'insert']),
+  blockId: z.string().nullable(),
+  afterBlockId: z.string().nullable(),
+  proposedMarkdown: z.string().nullable(),
+  reason: z.string(),
+  blockedBy: z.enum(['removal', 'protection', 'conflict', 'no_edit_access']),
+  /** What a conflicting citation's source is called, when `blockedBy` is `conflict`. */
+  conflictWith: z.string().nullable(),
+  status: z.enum(['open', 'accepted', 'declined', 'stale']),
+  captureId: z.string().uuid().nullable(),
+  createdAt: z.string(),
+});
+export type SuggestionSummary = z.infer<typeof SuggestionSummarySchema>;
+export const SuggestionListSchema = z.array(SuggestionSummarySchema);
+
+export const CaptureChangeSchema = z.object({
+  id: z.string().uuid(),
+  factId: z.string().uuid(),
+  documentId: z.string().uuid(),
+  op: z.enum(['insert', 'replace', 'create_page']),
+  blockId: z.string(),
+  beforeMarkdown: z.string().nullable(),
+  afterMarkdown: z.string(),
+  status: z.enum(['applied', 'undone', 'moved']),
+  reason: z.string().nullable(),
+});
+export const CaptureChangeListSchema = z.array(CaptureChangeSchema);
+
+export const CaptureReceiptSchema = z.object({
+  spaces: z.array(
+    z.object({
+      spaceId: z.string().uuid(),
+      spaceName: z.string(),
+      pages: z.array(
+        z.object({
+          documentId: z.string().uuid(),
+          title: z.string(),
+          /** applied: indexed or indexing; waiting_review: its snapshot waits; suggestion: only suggestions. */
+          outcome: z.enum(['applied', 'waiting_review', 'suggestion']),
+          changes: z.array(CaptureChangeSchema),
+          suggestions: z.array(SuggestionSummarySchema),
+        })
+      ),
+    })
+  ),
+  /** Changes on pages in spaces the viewer cannot read: counted, never shown. */
+  hiddenChanges: z.number().int().nonnegative(),
+  alreadyKnown: z.array(z.object({ factId: z.string().uuid(), statement: z.string() })),
+  needsHome: z.array(z.object({ factId: z.string().uuid(), statement: z.string(), reason: z.string().nullable() })),
+});
+export type CaptureReceipt = z.infer<typeof CaptureReceiptSchema>;
+
+export const CaptureDetailSchema = z.object({
+  capture: CaptureSummarySchema,
+  thread: z.array(CaptureMessageSchema),
+  receipt: CaptureReceiptSchema,
+});
+export type CaptureDetail = z.infer<typeof CaptureDetailSchema>;
+
+export const AnswerCaptureRequestSchema = z.object({
+  message_id: z.string().uuid(),
+  choice: z.string().uuid(),
+});

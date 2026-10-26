@@ -235,6 +235,7 @@ describe('error model', () => {
       unauthenticated: 401,
       invalid_credentials: 401,
       validation_failed: 400,
+      capture_too_long: 400,
       empty_file: 400,
       file_too_large: 413,
       unsupported_file_type: 415,
@@ -269,6 +270,9 @@ describe('error model', () => {
       'whatsapp_not_linked',
       'not_removed',
       'source_name_taken',
+      'capture_not_waiting',
+      'change_already_undone',
+      'suggestion_not_open',
     ]) {
       expected[code] = 409;
     }

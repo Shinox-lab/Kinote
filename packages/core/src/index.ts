@@ -111,3 +111,4 @@ export {
   searchWiki,
   type ChunkFilter,
 } from './search/hybridSearch.js';
+export { senderActor, senderAccess, type SenderAccess } from './routing/access.js';
