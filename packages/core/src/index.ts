@@ -78,3 +78,4 @@ export {
   type ExtractedEntity,
   type ExtractedEdge,
 } from './placement/model.js';
+export { buildPageCard, pageOutline, type BuildPageCardResult } from './placement/pageCard.js';
