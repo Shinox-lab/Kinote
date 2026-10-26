@@ -8,7 +8,7 @@ import {
   type DocumentRow,
 } from '@living-wiki/db';
 import { AppError } from '@living-wiki/contracts';
-import { requireDocumentRole, assertValidUuid, type Actor } from '@living-wiki/core';
+import { requireDocumentRole, assertValidUuid, deletePlacementIndex, type Actor } from '@living-wiki/core';
 
 // Lifecycle rules shared by pages and files: the same document lock order, the
 // same review-return table, the same cycle check. Callers hold the document lock.
@@ -62,6 +62,7 @@ export async function withdrawLiveVersions(tx: DbTransaction, tenantId: string, 
   await tx
     .delete(chunks)
     .where(and(eq(chunks.tenantId, tenantId), eq(chunks.documentId, documentId)));
+  await deletePlacementIndex(tx, tenantId, documentId);
 }
 
 /**
@@ -151,4 +152,5 @@ export async function returnToReview(tx: DbTransaction, tenantId: string, doc: D
   await tx
     .delete(chunks)
     .where(and(eq(chunks.tenantId, tenantId), eq(chunks.documentId, doc.id)));
+  await deletePlacementIndex(tx, tenantId, doc.id);
 }

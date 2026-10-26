@@ -48,6 +48,7 @@ import {
   pageSlugScope,
   isTenantAdmin,
   type Actor,
+  movePlacementIndex,
 } from '@living-wiki/core';
 import {
   signCollabToken,
@@ -1157,6 +1158,7 @@ export async function movePage(
             inboxOwner: chunkInboxOwner(targetSpace.kind, doc),
           })
           .where(and(eq(chunks.tenantId, actor.tenantId), eq(chunks.documentId, pageId)));
+        await movePlacementIndex(tx, actor.tenantId, doc, { spaceId: parsed.target_space_id, kind: targetSpace.kind });
       }
     }
 

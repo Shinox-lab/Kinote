@@ -39,6 +39,7 @@ import {
   type Actor,
   type DetectedFile,
   type VersionRow,
+  movePlacementIndex,
 } from '@living-wiki/core';
 import type { ObjectStorage } from '@living-wiki/shared';
 import {
@@ -503,6 +504,7 @@ export async function moveFile(actor: Actor, fileId: string, input: unknown): Pr
             inboxOwner: chunkInboxOwner(targetSpace.kind, doc),
           })
           .where(and(eq(chunks.tenantId, actor.tenantId), eq(chunks.documentId, fileId)));
+        await movePlacementIndex(tx, actor.tenantId, doc, { spaceId: parsed.target_space_id, kind: targetSpace.kind });
       }
     }
 

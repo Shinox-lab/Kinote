@@ -86,3 +86,4 @@ export {
   ENTITY_MATCH,
   type ExtractEntitiesResult,
 } from './placement/entities.js';
+export { deletePlacementIndex, movePlacementIndex, enqueuePlacementJobs } from './placement/derived.js';

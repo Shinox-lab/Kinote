@@ -245,6 +245,7 @@ describe('error model', () => {
       embedding_unavailable: 503,
       search_unavailable: 503,
       llm_unavailable: 503,
+      router_unavailable: 503,
       extractor_unavailable: 503,
       source_unavailable: 503,
       internal_error: 500,
