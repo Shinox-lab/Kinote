@@ -1,5 +1,5 @@
 import { expect, test, type APIRequestContext, type Browser, type Page } from '@playwright/test';
-import { call, openAs, seedWorld, type Account, type World } from './support.js';
+import { addMember, approveAll, call, openAs, seedWorld, type Account, type World } from './support.js';
 
 // The Capture page: send anything, follow what the routing engine did with it,
 // and take it back. The local stack routes captures with the deterministic model.
@@ -212,5 +212,56 @@ test.describe('Capture page', () => {
     await panel.getByRole('button', { name: 'Approve removal' }).click();
     await expect(page.getByRole('textbox').first()).not.toContainText('Billing uses Stripe.');
     await expect(page.getByRole('button', { name: /suggestion/ })).toHaveCount(0);
+  });
+});
+
+test.describe('review bundles', () => {
+  let reviewWorld: World;
+  let ed: Account;
+  let rae: Account;
+
+  test.beforeAll(async ({ playwright }) => {
+    const request = await playwright.request.newContext();
+    reviewWorld = await seedWorld(request, { reviewRequired: true });
+    ed = await addMember(request, reviewWorld, 'Ed Editor', 'editor');
+    rae = await addMember(request, reviewWorld, 'Rae Reviewer', 'reviewer');
+    const as = { account: reviewWorld.owner, tenantId: reviewWorld.tenantId };
+    const ids: string[] = [];
+    for (const [title, markdown] of [
+      ['Acme', 'Acme pays yearly.'],
+      ['Globex', 'Globex pays quarterly.'],
+    ] as const) {
+      const page = await call<{ id: string }>(request, '/pages', {
+        ...as,
+        method: 'POST',
+        data: { space_id: reviewWorld.spaceId, title, slug: title.toLowerCase(), markdown },
+      });
+      await call(request, `/pages/${page.id}/snapshot`, { ...as, method: 'POST' });
+      ids.push(page.id);
+    }
+    await approveAll(request, reviewWorld, rae);
+    for (const id of ids) {
+      await expect
+        .poll(async () => (await call<{ badge: string }>(request, `/pages/${id}`, as)).badge, { timeout: 30_000 })
+        .toMatch(/^Indexed/);
+    }
+  });
+
+  test('approve all from this capture', async ({ browser, request }) => {
+    const asEd = { account: ed, tenantId: reviewWorld.tenantId };
+    // Cards and the entity graph are built after indexing: send until both pages are waiting.
+    await expect(async () => {
+      await call(request, '/captures', { ...asEd, method: 'POST', data: { text: 'Acme now pays monthly. Globex now pays monthly.' } });
+      await expect
+        .poll(async () => (await call<unknown[]>(request, '/reviews', { account: rae, tenantId: reviewWorld.tenantId })).length, { timeout: 10_000 })
+        .toBe(2);
+    }).toPass({ timeout: 60_000 });
+
+    const page = await openAs(browser, reviewWorld, rae);
+    await page.goto(`/w/${reviewWorld.slug}/reviews`);
+    await expect(page.getByText('Routing engine on behalf of Ed Editor · from Capture').first()).toBeVisible();
+    await page.getByRole('button', { name: 'Approve all from this capture' }).first().click();
+    await expect(page.getByRole('status').filter({ hasText: 'Approved 2.' })).toBeVisible();
+    await expect(page.getByText('Nothing is waiting for your review.')).toBeVisible();
   });
 });

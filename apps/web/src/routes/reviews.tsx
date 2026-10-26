@@ -16,6 +16,8 @@ import { FileTypeTile } from '../components/FileTypeTile.js';
 import { PageIcon } from '../components/icons.js';
 import { isKnownIcon } from '../lib/emoji.js';
 import { ReviewDocument } from '../components/ReviewDocument.js';
+import { BundleHeader } from '../components/capture/BundleHeader.js';
+import { SuggestionEntry } from '../components/capture/SuggestionsPanel.js';
 import { Button, ErrorNote, Loading } from '../components/ui.js';
 
 const ALL_SPACES = '';
@@ -81,7 +83,17 @@ function RejectForm({
 }
 
 /** The selected review: header, typed full document or changes, and the sticky decision bar. */
-function ReviewDetail({ item, now, onResult }: { item: ReviewItem; now: Date; onResult: (notice: Notice) => void }) {
+function ReviewDetail({
+  item,
+  items,
+  now,
+  onResult,
+}: {
+  item: ReviewItem;
+  items: ReviewItem[];
+  now: Date;
+  onResult: (notice: Notice) => void;
+}) {
   const { tenant } = useWorkspace();
   const refresh = useRefresh();
   const [view, setView] = useState<View>('full');
@@ -129,6 +141,7 @@ function ReviewDetail({ item, now, onResult }: { item: ReviewItem; now: Date; on
 
   return (
     <section aria-label="Review detail" className="flex min-w-0 flex-col gap-3">
+      {item.capture && <BundleHeader item={{ ...item, capture: item.capture }} items={items} onResult={onResult} />}
       <header className="flex flex-col gap-1">
         <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
           <DocumentLink
@@ -188,6 +201,17 @@ function ReviewDetail({ item, now, onResult }: { item: ReviewItem; now: Date; on
       )}
       </div>
 
+      {item.suggestions.length > 0 && (
+        <section aria-label="Suggestions" className="flex flex-col gap-2">
+          <h2 className="text-sm font-semibold text-fg">Suggestions from the routing engine</h2>
+          <ul className="flex flex-col gap-2">
+            {item.suggestions.map((s) => (
+              <SuggestionEntry key={s.id} suggestion={s} onDone={settle} />
+            ))}
+          </ul>
+        </section>
+      )}
+
       <footer className="sticky bottom-0 z-10 mt-2 flex flex-col gap-2 border-t border-line bg-page/95 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur">
         {rejecting && (
           <RejectForm
@@ -236,7 +260,7 @@ function ReviewQueue({
         {items.map((item) => {
           const active = item.version.id === selectedId;
           return (
-            <li key={item.version.id}>
+            <li key={item.version.id} className={item.capture ? 'border-l-2 border-[var(--routing)] pl-1' : undefined}>
               <button
                 type="button"
                 aria-current={active ? 'true' : undefined}
@@ -260,6 +284,7 @@ function ReviewQueue({
                     {item.document.spaceName} · Version {item.version.number}
                   </span>
                   <span className="text-[10.5px] text-muted">{ago(item.version.createdAt, now)}</span>
+                  {item.capture && <span className="text-[10.5px] font-medium text-fg">From Capture</span>}
                 </span>
               </button>
             </li>
@@ -382,7 +407,7 @@ export function ReviewsPage() {
           wide ? (
             <div className="grid gap-5 min-[1200px]:grid-cols-[280px_minmax(0,1fr)]">
               <ReviewQueue items={items} selectedId={selectedId} now={now} onSelect={select} />
-              {current && <ReviewDetail key={current.version.id} item={current} now={now} onResult={setNotice} />}
+              {current && <ReviewDetail key={current.version.id} item={current} items={items} now={now} onResult={setNotice} />}
             </div>
           ) : reviewId ? (
             <div className="flex flex-col gap-3">
@@ -394,7 +419,7 @@ export function ReviewsPage() {
                 ← Back to reviews
               </button>
               {current ? (
-                <ReviewDetail key={current.version.id} item={current} now={now} onResult={setNotice} />
+                <ReviewDetail key={current.version.id} item={current} items={items} now={now} onResult={setNotice} />
               ) : (
                 <p className="text-sm text-muted">That review has left the queue.</p>
               )}
