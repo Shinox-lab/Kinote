@@ -23,7 +23,14 @@ export function CaptureBanner({ pageId, captureId, changes }: { pageId: string; 
     if (!first) return;
     const started = Date.now();
     const timer = setInterval(() => {
-      const el = document.querySelector(`[data-id="${cssString(first)}"]`);
+      let el: Element | null = null;
+      try {
+        el = document.querySelector(`[data-id="${cssString(first)}"]`);
+      } catch {
+        // An id no selector can name: nothing to scroll to.
+        clearInterval(timer);
+        return;
+      }
       if (el) {
         el.scrollIntoView({ block: 'center' });
         clearInterval(timer);

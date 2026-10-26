@@ -94,6 +94,11 @@ describe('capture helpers', () => {
     expect(css).toContain('var(--routing)');
     expect(captureHighlightCss([change('a"b', 'applied')])).toContain('[data-id="a\\"b"]');
     expect(captureHighlightCss([])).toBe('');
+    // A lone carriage return or form feed also ends a CSS string: neither may break out of the selector.
+    for (const id of ['x\r] {} body{display:none} [a="', 'x\f] {} body{display:none} [a="']) {
+      const css = captureHighlightCss([change(id, 'applied')]);
+      expect(css).not.toMatch(/[\r\n\f]/);
+    }
   });
 
   test('suggestionMarkerCss skips closed suggestions and inserts', () => {

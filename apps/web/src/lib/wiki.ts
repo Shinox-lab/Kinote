@@ -153,9 +153,16 @@ export function authorLabel(
   return { name: `${isAgent ? 'Agent' : 'Collaborator'} ${author.id.slice(-4)}`, isAgent };
 }
 
-/** An id inside a double-quoted CSS attribute selector: backslash, quote and line breaks escaped. */
+/**
+ * An id inside a double-quoted CSS attribute selector: backslash, quote and
+ * every line break CSS knows (LF, CR, CRLF, form feed) escaped, so no id can
+ * end the string and start a rule of its own.
+ */
 export function cssString(text: string): string {
-  return text.replace(/[\\"]/g, '\\$&').replace(/\r?\n/g, '\\a ');
+  return text
+    .replace(/[\\"]/g, '\\$&')
+    .replace(/\r\n|[\r\n]/g, '\\a ')
+    .replace(/\f/g, '\\c ');
 }
 
 /**

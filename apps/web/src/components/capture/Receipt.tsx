@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import { useMutation } from '@tanstack/react-query';
 import type { CaptureReceipt, UndoChangesResponse } from '@living-wiki/contracts';
-import { api } from '../../lib/api.js';
+import { ApiError, api } from '../../lib/api.js';
 import { hiddenChangesText, outcomeLabel, undoNotice, type CaptureChange } from '../../lib/capture.js';
 import { useRefresh, useWorkspace } from '../../lib/queries.js';
 import { Button, ErrorNote } from '../ui.js';
@@ -16,18 +16,26 @@ const OUTCOME_TONE = {
   suggestion: 'bg-hover text-fg',
 } as const;
 
-/** Undoes changes one after another and adds their results up (one call per change). */
+/**
+ * Undoes changes one after another and adds their results up (one call per
+ * change). A change someone already undid (another tab, Undo all) is done:
+ * the rest still get their turn.
+ */
 async function undoAll(changes: CaptureChange[]): Promise<UndoChangesResponse> {
   const total: UndoChangesResponse = { undone: [], changedSince: [] };
   for (const change of changes) {
-    const r = await api.undoChange(change.id);
-    total.undone.push(...r.undone);
-    total.changedSince.push(...r.changedSince);
+    try {
+      const r = await api.undoChange(change.id);
+      total.undone.push(...r.undone);
+      total.changedSince.push(...r.changedSince);
+    } catch (err) {
+      if (!(err instanceof ApiError && err.code === 'change_already_undone')) throw err;
+    }
   }
   return total;
 }
 
-function ChangeRow({ change, onMoved }: { change: CaptureChange; onMoved: () => void }) {
+function ChangeRow({ change, kept, onMoved }: { change: CaptureChange; kept: boolean; onMoved: () => void }) {
   const [picking, setPicking] = useState(false);
   const move = useMutation({
     mutationFn: (pageId: string) => api.moveChange(change.id, { target_page_id: pageId }),
@@ -44,6 +52,7 @@ function ChangeRow({ change, onMoved }: { change: CaptureChange; onMoved: () => 
         {change.afterMarkdown}
       </p>
       {change.status !== 'applied' && <p className="text-xs text-muted">{change.status === 'moved' ? 'Moved' : 'Undone'}</p>}
+      {kept && change.status === 'applied' && <p className="text-xs font-medium text-warn-text">Changed since, not undone</p>}
       {change.reason && <p className="text-xs text-muted">Why here: {change.reason}</p>}
       {movable && (
         <button
@@ -61,7 +70,19 @@ function ChangeRow({ change, onMoved }: { change: CaptureChange; onMoved: () => 
 }
 
 /** One page of the receipt: where it went, what changed, and taking it back. */
-function PageCard({ captureId, page, onNotice }: { captureId: string; page: ReceiptPage; onNotice: (text: string) => void }) {
+function PageCard({
+  captureId,
+  page,
+  kept,
+  undoing,
+  onUndo,
+}: {
+  captureId: string;
+  page: ReceiptPage;
+  kept: ReadonlySet<string>;
+  undoing: boolean;
+  onUndo: (run: () => Promise<UndoChangesResponse>) => void;
+}) {
   const { tenant } = useWorkspace();
   const refresh = useRefresh();
   const applied = page.changes.filter((c) => c.status === 'applied');
@@ -71,13 +92,7 @@ function PageCard({ captureId, page, onNotice }: { captureId: string; page: Rece
     void refresh('needs-home');
     void refresh('page', page.documentId);
   };
-  const undo = useMutation({
-    mutationFn: () => undoAll(applied),
-    onSuccess: (r) => {
-      onNotice(undoNotice(r));
-      settled();
-    },
-  });
+
   return (
     <section aria-label={page.title} className="flex flex-col gap-2 rounded-md border border-line bg-page p-3">
       <div className="flex flex-wrap items-center gap-2">
@@ -99,20 +114,19 @@ function PageCard({ captureId, page, onNotice }: { captureId: string; page: Rece
           {outcomeLabel(page.outcome)}
         </span>
         {applied.length > 0 && (
-          <Button variant="secondary" className="ml-auto !px-2 !py-1 text-xs" disabled={undo.isPending} onClick={() => undo.mutate()}>
+          <Button variant="secondary" className="ml-auto !px-2 !py-1 text-xs" disabled={undoing} onClick={() => onUndo(() => undoAll(applied))}>
             Undo
           </Button>
         )}
       </div>
       {page.changes.map((change) => (
-        <ChangeRow key={change.id} change={change} onMoved={settled} />
+        <ChangeRow key={change.id} change={change} kept={kept.has(change.id)} onMoved={settled} />
       ))}
       {page.suggestions.map((s) => (
         <p key={s.id} className="rounded border border-dashed border-[var(--routing)] px-2 py-1 text-xs text-fg">
           Suggestion ({s.kind}): {s.proposedMarkdown ?? 'remove this block'} · {s.status}
         </p>
       ))}
-      <ErrorNote error={undo.error} />
     </section>
   );
 }
@@ -120,14 +134,22 @@ function PageCard({ captureId, page, onNotice }: { captureId: string; page: Rece
 /** What a capture did, grouped by space and page; pages in spaces the viewer cannot read are only counted. */
 export function Receipt({ captureId, receipt }: { captureId: string; receipt: CaptureReceipt }) {
   const [notice, setNotice] = useState<string | null>(null);
+  // Changes an Undo left alone because someone changed their block since: named on their rows.
+  const [kept, setKept] = useState<ReadonlySet<string>>(new Set());
   const refresh = useRefresh();
   const applied = receipt.spaces.flatMap((s) => s.pages.flatMap((p) => p.changes.filter((c) => c.status === 'applied')));
-  const undoEverything = useMutation({
-    mutationFn: () => api.undoCapture(captureId),
+  // One undo at a time on this receipt (a page's, or all of them); whatever happens, look again.
+  const undo = useMutation({
+    mutationFn: (run: () => Promise<UndoChangesResponse>) => run(),
     onSuccess: (r) => {
       setNotice(undoNotice(r));
+      setKept((prev) => new Set([...prev, ...r.changedSince]));
+    },
+    onSettled: () => {
       void refresh('capture', captureId);
       void refresh('captures');
+      void refresh('needs-home');
+      void refresh('page');
     },
   });
   const hidden = hiddenChangesText(receipt.hiddenChanges);
@@ -137,7 +159,7 @@ export function Receipt({ captureId, receipt }: { captureId: string; receipt: Ca
   return (
     <section aria-label="Receipt" className="flex flex-col gap-3">
       {applied.length > 1 && (
-        <Button variant="secondary" className="self-start" disabled={undoEverything.isPending} onClick={() => undoEverything.mutate()}>
+        <Button variant="secondary" className="self-start" disabled={undo.isPending} onClick={() => undo.mutate(() => api.undoCapture(captureId))}>
           Undo all applied
         </Button>
       )}
@@ -146,12 +168,19 @@ export function Receipt({ captureId, receipt }: { captureId: string; receipt: Ca
           {notice}
         </p>
       )}
-      <ErrorNote error={undoEverything.error} />
+      <ErrorNote error={undo.error} />
       {receipt.spaces.map((space) => (
         <div key={space.spaceId} className="flex flex-col gap-2">
           <h3 className="text-xs font-semibold uppercase tracking-wide text-muted">{space.spaceName}</h3>
           {space.pages.map((page) => (
-            <PageCard key={page.documentId} captureId={captureId} page={page} onNotice={setNotice} />
+            <PageCard
+              key={page.documentId}
+              captureId={captureId}
+              page={page}
+              kept={kept}
+              undoing={undo.isPending}
+              onUndo={(run) => undo.mutate(run)}
+            />
           ))}
         </div>
       ))}

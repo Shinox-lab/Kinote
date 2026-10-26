@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import type { CaptureDetail, CaptureSummary } from '@living-wiki/contracts';
 import { api } from '../../lib/api.js';
@@ -70,6 +70,17 @@ export function CaptureCard({ capture, defaultOpen }: { capture: CaptureSummary;
   const [open, setOpen] = useState(defaultOpen);
   const { data: detail, error, isPending } = useCapture(capture.id, open);
   const status = detail?.capture.status ?? capture.status;
+  const refresh = useRefresh();
+  // When routing finishes, facts it could not place have just joined Needs a home.
+  const lastStatus = useRef(status);
+  useEffect(() => {
+    const was = lastStatus.current;
+    lastStatus.current = status;
+    if ((was === 'queued' || was === 'routing') && status !== 'queued' && status !== 'routing') {
+      void refresh('needs-home');
+    }
+    // `refresh` is a new function every render; the status is the trigger.
+  }, [status]);
   return (
     <article aria-label={`Capture from ${relativeTime(capture.createdAt)}`} className="flex flex-col gap-3 rounded-lg border border-line bg-surface p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">

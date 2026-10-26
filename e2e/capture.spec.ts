@@ -186,6 +186,54 @@ test.describe('Capture page', () => {
     await expect(home.getByText('The coffee machine is broken.')).toHaveCount(0);
   });
 
+  test('undo names the block someone changed since', async ({ browser, request }) => {
+    const target = await indexedPage(request, 'Kept billing', 'Billing uses Stripe.\n\nInvoices go out monthly.');
+    await captureVia(request, 'Billing moved to Adyen. Invoices now go out weekly.', target);
+    // A person edits the Adyen block in the editor after the engine did.
+    const editorPage = await openAs(browser, world, world.owner);
+    await editorPage.goto(`/w/${world.slug}/p/${target}`);
+    await expect(editorPage.getByRole('status', { name: 'Presence: connected' })).toBeVisible();
+    await editorPage.getByText('Billing moved to Adyen.').click();
+    await editorPage.keyboard.press('End');
+    await editorPage.keyboard.type(' And PayPal.');
+    await expect.poll(() => pageText(browser, target), { timeout: 20_000 }).toContain('And PayPal.');
+
+    const page = await openCapture(browser);
+    const card = page.getByRole('article').first().getByRole('region', { name: 'Kept billing' });
+    await card.getByRole('button', { name: 'Undo', exact: true }).click();
+    await expect(page.getByRole('status').filter({ hasText: 'Undid 1 change. 1 changed since, not undone.' })).toBeVisible();
+    await expect(card.getByText('Changed since, not undone')).toHaveCount(1);
+  });
+
+  test('page undo carries on past a change undone elsewhere', async ({ browser, request }) => {
+    const target = await indexedPage(request, 'Elsewhere billing', 'Billing uses Stripe.\n\nInvoices go out monthly.');
+    const captureId = await captureVia(request, 'Billing moved to Adyen. Invoices now go out weekly.', target);
+    const page = await openCapture(browser);
+    const card = page.getByRole('article').first().getByRole('region', { name: 'Elsewhere billing' });
+    await expect(card.getByRole('button', { name: 'Undo', exact: true })).toBeVisible();
+    // Another tab undoes the first change while this receipt still lists it as applied.
+    const as = { account: world.owner, tenantId: world.tenantId };
+    const detail = await call<{ receipt: { spaces: Array<{ pages: Array<{ changes: Array<{ id: string }> }> }> } }>(
+      request, `/captures/${captureId}`, as);
+    const first = detail.receipt.spaces[0]!.pages[0]!.changes[0]!.id;
+    await call(request, `/capture-changes/${first}/undo`, { ...as, method: 'POST' });
+
+    await card.getByRole('button', { name: 'Undo', exact: true }).click();
+    await expect(page.getByRole('status').filter({ hasText: 'Undid 1 change.' })).toBeVisible();
+    await expect(card.getByRole('button', { name: 'Undo', exact: true })).toHaveCount(0);
+    expect(await pageText(browser, target)).toContain('Invoices go out monthly.');
+  });
+
+  test('a fact sent from the box shows up in Needs a home without reloading', async ({ browser, request }) => {
+    const scope = await indexedPage(request, 'Live lunch scope', 'Billing uses Stripe.');
+    const page = await openCapture(browser, `?page=${scope}`);
+    await page.getByLabel('What do you want to file?').fill('The picnic is on Friday.');
+    await page.getByRole('button', { name: 'Send', exact: true }).click();
+    await expect(page.getByRole('region', { name: 'Needs a home' }).getByText('The picnic is on Friday.')).toBeVisible({
+      timeout: 15_000,
+    });
+  });
+
   test('a receipt card opens the page with the capture\'s blocks highlighted, and Exit leaves', async ({ browser, request }) => {
     const target = await indexedPage(request, 'Highlight billing', 'Billing uses Stripe.\n\nInvoices go out monthly.');
     await captureVia(request, 'Billing moved to Adyen.', target);
