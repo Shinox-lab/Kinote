@@ -392,16 +392,21 @@ export async function previousEntityIds(tx: DbTransaction, tenantId: string, doc
 }
 
 /**
- * Deletes those of `ids` nothing mentions or connects any more. A concurrent
- * writer adding a mention makes the foreign key fail the transaction (the job
- * retries) rather than losing that mention.
+ * Deletes those of `ids` nothing mentions or connects any more. Rows another
+ * transaction holds (an extraction job inserting a mention takes a key-share
+ * lock through the foreign key) are skipped, never waited on: a withdraw or
+ * move never fails on a concurrent job, and a skipped orphan is collected by
+ * the document's next extraction or the index check.
  */
 export async function deleteOrphanEntities(tx: DbTransaction, tenantId: string, ids: string[]): Promise<void> {
   if (ids.length === 0) return;
   await tx.execute(sql`
-    DELETE FROM entities e
-     WHERE e.tenant_id = ${tenantId}::uuid
-       AND e.id = ANY(${sql.param(ids)}::uuid[])
-       AND NOT EXISTS (SELECT 1 FROM entity_mentions m WHERE m.tenant_id = e.tenant_id AND m.entity_id = e.id)
-       AND NOT EXISTS (SELECT 1 FROM entity_edges g WHERE g.tenant_id = e.tenant_id AND (g.from_entity_id = e.id OR g.to_entity_id = e.id))`);
+    DELETE FROM entities
+     WHERE id IN (
+       SELECT e.id FROM entities e
+        WHERE e.tenant_id = ${tenantId}::uuid
+          AND e.id = ANY(${sql.param(ids)}::uuid[])
+          AND NOT EXISTS (SELECT 1 FROM entity_mentions m WHERE m.tenant_id = e.tenant_id AND m.entity_id = e.id)
+          AND NOT EXISTS (SELECT 1 FROM entity_edges g WHERE g.tenant_id = e.tenant_id AND (g.from_entity_id = e.id OR g.to_entity_id = e.id))
+        FOR UPDATE SKIP LOCKED)`);
 }
