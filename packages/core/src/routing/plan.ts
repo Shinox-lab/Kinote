@@ -1,4 +1,4 @@
-import { and, eq, gt, inArray } from 'drizzle-orm';
+import { and, eq, gt, inArray, sql } from 'drizzle-orm';
 import {
   withTenantTx,
   blockActivity,
@@ -11,6 +11,7 @@ import {
   spaces,
   suggestions,
   versions,
+  rowsOf,
   type DbTransaction,
 } from '@living-wiki/db';
 import { AppError } from '@living-wiki/contracts';
@@ -111,7 +112,8 @@ export async function planCapture(
     const actor = await senderActor(tx, { tenantId, type: capture.senderType, id: capture.senderId });
     const access = await senderAccess(tx, actor);
     let spaceIds = access.readable;
-    if (capture.scopeSpaceId) spaceIds = spaceIds.filter((id) => id === capture.scopeSpaceId);
+    // A page a person chose overrides the capture's scope.
+    if (capture.scopeSpaceId && !deps.onlyPage) spaceIds = spaceIds.filter((id) => id === capture.scopeSpaceId);
     const all = await tx.select({ id: spaces.id, kind: spaces.kind, name: spaces.name }).from(spaces).where(eq(spaces.tenantId, tenantId));
     const stored = deps.facts
       ? null
@@ -189,14 +191,18 @@ async function planFact(tenantId: string, ctx: Context, input: PlanFactInput, de
 
   // 2. Gather candidate pages from passages, cards and the graph, fused.
   const [vector] = await deps.embedder.embed([fact.statement], 'query');
-  const candidates = await withTenantTx(tenantId, (tx) => gatherCandidates(tx, ctx, fact.statement, vector!, resolved));
+  const { candidates, examples } = await withTenantTx(tenantId, async (tx) => {
+    const candidates = await gatherCandidates(tx, ctx, fact.statement, vector!, resolved);
+    const spaceIds = [...new Set([...candidates.values()].map((c) => c.spaceId))];
+    return { candidates, examples: await similarExamples(tx, tenantId, spaceIds, vector!) };
+  });
   if (candidates.size === 0) return { status: 'needs_home', reason: 'No page you can read is about this.' };
 
-  // 3. Plan.
+  // 3. Plan, shown how people corrected similar facts in these spaces (R11).
   const { edits } = await deps.model.planEdits({
     fact,
     candidates: [...candidates.values()].map((c) => c.card),
-    examples: [],
+    examples,
     writableSpaces: ctx.writableSpaces,
   });
 
@@ -258,6 +264,22 @@ async function gatherCandidates(
     });
   }
   return out;
+}
+
+/** Up to 5 corrections in `spaceIds` most similar to the fact. */
+async function similarExamples(tx: DbTransaction, tenantId: string, spaceIds: string[], vector: number[]) {
+  if (spaceIds.length === 0) return [];
+  const literal = `[${vector.join(',')}]`;
+  const rows = rowsOf<{ statement: string; title: string }>(
+    await tx.execute(sql`
+      SELECT e.statement, d.title
+        FROM routing_examples e
+        JOIN documents d ON d.tenant_id = e.tenant_id AND d.id = e.chosen_document_id
+       WHERE e.tenant_id = ${tenantId}::uuid AND e.space_id = ANY(${sql.param(spaceIds)}::uuid[])
+       ORDER BY e.statement_embedding <=> ${literal}::halfvec
+       LIMIT 5`)
+  );
+  return rows.map((r) => ({ statement: r.statement, chosenTitle: r.title }));
 }
 
 function targetOf(edit: PlannedEdit): string {

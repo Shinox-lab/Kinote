@@ -118,7 +118,8 @@ async function settleStatus(tx: DbTransaction, tenantId: string, captureId: stri
   return status;
 }
 
-async function finishCapture(tenantId: string, captureId: string) {
+/** Settles the capture's status and audits the run. */
+export async function finishCapture(tenantId: string, captureId: string) {
   return withTenantTx(tenantId, async (tx) => {
     const status = await settleStatus(tx, tenantId, captureId);
     const facts = await tx

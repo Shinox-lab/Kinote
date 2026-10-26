@@ -1155,3 +1155,28 @@ export const AnswerCaptureRequestSchema = z.object({
   message_id: z.string().uuid(),
   choice: z.string().uuid(),
 });
+
+export const UndoChangesResponseSchema = z.object({
+  undone: z.array(z.string().uuid()),
+  /** Changes whose block a person changed since: left alone. */
+  changedSince: z.array(z.string().uuid()),
+});
+export type UndoChangesResponse = z.infer<typeof UndoChangesResponseSchema>;
+
+export const MoveChangeRequestSchema = z.object({ target_page_id: z.string().uuid() });
+export const MoveChangeResponseSchema = z.object({ moved: z.string().uuid(), factId: z.string().uuid() });
+
+export const PlaceFactRequestSchema = z.object({ document_id: z.string().uuid() });
+
+export const NeedsHomeItemSchema = z.object({
+  factId: z.string().uuid(),
+  captureId: z.string().uuid(),
+  statement: z.string(),
+  reason: z.string().nullable(),
+  createdAt: z.string(),
+});
+export const NeedsHomeListSchema = z.array(NeedsHomeItemSchema);
+export const FactStatusSchema = z.object({
+  factId: z.string().uuid(),
+  outcome: z.enum(['pending', 'applied', 'waiting_review', 'suggested', 'needs_home', 'already_known', 'dismissed', 'undone']),
+});

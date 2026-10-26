@@ -273,6 +273,7 @@ describe('error model', () => {
       'capture_not_waiting',
       'change_already_undone',
       'suggestion_not_open',
+      'fact_not_open',
     ]) {
       expected[code] = 409;
     }

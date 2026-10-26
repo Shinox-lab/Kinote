@@ -8,6 +8,7 @@ import {
   buildPageCard,
   extractVersionEntities,
   routeCapture,
+  placeFact,
   failCapture,
   type EmbeddingProvider,
   type Extractor,
@@ -84,6 +85,19 @@ export interface JobContext {
 /** How long a capture waits before trying again when another is being routed (R13). */
 export const CAPTURE_BUSY_RETRY_MS = 10_000;
 
+/** Puts a running routing job back for CAPTURE_BUSY_RETRY_MS later (a rerun, not a failure). */
+async function requeueLater(job: Job) {
+  await withTenantTx(job.tenantId, (tx) =>
+    enqueueJob(tx, {
+      tenantId: job.tenantId,
+      queue: job.queue,
+      idempotencyKey: job.idempotencyKey,
+      payload: job.payload as Record<string, unknown>,
+      runAt: new Date(Date.now() + CAPTURE_BUSY_RETRY_MS),
+    })
+  );
+}
+
 function captureIdOf(job: Job): string {
   const payload = job.payload as { captureId?: unknown };
   if (typeof payload.captureId !== 'string') throw new NonRetryableError('capture.route job without a captureId');
@@ -120,20 +134,24 @@ export const handlers: Record<string, JobHandler> = {
         { tenantId: job.tenantId, captureId, holder: `job:${job.id}` },
         { model: ctx.placementModel, embedder: ctx.embeddingProvider, collab: ctx.collab, now: ctx.now }
       );
-      if (result === 'busy') {
-        await withTenantTx(job.tenantId, (tx) =>
-          enqueueJob(tx, {
-            tenantId: job.tenantId,
-            queue: 'capture.route',
-            idempotencyKey: job.idempotencyKey,
-            payload: job.payload as Record<string, unknown>,
-            runAt: new Date(Date.now() + CAPTURE_BUSY_RETRY_MS),
-          })
-        );
-      }
+      if (result === 'busy') await requeueLater(job);
     },
     async onDeadLetter(job, error) {
       await failCapture(job.tenantId, captureIdOf(job), failureDetail(error));
+    },
+  },
+  /** Files one fact on the page a person chose; waits for the lease like `capture.route`. */
+  'capture.place': {
+    async run(job, ctx) {
+      const payload = job.payload as { factId?: unknown; documentId?: unknown };
+      if (typeof payload.factId !== 'string' || typeof payload.documentId !== 'string') {
+        throw new NonRetryableError('capture.place job without a factId and documentId');
+      }
+      const result = await placeFact(
+        { tenantId: job.tenantId, factId: payload.factId, documentId: payload.documentId, holder: `job:${job.id}` },
+        { model: ctx.placementModel, embedder: ctx.embeddingProvider, collab: ctx.collab, now: ctx.now }
+      );
+      if (result === 'busy') await requeueLater(job);
     },
   },
   /**

@@ -126,9 +126,11 @@ export {
 export { ensureRouterAgent } from './routing/routerAgent.js';
 export {
   routeCapture,
+  finishCapture,
   applyPlannedFacts,
   failCapture,
   ROUTING_LEASE_SECONDS,
   QUESTION_TTL_DAYS,
   type RouteDeps,
 } from './routing/apply.js';
+export { placeFact, recordRoutingExample } from './routing/place.js';

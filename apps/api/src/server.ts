@@ -13,6 +13,10 @@ import {
   CaptureDetailSchema,
   SuggestionSummarySchema,
   SuggestionListSchema,
+  UndoChangesResponseSchema,
+  MoveChangeResponseSchema,
+  NeedsHomeListSchema,
+  FactStatusSchema,
   InviteMemberResponseSchema,
   AcceptInvitationResponseSchema,
   SpaceSchema,
@@ -110,6 +114,14 @@ import {
 import { listReviewQueue } from './routes/reviews.js';
 import { answerCapture, createCapture, getCapture, listCaptures } from './routes/captures.js';
 import { acceptSuggestion, declineSuggestion, listPageSuggestions } from './routes/suggestions.js';
+import {
+  dismissCaptureFact,
+  listNeedsHome,
+  moveCaptureChange,
+  placeCaptureFact,
+  undoCapture,
+  undoCaptureChange,
+} from './routes/captureChanges.js';
 import {
   archiveFile,
   dismissRemoval,
@@ -640,6 +652,37 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
   app.post('/api/v1/captures/:id/answer', async (req, reply) => {
     const { id } = req.params as { id: string };
     return reply.send(parseReply(CaptureDetailSchema, await answerCapture(actorOf(req), id, req.body)));
+  });
+
+  app.post('/api/v1/captures/:id/undo', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    return reply.send(parseReply(UndoChangesResponseSchema, await undoCapture(actorOf(req), id, opts.collab)));
+  });
+
+  app.post('/api/v1/capture-changes/:id/undo', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    return reply.send(parseReply(UndoChangesResponseSchema, await undoCaptureChange(actorOf(req), id, opts.collab)));
+  });
+
+  app.post('/api/v1/capture-changes/:id/move', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const res = await moveCaptureChange(actorOf(req), id, req.body, { collab: opts.collab, embedder: embeddingProvider });
+    return reply.send(parseReply(MoveChangeResponseSchema, res));
+  });
+
+  app.get('/api/v1/needs-home', async (req, reply) => {
+    return reply.send(parseReply(NeedsHomeListSchema, await listNeedsHome(actorOf(req))));
+  });
+
+  app.post('/api/v1/capture-facts/:id/place', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const res = await placeCaptureFact(actorOf(req), id, req.body, { embedder: embeddingProvider });
+    return reply.send(parseReply(FactStatusSchema, res));
+  });
+
+  app.post('/api/v1/capture-facts/:id/dismiss', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    return reply.send(parseReply(FactStatusSchema, await dismissCaptureFact(actorOf(req), id)));
   });
 
   app.get('/api/v1/pages/:id/suggestions', async (req, reply) => {
