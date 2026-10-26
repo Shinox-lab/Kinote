@@ -134,7 +134,7 @@ export const versions = pgTable(
     }).notNull(),
     contentHash: text('content_hash').notNull(),
     reason: text('reason', {
-      enum: ['quiet', 'submit', 'agent', 'restore', 'upload', 'source', 'transcript'],
+      enum: ['quiet', 'submit', 'agent', 'restore', 'upload', 'source', 'transcript', 'capture'],
     }).notNull(),
     createdByType: text('created_by_type', { enum: ['user', 'agent', 'connector'] }).notNull(),
     createdBy: uuid('created_by').notNull(),

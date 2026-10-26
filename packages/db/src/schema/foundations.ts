@@ -87,7 +87,7 @@ export const agents = pgTable('agents', {
     .notNull()
     .references(() => tenants.id),
   name: text('name').notNull(),
-  kind: text('kind', { enum: ['curator', 'external'] }).notNull().default('external'),
+  kind: text('kind', { enum: ['curator', 'external', 'router'] }).notNull().default('external'),
   createdBy: uuid('created_by').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   disabledAt: timestamp('disabled_at', { withTimezone: true }),

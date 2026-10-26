@@ -4,8 +4,9 @@ import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 import * as foundations from './schema/foundations.js';
 import * as pagesAndIndex from './schema/pages_and_index.js';
 import * as placement from './schema/placement.js';
+import * as routing from './schema/routing.js';
 
-export const schema = { ...foundations, ...pagesAndIndex, ...placement };
+export const schema = { ...foundations, ...pagesAndIndex, ...placement, ...routing };
 
 /** Driver-agnostic Drizzle database: node-postgres in production, PGlite in tests. */
 export type Db = PgDatabase<PgQueryResultHKT, typeof schema>;

@@ -54,7 +54,7 @@ export const entities = pgTable(
     /** Other spellings seen, normalized. */
     aliases: text('aliases').array().notNull().default([]),
     nameEmbedding: halfvec(2560)('name_embedding').notNull(),
-    userId: uuid('user_id').references(() => users.id),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
