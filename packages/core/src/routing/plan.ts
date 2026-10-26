@@ -1,0 +1,414 @@
+import { and, eq, gt, inArray } from 'drizzle-orm';
+import {
+  withTenantTx,
+  blockActivity,
+  captureChanges,
+  captureFacts,
+  captures,
+  citations,
+  documents,
+  pageCards,
+  spaces,
+  suggestions,
+  versions,
+  type DbTransaction,
+} from '@living-wiki/db';
+import { AppError } from '@living-wiki/contracts';
+import type { BlockLike } from '@living-wiki/shared';
+import type { EmbeddingProvider } from '../embedding.js';
+import type { Actor } from '../permissions.js';
+import type { CaptureFact, PlanCandidate, PlannedEdit, RoutingModel } from '../placement/model.js';
+import { findEntities, pagesForEntities, searchPageCards, type PlacementFilter } from '../placement/queries.js';
+import { searchWiki } from '../search/hybridSearch.js';
+import { senderAccess, senderActor } from './access.js';
+import { blockMarkdown, blockText, readLiveBlocks } from './liveBlocks.js';
+
+/**
+ * Routing settings. Thresholds are to be tuned on the evaluation set:
+ * `apply` for an insert or replace, `create` for a new page (R9), and
+ * `margin`, how far ahead the best target (or entity) must be (R10).
+ */
+export const ROUTING = { candidates: 8, blocksPerCandidate: 40, apply: 0.6, create: 0.85, margin: 0.1, rrfK: 60 } as const;
+
+/** Why an edit became a suggestion instead of being applied. */
+export type Gate = null | 'removal' | 'protection' | 'conflict' | 'no_edit_access';
+
+export interface CheckedEdit {
+  edit: PlannedEdit;
+  /** The space the edit lands in (the page's, or the new page's). */
+  spaceId: string;
+  /** Non-null: becomes a suggestion. */
+  gate: Gate;
+  /** The block's Markdown before a replace or remove. */
+  beforeMarkdown: string | null;
+  /** A still-valid version citation on the block (R4). */
+  conflictCitationId: string | null;
+}
+
+export type FactPlan =
+  | { status: 'question'; names: string[]; question: string; options: Array<{ entityId: string; label: string }> }
+  | { status: 'needs_home'; reason: string }
+  | { status: 'already_known'; documentId: string; blockId: string }
+  | { status: 'planned'; edits: CheckedEdit[] };
+
+export interface PlanFactInput {
+  ordinal: number;
+  /** The stored fact, on a run after the first. */
+  factId: string | null;
+  fact: CaptureFact;
+  /** Entities the sender chose in answers. */
+  pinnedEntityIds: string[];
+}
+
+export interface PlannedFact extends PlanFactInput {
+  plan: FactPlan;
+}
+
+export interface PlanDeps {
+  model: RoutingModel;
+  embedder: EmbeddingProvider;
+  now?: Date;
+  /** The facts to plan; by default the capture's pending facts, or a fresh split on the first run. */
+  facts?: PlanFactInput[];
+  /** Restrict candidates to this page and waive the confidence floor (a person chose the page). */
+  onlyPage?: string;
+}
+
+interface Context {
+  actor: Actor;
+  filter: PlacementFilter;
+  inboxSpaceId: string;
+  editable: Set<string>;
+  writableSpaces: Array<{ id: string; name: string }>;
+  scopePageId: string | null;
+}
+
+interface Candidate {
+  spaceId: string;
+  card: PlanCandidate;
+  blocks: Map<string, BlockLike>;
+}
+
+/**
+ * Plans what a capture would change, without changing anything (a dry run:
+ * reads in short transactions, model and embedder calls outside them).
+ * Every proposed edit is checked against the rules: unknown ids and low
+ * confidence are dropped; removals, protected blocks, blocks citing a valid
+ * version and pages the sender cannot edit are gated into suggestions;
+ * duplicates of what already waits are dropped.
+ */
+export async function planCapture(
+  params: { tenantId: string; captureId: string },
+  deps: PlanDeps
+): Promise<PlannedFact[]> {
+  const { tenantId, captureId } = params;
+  const loaded = await withTenantTx(tenantId, async (tx) => {
+    const [capture] = await tx
+      .select()
+      .from(captures)
+      .where(and(eq(captures.tenantId, tenantId), eq(captures.id, captureId)));
+    if (!capture) throw new AppError('capture_not_found');
+    const actor = await senderActor(tx, { tenantId, type: capture.senderType, id: capture.senderId });
+    const access = await senderAccess(tx, actor);
+    let spaceIds = access.readable;
+    if (capture.scopeSpaceId) spaceIds = spaceIds.filter((id) => id === capture.scopeSpaceId);
+    const all = await tx.select({ id: spaces.id, kind: spaces.kind, name: spaces.name }).from(spaces).where(eq(spaces.tenantId, tenantId));
+    const stored = deps.facts
+      ? null
+      : await tx
+          .select()
+          .from(captureFacts)
+          .where(and(eq(captureFacts.tenantId, tenantId), eq(captureFacts.captureId, captureId)))
+          .orderBy(captureFacts.ordinal);
+    const context: Context = {
+      actor,
+      filter: { tenantId, spaceIds },
+      inboxSpaceId: all.find((s) => s.kind === 'inbox')?.id ?? '00000000-0000-0000-0000-000000000000',
+      editable: new Set(access.editable),
+      writableSpaces: all.filter((s) => access.editable.includes(s.id)).map((s) => ({ id: s.id, name: s.name })),
+      scopePageId: deps.onlyPage ?? capture.scopePageId,
+    };
+    return { capture, context, stored };
+  });
+
+  let facts: PlanFactInput[];
+  if (deps.facts) facts = deps.facts;
+  else if (loaded.stored && loaded.stored.length > 0) {
+    facts = loaded.stored
+      .filter((f) => f.outcome === 'pending')
+      .map((f) => ({
+        ordinal: f.ordinal,
+        factId: f.id,
+        fact: { statement: f.statement, kind: f.kind, names: f.names, date: f.date },
+        pinnedEntityIds: f.pinnedEntityIds,
+      }));
+  } else {
+    const split = await deps.model.splitCapture({ text: loaded.capture.text });
+    facts = split.facts.map((fact, ordinal) => ({ ordinal, factId: null, fact, pinnedEntityIds: [] }));
+  }
+
+  const out: PlannedFact[] = [];
+  for (const input of facts) {
+    out.push({ ...input, plan: await planFact(tenantId, loaded.context, input, deps) });
+  }
+  return out;
+}
+
+async function planFact(tenantId: string, ctx: Context, input: PlanFactInput, deps: PlanDeps): Promise<FactPlan> {
+  const { fact, pinnedEntityIds } = input;
+
+  // 1. Resolve the names, asking when two entities fit about equally well.
+  const resolved: string[] = [];
+  const hitsByName = await withTenantTx(tenantId, async (tx) => {
+    const found: Array<[string, Awaited<ReturnType<typeof findEntities>>]> = [];
+    for (const name of fact.names) found.push([name, await findEntities(tx, ctx.filter, name, 5)]);
+    return found;
+  });
+  for (const [name, hits] of hitsByName) {
+    const pinned = hits.find((h) => pinnedEntityIds.includes(h.entityId));
+    if (pinned) {
+      resolved.push(pinned.entityId);
+      continue;
+    }
+    const [top, second] = hits;
+    if (!top) continue;
+    const clearlyAhead =
+      !second || (top.match === 'exact' && second.match !== 'exact') || top.score - second.score > ROUTING.margin;
+    if (clearlyAhead) {
+      resolved.push(top.entityId);
+      continue;
+    }
+    const close = hits.filter((h) => h.match === top.match && top.score - h.score <= ROUTING.margin);
+    return {
+      status: 'question',
+      names: [name],
+      question: `Which ${name} do you mean?`,
+      options: close.map((h) => ({ entityId: h.entityId, label: h.name })),
+    };
+  }
+
+  // 2. Gather candidate pages from passages, cards and the graph, fused.
+  const [vector] = await deps.embedder.embed([fact.statement], 'query');
+  const candidates = await withTenantTx(tenantId, (tx) => gatherCandidates(tx, ctx, fact.statement, vector!, resolved));
+  if (candidates.size === 0) return { status: 'needs_home', reason: 'No page you can read is about this.' };
+
+  // 3. Plan.
+  const { edits } = await deps.model.planEdits({
+    fact,
+    candidates: [...candidates.values()].map((c) => c.card),
+    examples: [],
+    writableSpaces: ctx.writableSpaces,
+  });
+
+  // 4. Check.
+  return checkEdits(tenantId, ctx, candidates, edits, deps);
+}
+
+async function gatherCandidates(
+  tx: DbTransaction,
+  ctx: Context,
+  statement: string,
+  vector: number[],
+  entityIds: string[]
+): Promise<Map<string, Candidate>> {
+  let ids: string[];
+  if (ctx.scopePageId) {
+    ids = [ctx.scopePageId];
+  } else {
+    const passages = (
+      await searchWiki(tx, ctx.actor, ctx.filter.spaceIds, ctx.inboxSpaceId, statement, vector, 20)
+    ).filter((p) => p.documentKind === 'page');
+    const cards = await searchPageCards(tx, ctx.filter, vector, 20);
+    const graph = (await pagesForEntities(tx, ctx.filter, entityIds, 1)).sort((a, b) => a.hops - b.hops);
+    const score = new Map<string, number>();
+    for (const list of [passages.map((p) => p.documentId), cards.map((c) => c.documentId), graph.map((g) => g.documentId)]) {
+      [...new Set(list)].forEach((id, rank) => score.set(id, (score.get(id) ?? 0) + 1 / (ROUTING.rrfK + rank + 1)));
+    }
+    ids = [...score.entries()].sort((a, b) => b[1] - a[1]).map(([id]) => id);
+  }
+  if (ids.length === 0) return new Map();
+
+  const docs = await tx
+    .select()
+    .from(documents)
+    .where(and(eq(documents.tenantId, ctx.filter.tenantId), inArray(documents.id, ids)));
+  const cards = await tx
+    .select()
+    .from(pageCards)
+    .where(and(eq(pageCards.tenantId, ctx.filter.tenantId), inArray(pageCards.documentId, ids)));
+  const out = new Map<string, Candidate>();
+  for (const id of ids) {
+    if (out.size >= ROUTING.candidates) break;
+    const doc = docs.find((d) => d.id === id);
+    if (!doc || doc.kind !== 'page' || doc.archivedAt || !ctx.filter.spaceIds.includes(doc.spaceId)) continue;
+    const live = await readLiveBlocks(tx, ctx.filter.tenantId, id);
+    if (!live) continue;
+    const card = cards.find((c) => c.documentId === id);
+    const top = live.blocks.slice(0, ROUTING.blocksPerCandidate);
+    out.set(id, {
+      spaceId: doc.spaceId,
+      blocks: new Map(live.blocks.map((b) => [b.id, b])),
+      card: {
+        documentId: id,
+        title: doc.title,
+        summary: card?.summary ?? '',
+        outline: card?.outline ?? [],
+        blocks: top.map((b) => ({ id: b.id, type: b.type, text: blockText(b) })),
+      },
+    });
+  }
+  return out;
+}
+
+function targetOf(edit: PlannedEdit): string {
+  return edit.op.op === 'create_page' ? `new:${edit.op.spaceId}` : edit.op.documentId;
+}
+
+async function checkEdits(
+  tenantId: string,
+  ctx: Context,
+  candidates: Map<string, Candidate>,
+  edits: PlannedEdit[],
+  deps: PlanDeps
+): Promise<FactPlan> {
+  const now = deps.now ?? new Date();
+  const waived = deps.onlyPage !== undefined;
+
+  // Unknown pages and blocks, and low confidence, are dropped.
+  const valid: PlannedEdit[] = [];
+  for (const edit of edits) {
+    const op = edit.op;
+    if (op.op === 'create_page') {
+      if (!ctx.editable.has(op.spaceId) || waived) continue;
+      if (op.parentId !== null) {
+        const [parent] = await withTenantTx(tenantId, (tx) =>
+          tx.select().from(documents).where(and(eq(documents.tenantId, tenantId), eq(documents.id, op.parentId!)))
+        );
+        if (!parent || parent.kind !== 'page' || parent.archivedAt || parent.spaceId !== op.spaceId) continue;
+      }
+      if (edit.confidence < ROUTING.create) continue;
+      valid.push(edit);
+      continue;
+    }
+    const candidate = candidates.get(op.documentId);
+    if (!candidate) continue;
+    const block = op.op === 'insert_after' ? op.after : op.blockId;
+    if (block !== null && !candidate.blocks.has(block)) continue;
+    if (op.op !== 'already_known' && !waived && edit.confidence < ROUTING.apply) continue;
+    valid.push(edit);
+  }
+
+  const known = valid.find((e) => e.op.op === 'already_known');
+  const changes = valid.filter((e) => e.op.op !== 'already_known');
+  if (changes.length === 0) {
+    if (known && known.op.op === 'already_known') {
+      return { status: 'already_known', documentId: known.op.documentId, blockId: known.op.blockId };
+    }
+    return { status: 'needs_home', reason: 'No page fits this fact well enough.' };
+  }
+
+  // The best target must be clearly ahead of the next (R10).
+  const best = new Map<string, number>();
+  for (const e of changes) best.set(targetOf(e), Math.max(best.get(targetOf(e)) ?? 0, e.confidence));
+  const ranked = [...best.values()].sort((a, b) => b - a);
+  if (ranked.length >= 2 && ranked[0]! - ranked[1]! <= ROUTING.margin) {
+    return { status: 'needs_home', reason: 'Two pages fit this fact about equally well.' };
+  }
+
+  return withTenantTx(tenantId, async (tx) => {
+    const spaceRows = await tx.select().from(spaces).where(eq(spaces.tenantId, tenantId));
+    const checked: CheckedEdit[] = [];
+    let duplicateOf: { documentId: string; blockId: string } | null = null;
+    for (const edit of changes) {
+      const op = edit.op;
+      const spaceId = op.op === 'create_page' ? op.spaceId : candidates.get(op.documentId)!.spaceId;
+      let gate: Gate = op.op === 'remove' ? 'removal' : null;
+      let conflictCitationId: string | null = null;
+      let beforeMarkdown: string | null = null;
+
+      if (op.op === 'replace' || op.op === 'remove') {
+        const space = spaceRows.find((s) => s.id === spaceId)!;
+        const since = new Date(now.getTime() - space.humanProtectionSeconds * 1000);
+        const [touched] = await tx
+          .select()
+          .from(blockActivity)
+          .where(
+            and(
+              eq(blockActivity.tenantId, tenantId),
+              eq(blockActivity.pageId, op.documentId),
+              eq(blockActivity.blockId, op.blockId),
+              eq(blockActivity.actorType, 'user'),
+              gt(blockActivity.changedAt, since)
+            )
+          );
+        if (touched && !gate) gate = 'protection';
+        const [cited] = await tx
+          .select({ id: citations.id })
+          .from(citations)
+          .where(
+            and(
+              eq(citations.tenantId, tenantId),
+              eq(citations.pageId, op.documentId),
+              eq(citations.blockId, op.blockId),
+              eq(citations.sourceKind, 'version'),
+              eq(citations.state, 'ok')
+            )
+          );
+        if (cited) {
+          conflictCitationId = cited.id;
+          if (!gate) gate = 'conflict';
+        }
+        beforeMarkdown = await blockMarkdown(candidates.get(op.documentId)!.blocks.get(op.blockId)!);
+      }
+      if (!gate && !ctx.editable.has(spaceId)) gate = 'no_edit_access';
+
+      if (op.op !== 'create_page' && op.op !== 'already_known' && (await isDuplicate(tx, tenantId, op))) {
+        duplicateOf = { documentId: op.documentId, blockId: op.op === 'insert_after' ? op.after ?? '' : op.blockId };
+        continue;
+      }
+      checked.push({ edit, spaceId, gate, beforeMarkdown, conflictCitationId });
+    }
+    if (checked.length === 0 && duplicateOf) return { status: 'already_known', ...duplicateOf };
+    return { status: 'planned', edits: checked };
+  });
+}
+
+/** The same change already waits: an open suggestion, or an applied change whose snapshot waits for review. */
+async function isDuplicate(
+  tx: DbTransaction,
+  tenantId: string,
+  op: Exclude<PlannedEdit['op'], { op: 'create_page' } | { op: 'already_known' }>
+): Promise<boolean> {
+  const open = await tx
+    .select()
+    .from(suggestions)
+    .where(
+      and(eq(suggestions.tenantId, tenantId), eq(suggestions.documentId, op.documentId), eq(suggestions.status, 'open'))
+    );
+  const markdown = op.op === 'remove' ? null : op.markdown.trim();
+  const kind = op.op === 'insert_after' ? 'insert' : op.op;
+  if (
+    open.some(
+      (s) =>
+        s.kind === kind &&
+        (op.op === 'insert_after' || s.blockId === op.blockId) &&
+        (markdown === null || (s.proposedMarkdown ?? '').trim() === markdown)
+    )
+  ) {
+    return true;
+  }
+  if (markdown === null) return false;
+  const waiting = await tx
+    .select({ after: captureChanges.afterMarkdown })
+    .from(captureChanges)
+    .innerJoin(versions, and(eq(versions.tenantId, captureChanges.tenantId), eq(versions.id, captureChanges.versionId)))
+    .where(
+      and(
+        eq(captureChanges.tenantId, tenantId),
+        eq(captureChanges.documentId, op.documentId),
+        eq(captureChanges.status, 'applied'),
+        eq(versions.status, 'pending_review')
+      )
+    );
+  return waiting.some((w) => w.after.trim() === markdown);
+}

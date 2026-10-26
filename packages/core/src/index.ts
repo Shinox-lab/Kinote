@@ -112,3 +112,14 @@ export {
   type ChunkFilter,
 } from './search/hybridSearch.js';
 export { senderActor, senderAccess, type SenderAccess } from './routing/access.js';
+export { readLiveBlocks, blockText, blockMarkdown, markdownBlocks } from './routing/liveBlocks.js';
+export {
+  planCapture,
+  ROUTING,
+  type CheckedEdit,
+  type FactPlan,
+  type Gate,
+  type PlanDeps,
+  type PlanFactInput,
+  type PlannedFact,
+} from './routing/plan.js';
