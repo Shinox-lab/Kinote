@@ -32,6 +32,7 @@ export const VersionReasonSchema = z.enum([
   'upload',
   'source',
   'transcript',
+  'capture',
 ]);
 export type VersionReason = z.infer<typeof VersionReasonSchema>;
 
@@ -54,6 +55,15 @@ export const AuditEventTypeSchema = z.enum([
   'page.archived',
   'page.restored',
   'page.withdrawn',
+  'capture.created',
+  'capture.routed',
+  'capture.question_asked',
+  'capture.answered',
+  'capture.change_undone',
+  'capture.change_moved',
+  'capture.fact_placed',
+  'suggestion.accepted',
+  'suggestion.declined',
   'version.created',
   'version.approved',
   'version.rejected',

@@ -24,6 +24,7 @@ const REASON: Record<VersionReason, string> = {
   upload: 'Uploaded',
   source: 'Synced from a source',
   transcript: 'Transcript',
+  capture: 'From a capture',
 };
 
 export function versionStatusLabel(status: VersionStatus): string {
