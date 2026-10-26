@@ -345,12 +345,21 @@ export async function extractVersionEntities(
     const mentionRows = [];
     const edgeRows = [];
     for (const r of results) {
-      const seen = new Set<string>();
+      // One mention per entity per chunk, carrying every spelling the chunk used.
+      const byEntity = new Map<string, { surfaces: string[]; surfaceKeys: string[] }>();
       for (const e of r.entities) {
-        const id = idOf.get(normalizeEntityName(e.name));
-        if (!id || seen.has(id)) continue;
-        seen.add(id);
-        mentionRows.push({ tenantId, entityId: id, documentId: doc.id, versionId, chunkId: r.chunkId, spaceId: doc.spaceId, blockIds: r.blockIds });
+        const key = normalizeEntityName(e.name);
+        const id = idOf.get(key);
+        if (!id) continue;
+        const forms = byEntity.get(id) ?? { surfaces: [], surfaceKeys: [] };
+        if (!forms.surfaceKeys.includes(key)) {
+          forms.surfaces.push(e.name.trim());
+          forms.surfaceKeys.push(key);
+        }
+        byEntity.set(id, forms);
+      }
+      for (const [id, forms] of byEntity) {
+        mentionRows.push({ tenantId, entityId: id, documentId: doc.id, versionId, chunkId: r.chunkId, spaceId: doc.spaceId, blockIds: r.blockIds, ...forms });
       }
       for (const edge of r.edges) {
         const from = idOf.get(normalizeEntityName(edge.from));

@@ -70,6 +70,19 @@ describe('placement queries', () => {
     expect(fuzzy[0]).toMatchObject({ name: 'Aisha Rahman', match: 'trigram' });
   });
 
+  it('names and spellings seen only in an unreadable space are never shown or matched', async () => {
+    const w = await seedTenant();
+    const open = await addSpace(w);
+    const hidden = await addSpace(w);
+    await placed(w, hidden, 'falcon', 'Aisha Rahman owns Falcon Project.');
+    await placed(w, open, 'approvals', 'It was approved by Aisha.');
+    const filter: PlacementFilter = { tenantId: w.tenantId, spaceIds: [open] };
+
+    const hits = await inTx(w, (tx) => findEntities(tx, filter, 'aisha'));
+    expect(hits).toHaveLength(1);
+    expect(hits[0]).toMatchObject({ name: 'Aisha', match: 'exact' });
+  });
+
   it('entity found only through an unreadable space is not returned', async () => {
     const { w, filter } = await world();
     expect(await inTx(w, (tx) => findEntities(tx, filter, 'Secret Project'))).toEqual([]);

@@ -89,6 +89,13 @@ export const entityMentions = pgTable(
       .notNull()
       .references(() => spaces.id),
     blockIds: text('block_ids').array().notNull(),
+    /**
+     * The spellings this chunk used for the entity, and their normalized
+     * forms. Lookups match and display names only through mentions the actor
+     * can read, so a spelling from an unreadable space never surfaces.
+     */
+    surfaces: text('surfaces').array().notNull().default([]),
+    surfaceKeys: text('surface_keys').array().notNull().default([]),
   },
   (t) => [
     index('entity_mentions_entity_idx').on(t.tenantId, t.entityId),

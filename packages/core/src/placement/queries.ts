@@ -48,16 +48,19 @@ export async function searchPageCards(
 
 export interface EntityHit {
   entityId: string;
+  /** The most used spelling among the mentions the actor can read. */
   name: string;
   kind: EntityKind;
-  match: 'exact' | 'alias' | 'trigram';
+  match: 'exact' | 'trigram';
   score: number;
 }
 
 /**
- * Entities named like `name` (exact, alias, then trigram within
- * `ENTITY_MATCH`), only those with a mention in the filter's spaces: an
- * entity known only from a space the actor cannot read does not exist for them.
+ * Entities named like `name`, matched only against the spellings recorded on
+ * mentions in the filter's spaces (exact, then trigram within
+ * `ENTITY_MATCH`, in both directions). The returned name is likewise a
+ * readable spelling: an entity, alias or full name known only from a space
+ * the actor cannot read never surfaces.
  */
 export async function findEntities(
   tx: DbTransaction,
@@ -69,21 +72,35 @@ export async function findEntities(
   if (n === '' || f.spaceIds.length === 0) return [];
   const rows = rowsOf<{ id: string; name: string; kind: EntityKind; match: EntityHit['match']; score: number }>(
     await tx.execute(sql`
-      SELECT e.id, e.name, e.kind,
-             CASE WHEN e.normalized_name = ${n} THEN 'exact'
-                  WHEN ${n} = ANY(e.aliases) THEN 'alias'
-                  ELSE 'trigram' END AS match,
-             greatest(similarity(e.normalized_name, ${n}), word_similarity(${n}, e.normalized_name)) AS score
-        FROM entities e
-       WHERE e.tenant_id = ${f.tenantId}::uuid
-         AND (e.normalized_name = ${n}
-              OR ${n} = ANY(e.aliases)
-              OR similarity(e.normalized_name, ${n}) >= ${ENTITY_MATCH.trigram}
-              OR word_similarity(${n}, e.normalized_name) >= ${ENTITY_MATCH.wordTrigram})
-         AND EXISTS (SELECT 1 FROM entity_mentions m
-                      WHERE m.tenant_id = e.tenant_id AND m.entity_id = e.id
-                        AND m.space_id = ANY(${sql.param(f.spaceIds)}::uuid[]))
-       ORDER BY CASE WHEN e.normalized_name = ${n} THEN 0 WHEN ${n} = ANY(e.aliases) THEN 1 ELSE 2 END, score DESC
+      WITH readable AS (
+        SELECT m.entity_id, u.key, u.surface
+          FROM entity_mentions m, unnest(m.surface_keys, m.surfaces) AS u(key, surface)
+         WHERE m.tenant_id = ${f.tenantId}::uuid AND m.space_id = ANY(${sql.param(f.spaceIds)}::uuid[])
+      ),
+      matched AS (
+        SELECT entity_id,
+               CASE WHEN key = ${n} THEN 'exact' ELSE 'trigram' END AS match,
+               greatest(similarity(key, ${n}), word_similarity(${n}, key), word_similarity(key, ${n})) AS score
+          FROM readable
+         WHERE key = ${n}
+            OR similarity(key, ${n}) >= ${ENTITY_MATCH.trigram}
+            OR word_similarity(${n}, key) >= ${ENTITY_MATCH.wordTrigram}
+            OR word_similarity(key, ${n}) >= ${ENTITY_MATCH.wordTrigram}
+      ),
+      best AS (
+        SELECT DISTINCT ON (entity_id) entity_id, match, score
+          FROM matched ORDER BY entity_id, (match = 'exact') DESC, score DESC
+      ),
+      display AS (
+        SELECT DISTINCT ON (entity_id) entity_id, surface
+          FROM (SELECT entity_id, surface, count(*) AS uses FROM readable GROUP BY entity_id, surface) s
+         ORDER BY entity_id, uses DESC, surface
+      )
+      SELECT b.entity_id AS id, d.surface AS name, e.kind, b.match, b.score
+        FROM best b
+        JOIN display d ON d.entity_id = b.entity_id
+        JOIN entities e ON e.tenant_id = ${f.tenantId}::uuid AND e.id = b.entity_id
+       ORDER BY (b.match = 'exact') DESC, b.score DESC
        LIMIT ${limit}`)
   );
   return rows.map((r) => ({ entityId: r.id, name: r.name, kind: r.kind, match: r.match, score: Number(r.score) }));
