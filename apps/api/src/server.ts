@@ -11,6 +11,8 @@ import {
   CaptureSummarySchema,
   CaptureListSchema,
   CaptureDetailSchema,
+  SuggestionSummarySchema,
+  SuggestionListSchema,
   InviteMemberResponseSchema,
   AcceptInvitationResponseSchema,
   SpaceSchema,
@@ -107,6 +109,7 @@ import {
 } from './routes/pages.js';
 import { listReviewQueue } from './routes/reviews.js';
 import { answerCapture, createCapture, getCapture, listCaptures } from './routes/captures.js';
+import { acceptSuggestion, declineSuggestion, listPageSuggestions } from './routes/suggestions.js';
 import {
   archiveFile,
   dismissRemoval,
@@ -637,6 +640,21 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
   app.post('/api/v1/captures/:id/answer', async (req, reply) => {
     const { id } = req.params as { id: string };
     return reply.send(parseReply(CaptureDetailSchema, await answerCapture(actorOf(req), id, req.body)));
+  });
+
+  app.get('/api/v1/pages/:id/suggestions', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    return reply.send(parseReply(SuggestionListSchema, await listPageSuggestions(actorOf(req), id)));
+  });
+
+  app.post('/api/v1/suggestions/:id/accept', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    return reply.send(parseReply(SuggestionSummarySchema, await acceptSuggestion(actorOf(req), id, opts.collab)));
+  });
+
+  app.post('/api/v1/suggestions/:id/decline', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    return reply.send(parseReply(SuggestionSummarySchema, await declineSuggestion(actorOf(req), id)));
   });
 
   app.get('/api/v1/reviews', async (req, reply) => {
