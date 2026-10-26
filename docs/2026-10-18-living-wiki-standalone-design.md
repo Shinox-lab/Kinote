@@ -9,6 +9,20 @@ This is a new product built from zero. Nothing is imported from the Shinox codeb
 carried over where this spec says so (references like "from W1"). Where this spec and the Shinox specs differ, this spec
 wins. Implementation plans are written per slice (see "Delivery slices") after this spec is approved.
 
+## Revisions
+
+**2026-10-26: routing engine** (`superpowers/specs/2026-10-26-routing-engine-design.md`). That spec wins where the two
+differ:
+- **Routing is the headline feature:** a Capture page feeds a routing engine that edits the right pages, backed by page
+  cards and an entity graph in Postgres. Capture over MCP comes with the MCP rework.
+- **S3 and review rule 2 are replaced.** Review follows the space for every agent edit, including the engine. Removals
+  with nothing replacing them never apply on their own; they become suggestions a person accepts. A block citing another
+  still-valid source is never replaced or removed by the engine.
+- **The agent sections (MCP tiers, Curator) are being reworked for external agents** and will get their own spec.
+- **New order after slice 2:** routing engine, then Phase A (links and backlinks, comments, mentions, notifications,
+  side-peek), then Phase C (page collections and Excalidraw drawings), then WhatsApp and Google Drive. The "Delivery
+  slices" table below is kept for history.
+
 ## Intent
 
 A multi-tenant SaaS wiki where people and AI agents write the same pages together, live. Every source a team has (files
