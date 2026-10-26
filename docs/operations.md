@@ -175,6 +175,19 @@ DATABASE_MIGRATE_URL=postgres://postgres:...@host/living_wiki pnpm placement:reb
 It only queues `version.card` and `version.entities` jobs (the same keys
 indexing uses, so nothing is duplicated); the workers do the work.
 
+Before a routing model files real captures, score it on the labelled set:
+
+```sh
+ROUTER_PROVIDER=openai ROUTER_BASE_URL=... ROUTER_MODEL=... \
+EMBEDDING_PROVIDER=openai EMBEDDING_BASE_URL=... EMBEDDING_MODEL=... pnpm routing:eval
+```
+
+It seeds `packages/core/eval/routing/corpus.json` into a throwaway in-process
+database, plans every capture in `captures.json` without changing anything,
+and prints how many facts landed on the expected page and operation. It exits
+non-zero below 90% or on any removal that would apply without a person (R2).
+Add a labelled capture whenever routing gets something wrong in use.
+
 **Data egress:** indexing sends each chunk's text to the embedding endpoint,
 and Ask sends the question plus the retrieved passages to the chat endpoint;
 the routing model receives indexed page text and chunk text.

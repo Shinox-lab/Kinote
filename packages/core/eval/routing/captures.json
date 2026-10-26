@@ -1,0 +1,30 @@
+[
+  { "text": "Billing moved to Adyen.", "expect": [{ "fact": 0, "documentTitle": "Billing service", "op": "replace" }] },
+  { "text": "Billing no longer uses Stripe for card payments.", "expect": [{ "fact": 0, "documentTitle": "Billing service", "op": "remove" }] },
+  { "text": "Billing uses Stripe for card payments.", "expect": [{ "fact": 0, "documentTitle": "Billing service", "op": "already_known" }] },
+  { "text": "Acme now pays monthly.", "expect": [{ "fact": 0, "documentTitle": "Acme account", "op": "replace" }] },
+  { "text": "Globex changed to the Growth plan.", "expect": [{ "fact": 0, "documentTitle": "Globex account", "op": "replace" }] },
+  { "text": "Deploys now go out through Flux.", "expect": [{ "fact": 0, "documentTitle": "Deploy runbook", "op": "replace" }] },
+  { "text": "Daniel Okoro is on leave until May.", "expect": [{ "fact": 0, "documentTitle": "Search team", "op": "insert" }] },
+  { "text": "Aisha Rahman started a hiring round.", "expect": [{ "fact": 0, "documentTitle": "Payments team", "op": "insert" }] },
+  { "text": "Globex is renewing in March.", "expect": [{ "fact": 0, "documentTitle": "Globex account", "op": "insert" }] },
+  { "text": "Lunch is at noon.", "expect": [{ "fact": 0, "documentTitle": null, "op": "needs_home" }] },
+  { "text": "Priya Shah moved to the London office.", "expect": [{ "fact": 0, "documentTitle": "Acme account", "op": "replace" }] },
+  { "text": "Search runs on Postgres full text search.", "expect": [{ "fact": 0, "documentTitle": "Search service", "op": "already_known" }] },
+  { "text": "Rollbacks now need two approvals.", "expect": [{ "fact": 0, "documentTitle": "Deploy runbook", "op": "replace" }] },
+  { "text": "Argo is pinned to version three.", "expect": [{ "fact": 0, "documentTitle": "Deploy runbook", "op": "insert" }] },
+  { "text": "Invoices go out monthly.", "expect": [{ "fact": 0, "documentTitle": "Billing service", "op": "already_known" }] },
+  { "text": "Acme no longer pays yearly by bank transfer.", "expect": [{ "fact": 0, "documentTitle": "Acme account", "op": "remove" }] },
+  { "text": "The office closes early on Friday.", "expect": [{ "fact": 0, "documentTitle": null, "op": "needs_home" }] },
+  { "text": "Globex is on the Enterprise plan.", "expect": [{ "fact": 0, "documentTitle": "Globex account", "op": "already_known" }] },
+  { "text": "Aisha Rahman leads the payments group.", "expect": [{ "fact": 0, "documentTitle": "Payments team", "op": "already_known" }] },
+  {
+    "text": "Stripe now handles refunds too. Acme's contact is Priya Shah.",
+    "expect": [
+      { "fact": 0, "documentTitle": "Billing service", "op": "replace" },
+      { "fact": 1, "documentTitle": "Acme account", "op": "already_known" }
+    ]
+  },
+  { "text": "Daniel Okoro joined the on-call rota.", "expect": [{ "fact": 0, "documentTitle": "Search team", "op": "insert" }] },
+  { "text": "Postgres was upgraded to version 17.", "expect": [{ "fact": 0, "documentTitle": "Search service", "op": "insert" }] }
+]

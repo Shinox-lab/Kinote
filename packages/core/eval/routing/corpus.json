@@ -1,0 +1,26 @@
+{
+  "spaces": [
+    {
+      "name": "Engineering",
+      "pages": [
+        { "title": "Billing service", "markdown": "Billing uses Stripe for card payments.\n\nInvoices go out monthly." },
+        { "title": "Search service", "markdown": "Search runs on Postgres full text search.\n\nThe search index rebuilds nightly." },
+        { "title": "Deploy runbook", "markdown": "Deploys go out through Argo.\n\nRollbacks need a Platform approval." }
+      ]
+    },
+    {
+      "name": "Clients",
+      "pages": [
+        { "title": "Acme account", "markdown": "Acme pays yearly by bank transfer.\n\nAcme's contact is Priya Shah." },
+        { "title": "Globex account", "markdown": "Globex pays quarterly.\n\nGlobex is on the Enterprise plan." }
+      ]
+    },
+    {
+      "name": "People",
+      "pages": [
+        { "title": "Payments team", "markdown": "Aisha Rahman leads the payments group.\n\nThe group meets every Tuesday." },
+        { "title": "Search team", "markdown": "Daniel Okoro leads the search group.\n\nThe group meets every Thursday." }
+      ]
+    }
+  ]
+}
