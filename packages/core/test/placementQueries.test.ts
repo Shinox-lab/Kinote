@@ -1,5 +1,5 @@
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { withTenantTx } from '@living-wiki/db';
+import { withTenantTx, type DbTransaction } from '@living-wiki/db';
 import { createTestDb, type TestDb } from '@living-wiki/db/testing';
 import {
   DeterministicEmbeddingProvider,
@@ -49,7 +49,7 @@ async function world() {
   return { w, s1, s2, owners, stack, people, secret, filter };
 }
 
-const inTx = <T>(w: World, fn: Parameters<typeof withTenantTx<T>>[1]) => withTenantTx(w.tenantId, fn);
+const inTx = <T>(w: World, fn: (tx: DbTransaction) => Promise<T>) => withTenantTx(w.tenantId, fn);
 
 describe('placement queries', () => {
   it('searchPageCards returns only readable spaces\' cards, nearest first', async () => {
