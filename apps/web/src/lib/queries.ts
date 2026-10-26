@@ -4,6 +4,7 @@ import { useRouteContext } from '@tanstack/react-router';
 import { api } from './api.js';
 import { canAdminister } from './console.js';
 import { loadSession } from './session.js';
+import { capturesBusy } from './capture.js';
 import { pagePoll } from './wiki.js';
 
 // Query keys and hooks. Every key of a workspace starts with its tenant id, so
@@ -237,4 +238,51 @@ export function useVersionChunks(versionId: string, enabled: boolean) {
 /** The workspace's sources (admins only, so `enabled` follows the role). */
 export function useSources(enabled = true) {
   return useQuery({ queryKey: useTenantKey('sources'), queryFn: () => api.listSources(), enabled });
+}
+
+/** How often the Capture page asks again while some capture is still being routed. */
+export const CAPTURE_POLL_MS = 2_000;
+
+/** The actor's captures, newest first; polled only while one is queued or routing. */
+export function useCaptures() {
+  return useQuery({
+    queryKey: useTenantKey('captures'),
+    queryFn: () => api.listCaptures(),
+    staleTime: 0,
+    refetchInterval: (query) => (capturesBusy(query.state.data) ? CAPTURE_POLL_MS : false),
+  });
+}
+
+/** One capture with its thread and receipt; polled while it is still being routed. */
+export function useCapture(id: string | undefined, enabled = true) {
+  return useQuery({
+    queryKey: useTenantKey('capture', id),
+    queryFn: () => api.getCapture(id!),
+    enabled: enabled && id !== undefined,
+    staleTime: 0,
+    refetchInterval: (query) => (capturesBusy(query.state.data ? [query.state.data.capture] : undefined) ? CAPTURE_POLL_MS : false),
+  });
+}
+
+/** Facts the engine would not place, from the actor's captures. */
+export function useNeedsHome() {
+  return useQuery({ queryKey: useTenantKey('needs-home'), queryFn: () => api.needsHome(), staleTime: 0 });
+}
+
+/** A page's open suggestions. */
+export function usePageSuggestions(pageId: string) {
+  return useQuery({
+    queryKey: useTenantKey('page', pageId, 'suggestions'),
+    queryFn: () => api.pageSuggestions(pageId),
+    staleTime: 0,
+  });
+}
+
+/** One capture's changes on a page ("changes from this capture"); nothing is asked without a capture. */
+export function usePageCaptureChanges(pageId: string, captureId: string | undefined) {
+  return useQuery({
+    queryKey: useTenantKey('page', pageId, 'capture-changes', captureId),
+    queryFn: () => api.pageCaptureChanges(pageId, captureId!),
+    enabled: captureId !== undefined,
+  });
 }

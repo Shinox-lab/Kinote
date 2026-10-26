@@ -50,6 +50,8 @@
   --diff-added-line: #79ad92;
   --diff-removed-bg: #fbf1ef;
   --diff-removed-line: #c98279;
+  --routing: #7c5cff;
+  --routing-tint: #7c5cff1a;
   --dot-failed: #d1332a;
   --dot-review: #b86e00;
   --dot-editing: #7b4fe0;
@@ -116,6 +118,8 @@
   --diff-added-line: #4f8f74;
   --diff-removed-bg: #2b1e1b;
   --diff-removed-line: #a9635c;
+  --routing: #a08bff;
+  --routing-tint: #a08bff26;
   --dot-failed: #ff6b61;
   --dot-review: #e5a23c;
   --dot-editing: #a58bff;

@@ -1141,6 +1141,7 @@ export const CaptureChangeSchema = z.object({
   status: z.enum(['applied', 'undone', 'moved']),
   reason: z.string().nullable(),
 });
+export type CaptureChange = z.infer<typeof CaptureChangeSchema>;
 export const CaptureChangeListSchema = z.array(CaptureChangeSchema);
 
 export const CaptureReceiptSchema = z.object({
@@ -1198,6 +1199,7 @@ export const NeedsHomeItemSchema = z.object({
   reason: z.string().nullable(),
   createdAt: z.string(),
 });
+export type NeedsHomeItem = z.infer<typeof NeedsHomeItemSchema>;
 export const NeedsHomeListSchema = z.array(NeedsHomeItemSchema);
 export const FactStatusSchema = z.object({
   factId: z.string().uuid(),

@@ -154,7 +154,7 @@ export function authorLabel(
 }
 
 /** An id inside a double-quoted CSS attribute selector: backslash, quote and line breaks escaped. */
-function cssString(text: string): string {
+export function cssString(text: string): string {
   return text.replace(/[\\"]/g, '\\$&').replace(/\r?\n/g, '\\a ');
 }
 

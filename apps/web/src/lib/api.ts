@@ -1,5 +1,15 @@
 import {
   AcceptInvitationResponseSchema,
+  CaptureChangeListSchema,
+  CaptureDetailSchema,
+  CaptureListSchema,
+  CaptureSummarySchema,
+  FactStatusSchema,
+  MoveChangeResponseSchema,
+  NeedsHomeListSchema,
+  SuggestionListSchema,
+  SuggestionSummarySchema,
+  UndoChangesResponseSchema,
   AskResponseSchema,
   AuthResponseSchema,
   ChunkInspectorSchema,
@@ -311,6 +321,27 @@ export const api = {
     request(`/api/v1/sources/${e(id)}/tokens`, CreateSourceTokenResponseSchema, send('POST', body)),
   revokeSourceToken: (id: string, tokenId: string) =>
     request(`/api/v1/sources/${e(id)}/tokens/${e(tokenId)}`, SourceTokenSchema, del),
+
+  // Captures (the routing engine)
+  createCapture: (body: { text: string; scope_space_id?: string; scope_page_id?: string }) =>
+    request('/api/v1/captures', CaptureSummarySchema, send('POST', body)),
+  listCaptures: () => request('/api/v1/captures', CaptureListSchema),
+  getCapture: (id: string) => request(`/api/v1/captures/${e(id)}`, CaptureDetailSchema),
+  answerCapture: (id: string, body: { message_id: string; choice: string }) =>
+    request(`/api/v1/captures/${e(id)}/answer`, CaptureDetailSchema, send('POST', body)),
+  undoCapture: (id: string) => request(`/api/v1/captures/${e(id)}/undo`, UndoChangesResponseSchema, send('POST')),
+  undoChange: (id: string) => request(`/api/v1/capture-changes/${e(id)}/undo`, UndoChangesResponseSchema, send('POST')),
+  moveChange: (id: string, body: { target_page_id: string }) =>
+    request(`/api/v1/capture-changes/${e(id)}/move`, MoveChangeResponseSchema, send('POST', body)),
+  pageCaptureChanges: (pageId: string, captureId: string) =>
+    request(`/api/v1/pages/${e(pageId)}/capture-changes?capture=${e(captureId)}`, CaptureChangeListSchema),
+  needsHome: () => request('/api/v1/needs-home', NeedsHomeListSchema),
+  placeFact: (id: string, body: { document_id: string }) =>
+    request(`/api/v1/capture-facts/${e(id)}/place`, FactStatusSchema, send('POST', body)),
+  dismissFact: (id: string) => request(`/api/v1/capture-facts/${e(id)}/dismiss`, FactStatusSchema, send('POST')),
+  pageSuggestions: (pageId: string) => request(`/api/v1/pages/${e(pageId)}/suggestions`, SuggestionListSchema),
+  acceptSuggestion: (id: string) => request(`/api/v1/suggestions/${e(id)}/accept`, SuggestionSummarySchema, send('POST')),
+  declineSuggestion: (id: string) => request(`/api/v1/suggestions/${e(id)}/decline`, SuggestionSummarySchema, send('POST')),
 
   // Search and ask
   search: (body: SearchRequest) => request('/api/v1/search', SearchResponseSchema, send('POST', body)),
