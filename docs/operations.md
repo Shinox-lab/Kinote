@@ -155,8 +155,16 @@ may use different hosts. A key is optional for a local endpoint without auth.
 `EMBEDDING_BATCH_SIZE` (default 64), `EMBEDDING_TIMEOUT_MS` (30000),
 `ASK_TIMEOUT_MS` (60000) and `ASK_MAX_TOKENS` (800) are the other bounds.
 
+The routing model is set the same way with `ROUTER_PROVIDER=openai`,
+`ROUTER_BASE_URL`, `ROUTER_API_KEY` and `ROUTER_MODEL` (bounds
+`ROUTER_TIMEOUT_MS`, 60000, and `ROUTER_MAX_TOKENS`, 2000). It must support
+`response_format: {"type": "json_object"}`. After a page or file is indexed it
+writes the page's card and extracts the entity graph; a failure retries as a job
+and never changes the version's status.
+
 **Data egress:** indexing sends each chunk's text to the embedding endpoint,
-and Ask sends the question plus the retrieved passages to the chat endpoint.
+and Ask sends the question plus the retrieved passages to the chat endpoint;
+the routing model receives indexed page text and chunk text.
 Use a self-hosted or approved provider for sensitive wiki content.
 
 The local stack and `pnpm e2e` keep `deterministic` for both providers, so no

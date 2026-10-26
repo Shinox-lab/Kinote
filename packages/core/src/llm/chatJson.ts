@@ -1,0 +1,87 @@
+import type { z } from 'zod';
+import { AppError } from '@living-wiki/contracts';
+
+export interface ChatJsonOptions {
+  baseUrl: string;
+  apiKey?: string;
+  model: string;
+  timeoutMs: number;
+  maxTokens: number;
+  fetchImpl?: typeof fetch;
+}
+
+function unavailable(cause: string): AppError {
+  const error = new AppError('router_unavailable');
+  error.cause = new Error(cause);
+  return error;
+}
+
+function contentOf(body: unknown): string {
+  const choices = (body as { choices?: unknown })?.choices;
+  const first = Array.isArray(choices) ? choices[0] : undefined;
+  const content = (first as { message?: { content?: unknown } })?.message?.content;
+  return typeof content === 'string' ? content.trim() : '';
+}
+
+/**
+ * One OpenAI-compatible `/chat/completions` call that must answer a JSON
+ * object matching `schema`. A malformed or invalid answer is retried once with
+ * the validation error added; a second one, or any transport failure, is
+ * `router_unavailable` (the caller's job retries). The answer is untrusted
+ * model output: only what `schema` accepts comes back.
+ */
+export async function chatJson<T>(
+  opts: ChatJsonOptions,
+  req: { system: string; user: string; schema: z.ZodType<T, z.ZodTypeDef, unknown> }
+): Promise<T> {
+  const baseUrl = opts.baseUrl.replace(/\/+$/, '');
+  const fetchImpl = opts.fetchImpl ?? fetch;
+  let user = req.user;
+
+  for (let attempt = 0; attempt < 2; attempt++) {
+    let response: Response;
+    try {
+      response = await fetchImpl(`${baseUrl}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          ...(opts.apiKey ? { authorization: `Bearer ${opts.apiKey}` } : {}),
+        },
+        body: JSON.stringify({
+          model: opts.model,
+          messages: [
+            { role: 'system', content: req.system },
+            { role: 'user', content: user },
+          ],
+          temperature: 0,
+          max_tokens: opts.maxTokens,
+          response_format: { type: 'json_object' },
+          stream: false,
+        }),
+        signal: AbortSignal.timeout(opts.timeoutMs),
+      });
+    } catch (err) {
+      const timedOut = err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError');
+      throw unavailable(timedOut ? 'the routing model did not answer in time' : 'the routing model could not be reached');
+    }
+    if (!response.ok) throw unavailable(`the routing model answered ${response.status}`);
+
+    let body: unknown;
+    try {
+      body = await response.json();
+    } catch {
+      throw unavailable('the routing model returned an unexpected answer');
+    }
+
+    let problem: string;
+    try {
+      const parsed = req.schema.safeParse(JSON.parse(contentOf(body)));
+      if (parsed.success) return parsed.data;
+      problem = parsed.error.issues.map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`).join('; ');
+    } catch {
+      problem = 'the answer was not a JSON object';
+    }
+    user = `${req.user}\n\nYour previous answer was rejected (${problem}). Answer again with only the JSON object.`;
+  }
+  throw unavailable('the routing model returned invalid JSON twice');
+}

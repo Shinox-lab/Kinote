@@ -66,3 +66,15 @@ export {
   type ExtractDeps,
   type ExtractVersionResult,
 } from './files/extractVersion.js';
+export { chatJson, type ChatJsonOptions } from './llm/chatJson.js';
+export {
+  DeterministicPlacementModel,
+  OpenAIPlacementModel,
+  createPlacementModel,
+  defaultPlacementModel,
+  type PlacementModel,
+  type EntityKind,
+  type EdgeType,
+  type ExtractedEntity,
+  type ExtractedEdge,
+} from './placement/model.js';

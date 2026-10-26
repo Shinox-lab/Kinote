@@ -11,6 +11,7 @@
     "@living-wiki/db": "workspace:*",
     "@living-wiki/shared": "workspace:*",
     "drizzle-orm": "^0.44.5",
-    "yjs": "^13.6.33"
+    "yjs": "^13.6.33",
+    "zod": "^3.25.76"
   }
 }

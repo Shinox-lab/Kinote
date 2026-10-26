@@ -58,6 +58,13 @@ export const ConfigSchema = z.object({
   ASK_MODEL: z.string().min(1).optional(),
   ASK_TIMEOUT_MS: z.coerce.number().int().positive().max(120_000).default(60_000),
   ASK_MAX_TOKENS: z.coerce.number().int().positive().max(8192).default(800),
+  /** The model that writes page cards, extracts entities and routes captures. */
+  ROUTER_PROVIDER: z.enum(['deterministic', 'openai']).default('deterministic'),
+  ROUTER_BASE_URL: z.string().url().optional(),
+  ROUTER_API_KEY: z.string().min(1).optional(),
+  ROUTER_MODEL: z.string().min(1).optional(),
+  ROUTER_TIMEOUT_MS: z.coerce.number().int().positive().max(120_000).default(60_000),
+  ROUTER_MAX_TOKENS: z.coerce.number().int().positive().max(8192).default(2000),
   S3_ENDPOINT: z.string().min(1).optional(),
   S3_BUCKET: z.string().min(1).optional(),
   S3_ACCESS_KEY: z.string().min(1).optional(),
@@ -96,6 +103,22 @@ export const ConfigSchema = z.object({
         code: z.ZodIssueCode.custom,
         path: ['EMBEDDING_MODEL'],
         message: 'is required when EMBEDDING_PROVIDER is openai',
+      });
+    }
+  }
+  if (value.ROUTER_PROVIDER === 'openai') {
+    if (!value.ROUTER_BASE_URL) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['ROUTER_BASE_URL'],
+        message: 'is required when ROUTER_PROVIDER is openai',
+      });
+    }
+    if (!value.ROUTER_MODEL) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['ROUTER_MODEL'],
+        message: 'is required when ROUTER_PROVIDER is openai',
       });
     }
   }
