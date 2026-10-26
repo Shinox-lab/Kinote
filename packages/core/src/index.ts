@@ -79,3 +79,10 @@ export {
   type ExtractedEdge,
 } from './placement/model.js';
 export { buildPageCard, pageOutline, type BuildPageCardResult } from './placement/pageCard.js';
+export {
+  extractVersionEntities,
+  previousEntityIds,
+  deleteOrphanEntities,
+  ENTITY_MATCH,
+  type ExtractEntitiesResult,
+} from './placement/entities.js';

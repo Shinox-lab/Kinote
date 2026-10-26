@@ -60,7 +60,7 @@ const RELATION_TYPES: Record<string, EdgeType> = {
 
 function sentences(text: string): string[] {
   return text
-    .split(/(?<=[.!?])\s+/)
+    .split(/(?<=[.!?])\s+|\n+/)
     .map((s) => s.trim())
     .filter((s) => s.length > 0);
 }

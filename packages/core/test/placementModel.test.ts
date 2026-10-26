@@ -48,6 +48,11 @@ describe('DeterministicPlacementModel', () => {
     expect(out.edges).toEqual([{ from: 'Aisha Rahman', to: 'Billing Service', type: 'owns' }]);
   });
 
+  it('treats line breaks as sentence ends', async () => {
+    const out = await model.extractEntities({ title: 't', headingPath: [], text: 'billing\n\nAisha Rahman owns Billing Service.' });
+    expect(out.edges).toEqual([{ from: 'Aisha Rahman', to: 'Billing Service', type: 'owns' }]);
+  });
+
   it('skips sentence-start stop words', async () => {
     const out = await model.extractEntities({ title: 't', headingPath: [], text: 'We use Adyen.' });
     expect(out.entities.map((e) => e.name)).toEqual(['Adyen']);
