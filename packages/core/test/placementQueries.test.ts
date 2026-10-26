@@ -54,7 +54,7 @@ const inTx = <T>(w: World, fn: (tx: DbTransaction) => Promise<T>) => withTenantT
 describe('placement queries', () => {
   it('searchPageCards returns only readable spaces\' cards, nearest first', async () => {
     const { w, s1, owners, filter } = await world();
-    const [vector] = await embedder.embed(['owners Aisha Rahman owns Billing Service'], 'query');
+    const [vector] = await embedder.embed(['owners Aisha Rahman owns Billing Service']);
     const hits = await inTx(w, (tx) => searchPageCards(tx, filter, vector!));
     expect(hits).toHaveLength(3);
     expect(hits.every((h) => h.spaceId === s1)).toBe(true);
