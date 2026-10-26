@@ -6,6 +6,7 @@ import {
   chunks,
   entities,
   entityEdges,
+  entityExtractionCache,
   entityMentions,
   memberships,
   users,
@@ -36,12 +37,13 @@ class CountingModel implements PlacementModel {
   readonly model = this.inner.model;
   extractCalls = 0;
   fail = false;
+  failFromCall = Infinity;
   summarizePage(input: Parameters<PlacementModel['summarizePage']>[0]) {
     return this.inner.summarizePage(input);
   }
   async extractEntities(input: Parameters<PlacementModel['extractEntities']>[0]) {
     this.extractCalls += 1;
-    if (this.fail) throw new AppError('router_unavailable');
+    if (this.fail || this.extractCalls >= this.failFromCall) throw new AppError('router_unavailable');
     return this.inner.extractEntities(input);
   }
   sameEntity(input: Parameters<PlacementModel['sameEntity']>[0]) {
@@ -172,6 +174,26 @@ describe('extractVersionEntities', () => {
     const { mentions, entities: rows } = await all(w);
     expect(mentions).toHaveLength(2);
     expect(rows.map((e) => e.name).sort()).toEqual(['Aisha Rahman', 'Billing Service']);
+  });
+
+  it('keeps the extractions of earlier chunks when a later chunk fails', async () => {
+    const w = await seedTenant();
+    const space = await addSpace(w);
+    const page = await indexPageVersion(
+      w,
+      space,
+      'billing',
+      '# Owners\n\nAisha Rahman owns Billing Service.\n\n# Stack\n\nBilling Service uses Adyen.'
+    );
+    const chunkCount = (
+      await withTenantTx(w.tenantId, (tx) => tx.select().from(chunks).where(eq(chunks.versionId, page.versionId)))
+    ).length;
+    expect(chunkCount).toBeGreaterThan(1);
+    const model = new CountingModel();
+    model.failFromCall = 2;
+    await expect(run(w, page.versionId, model)).rejects.toMatchObject({ code: 'router_unavailable' });
+    const cached = await withTenantTx(w.tenantId, (tx) => tx.select().from(entityExtractionCache));
+    expect(cached).toHaveLength(1);
   });
 
   it('orphans are removed', async () => {

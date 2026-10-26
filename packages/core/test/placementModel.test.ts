@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { AppError } from '@living-wiki/contracts';
 import { loadConfig } from '@living-wiki/shared';
-import { DeterministicPlacementModel, chatJson, createPlacementModel } from '../src/index.js';
+import { DeterministicPlacementModel, OpenAIPlacementModel, chatJson, createPlacementModel } from '../src/index.js';
 
 const opts = { baseUrl: 'https://router.example/v1/', model: 'Qwen/Qwen3-8B', timeoutMs: 1000, maxTokens: 500 };
 const Summary = z.object({ summary: z.string().min(1) });
@@ -125,3 +125,41 @@ describe('router config', () => {
     ).toThrow(/ROUTER_MODEL/);
   });
 });
+
+describe('OpenAIPlacementModel.extractEntities is lenient per item', () => {
+  it('keeps a usable answer: maps spellings, drops bad items, caps the lists', async () => {
+    const entities = [
+      { name: 'Acme Corp', kind: 'organization' },
+      { name: 'Billing Service', kind: 'service', aliases: ['billing', 'x'.repeat(200), 'b1', 'b2', 'b3', 'b4', 'b5'] },
+      { name: 'y'.repeat(200), kind: 'person' },
+      { kind: 'person' },
+      ...Array.from({ length: 45 }, (_, i) => ({ name: `Thing ${i}`, kind: 'other' })),
+    ];
+    const edges = [
+      { from: 'Acme Corp', to: 'Billing Service', type: 'manages' },
+      { from: 'Acme Corp', type: 'owns' },
+    ];
+    const { impl } = fakeFetch(reply(JSON.stringify({ entities, edges })));
+    const out = await new OpenAIPlacementModel({ ...opts, fetchImpl: impl }).extractEntities({
+      title: 't',
+      headingPath: [],
+      text: 'x',
+    });
+    expect(out.entities).toHaveLength(40);
+    expect(out.entities[0]).toEqual({ name: 'Acme Corp', kind: 'organisation', aliases: [] });
+    expect(out.entities[1]).toEqual({
+      name: 'Billing Service',
+      kind: 'other',
+      aliases: ['billing', 'b1', 'b2', 'b3', 'b4'],
+    });
+    expect(out.edges).toEqual([{ from: 'Acme Corp', to: 'Billing Service', type: 'related_to' }]);
+  });
+
+  it('still fails when the answer is not the expected object at all', async () => {
+    const { impl } = fakeFetch(reply('{"names":[]}'), reply('[]'));
+    expect(
+      await codeOf(new OpenAIPlacementModel({ ...opts, fetchImpl: impl }).extractEntities({ title: 't', headingPath: [], text: 'x' }))
+    ).toBe('router_unavailable');
+  });
+});
+

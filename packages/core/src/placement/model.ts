@@ -33,11 +33,49 @@ const SUMMARY_INPUT_CHARS = 12_000;
 
 const Name = z.string().trim().min(1).max(120);
 const SummarySchema = z.object({ summary: z.string().trim().min(1).max(800) });
+/** Spellings models use for our kinds; anything else unknown becomes `other`. */
+const KIND_SYNONYMS: Record<string, EntityKind> = { organization: 'organisation', org: 'organisation', company: 'organisation' };
+const MAX_ENTITIES = 40;
+const MAX_EDGES = 60;
+const MAX_ALIASES = 5;
+
+function kindOf(value: unknown): EntityKind {
+  const v = typeof value === 'string' ? value.trim().toLowerCase() : '';
+  if ((ENTITY_KINDS as readonly string[]).includes(v)) return v as EntityKind;
+  return KIND_SYNONYMS[v] ?? 'other';
+}
+
+function edgeTypeOf(value: unknown): EdgeType {
+  const v = typeof value === 'string' ? value.trim().toLowerCase().replace(/[\s-]+/g, '_') : '';
+  return (EDGE_TYPES as readonly string[]).includes(v) ? (v as EdgeType) : 'related_to';
+}
+
+/** Items that do not fit are dropped one by one; only a wrong overall shape fails. */
+function validItems<T>(items: unknown[], item: z.ZodType<T, z.ZodTypeDef, unknown>, max: number): T[] {
+  const out: T[] = [];
+  for (const raw of items) {
+    if (out.length >= max) break;
+    const parsed = item.safeParse(raw);
+    if (parsed.success) out.push(parsed.data);
+  }
+  return out;
+}
+
+const EntityItem = z.object({
+  name: Name,
+  kind: z.unknown().transform(kindOf),
+  aliases: z
+    .array(z.unknown())
+    .default([])
+    .transform((list) => validItems(list, Name, MAX_ALIASES)),
+});
+const EdgeItem = z.object({ from: Name, to: Name, type: z.unknown().transform(edgeTypeOf) });
 const EntitiesSchema = z.object({
-  entities: z
-    .array(z.object({ name: Name, kind: z.enum(ENTITY_KINDS), aliases: z.array(Name).max(5).default([]) }))
-    .max(40),
-  edges: z.array(z.object({ from: Name, to: Name, type: z.enum(EDGE_TYPES) })).max(60),
+  entities: z.array(z.unknown()).transform((list) => validItems(list, EntityItem, MAX_ENTITIES)),
+  edges: z
+    .array(z.unknown())
+    .default([])
+    .transform((list) => validItems(list, EdgeItem, MAX_EDGES)),
 });
 const SameSchema = z.object({ same: z.boolean() });
 

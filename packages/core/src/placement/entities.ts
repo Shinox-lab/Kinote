@@ -173,14 +173,23 @@ export async function extractVersionEntities(
   const cache = new Map(
     loaded.cached.map((c) => [c.contentHash, c.result as { entities: ExtractedEntity[]; edges: ExtractedEdge[] }])
   );
-  const newCacheRows: Array<{ contentHash: string; result: { entities: ExtractedEntity[]; edges: ExtractedEdge[] } }> = [];
   const results: ChunkResult[] = [];
   for (const c of loaded.chunkRows) {
     let out = cache.get(c.contentHash);
     if (!out) {
       out = await model.extractEntities({ title: version.title, headingPath: c.headingPath, text: c.text });
       cache.set(c.contentHash, out);
-      newCacheRows.push({ contentHash: c.contentHash, result: out });
+      // Cached at once (content-addressed, so safe outside phase C): a later
+      // chunk's failure does not make the retry pay for this one again.
+      const result = out;
+      await withTenantTx(tenantId, (tx) =>
+        tx
+          .insert(entityExtractionCache)
+          .values({ tenantId, model: model.model, contentHash: c.contentHash, result })
+          .onConflictDoNothing({
+            target: [entityExtractionCache.tenantId, entityExtractionCache.model, entityExtractionCache.contentHash],
+          })
+      );
     }
     results.push({ chunkId: c.id, blockIds: c.blockIds, text: c.text, ...out });
   }
@@ -237,15 +246,6 @@ export async function extractVersionEntities(
       .from(spaces)
       .where(and(eq(spaces.tenantId, tenantId), eq(spaces.id, doc.spaceId)));
     if (space?.kind === 'inbox') return { outcome: 'skipped', reason: 'inbox' };
-
-    if (newCacheRows.length > 0) {
-      await tx
-        .insert(entityExtractionCache)
-        .values(newCacheRows.map((r) => ({ tenantId, model: model.model, ...r })))
-        .onConflictDoNothing({
-          target: [entityExtractionCache.tenantId, entityExtractionCache.model, entityExtractionCache.contentHash],
-        });
-    }
 
     const previous = await previousEntityIds(tx, tenantId, doc.id);
     await tx.delete(entityEdges).where(and(eq(entityEdges.tenantId, tenantId), eq(entityEdges.documentId, doc.id)));
