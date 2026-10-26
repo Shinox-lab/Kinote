@@ -11,9 +11,11 @@ import {
 import { AppError } from '@living-wiki/contracts';
 import {
   defaultEmbeddingProvider,
+  defaultPlacementModel,
   UnavailableExtractor,
   type EmbeddingProvider,
   type Extractor,
+  type PlacementModel,
 } from '@living-wiki/core';
 import { InMemoryObjectStorage, type ObjectStorage } from '@living-wiki/shared';
 import { handlers as defaultHandlers, type JobContext, type JobHandler } from './registry.js';
@@ -41,6 +43,8 @@ export interface RunnerOptions {
   extractor?: Extractor;
   /** Default 2 000 000 characters. */
   maxExtractedChars?: number;
+  /** Default: the deterministic placement model. */
+  placementModel?: PlacementModel;
   /** Overrides the queue registry (tests). */
   handlers?: Record<string, JobHandler>;
   /** Stops between jobs and passes; claimed jobs not yet started are released. */
@@ -88,6 +92,7 @@ export async function runPendingJobsForTenant(
     storage: o.storage ?? new InMemoryObjectStorage(),
     extractor: o.extractor ?? new UnavailableExtractor(),
     maxExtractedChars: o.maxExtractedChars ?? DEFAULT_MAX_EXTRACTED_CHARS,
+    placementModel: o.placementModel ?? defaultPlacementModel,
   };
   const limit = o.limit ?? DEFAULT_LIMIT;
   const fixedNow = o.now;
@@ -251,6 +256,7 @@ export async function runWorkerLoop(o: {
   storage?: ObjectStorage;
   extractor?: Extractor;
   maxExtractedChars?: number;
+  placementModel?: PlacementModel;
   handlers?: Record<string, JobHandler>;
 }): Promise<void> {
   while (!o.signal.aborted) {
@@ -268,6 +274,7 @@ export async function runWorkerLoop(o: {
           storage: o.storage,
           extractor: o.extractor,
           maxExtractedChars: o.maxExtractedChars,
+          placementModel: o.placementModel,
           handlers: o.handlers,
           signal: o.signal,
         });

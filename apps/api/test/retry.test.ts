@@ -5,6 +5,7 @@ import { withTenantTx, versions, jobs, auditEvents, type Job } from '@living-wik
 import {
   OpenAIEmbeddingProvider,
   UnavailableExtractor,
+  defaultPlacementModel,
   type EmbeddingProvider,
 } from '@living-wiki/core';
 import { InMemoryObjectStorage } from '@living-wiki/shared';
@@ -373,6 +374,7 @@ describe('failed versions and retry', () => {
       storage: new InMemoryObjectStorage(),
       extractor: new UnavailableExtractor(),
       maxExtractedChars: 1000,
+      placementModel: defaultPlacementModel,
     });
 
     const logged = warn.mock.calls.map((args) => args.join(' '));

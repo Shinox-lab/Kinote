@@ -16,6 +16,7 @@ import type { BlockLike, ObjectStorage } from '@living-wiki/shared';
 import { chunkPageBlocks } from './chunkPage.js';
 import { chunkInboxOwner } from './inboxOwner.js';
 import { loadFileChunks } from '../files/loadChunks.js';
+import { enqueuePlacementJobs } from '../placement/derived.js';
 
 /** What indexing needs beyond the database: file versions read their extracted text from storage. */
 export interface IndexDeps {
@@ -253,6 +254,9 @@ export async function indexVersion(
       .update(documents)
       .set({ indexedVersionId: ver.id, title: ver.title })
       .where(and(eq(documents.tenantId, tenantId), eq(documents.id, doc.id)));
+
+    // The routing engine's card and entity graph follow the index (never in the Inbox, R17).
+    if (space.kind !== 'inbox') await enqueuePlacementJobs(tx, tenantId, ver.id, doc.kind);
 
     await writeAuditEvent(tx, {
       tenantId,

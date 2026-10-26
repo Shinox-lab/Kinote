@@ -1,5 +1,10 @@
 import { assertEmbeddingDimensions, closeDb, initDb } from '@living-wiki/db';
-import { createEmbeddingProvider, createExtractor, EMBEDDING_DIMENSIONS } from '@living-wiki/core';
+import {
+  createEmbeddingProvider,
+  createExtractor,
+  createPlacementModel,
+  EMBEDDING_DIMENSIONS,
+} from '@living-wiki/core';
 import { createObjectStorage, loadConfig } from '@living-wiki/shared';
 import { runWorkerLoop } from './runner.js';
 
@@ -34,6 +39,7 @@ async function main(): Promise<void> {
       storage,
       extractor,
       maxExtractedChars: config.MAX_EXTRACTED_CHARS,
+      placementModel: createPlacementModel(config),
     });
   } finally {
     await closeDb();

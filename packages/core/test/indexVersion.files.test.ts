@@ -1,6 +1,6 @@
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { and, asc, eq } from 'drizzle-orm';
-import { chunks, documents, NonRetryableError, versions, withTenantTx } from '@living-wiki/db';
+import { chunks, documents, jobs, NonRetryableError, versions, withTenantTx } from '@living-wiki/db';
 import { createTestDb, type TestDb } from '@living-wiki/db/testing';
 import { InMemoryObjectStorage } from '@living-wiki/shared';
 import {
@@ -73,6 +73,15 @@ describe('indexVersion for file versions', () => {
     expect((await versionRow(seed, v.id)).status).toBe('indexed');
     const [doc] = await withTenantTx(seed.tenantId, (tx) => tx.select().from(documents).where(eq(documents.id, seed.documentId)));
     expect(doc).toMatchObject({ indexedVersionId: v.id, title: 'handbook.pdf' });
+  });
+
+  it('indexing a file enqueues only the entity job', async () => {
+    const seed = await seedFileDocument();
+    const v = await ready(seed, 'handbook.pdf', TWO_PAGES);
+    await withTenantTx(seed.tenantId, (tx) => tx.delete(jobs));
+    await indexVersion({ tenantId: seed.tenantId, versionId: v.id }, new DeterministicEmbeddingProvider(), { storage });
+    const queued = await withTenantTx(seed.tenantId, (tx) => tx.select().from(jobs));
+    expect(queued.map((j) => [j.queue, j.idempotencyKey])).toEqual([['version.entities', `entities:${v.id}`]]);
   });
 
   it('stamps the creator on the chunks of a file in the Inbox', async () => {

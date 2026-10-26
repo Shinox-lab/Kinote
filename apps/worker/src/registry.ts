@@ -5,8 +5,11 @@ import {
   takePageSnapshot,
   indexVersion,
   extractVersion,
+  buildPageCard,
+  extractVersionEntities,
   type EmbeddingProvider,
   type Extractor,
+  type PlacementModel,
 } from '@living-wiki/core';
 import type { ObjectStorage } from '@living-wiki/shared';
 
@@ -69,6 +72,14 @@ export interface JobContext {
   extractor: Extractor;
   /** Most characters of text one file may yield. */
   maxExtractedChars: number;
+  /** Writes page cards and extracts the entity graph. */
+  placementModel: PlacementModel;
+}
+
+function versionIdOf(job: Job): string {
+  const payload = job.payload as { versionId?: unknown };
+  if (typeof payload?.versionId !== 'string') throw new NonRetryableError(`${job.queue} job has no versionId`);
+  return payload.versionId;
 }
 
 /**
@@ -83,6 +94,34 @@ export interface JobHandler {
 }
 
 export const handlers: Record<string, JobHandler> = {
+  /**
+   * The page card of an indexed page. No onDeadLetter: a card that cannot be
+   * built never changes the version's status; the dead-lettered job is shown
+   * to admins and a later index of the page rebuilds it.
+   */
+  'version.card': {
+    async run(job, ctx) {
+      const versionId = versionIdOf(job);
+      const result = await buildPageCard({ tenantId: job.tenantId, versionId }, ctx.placementModel, ctx.embeddingProvider);
+      if (result.outcome === 'skipped') {
+        console.warn(`[worker] version.card: version ${versionId} has no card (skipped: ${result.reason})`);
+      }
+    },
+  },
+  /** The entity graph of an indexed version; like `version.card`, never touches the version. */
+  'version.entities': {
+    async run(job, ctx) {
+      const versionId = versionIdOf(job);
+      const result = await extractVersionEntities(
+        { tenantId: job.tenantId, versionId },
+        ctx.placementModel,
+        ctx.embeddingProvider
+      );
+      if (result.outcome === 'skipped') {
+        console.warn(`[worker] version.entities: version ${versionId} not extracted (skipped: ${result.reason})`);
+      }
+    },
+  },
   'file.extract': {
     async run(job, ctx) {
       const payload = job.payload as { versionId?: unknown };

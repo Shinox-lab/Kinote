@@ -4,6 +4,7 @@ import { and, asc, eq, sql } from 'drizzle-orm';
 import {
   chunks,
   documents,
+  jobs,
   NonRetryableError,
   spaces,
   tenants,
@@ -22,6 +23,7 @@ import {
 import { archivePage, withdrawPage } from '../../../apps/api/src/routes/pages.js';
 import { searchWiki } from '../../../apps/api/src/search/hybridSearch.js';
 import { blocksFromMarkdown } from './fixtures/realBlocks.js';
+import { addSpace, indexPageVersion, seedTenant } from './fixtures/placementSeed.js';
 
 let testDb: TestDb;
 beforeAll(async () => {
@@ -417,5 +419,29 @@ describe('indexVersion (two-phase, locked)', () => {
     ).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(AppError);
     expect((err as AppError).code).toBe('version_not_found');
+  });
+});
+
+describe('placement jobs after indexing', () => {
+  const jobKeys = (tenantId: string) =>
+    withTenantTx(tenantId, async (tx) =>
+      (await tx.select().from(jobs)).map((j) => [j.queue, j.idempotencyKey]).sort()
+    );
+
+  it('indexing a page enqueues card and entity jobs', async () => {
+    const w = await seedTenant();
+    const space = await addSpace(w);
+    const page = await indexPageVersion(w, space, 'billing', 'Aisha Rahman owns Billing Service.');
+    expect(await jobKeys(w.tenantId)).toEqual([
+      ['version.card', `card:${page.versionId}`],
+      ['version.entities', `entities:${page.versionId}`],
+    ]);
+  });
+
+  it('indexing an Inbox document enqueues neither', async () => {
+    const w = await seedTenant();
+    const inbox = await addSpace(w, 'inbox');
+    await indexPageVersion(w, inbox, 'note', 'Aisha Rahman owns Billing Service.');
+    expect(await jobKeys(w.tenantId)).toEqual([]);
   });
 });
