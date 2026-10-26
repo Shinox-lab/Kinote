@@ -7,6 +7,7 @@ import { and, eq } from 'drizzle-orm';
 import { withTenantTx, documents, pages, spaces } from '@living-wiki/db';
 import {
   AppError,
+  CollabApplyBlockOpsRequestSchema,
   CollabFlushRequestSchema,
   CollabReplaceBlocksRequestSchema,
   CollabRevokeRequestSchema,
@@ -17,6 +18,7 @@ import {
 import { parseDocumentName } from '@living-wiki/shared';
 import type { CollabContext } from './auth.js';
 import { openTrustedDirectSession } from './directSession.js';
+import { applyBlockOps } from './blockOps.js';
 import { BLOCK_FRAGMENT } from './fragment.js';
 import { collabServerDeps, storeDocumentNow } from './serverState.js';
 
@@ -28,6 +30,7 @@ import { collabServerDeps, storeDocumentNow } from './serverState.js';
 export const INTERNAL_PATHS = {
   flush: '/internal/flush',
   replaceBlocks: '/internal/replace-blocks',
+  applyBlockOps: '/internal/apply-block-ops',
   setTitle: '/internal/set-title',
   revoke: '/internal/revoke',
 } as const;
@@ -140,6 +143,39 @@ export async function replaceDocumentBlocks(server: Hocuspocus, input: unknown):
 }
 
 /**
+ * POST /internal/apply-block-ops: inserts, replaces or removes single
+ * top-level blocks of the live page, all in one transaction attributed to
+ * `actor` with `source`. Every new block is converted off-document first and
+ * every addressed block checked before the live fragment is touched: one
+ * missing block is 404 `block_not_found` and nothing changes.
+ */
+export async function applyDocumentBlockOps(server: Hocuspocus, input: unknown): Promise<void> {
+  const parsed = CollabApplyBlockOpsRequestSchema.safeParse(input);
+  if (!parsed.success) throw new AppError('validation_failed');
+  const { documentName, actor, source, ops } = parsed.data;
+  const { tenantId, pageId } = requireDocument(documentName);
+
+  for (const op of ops) {
+    if (op.op === 'remove') continue;
+    try {
+      blockNote.blocksToYXmlFragment(op.blocks as any, new Y.Doc().getXmlFragment(BLOCK_FRAGMENT));
+    } catch {
+      throw new AppError('validation_failed', 'The blocks are not valid page content.');
+    }
+  }
+
+  const context = await trustedContext(tenantId, pageId, actor);
+  const session = await openTrustedDirectSession(server, documentName, context);
+  try {
+    await session.transact({ source, actorId: actor.id }, (doc) => {
+      applyBlockOps(doc.getXmlFragment(BLOCK_FRAGMENT), ops);
+    });
+  } finally {
+    await session.close();
+  }
+}
+
+/**
  * POST /internal/set-title: renames a live page. Only the title changes; the
  * blocks are untouched. The change is attributed to `actor` as a human edit
  * (`restore` and `agent` are not offered here): the title is part of the
@@ -206,6 +242,7 @@ export async function revokeConnections(server: Hocuspocus, input: unknown): Pro
 const HANDLERS: Record<string, (server: Hocuspocus, input: unknown) => Promise<void>> = {
   [INTERNAL_PATHS.flush]: flushDocument,
   [INTERNAL_PATHS.replaceBlocks]: replaceDocumentBlocks,
+  [INTERNAL_PATHS.applyBlockOps]: applyDocumentBlockOps,
   [INTERNAL_PATHS.setTitle]: setDocumentTitle,
   [INTERNAL_PATHS.revoke]: revokeConnections,
 };

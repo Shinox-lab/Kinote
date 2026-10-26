@@ -95,6 +95,7 @@ describe('manual snapshots flush the live document first', () => {
         if (failFlush) throw new AppError('internal_error');
       },
       async replaceBlocks() {},
+      async applyBlockOps() {},
       async setTitle() {},
       async revoke() {},
     };

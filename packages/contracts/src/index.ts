@@ -797,6 +797,44 @@ export const CollabSetTitleRequestSchema = z.object({
 });
 export type CollabSetTitleRequest = z.infer<typeof CollabSetTitleRequestSchema>;
 
+const BlocksSchema = z.array(z.record(z.unknown())).min(1).max(1_000);
+
+/**
+ * Body of POST /internal/apply-block-ops: changes single top-level blocks of a
+ * live page, all in one attributed change. `agent` changes are made by an
+ * agent, `human` ones by a user (an undo is the person's own edit).
+ */
+export const CollabApplyBlockOpsRequestSchema = z
+  .object({
+    documentName: z.string().min(1).max(200),
+    actor: z.object({
+      type: z.enum(['user', 'agent']),
+      id: z.string().uuid(),
+    }),
+    source: z.enum(['agent', 'human']),
+    ops: z
+      .array(
+        z.discriminatedUnion('op', [
+          z.object({ op: z.literal('insert_after'), after: z.string().min(1).max(100).nullable(), blocks: BlocksSchema }),
+          z.object({ op: z.literal('replace'), blockId: z.string().min(1).max(100), blocks: BlocksSchema }),
+          z.object({ op: z.literal('remove'), blockId: z.string().min(1).max(100) }),
+        ])
+      )
+      .min(1)
+      .max(200),
+  })
+  .superRefine((req, ctx) => {
+    const expected = req.source === 'agent' ? 'agent' : 'user';
+    if (req.actor.type !== expected) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['actor', 'type'],
+        message: `A ${req.source} change must be made by a${expected === 'agent' ? 'n agent' : ' user'}.`,
+      });
+    }
+  });
+export type CollabApplyBlockOpsRequest = z.infer<typeof CollabApplyBlockOpsRequestSchema>;
+
 // ---------------------------------------------------------------------------
 // Files (Slice 2)
 // ---------------------------------------------------------------------------

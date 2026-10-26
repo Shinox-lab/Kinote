@@ -160,6 +160,7 @@ describe('live editing sessions are revoked on access changes', () => {
     const recording: CollabClient = {
       async flush() {},
       async replaceBlocks() {},
+      async applyBlockOps() {},
       async setTitle() {},
       async revoke(target) {
         calls.push(target);
@@ -201,6 +202,7 @@ describe('live editing sessions are revoked on access changes', () => {
     const failing: CollabClient = {
       async flush() {},
       async replaceBlocks() {},
+      async applyBlockOps() {},
       async setTitle() {},
       async revoke() {
         throw new AppError('internal_error');

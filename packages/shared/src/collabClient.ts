@@ -1,4 +1,4 @@
-import { AppError } from '@living-wiki/contracts';
+import { AppError, type CollabApplyBlockOpsRequest } from '@living-wiki/contracts';
 import { documentName } from './collabToken.js';
 
 /**
@@ -23,6 +23,21 @@ export interface CollabClient {
     title: string;
     actor: { type: 'user' | 'agent'; id: string };
     source: 'restore' | 'agent';
+  }): Promise<void>;
+  /**
+   * Changes single top-level blocks of a live page in one attributed change
+   * (`agent` by an agent, `human` by a user). A block that is not on the page
+   * is `block_not_found` and nothing changes.
+   *
+   * Never call it while holding `lockDocument` on that page, for the same
+   * reason as `replaceBlocks`.
+   */
+  applyBlockOps(a: {
+    tenantId: string;
+    pageId: string;
+    actor: { type: 'user' | 'agent'; id: string };
+    source: 'agent' | 'human';
+    ops: CollabApplyBlockOpsRequest['ops'];
   }): Promise<void>;
   /**
    * Renames a live page (its title only; the blocks are untouched),
@@ -81,6 +96,15 @@ export class HttpCollabClient implements CollabClient {
     });
   }
 
+  async applyBlockOps(a: Parameters<CollabClient['applyBlockOps']>[0]): Promise<void> {
+    await this.#post('/internal/apply-block-ops', {
+      documentName: documentName(a.tenantId, a.pageId),
+      actor: a.actor,
+      source: a.source,
+      ops: a.ops,
+    });
+  }
+
   async setTitle(a: Parameters<CollabClient['setTitle']>[0]): Promise<void> {
     await this.#post('/internal/set-title', {
       documentName: documentName(a.tenantId, a.pageId),
@@ -112,6 +136,13 @@ export class HttpCollabClient implements CollabClient {
         `[api] collab ${path} unreachable:`,
         err instanceof Error ? err.message : String(err)
       );
+      throw new AppError('internal_error');
+    }
+    if (res.status === 404) {
+      // The one refusal callers act on: the block they addressed is gone.
+      const body = (await res.json().catch(() => null)) as { error?: unknown } | null;
+      if (body?.error === 'block_not_found') throw new AppError('block_not_found');
+      console.error(`[api] collab ${path} answered 404`);
       throw new AppError('internal_error');
     }
     if (res.status !== 204) {

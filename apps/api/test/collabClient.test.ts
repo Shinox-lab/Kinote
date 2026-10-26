@@ -12,6 +12,7 @@ describe('HttpCollabClient success is 204 only', () => {
   let server: http.Server;
   let base: string;
   let status = 204;
+  let replyJson: unknown = null;
   const seen: string[] = [];
   const bodies: string[] = [];
 
@@ -25,6 +26,9 @@ describe('HttpCollabClient success is 204 only', () => {
         if (status === 204) {
           res.writeHead(204);
           res.end();
+        } else if (replyJson !== null) {
+          res.writeHead(status, { 'content-type': 'application/json' });
+          res.end(JSON.stringify(replyJson));
         } else {
           res.writeHead(status, { 'content-type': 'text/plain' });
           res.end('Welcome to Hocuspocus!');
@@ -40,6 +44,30 @@ describe('HttpCollabClient success is 204 only', () => {
   });
 
   const client = () => new HttpCollabClient(base, 'x'.repeat(40));
+
+  test('applyBlockOps posts the ops; a 404 block_not_found is that error', async () => {
+    const tenantId = '00000000-0000-0000-0000-000000000001';
+    const pageId = '00000000-0000-0000-0000-000000000003';
+    const actor = { type: 'agent' as const, id: '00000000-0000-0000-0000-000000000004' };
+    status = 204;
+    await client().applyBlockOps({ tenantId, pageId, actor, source: 'agent', ops: [{ op: 'remove', blockId: 'b' }] });
+    expect(seen.at(-1)).toBe('POST /internal/apply-block-ops');
+    expect(JSON.parse(bodies.at(-1)!)).toMatchObject({ actor, source: 'agent', ops: [{ op: 'remove', blockId: 'b' }] });
+
+    status = 404;
+    replyJson = { error: 'block_not_found' };
+    try {
+      await expect(
+        client().applyBlockOps({ tenantId, pageId, actor, source: 'agent', ops: [{ op: 'remove', blockId: 'b' }] })
+      ).rejects.toMatchObject({ code: 'block_not_found' });
+      replyJson = { error: 'page_not_found' };
+      await expect(
+        client().applyBlockOps({ tenantId, pageId, actor, source: 'agent', ops: [{ op: 'remove', blockId: 'b' }] })
+      ).rejects.toMatchObject({ code: 'internal_error' });
+    } finally {
+      replyJson = null;
+    }
+  });
 
   test('204 resolves', async () => {
     status = 204;
