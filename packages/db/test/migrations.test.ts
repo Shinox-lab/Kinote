@@ -6,6 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PGlite } from '@electric-sql/pglite';
 import { vector } from '@electric-sql/pglite/vector';
+import { pg_trgm } from '@electric-sql/pglite/contrib/pg_trgm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { migrate } from 'drizzle-orm/pglite/migrator';
 
@@ -37,7 +38,7 @@ describe('migration chain', () => {
   let migrateError: unknown = null;
 
   beforeAll(async () => {
-    client = new PGlite({ extensions: { vector } });
+    client = new PGlite({ extensions: { vector, pg_trgm } });
     db = drizzle({ client });
     vectorBefore = (await rows(`SELECT 1 FROM pg_extension WHERE extname = 'vector'`)).length;
     try {
@@ -161,7 +162,7 @@ describe('migration chain', () => {
   });
 
   test('a seeded 1536 database clears old vectors and rebuilds the index at 2560', async () => {
-    const legacy = new PGlite({ extensions: { vector } });
+    const legacy = new PGlite({ extensions: { vector, pg_trgm } });
     try {
       const files = fs
         .readdirSync(MIGRATIONS_DIR)

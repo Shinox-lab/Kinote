@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { PGlite } from '@electric-sql/pglite';
 import { vector } from '@electric-sql/pglite/vector';
+import { pg_trgm } from '@electric-sql/pglite/contrib/pg_trgm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { migrate } from 'drizzle-orm/pglite/migrator';
 import { initDb, schema, type Db } from './client.js';
@@ -33,7 +34,7 @@ export interface TestDb {
  * role so row-level security is enforced (a superuser would bypass it).
  */
 export async function createTestDb(): Promise<TestDb> {
-  const pglite = new PGlite({ extensions: { vector } });
+  const pglite = new PGlite({ extensions: { vector, pg_trgm } });
   // Roles are cluster-wide; in a deployment the login role comes from
   // infra/postgres/01-roles.sh.
   await pglite.exec('CREATE ROLE living_wiki_app LOGIN NOSUPERUSER NOBYPASSRLS;');
