@@ -87,3 +87,12 @@ export {
   type ExtractEntitiesResult,
 } from './placement/entities.js';
 export { deletePlacementIndex, movePlacementIndex, enqueuePlacementJobs } from './placement/derived.js';
+export {
+  searchPageCards,
+  findEntities,
+  pagesForEntities,
+  type PlacementFilter,
+  type CardHit,
+  type EntityHit,
+  type GraphPageHit,
+} from './placement/queries.js';
