@@ -13,6 +13,9 @@ const PAGE_ONLY = [
   'routes/space.tsx',
   'components/DocumentLink.tsx',
   'router.tsx',
+  // The routing engine only ever changes pages: a receipt card and the capture banner name a page.
+  'components/capture/Receipt.tsx',
+  'components/capture/CaptureBanner.tsx',
 ];
 
 function sources(dir: string): string[] {
