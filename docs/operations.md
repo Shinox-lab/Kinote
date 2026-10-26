@@ -162,6 +162,19 @@ The routing model is set the same way with `ROUTER_PROVIDER=openai`,
 writes the page's card and extracts the entity graph; a failure retries as a job
 and never changes the version's status.
 
+Migration `0022` queues cards and entity extraction once for everything already
+indexed, using whichever router model the workers have when they pick the jobs
+up. Configure `ROUTER_PROVIDER=openai` before upgrading, and roll the workers to
+this release before or together with the api. Whenever the router model is set
+or changed later, rebuild with the schema owner's connection:
+
+```sh
+DATABASE_MIGRATE_URL=postgres://postgres:...@host/living_wiki pnpm placement:rebuild
+```
+
+It only queues `version.card` and `version.entities` jobs (the same keys
+indexing uses, so nothing is duplicated); the workers do the work.
+
 **Data egress:** indexing sends each chunk's text to the embedding endpoint,
 and Ask sends the question plus the retrieved passages to the chat endpoint;
 the routing model receives indexed page text and chunk text.

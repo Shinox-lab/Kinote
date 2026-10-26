@@ -13,6 +13,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx packages/db/src/migrate.ts",
+    "placement:rebuild": "tsx packages/db/src/rebuildPlacement.ts",
     "test:pg": "vitest run -c vitest.pg.config.ts",
     "stack:up": "bash infra/stack-up.sh",
     "stack:down": "bash infra/stack-down.sh",
