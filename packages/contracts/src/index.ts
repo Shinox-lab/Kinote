@@ -464,6 +464,24 @@ export const ReviewQuerySchema = z.object({
  * markdown, blocks or Yjs bytes), its document and space, who contributed, and
  * whether the asking actor may approve it (the same rule approve enforces).
  */
+export const SuggestionSummarySchema = z.object({
+  id: z.string().uuid(),
+  documentId: z.string().uuid(),
+  kind: z.enum(['remove', 'replace', 'insert']),
+  blockId: z.string().nullable(),
+  afterBlockId: z.string().nullable(),
+  proposedMarkdown: z.string().nullable(),
+  reason: z.string(),
+  blockedBy: z.enum(['removal', 'protection', 'conflict', 'no_edit_access']),
+  /** What a conflicting citation's source is called, when `blockedBy` is `conflict`. */
+  conflictWith: z.string().nullable(),
+  status: z.enum(['open', 'accepted', 'declined', 'stale']),
+  captureId: z.string().uuid().nullable(),
+  createdAt: z.string(),
+});
+export type SuggestionSummary = z.infer<typeof SuggestionSummarySchema>;
+export const SuggestionListSchema = z.array(SuggestionSummarySchema);
+
 export const ReviewItemSchema = z.object({
   version: VersionSummarySchema.extend({
     /** The creator's display name (System for a connector, Former member for someone who left). */
@@ -483,6 +501,19 @@ export const ReviewItemSchema = z.object({
     .nullable(),
   contributors: z.array(VersionContributorSchema),
   canApprove: z.boolean(),
+  /** The capture this snapshot's routed changes came from, if any. */
+  capture: z
+    .object({
+      id: z.string().uuid(),
+      senderName: z.string(),
+      /** The first 280 characters of the capture. */
+      excerpt: z.string(),
+      /** Other pages the capture changed that the reviewer can read. */
+      alsoApplied: z.array(z.object({ pageId: z.string().uuid(), title: z.string() })),
+    })
+    .nullable(),
+  /** The page's open suggestions. */
+  suggestions: z.array(SuggestionSummarySchema),
 });
 export type ReviewItem = z.infer<typeof ReviewItemSchema>;
 
@@ -1089,23 +1120,6 @@ export const CaptureMessageSchema = z.object({
   createdAt: z.string(),
 });
 
-export const SuggestionSummarySchema = z.object({
-  id: z.string().uuid(),
-  documentId: z.string().uuid(),
-  kind: z.enum(['remove', 'replace', 'insert']),
-  blockId: z.string().nullable(),
-  afterBlockId: z.string().nullable(),
-  proposedMarkdown: z.string().nullable(),
-  reason: z.string(),
-  blockedBy: z.enum(['removal', 'protection', 'conflict', 'no_edit_access']),
-  /** What a conflicting citation's source is called, when `blockedBy` is `conflict`. */
-  conflictWith: z.string().nullable(),
-  status: z.enum(['open', 'accepted', 'declined', 'stale']),
-  captureId: z.string().uuid().nullable(),
-  createdAt: z.string(),
-});
-export type SuggestionSummary = z.infer<typeof SuggestionSummarySchema>;
-export const SuggestionListSchema = z.array(SuggestionSummarySchema);
 
 export const CaptureChangeSchema = z.object({
   id: z.string().uuid(),

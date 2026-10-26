@@ -1,6 +1,9 @@
-import { and, asc, eq, inArray, isNull } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, ne } from 'drizzle-orm';
 import {
   withTenantTx,
+  captureChanges,
+  captures,
+  suggestions,
   documents,
   spaces,
   versions,
@@ -14,10 +17,11 @@ import {
   AppError,
   type ReviewItem,
 } from '@living-wiki/contracts';
-import { requireSpaceRole, assertValidUuid, isTenantAdmin, type Actor } from '@living-wiki/core';
+import { requireSpaceRole, assertValidUuid, isTenantAdmin, senderAccess, type Actor } from '@living-wiki/core';
 import { canApprove, type SpaceRow } from '../pages/approval.js';
 import { resolveActorNames } from '../people.js';
 import { versionSummaryColumns, toVersionSummary } from './pages.js';
+import { conflictNames, toSuggestionSummary } from './captures.js';
 
 /**
  * The space when the actor holds `reviewer` or above in it, else null. An
@@ -151,6 +155,22 @@ export async function listReviewQueue(actor: Actor, query: unknown): Promise<Rev
       actor.tenantId,
       visible.map((r) => ({ type: r.createdByType, id: r.createdBy }))
     );
+    const bundles = await captureBundles(tx, actor, visible.map((r) => r.id));
+    const suggestionRows = await tx
+      .select()
+      .from(suggestions)
+      .where(
+        and(
+          eq(suggestions.tenantId, actor.tenantId),
+          eq(suggestions.status, 'open'),
+          inArray(suggestions.documentId, [...new Set(visible.map((r) => r.documentId))])
+        )
+      )
+      .orderBy(asc(suggestions.createdAt));
+    const openSuggestions = new Map<string, typeof suggestionRows>();
+    for (const row of suggestionRows) openSuggestions.set(row.documentId, [...(openSuggestions.get(row.documentId) ?? []), row]);
+    const names = await conflictNames(tx, actor.tenantId, suggestionRows);
+
     const items = visible.map((r) => {
       const space = reviewable.get(r.spaceId)!;
       const contributors = byVersion.get(r.id) ?? [];
@@ -192,8 +212,77 @@ export async function listReviewQueue(actor: Actor, query: unknown): Promise<Rev
           contributors.map((c) => ({ principalType: c.type, principalId: c.id })),
           space
         ),
+        capture: bundles.get(r.id) ?? null,
+        suggestions: (openSuggestions.get(r.documentId) ?? []).map((row) =>
+          toSuggestionSummary(row, row.conflictCitationId ? names.get(row.conflictCitationId) ?? null : null)
+        ),
       };
     });
-    return items;
+    return groupByCapture(items);
   });
+}
+
+/**
+ * Keeps the queue's order but moves every item of a capture up next to that
+ * capture's first item, so a reviewer sees one capture's pages together.
+ */
+function groupByCapture<T extends { capture: { id: string } | null }>(items: T[]): T[] {
+  const out: T[] = [];
+  const placed = new Set<T>();
+  for (const item of items) {
+    if (placed.has(item)) continue;
+    const group = item.capture ? items.filter((i) => i.capture?.id === item.capture!.id) : [item];
+    for (const g of group) {
+      out.push(g);
+      placed.add(g);
+    }
+  }
+  return out;
+}
+
+/** Per waiting version: the capture its routed changes came from, as the reviewer may see it. */
+async function captureBundles(tx: DbTransaction, actor: Actor, versionIds: string[]) {
+  const bundles = new Map<string, ReviewItem['capture']>();
+  if (versionIds.length === 0) return bundles;
+  const links = await tx
+    .selectDistinct({ versionId: captureChanges.versionId, captureId: captureChanges.captureId, documentId: captureChanges.documentId })
+    .from(captureChanges)
+    .where(and(eq(captureChanges.tenantId, actor.tenantId), inArray(captureChanges.versionId, versionIds)));
+  if (links.length === 0) return bundles;
+  const captureIds = [...new Set(links.map((l) => l.captureId))];
+  const rows = await tx
+    .select()
+    .from(captures)
+    .where(and(eq(captures.tenantId, actor.tenantId), inArray(captures.id, captureIds)));
+  const senders = await resolveActorNames(
+    tx,
+    actor.tenantId,
+    rows.map((c) => ({ type: c.senderType, id: c.senderId }))
+  );
+  const { readable } = await senderAccess(tx, actor);
+  const touched = await tx
+    .selectDistinct({ captureId: captureChanges.captureId, documentId: captureChanges.documentId, title: documents.title })
+    .from(captureChanges)
+    .innerJoin(documents, and(eq(documents.tenantId, captureChanges.tenantId), eq(documents.id, captureChanges.documentId)))
+    .where(
+      and(
+        eq(captureChanges.tenantId, actor.tenantId),
+        inArray(captureChanges.captureId, captureIds),
+        inArray(captureChanges.spaceId, readable.length > 0 ? readable : ['00000000-0000-0000-0000-000000000000']),
+        ne(captureChanges.status, 'undone')
+      )
+    );
+  for (const link of links) {
+    const capture = rows.find((c) => c.id === link.captureId);
+    if (!capture || !link.versionId) continue;
+    bundles.set(link.versionId, {
+      id: capture.id,
+      senderName: senders.get(`${capture.senderType}:${capture.senderId}`) ?? 'Former member',
+      excerpt: capture.text.slice(0, 280),
+      alsoApplied: touched
+        .filter((t) => t.captureId === capture.id && t.documentId !== link.documentId)
+        .map((t) => ({ pageId: t.documentId, title: t.title })),
+    });
+  }
+  return bundles;
 }

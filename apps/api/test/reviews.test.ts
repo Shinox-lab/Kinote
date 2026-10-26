@@ -155,7 +155,7 @@ describe('review queue: GET /api/v1/reviews', () => {
     await snapshotAs(w.author.headers, pageId);
 
     const [item] = await queue(w.reviewer.headers);
-    expect(Object.keys(item).sort()).toEqual(['canApprove', 'contributors', 'document', 'file', 'version']);
+    expect(Object.keys(item).sort()).toEqual(['canApprove', 'capture', 'contributors', 'document', 'file', 'suggestions', 'version']);
     expect(Object.keys(item.version).sort()).toEqual([
       'createdAt',
       'createdBy',

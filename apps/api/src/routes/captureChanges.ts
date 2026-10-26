@@ -375,3 +375,39 @@ export async function dismissCaptureFact(actor: Actor, id: string) {
     return { factId: fact.id, outcome: 'dismissed' as const };
   });
 }
+
+/** GET /api/v1/pages/:id/capture-changes?capture=: one capture's changes on a page, for its readers. */
+export async function listPageCaptureChanges(actor: Actor, pageId: string, query: unknown) {
+  assertValidUuid(pageId, 'page_not_found');
+  const captureId = (query as { capture?: unknown } | null)?.capture;
+  if (typeof captureId !== 'string') throw new AppError('validation_failed');
+  assertValidUuid(captureId, 'capture_not_found');
+  return withTenantTx(actor.tenantId, async (tx) => {
+    const doc = await documentOf(tx, actor.tenantId, pageId);
+    if (!doc || doc.kind !== 'page') throw new AppError('page_not_found');
+    await requireDocumentRole(tx, actor, doc, 'viewer', { notFound: 'page_not_found' });
+    const rows = await tx
+      .select({ change: captureChanges, reason: captureFacts.reason })
+      .from(captureChanges)
+      .innerJoin(captureFacts, and(eq(captureFacts.tenantId, captureChanges.tenantId), eq(captureFacts.id, captureChanges.factId)))
+      .where(
+        and(
+          eq(captureChanges.tenantId, actor.tenantId),
+          eq(captureChanges.documentId, pageId),
+          eq(captureChanges.captureId, captureId)
+        )
+      )
+      .orderBy(captureChanges.createdAt);
+    return rows.map(({ change, reason }) => ({
+      id: change.id,
+      factId: change.factId,
+      documentId: change.documentId,
+      op: change.op,
+      blockId: change.blockId,
+      beforeMarkdown: change.beforeMarkdown,
+      afterMarkdown: change.afterMarkdown,
+      status: change.status,
+      reason,
+    }));
+  });
+}

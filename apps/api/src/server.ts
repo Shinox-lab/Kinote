@@ -17,6 +17,7 @@ import {
   MoveChangeResponseSchema,
   NeedsHomeListSchema,
   FactStatusSchema,
+  CaptureChangeListSchema,
   InviteMemberResponseSchema,
   AcceptInvitationResponseSchema,
   SpaceSchema,
@@ -117,6 +118,7 @@ import { acceptSuggestion, declineSuggestion, listPageSuggestions } from './rout
 import {
   dismissCaptureFact,
   listNeedsHome,
+  listPageCaptureChanges,
   moveCaptureChange,
   placeCaptureFact,
   undoCapture,
@@ -668,6 +670,11 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
     const { id } = req.params as { id: string };
     const res = await moveCaptureChange(actorOf(req), id, req.body, { collab: opts.collab, embedder: embeddingProvider });
     return reply.send(parseReply(MoveChangeResponseSchema, res));
+  });
+
+  app.get('/api/v1/pages/:id/capture-changes', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    return reply.send(parseReply(CaptureChangeListSchema, await listPageCaptureChanges(actorOf(req), id, req.query)));
   });
 
   app.get('/api/v1/needs-home', async (req, reply) => {
