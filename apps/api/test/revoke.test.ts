@@ -4,7 +4,7 @@ import { signCollabToken, getCollabTokenSecret, documentName } from '@living-wik
 import { collabSettle, type CollabServer } from '../../collab/src/server.js';
 import { connectClient, startCollabServer, type ConnectedClient } from '../../collab/test/support/wsClient.js';
 import { waitFor } from '../../collab/test/support/collabWorld.js';
-import type { CollabClient } from '../src/collab/client.js';
+import type { CollabClient } from '@living-wiki/shared';
 import { InProcessCollabClient } from './support/inProcessCollab.js';
 import { bootstrapTenant, signUpMember, buildTestApp, useTestDb } from './support/testkit.js';
 

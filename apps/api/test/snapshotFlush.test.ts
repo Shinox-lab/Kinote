@@ -6,7 +6,7 @@ import type { CollabServer } from '../../collab/src/server.js';
 import { connectClient, startCollabServer, type ConnectedClient } from '../../collab/test/support/wsClient.js';
 import { readBlocks, writeBlocks, fragmentText } from '../../collab/test/support/blocks.js';
 import { buildCollabWorld, storedDoc, waitFor } from '../../collab/test/support/collabWorld.js';
-import { HttpCollabClient, type CollabClient } from '../src/collab/client.js';
+import { HttpCollabClient, type CollabClient } from '@living-wiki/shared';
 import { encodePageYDoc } from '../src/routes/pages.js';
 import { InProcessCollabClient } from './support/inProcessCollab.js';
 import { buildTestApp, useTestDb } from './support/testkit.js';

@@ -1,6 +1,7 @@
 import { sql, type SQL } from 'drizzle-orm';
 import { rowsOf, type DbTransaction } from '@living-wiki/db';
-import { principalKey, type Actor } from '@living-wiki/core';
+import { principalKey } from '../indexing/inboxOwner.js';
+import type { Actor } from '../permissions.js';
 import type { SearchPassage } from '@living-wiki/contracts';
 
 /** Candidates each branch contributes to reciprocal rank fusion. */

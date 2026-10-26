@@ -67,7 +67,7 @@ import { computePageBadge } from '../pages/badge.js';
 import { diffBlocks } from '../pages/diff.js';
 import { resolveActorNames } from '../people.js';
 import { canApprove } from '../pages/approval.js';
-import type { CollabClient } from '../collab/client.js';
+import type { CollabClient } from '@living-wiki/shared';
 
 const blockNote = ServerBlockNoteEditor.create();
 

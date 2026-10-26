@@ -10,7 +10,7 @@ import { fragmentText } from '../../collab/test/support/blocks.js';
 import { waitFor } from '../../collab/test/support/collabWorld.js';
 import { runPendingJobsForTenant } from '../../worker/src/runner.js';
 import { encodePageYDoc } from '../src/routes/pages.js';
-import type { CollabClient } from '../src/collab/client.js';
+import type { CollabClient } from '@living-wiki/shared';
 import { InProcessCollabClient } from './support/inProcessCollab.js';
 import { bootstrapTenant, signUpMember, buildTestApp, useTestDb } from './support/testkit.js';
 

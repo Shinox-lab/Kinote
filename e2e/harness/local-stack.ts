@@ -24,7 +24,7 @@ import { createTestDb } from '@living-wiki/db/testing';
 import { EMBEDDING_DIMENSIONS, FakeExtractor, defaultEmbeddingProvider } from '@living-wiki/core';
 import { InMemoryObjectStorage, loadConfig } from '@living-wiki/shared';
 import { buildApiServer } from '../../apps/api/src/server.js';
-import { HttpCollabClient } from '../../apps/api/src/collab/client.js';
+import { HttpCollabClient } from '@living-wiki/shared';
 import { collabSettle, createCollabServer } from '../../apps/collab/src/server.js';
 import { runWorkerLoop } from '../../apps/worker/src/runner.js';
 

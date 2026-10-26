@@ -1,5 +1,5 @@
 import { collabServerDeps, type CollabServer } from '../../../collab/src/server.js';
-import { HttpCollabClient } from '../../src/collab/client.js';
+import { HttpCollabClient } from '@living-wiki/shared';
 
 /**
  * The collab client tests hand to the API: the real HTTP transport, looped

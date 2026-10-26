@@ -1,5 +1,5 @@
 import { AppError } from '@living-wiki/contracts';
-import { documentName } from '@living-wiki/shared';
+import { documentName } from './collabToken.js';
 
 /**
  * The API's handle on the collab server's internal endpoints: the live page

@@ -96,3 +96,12 @@ export {
   type EntityHit,
   type GraphPageHit,
 } from './placement/queries.js';
+export {
+  BRANCH_LIMIT,
+  chunkFilterFor,
+  vectorBranchSql,
+  ftsBranchSql,
+  searchSql,
+  searchWiki,
+  type ChunkFilter,
+} from './search/hybridSearch.js';

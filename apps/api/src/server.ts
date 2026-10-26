@@ -125,9 +125,10 @@ import { authRoutes, type AuthRateLimit } from './routes/auth.js';
 import { requireSession, resolveActor, resolveSourceActor, type AuthSession, type SourceActor } from './auth/actor.js';
 import { registerErrorHandler } from './errors.js';
 import { parseReply } from './reply.js';
-import { searchWiki } from './search/hybridSearch.js';
+
 import { answerPassages } from './search/ask.js';
-import type { CollabClient } from './collab/client.js';
+import type { CollabClient } from '@living-wiki/shared';
+import { searchWiki } from '@living-wiki/core';
 import { fastifyLogger, type ApiLoggerOptions } from './logger.js';
 
 export interface ApiServerOptions {

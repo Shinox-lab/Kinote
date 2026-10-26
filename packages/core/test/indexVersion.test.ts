@@ -21,7 +21,7 @@ import {
   type EmbeddingProvider,
 } from '../src/index.js';
 import { archivePage, withdrawPage } from '../../../apps/api/src/routes/pages.js';
-import { searchWiki } from '../../../apps/api/src/search/hybridSearch.js';
+import { searchWiki } from '../src/search/hybridSearch.js';
 import { blocksFromMarkdown } from './fixtures/realBlocks.js';
 import { addSpace, indexPageVersion, seedTenant } from './fixtures/placementSeed.js';
 

@@ -2,7 +2,7 @@ import { assertEmbeddingDimensions, closeDb, initDb } from '@living-wiki/db';
 import { createAnswerProvider, createEmbeddingProvider, EMBEDDING_DIMENSIONS } from '@living-wiki/core';
 import { createObjectStorage, loadConfig } from '@living-wiki/shared';
 import { buildApiServer } from './server.js';
-import { HttpCollabClient } from './collab/client.js';
+import { HttpCollabClient } from '@living-wiki/shared';
 
 async function main(): Promise<void> {
   const config = loadConfig();

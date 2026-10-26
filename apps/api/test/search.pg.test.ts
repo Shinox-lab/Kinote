@@ -17,7 +17,7 @@ import {
   searchSql,
   searchWiki,
   vectorBranchSql,
-} from '../src/search/hybridSearch.js';
+} from '@living-wiki/core';
 
 const APP_URL = process.env.TEST_DATABASE_URL;
 const OWNER_URL = process.env.TEST_DATABASE_MIGRATE_URL;
