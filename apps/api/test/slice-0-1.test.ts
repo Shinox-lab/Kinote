@@ -537,7 +537,7 @@ describe('Living Wiki — Slice 0 (Foundations) & Slice 1 (Live Pages)', () => {
     assert.match(askAfterApproval.answer, /1500 USD/);
   });
 
-  test('Slice 1 Lifecycle Guards: Agent changes always require review, superseding pending snapshots, parent_cycle, and has_children', async () => {
+  test('Slice 1 Lifecycle Guards: Agent changes follow the space review setting (R1), superseding pending snapshots, parent_cycle, and has_children', async () => {
     const { tenant, owner } = await bootstrapTenant(app, {
       name: 'Orbit AI',
       slug: 'orbit-ai',
@@ -589,7 +589,7 @@ describe('Living Wiki — Slice 0 (Foundations) & Slice 1 (Live Pages)', () => {
       payload: { principal_type: 'agent', principal_id: agentId, role: 'editor' },
     });
 
-    // Rule S3: Agent edits the page -> even in a no-review space, agent changes ALWAYS wait for human approval!
+    // R1 (replaces rule S3): an agent's edit follows the space, so in a no-review space it indexes at once.
     const agentSession = await openDirectSession(collab, {
       documentName: `${tenant.id}:${parentPage.id}`,
       token: collabToken(tenant.id, parentPage.id, 'agent', agentId),
@@ -610,8 +610,8 @@ describe('Living Wiki — Slice 0 (Foundations) & Slice 1 (Live Pages)', () => {
     assert.ok(v2Agent);
     assert.equal(
       v2Agent.status,
-      'pending_review',
-      'Agent change must always require human approval even in a space with review_required=false'
+      'indexing',
+      'R1: an agent change in a space with review_required=false indexes without approval'
     );
 
     // Create a child page under parentPage

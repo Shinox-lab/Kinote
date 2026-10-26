@@ -44,9 +44,9 @@ export function isRejected(input: BadgeInput): boolean {
   return input.latestVersion?.status === 'rejected' && !input.liveChangedSinceSnapshot;
 }
 
-/** The space requires review, or an agent changed the page. */
+/** The space requires review (R1: an agent's change follows the space too). */
 export function needsReview(input: BadgeInput): boolean {
-  return input.spaceReviewRequired || input.agentChangedAt !== null;
+  return input.spaceReviewRequired;
 }
 
 /**

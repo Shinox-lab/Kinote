@@ -117,16 +117,16 @@ const TABLE: Row[] = [
     stale: null,
   },
   {
-    name: 'live changed, agent changed (needs review)',
+    name: 'live changed, agent changed, no review (R1: follows the space)',
     input: input({
       latestVersion: { number: 1, status: 'indexed' },
       indexedVersion: { number: 1 },
       liveChangedSinceSnapshot: true,
       agentChangedAt: ago(10),
     }),
-    badge: 'Saved · not indexed (awaiting approval)',
-    fresh: 'review',
-    stale: 'review',
+    badge: 'Saved · indexing soon',
+    fresh: 'editing',
+    stale: null,
   },
   {
     name: 'live changed, no review',
@@ -161,11 +161,11 @@ const TABLE: Row[] = [
     stale: 'review',
   },
   {
-    name: 'never indexed, agent changed',
+    name: 'never indexed, agent changed, no review (R1: follows the space)',
     input: input({ agentChangedAt: ago(100) }),
-    badge: 'Saved · not indexed (awaiting approval)',
-    fresh: 'review',
-    stale: 'review',
+    badge: 'Saved · indexing soon',
+    fresh: null,
+    stale: null,
   },
 ];
 

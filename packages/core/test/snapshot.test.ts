@@ -137,6 +137,46 @@ describe('takePageSnapshot', () => {
     );
   }
 
+  describe('review follows the space (R1)', () => {
+    async function agentSnapshot(pageId: string, reason: 'agent' | 'capture') {
+      await withTenantTx(ctx.tenant.id, (tx) =>
+        tx
+          .update(pages)
+          .set({ agentChangedAt: new Date(), liveChangedSinceSnapshot: true })
+          .where(and(eq(pages.tenantId, ctx.tenant.id), eq(pages.documentId, pageId)))
+      );
+      return takePageSnapshot({
+        tenantId: ctx.tenant.id,
+        pageId,
+        reason,
+        actorType: 'agent',
+        actorId: randomUUID(),
+        manual: true,
+      });
+    }
+
+    test("an agent's snapshot in a space with review off goes straight to indexing (R1)", async () => {
+      const pageId = await createPage(ctx.headers, ctx.open.id, 'r1-open', 'Billing uses Stripe.');
+      await editLive(pageId, 'Billing uses Adyen.');
+      const created = await agentSnapshot(pageId, 'agent');
+      assert.equal(created?.status, 'indexing');
+    });
+
+    test("an agent's snapshot in a review space waits", async () => {
+      const pageId = await createPage(ctx.headers, ctx.review.id, 'r1-review', 'Billing uses Stripe.');
+      await editLive(pageId, 'Billing uses Adyen.');
+      const created = await agentSnapshot(pageId, 'agent');
+      assert.equal(created?.status, 'pending_review');
+    });
+
+    test('a capture snapshot is recorded with reason capture', async () => {
+      const pageId = await createPage(ctx.headers, ctx.open.id, 'r1-capture', 'Billing uses Stripe.');
+      await editLive(pageId, 'Billing uses Adyen.');
+      const created = await agentSnapshot(pageId, 'capture');
+      assert.equal(created?.reason, 'capture');
+    });
+  });
+
   describe('a change made while the snapshot runs', () => {
     test('without a concurrent change the snapshot clears the changed-since flag', async () => {
       const pageId = await createPage(ctx.headers, ctx.review.id, 'quiet', 'Quokkas are welcome.');

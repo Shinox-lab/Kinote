@@ -145,7 +145,7 @@ export async function extractVersion(
       trusted = source?.trusted === true;
     }
     const needsReview =
-      space.reviewRequired || ver.createdByType === 'agent' || (ver.createdByType === 'connector' && !trusted);
+      space.reviewRequired || (ver.createdByType === 'connector' && !trusted);
     const status = !hasText ? 'stored' : needsReview ? 'pending_review' : 'indexing';
 
     await tx

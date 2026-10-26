@@ -72,7 +72,7 @@ export async function takePageSnapshot(
   params: {
     tenantId: string;
     pageId: string;
-    reason: 'quiet' | 'submit' | 'agent' | 'restore';
+    reason: 'quiet' | 'submit' | 'agent' | 'restore' | 'capture';
     actorType: 'user' | 'agent';
     actorId: string;
     manual: boolean;
@@ -178,8 +178,8 @@ export async function takePageSnapshot(
     }
 
     const nextNumber = (latestVersion?.number ?? 0) + 1;
-    const needsReview =
-      spaceRow.reviewRequired || pageRow.agentChangedAt !== null || actorType === 'agent';
+    // R1: review follows the space for every edit, an agent's included.
+    const needsReview = spaceRow.reviewRequired;
     const initialStatus = needsReview ? 'pending_review' : 'indexing';
 
     const [newVersion] = await tx

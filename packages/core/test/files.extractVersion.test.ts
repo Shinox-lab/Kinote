@@ -72,12 +72,13 @@ describe('extractVersion', () => {
     expect(await jobsOf(seed, 'version.index')).toEqual([]);
   });
 
-  it('always holds an agent version, and a connector version, for review', async () => {
+  it('holds an untrusted connector version for review; an agent version follows the space (R1)', async () => {
+    const expected = { agent: 'indexing', connector: 'pending_review' } as const;
     for (const actor of ['agent', 'connector'] as const) {
       const seed = await seedFileDocument({ title: 'notes.txt' });
       const v = await upload(seed, 'notes.txt', 'hello', actor);
       await extractVersion({ tenantId: seed.tenantId, versionId: v.id }, deps());
-      expect((await reload(seed, v.id)).status).toBe('pending_review');
+      expect((await reload(seed, v.id)).status).toBe(expected[actor]);
     }
   });
 
@@ -125,8 +126,8 @@ describe('extractVersion', () => {
       expect(await extract(seed, v.id)).toEqual({ outcome: 'extracted', status: 'pending_review' });
     });
 
-    it('never lets an agent skip review, whatever id it carries', async () => {
-      const seed = await seedFileDocument({ title: 'notes.txt' });
+    it("never lets an agent borrow a trusted source's id to skip a review space (R1: agents follow the space)", async () => {
+      const seed = await seedFileDocument({ title: 'notes.txt', reviewRequired: true });
       const source = await seedSource(seed, { trusted: true });
       const v = await upload(seed, 'notes.txt', 'hello', 'agent', source);
       expect(await extract(seed, v.id)).toEqual({ outcome: 'extracted', status: 'pending_review' });
