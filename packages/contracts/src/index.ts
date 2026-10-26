@@ -1105,6 +1105,8 @@ export const CaptureSummarySchema = z.object({
   id: z.string().uuid(),
   senderType: z.enum(['user', 'agent']),
   senderId: z.string().uuid(),
+  /** The sender's display name (Former member for someone who left). */
+  senderName: z.string(),
   channel: z.enum(['console', 'mcp']),
   text: z.string(),
   scopeSpaceId: z.string().uuid().nullable(),

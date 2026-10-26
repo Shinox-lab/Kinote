@@ -185,4 +185,32 @@ test.describe('Capture page', () => {
     await item.getByRole('button', { name: 'Dismiss' }).click();
     await expect(home.getByText('The coffee machine is broken.')).toHaveCount(0);
   });
+
+  test('a receipt card opens the page with the capture\'s blocks highlighted, and Exit leaves', async ({ browser, request }) => {
+    const target = await indexedPage(request, 'Highlight billing', 'Billing uses Stripe.\n\nInvoices go out monthly.');
+    await captureVia(request, 'Billing moved to Adyen.', target);
+    const page = await openCapture(browser);
+    await page.getByRole('article').first().getByRole('link', { name: 'Highlight billing' }).click();
+    await expect(page).toHaveURL(/\?capture=[0-9a-f-]{36}/);
+    await expect(page.getByText('Changes from this capture · Routing engine on behalf of Olive Owner')).toBeVisible();
+    const block = page.locator('.bn-block-content', { hasText: 'Billing moved to Adyen.' });
+    await expect.poll(() => block.evaluate((el) => getComputedStyle(el).boxShadow)).toContain('rgb(124, 92, 255)');
+
+    await page.getByRole('link', { name: 'Exit' }).click();
+    await expect(page.getByText('Changes from this capture')).toHaveCount(0);
+    expect(page.url()).not.toContain('capture=');
+  });
+
+  test('a removal becomes a suggestion the editor approves on the page', async ({ browser, request }) => {
+    const target = await indexedPage(request, 'Suggest billing', 'Billing uses Stripe.\n\nInvoices go out monthly.');
+    await captureVia(request, 'Billing no longer uses Stripe.', target);
+    const page = await openAs(browser, world, world.owner);
+    await page.goto(`/w/${world.slug}/p/${target}`);
+    await page.getByRole('button', { name: '1 suggestion' }).click();
+    const panel = page.getByRole('region', { name: 'Suggestions' });
+    await expect(panel.getByText('Removals always wait for a person')).toBeVisible();
+    await panel.getByRole('button', { name: 'Approve removal' }).click();
+    await expect(page.getByRole('textbox').first()).not.toContainText('Billing uses Stripe.');
+    await expect(page.getByRole('button', { name: /suggestion/ })).toHaveCount(0);
+  });
 });

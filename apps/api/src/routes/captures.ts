@@ -26,17 +26,19 @@ import {
   type SuggestionSummary,
 } from '@living-wiki/contracts';
 import { assertValidUuid, isTenantAdmin, senderAccess, type Actor } from '@living-wiki/core';
+import { resolveActorNames } from '../people.js';
 
 type CaptureRow = typeof captures.$inferSelect;
 type SuggestionRow = typeof suggestions.$inferSelect;
 
 const LIST_LIMIT = 50;
 
-export function toCaptureSummary(row: CaptureRow): CaptureSummary {
+export function toCaptureSummary(row: CaptureRow, senderName: string): CaptureSummary {
   return {
     id: row.id,
     senderType: row.senderType,
     senderId: row.senderId,
+    senderName,
     channel: row.channel,
     text: row.text,
     scopeSpaceId: row.scopeSpaceId,
@@ -46,6 +48,16 @@ export function toCaptureSummary(row: CaptureRow): CaptureSummary {
     createdAt: row.createdAt.toISOString(),
     finishedAt: row.finishedAt?.toISOString() ?? null,
   };
+}
+
+/** Captures as the API shows them, each with its sender's display name. */
+async function summaries(tx: DbTransaction, tenantId: string, rows: CaptureRow[]): Promise<CaptureSummary[]> {
+  const names = await resolveActorNames(
+    tx,
+    tenantId,
+    rows.map((r) => ({ type: r.senderType, id: r.senderId }))
+  );
+  return rows.map((r) => toCaptureSummary(r, names.get(`${r.senderType}:${r.senderId}`) ?? 'Former member'));
 }
 
 function isSender(actor: Actor, row: CaptureRow): boolean {
@@ -117,7 +129,7 @@ export async function createCapture(actor: Actor, body: unknown): Promise<Captur
       subjectId: row!.id,
       payload: { scopeSpaceId, scopePageId: scope_page_id ?? null, length: text.length },
     });
-    return toCaptureSummary(row!);
+    return (await summaries(tx, actor.tenantId, [row!]))[0]!;
   });
 }
 
@@ -139,7 +151,7 @@ export async function listCaptures(actor: Actor, query: unknown): Promise<Captur
       )
       .orderBy(desc(captures.createdAt))
       .limit(LIST_LIMIT);
-    return rows.map(toCaptureSummary);
+    return summaries(tx, actor.tenantId, rows);
   });
 }
 
@@ -302,7 +314,7 @@ async function captureDetail(tx: DbTransaction, actor: Actor, row: CaptureRow): 
     .where(and(eq(captureMessages.tenantId, actor.tenantId), eq(captureMessages.captureId, row.id)))
     .orderBy(captureMessages.createdAt);
   return {
-    capture: toCaptureSummary(row),
+    capture: (await summaries(tx, actor.tenantId, [row]))[0]!,
     thread: thread.map((m) => ({
       id: m.id,
       author: m.author,

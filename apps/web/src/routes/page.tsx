@@ -1,6 +1,16 @@
-import { useEffect, useRef } from 'react';
-import { Link, useParams } from '@tanstack/react-router';
-import { usePageChanges, useRefresh, useSpaceTree, useWorkspace } from '../lib/queries.js';
+import { useEffect, useRef, useState } from 'react';
+import { Link, useParams, useSearch } from '@tanstack/react-router';
+import {
+  usePageCaptureChanges,
+  usePageChanges,
+  usePageSuggestions,
+  useRefresh,
+  useSpaceTree,
+  useWorkspace,
+} from '../lib/queries.js';
+import { captureHighlightCss, suggestionMarkerCss } from '../lib/capture.js';
+import { CaptureBanner } from '../components/capture/CaptureBanner.js';
+import { SuggestionsPanel } from '../components/capture/SuggestionsPanel.js';
 import { closeHistory, openHistory, useHistoryOpen, useHistoryTab } from '../lib/pageUi.js';
 import { usePageView } from '../lib/usePageView.js';
 import { useLivePage } from '../lib/useLivePage.js';
@@ -78,6 +88,11 @@ export function PagePage() {
   const refresh = useRefresh();
   const { page, error, isPending, spaces, space, archived, controls, reload, changed } = usePageView(pageId);
   const { data: entries } = usePageChanges(pageId);
+  const { capture: captureId } = useSearch({ from: '/w/$tenantSlug/p/$pageId' });
+  const { data: captureChanges } = usePageCaptureChanges(pageId, captureId);
+  const { data: suggestions } = usePageSuggestions(pageId);
+  const openSuggestions = (suggestions ?? []).filter((s) => s.status === 'open');
+  const [showSuggestions, setShowSuggestions] = useState(false);
   const historyOpen = useHistoryOpen(pageId);
   const historyTab = useHistoryTab(pageId);
   const livePage = useLivePage(pageId, reload);
@@ -125,8 +140,10 @@ export function PagePage() {
         }
       />
       <article className="mx-auto flex w-full max-w-[660px] flex-col gap-4 pt-4">
-        {/* The changed blocks wear their author's colour here, as in the sidebar's list. */}
-        <style>{blockHighlightCss(entries ?? [])}</style>
+        {/* The changed blocks wear their author's colour here, as in the sidebar's list; in
+            "changes from this capture" mode the capture's blocks wear the Routing engine's instead. */}
+        <style>{captureId ? captureHighlightCss(captureChanges ?? []) : blockHighlightCss(entries ?? [])}</style>
+        <style>{suggestionMarkerCss(openSuggestions)}</style>
         <PageHeader
           page={page}
           canEdit={controls.move}
@@ -142,9 +159,21 @@ export function PagePage() {
                 onHistory={(tab) => openHistory(pageId, tab)}
               />
               {archived && <span className="rounded-full bg-hover px-2 py-0.5 text-xs text-muted">Archived</span>}
+              {openSuggestions.length > 0 && (
+                <button
+                  type="button"
+                  aria-expanded={showSuggestions}
+                  onClick={() => setShowSuggestions((v) => !v)}
+                  className="rounded-full border border-dashed border-[var(--routing)] bg-[var(--routing-tint)] px-2 py-0.5 text-xs font-medium text-fg max-md:min-h-11"
+                >
+                  {openSuggestions.length} {openSuggestions.length === 1 ? 'suggestion' : 'suggestions'}
+                </button>
+              )}
             </div>
           }
         />
+        {captureId && <CaptureBanner pageId={pageId} captureId={captureId} changes={captureChanges ?? []} />}
+        {showSuggestions && openSuggestions.length > 0 && <SuggestionsPanel pageId={pageId} suggestions={openSuggestions} />}
         {/* A failed refetch keeps the last page on screen and says so. */}
         <ErrorNote error={error} />
         <Editor

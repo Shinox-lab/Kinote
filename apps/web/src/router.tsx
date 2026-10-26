@@ -24,7 +24,7 @@ import { parseSearchSearch } from './lib/search.js';
 import { WorkspaceLayout } from './routes/layout.js';
 import { ReviewsPage } from './routes/reviews.js';
 import { CapturePage } from './routes/capture.js';
-import { parseCaptureSearch } from './lib/capture.js';
+import { parseCaptureSearch, parsePageCaptureSearch } from './lib/capture.js';
 import { SearchPage } from './routes/search.js';
 import { SignInPage } from './routes/sign-in.js';
 import { SignUpPage } from './routes/sign-up.js';
@@ -146,6 +146,7 @@ const spaceRoute = createRoute({
 const pageRoute = createRoute({
   getParentRoute: () => workspaceRoute,
   path: 'p/$pageId',
+  validateSearch: parsePageCaptureSearch,
   // The editor and its dependencies are heavy: load them only when a page is opened.
   component: lazyRouteComponent(() => import('./routes/page.js'), 'PagePage'),
 });

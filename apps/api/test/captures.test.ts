@@ -47,6 +47,10 @@ describe('captures API', () => {
     expect(res.statusCode, res.body).toBe(201);
     const capture = res.json();
     expect(capture).toMatchObject({ status: 'queued', text: 'Billing moved to Adyen.', channel: 'console' });
+    expect(capture.senderName).toEqual(expect.any(String));
+    expect(capture.senderName).not.toBe('Former member');
+    const [listed] = (await app.inject({ method: 'GET', url: '/api/v1/captures', headers: w.member.headers })).json();
+    expect(listed.senderName).toBe(capture.senderName);
     const queued = await withTenantTx(w.tenant.id, (tx) =>
       tx.select().from(jobs).where(and(eq(jobs.tenantId, w.tenant.id), eq(jobs.queue, 'capture.route')))
     );
