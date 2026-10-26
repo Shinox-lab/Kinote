@@ -39,6 +39,8 @@ export interface RouteDeps {
   now?: Date;
   /** Test seam: runs after planning, before anything is applied. */
   hooks?: { afterPlan?: () => Promise<void> };
+  /** Throws when the run may no longer change anything (it lost the tenant's lease). */
+  guard?: () => Promise<void>;
 }
 
 type FactResult = { applied: Array<'indexing' | 'pending_review' | 'other'>; suggested: number };
@@ -63,6 +65,7 @@ export async function routeCapture(
   const now = deps.now ?? new Date();
   const got = await withTenantTx(tenantId, (tx) => acquireRoutingLease(tx, tenantId, holder, ROUTING_LEASE_SECONDS));
   if (!got) return 'busy';
+  const guard = leaseGuard(tenantId, holder);
   try {
     await expireQuestions(tenantId, now);
     await withTenantTx(tenantId, (tx) =>
@@ -71,13 +74,25 @@ export async function routeCapture(
         .set({ status: 'routing', error: null })
         .where(and(eq(captures.tenantId, tenantId), eq(captures.id, captureId)))
     );
-    const planned = await planCapture({ tenantId, captureId }, { model: deps.model, embedder: deps.embedder, now });
+    const planned = await planCapture({ tenantId, captureId }, { model: deps.model, embedder: deps.embedder, now, guard });
     await deps.hooks?.afterPlan?.();
-    await applyPlannedFacts(tenantId, captureId, planned, deps);
+    await applyPlannedFacts(tenantId, captureId, planned, { ...deps, guard });
     return await finishCapture(tenantId, captureId);
   } finally {
     await withTenantTx(tenantId, (tx) => releaseRoutingLease(tx, tenantId, holder));
   }
+}
+
+/**
+ * Renews the tenant's routing lease for `holder`, or throws when another run
+ * holds it now (this one outlived its lease): the run stops before it plans
+ * or changes anything more, and its job retries. Fencing for R13.
+ */
+export function leaseGuard(tenantId: string, holder: string): () => Promise<void> {
+  return async () => {
+    const still = await withTenantTx(tenantId, (tx) => acquireRoutingLease(tx, tenantId, holder, ROUTING_LEASE_SECONDS));
+    if (!still) throw new AppError('router_unavailable', 'Another routing run took over this tenant; this one stopped.');
+  };
 }
 
 /** Facts waiting on a question older than QUESTION_TTL_DAYS go to Needs a home. */
@@ -154,6 +169,7 @@ export async function applyPlannedFacts(
   deps: RouteDeps
 ): Promise<void> {
   const now = deps.now ?? new Date();
+  await deps.guard?.();
   const { routerId, items } = await withTenantTx(tenantId, async (tx) => {
     const routerId = await ensureRouterAgent(tx, tenantId);
     const items: Item[] = [];
@@ -233,12 +249,21 @@ export async function applyPlannedFacts(
   }
 
   for (const [pageId, list] of byPage) {
+    await deps.guard?.();
+    // What people typed is stored first, so the recheck compares live text.
+    await deps.collab.flush(documentName(tenantId, pageId));
     const { apply, gated } = await recheck(tenantId, pageId, list, now);
     toSuggest.push(...gated);
-    if (apply.length > 0) await applyToPage(tenantId, captureId, pageId, apply, routerId, deps, resultOf);
+    if (apply.length > 0) toSuggest.push(...(await applyToPage(tenantId, captureId, pageId, apply, routerId, deps, resultOf)));
   }
-  for (const item of creates) await createPageFor(tenantId, captureId, item, routerId, resultOf);
-  if (toSuggest.length > 0) await writeSuggestions(tenantId, captureId, toSuggest, resultOf);
+  for (const item of creates) {
+    await deps.guard?.();
+    await createPageFor(tenantId, captureId, item, routerId, resultOf);
+  }
+  if (toSuggest.length > 0) {
+    await deps.guard?.();
+    await writeSuggestions(tenantId, captureId, toSuggest, resultOf);
+  }
 
   await withTenantTx(tenantId, async (tx) => {
     for (const [factId, r] of results) {
@@ -310,6 +335,14 @@ async function freshBlocks(markdown: string): Promise<BlockLike[]> {
   return (await markdownBlocks(markdown)).map((b) => ({ ...b, id: randomUUID() }));
 }
 
+/**
+ * Applies a page's ungated edits in one collab change and snapshots it.
+ * Returns the edits that became suggestions instead: all of them when collab
+ * refuses because a planned block changed since (`block_changed`).
+ * The changes are recorded as soon as collab has applied them, before the
+ * flush and snapshot, so a run that fails after that point keeps its receipt
+ * and its retry does not plan the same facts again.
+ */
 async function applyToPage(
   tenantId: string,
   captureId: string,
@@ -318,7 +351,7 @@ async function applyToPage(
   routerId: string,
   deps: RouteDeps,
   resultOf: (factId: string) => FactResult
-) {
+): Promise<Array<Item & { gate: Exclude<Gate, null> }>> {
   type Planned = { item: Item; blocks: BlockLike[]; keeps: string | null };
   const planned: Planned[] = [];
   const ops: Parameters<CollabClient['applyBlockOps']>[0]['ops'] = [];
@@ -333,19 +366,30 @@ async function applyToPage(
       const blocks = await freshBlocks(op.markdown);
       if (blocks.length === 0) continue;
       blocks[0] = { ...blocks[0]!, id: op.blockId };
-      ops.push({ op: 'replace', blockId: op.blockId, blocks: blocks as unknown as Record<string, unknown>[] });
+      ops.push({
+        op: 'replace',
+        blockId: op.blockId,
+        blocks: blocks as unknown as Record<string, unknown>[],
+        ...(item.checked.expectedText !== null ? { expectedText: item.checked.expectedText } : {}),
+      });
       planned.push({ item, blocks, keeps: op.blockId });
     }
   }
-  if (ops.length === 0) return;
+  if (ops.length === 0) return [];
 
   try {
     await deps.collab.applyBlockOps({ tenantId, pageId, actor: { type: 'agent', id: routerId }, source: 'agent', ops });
   } catch (err) {
+    // Someone changed a planned block since: nothing was applied; a person decides.
+    if (err instanceof AppError && err.code === 'block_changed') {
+      return planned.map((p) => ({ ...p.item, gate: 'protection' as const }));
+    }
     // The page changed under us (a block was deleted): nothing was applied.
-    if (err instanceof AppError && err.code === 'block_not_found') return;
+    if (err instanceof AppError && err.code === 'block_not_found') return [];
     throw err;
   }
+
+  const rowIds = await recordChanges(tenantId, captureId, pageId, planned, routerId);
   await deps.collab.flush(documentName(tenantId, pageId));
   const version = await takePageSnapshot({
     tenantId,
@@ -355,35 +399,64 @@ async function applyToPage(
     actorId: routerId,
     manual: false,
   });
-  await recordChanges(tenantId, captureId, pageId, planned, version, routerId, resultOf);
+  const state =
+    version?.status === 'pending_review'
+      ? 'pending_review'
+      : version?.status === 'indexing' || version?.status === 'indexed'
+        ? 'indexing'
+        : 'other';
+  await withTenantTx(tenantId, async (tx) => {
+    if (version) {
+      await tx
+        .update(captureChanges)
+        .set({ versionId: version.id })
+        .where(and(eq(captureChanges.tenantId, tenantId), inArray(captureChanges.id, rowIds)));
+    }
+    for (const { item } of planned) {
+      resultOf(item.factId).applied.push(state);
+      if (state === 'pending_review') {
+        await tx
+          .update(captureFacts)
+          .set({ outcome: 'waiting_review' })
+          .where(and(eq(captureFacts.tenantId, tenantId), eq(captureFacts.id, item.factId)));
+      }
+    }
+  });
+  return [];
 }
 
+/**
+ * Writes the receipt rows and citations of edits collab just applied, and
+ * marks their facts applied (the snapshot may still turn that into
+ * waiting_review). Returns the new capture_changes ids.
+ */
 async function recordChanges(
   tenantId: string,
   captureId: string,
   pageId: string,
   planned: Array<{ item: Item; blocks: BlockLike[]; keeps: string | null }>,
-  version: { id: string; status: string } | null,
-  routerId: string,
-  resultOf: (factId: string) => FactResult
-) {
-  const state = version?.status === 'pending_review' ? 'pending_review' : version?.status === 'indexing' || version?.status === 'indexed' ? 'indexing' : 'other';
-  await withTenantTx(tenantId, async (tx) => {
+  routerId: string
+): Promise<string[]> {
+  return withTenantTx(tenantId, async (tx) => {
+    const ids: string[] = [];
     for (const { item, blocks, keeps } of planned) {
       for (const [i, block] of blocks.entries()) {
         const replaced = i === 0 && keeps !== null;
-        await tx.insert(captureChanges).values({
-          tenantId,
-          captureId,
-          factId: item.factId,
-          documentId: pageId,
-          spaceId: item.checked.spaceId,
-          blockId: block.id,
-          op: replaced ? 'replace' : 'insert',
-          beforeMarkdown: replaced ? item.checked.beforeMarkdown : null,
-          afterMarkdown: await blockMarkdown(block),
-          versionId: version?.id ?? null,
-        });
+        const [row] = await tx
+          .insert(captureChanges)
+          .values({
+            tenantId,
+            captureId,
+            factId: item.factId,
+            documentId: pageId,
+            spaceId: item.checked.spaceId,
+            blockId: block.id,
+            op: replaced ? 'replace' : 'insert',
+            beforeMarkdown: replaced ? item.checked.beforeMarkdown : null,
+            afterMarkdown: await blockMarkdown(block),
+          })
+          .returning({ id: captureChanges.id });
+        ids.push(row!.id);
         await tx.insert(citations).values({
           tenantId,
           pageId,
@@ -396,8 +469,12 @@ async function recordChanges(
           createdBy: routerId,
         });
       }
-      resultOf(item.factId).applied.push(state);
+      await tx
+        .update(captureFacts)
+        .set({ outcome: 'applied' })
+        .where(and(eq(captureFacts.tenantId, tenantId), eq(captureFacts.id, item.factId)));
     }
+    return ids;
   });
 }
 
@@ -518,6 +595,7 @@ async function writeSuggestions(
       kind: op.op === 'insert_after' ? ('insert' as const) : op.op,
       proposedMarkdown: markdown,
       proposedBlocks: markdown === null ? null : await markdownBlocks(markdown),
+      expectedText: item.checked.expectedText,
       reason: item.checked.edit.reason || 'Proposed by the routing engine.',
       blockedBy: item.gate,
       conflictCitationId: item.checked.conflictCitationId,

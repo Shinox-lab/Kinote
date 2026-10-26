@@ -99,13 +99,17 @@ async function setStatus(tenantId: string, id: string, status: 'open' | 'stale')
 }
 
 async function opsFor(row: SuggestionRow): Promise<{ ops: Parameters<CollabClient['applyBlockOps']>[0]['ops']; added: BlockLike[] }> {
-  if (row.kind === 'remove') return { ops: [{ op: 'remove', blockId: row.blockId! }], added: [] };
+  const expected = row.expectedText !== null ? { expectedText: row.expectedText } : {};
+  if (row.kind === 'remove') return { ops: [{ op: 'remove', blockId: row.blockId!, ...expected }], added: [] };
   const blocks: BlockLike[] = (await markdownBlocks(row.proposedMarkdown ?? '')).map((b) => ({ ...b, id: randomUUID() }));
   if (blocks.length === 0) throw new AppError('suggestion_not_open');
   const raw = blocks as unknown as Record<string, unknown>[];
   if (row.kind === 'replace') {
     blocks[0] = { ...blocks[0]!, id: row.blockId! };
-    return { ops: [{ op: 'replace', blockId: row.blockId!, blocks: blocks as unknown as Record<string, unknown>[] }], added: blocks };
+    return {
+      ops: [{ op: 'replace', blockId: row.blockId!, blocks: blocks as unknown as Record<string, unknown>[], ...expected }],
+      added: blocks,
+    };
   }
   return { ops: [{ op: 'insert_after', after: row.afterBlockId, blocks: raw }], added: blocks };
 }
@@ -115,7 +119,8 @@ async function opsFor(row: SuggestionRow): Promise<{ ops: Parameters<CollabClien
  * Routing engine, accepted by the actor, and snapshots the page. In a review
  * space the acceptance approves that snapshot when nothing else was waiting
  * on the page; otherwise the change joins the waiting snapshot. A block that
- * has gone makes the suggestion `stale` (409 `suggestion_not_open`).
+ * has gone, or changed since the suggestion was made, makes it `stale` (409
+ * `suggestion_not_open`).
  */
 export async function acceptSuggestion(actor: Actor, id: string, collab?: CollabClient): Promise<SuggestionSummary> {
   if (!collab) throw new AppError('internal_error');
@@ -142,7 +147,9 @@ export async function acceptSuggestion(actor: Actor, id: string, collab?: Collab
       ops: built.ops,
     });
   } catch (err) {
-    const gone = err instanceof AppError && (err.code === 'block_not_found' || err.code === 'suggestion_not_open');
+    const gone =
+      err instanceof AppError &&
+      (err.code === 'block_not_found' || err.code === 'block_changed' || err.code === 'suggestion_not_open');
     await setStatus(actor.tenantId, id, gone ? 'stale' : 'open');
     if (gone) throw new AppError('suggestion_not_open', 'The block this suggestion was for has changed or gone.');
     throw err;

@@ -1,6 +1,7 @@
 import * as Y from 'yjs';
 import { ServerBlockNoteEditor } from '@blocknote/server-util';
 import { AppError } from '@living-wiki/contracts';
+import { blockFullText, type BlockLike } from '@living-wiki/shared';
 import { BLOCK_FRAGMENT } from './fragment.js';
 
 /**
@@ -8,12 +9,16 @@ import { BLOCK_FRAGMENT } from './fragment.js';
  * parent; ops never address them.
  * - `insert_after`: `after` null inserts at the start.
  * - `replace`: the first new block keeps `blockId`, so citations and
- *   activity stay attached to it.
+ *   activity stay attached to it, and keeps the old block's nested children
+ *   (a replace changes one block, never what sits under it).
+ * - `expectedText` (replace, remove): the block's text with its children
+ *   (`blockFullText`) when the caller planned the op; anything else means
+ *   someone changed it since, and nothing is applied (`block_changed`).
  */
 export type BlockOp =
   | { op: 'insert_after'; after: string | null; blocks: unknown[] }
-  | { op: 'replace'; blockId: string; blocks: unknown[] }
-  | { op: 'remove'; blockId: string };
+  | { op: 'replace'; blockId: string; blocks: unknown[]; expectedText?: string }
+  | { op: 'remove'; blockId: string; expectedText?: string };
 
 const BLOCK_CONTAINER = 'blockContainer';
 const BLOCK_GROUP = 'blockGroup';
@@ -65,6 +70,18 @@ export function applyBlockOps(fragment: Y.XmlFragment, ops: BlockOp[]): void {
     if (op.op === 'remove') ids.delete(op.blockId);
     else for (const b of op.blocks) ids.add((b as { id?: string }).id);
   }
+  if (ops.some((op) => op.op !== 'insert_after' && op.expectedText !== undefined)) {
+    const current = new Map(
+      (blockNote.yXmlFragmentToBlocks(fragment) as BlockLike[]).map((b) => [b.id, blockFullText(b)])
+    );
+    for (const op of ops) {
+      if (op.op === 'insert_after' || op.expectedText === undefined) continue;
+      // A block an earlier op of this call added has no planned text to compare.
+      if (current.has(op.blockId) && current.get(op.blockId) !== op.expectedText) {
+        throw new AppError('block_changed');
+      }
+    }
+  }
   const prepared = ops.map((op) => (op.op === 'remove' ? [] : containers(op.blocks)));
 
   ops.forEach((op, i) => {
@@ -80,7 +97,16 @@ export function applyBlockOps(fragment: Y.XmlFragment, ops: BlockOp[]): void {
       group.insert(at, fresh);
     } else if (op.op === 'replace') {
       const at = indexOf(group, op.blockId);
-      fresh[0]?.setAttribute('id', op.blockId);
+      const old = group.get(at) as Y.XmlElement;
+      const children = old
+        .toArray()
+        .find((c): c is Y.XmlElement => c instanceof Y.XmlElement && c.nodeName === BLOCK_GROUP);
+      const first = fresh[0];
+      if (first) {
+        first.setAttribute('id', op.blockId);
+        const hasOwn = first.toArray().some((c) => c instanceof Y.XmlElement && c.nodeName === BLOCK_GROUP);
+        if (children && !hasOwn) first.push([children.clone()]);
+      }
       group.delete(at, 1);
       group.insert(at, fresh);
     } else {

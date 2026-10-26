@@ -45,15 +45,19 @@ describe('review bundles and per-capture changes', () => {
         .returning();
       const [fact] = await tx
         .insert(captureFacts)
-        .values({ tenantId: tenant.id, captureId: capture!.id, ordinal: 0, statement: 's', kind: 'change', outcome: 'waiting_review', reason: 'r' })
+        .values({ tenantId: tenant.id, captureId: capture!.id, ordinal: 0, statement: 'Billing moved to Adyen.', kind: 'change', outcome: 'waiting_review', reason: 'r' })
         .returning();
-      for (const [documentId, spaceId, versionId] of [
-        [a, review, va],
-        [b, review, vb],
-        [secret, hidden, vsecret],
+      const [secretFact] = await tx
+        .insert(captureFacts)
+        .values({ tenantId: tenant.id, captureId: capture!.id, ordinal: 1, statement: "Aisha's salary changes.", kind: 'change', outcome: 'applied', reason: 'r' })
+        .returning();
+      for (const [documentId, spaceId, versionId, factId] of [
+        [a, review, va, fact!.id],
+        [b, review, vb, fact!.id],
+        [secret, hidden, vsecret, secretFact!.id],
       ] as const) {
         await tx.insert(captureChanges).values({
-          tenantId: tenant.id, captureId: capture!.id, factId: fact!.id, documentId, spaceId, blockId: `blk-${documentId}`,
+          tenantId: tenant.id, captureId: capture!.id, factId, documentId, spaceId, blockId: `blk-${documentId}`,
           op: 'replace', beforeMarkdown: 'before', afterMarkdown: 'after', versionId,
         });
       }
@@ -72,7 +76,7 @@ describe('review bundles and per-capture changes', () => {
     expect(res.statusCode, res.body).toBe(200);
     const items = res.json() as Array<{ document: { id: string }; capture: any; suggestions: any[] }>;
     expect(items.map((i) => i.document.id)).toEqual([w.a, w.b, w.lone]);
-    expect(items[0]!.capture).toMatchObject({ id: w.captureId, excerpt: 'x'.repeat(280) });
+    expect(items[0]!.capture).toMatchObject({ id: w.captureId, excerpt: 'Billing moved to Adyen.' });
     expect(items[1]!.capture.id).toBe(w.captureId);
     expect(items[2]!.capture).toBeNull();
     expect(items[0]!.suggestions).toMatchObject([{ kind: 'remove', blockedBy: 'removal' }]);
@@ -84,6 +88,7 @@ describe('review bundles and per-capture changes', () => {
     const items = (await get(w.reviewer.headers, '/api/v1/reviews')).json();
     expect(items[0].capture.alsoApplied.map((p: { pageId: string }) => p.pageId)).toEqual([w.b]);
     const asOwner = (await get(w.headers, '/api/v1/reviews')).json();
+    expect(asOwner[0].capture.excerpt).toBe("Billing moved to Adyen. Aisha's salary changes.");
     expect(asOwner[0].capture.alsoApplied.map((p: { pageId: string }) => p.pageId).sort()).toEqual([w.b, w.secret].sort());
   });
 

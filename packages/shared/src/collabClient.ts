@@ -27,7 +27,8 @@ export interface CollabClient {
   /**
    * Changes single top-level blocks of a live page in one attributed change
    * (`agent` by an agent, `human` by a user). A block that is not on the page
-   * is `block_not_found` and nothing changes.
+   * is `block_not_found`, one whose text is not an op's `expectedText` is
+   * `block_changed`; either way nothing changes.
    *
    * Never call it while holding `lockDocument` on that page, for the same
    * reason as `replaceBlocks`.
@@ -143,6 +144,12 @@ export class HttpCollabClient implements CollabClient {
       const body = (await res.json().catch(() => null)) as { error?: unknown } | null;
       if (body?.error === 'block_not_found') throw new AppError('block_not_found');
       console.error(`[api] collab ${path} answered 404`);
+      throw new AppError('internal_error');
+    }
+    if (res.status === 409) {
+      const body = (await res.json().catch(() => null)) as { error?: unknown } | null;
+      if (body?.error === 'block_changed') throw new AppError('block_changed');
+      console.error(`[api] collab ${path} answered 409`);
       throw new AppError('internal_error');
     }
     if (res.status !== 204) {

@@ -2,14 +2,14 @@ import { describe, test, beforeAll, afterEach, afterAll, expect } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { withTenantTx, captureChanges, captureFacts, routingExamples, versions } from '@living-wiki/db';
 import { DeterministicEmbeddingProvider, DeterministicPlacementModel, blockText } from '@living-wiki/core';
-import type { BlockLike } from '@living-wiki/shared';
+import type { BlockLike, CollabClient } from '@living-wiki/shared';
 import { collabSettle, type CollabServer } from '../../collab/src/server.js';
 import { startCollabServer } from '../../collab/test/support/wsClient.js';
 import { readBlocks } from '../../collab/test/support/blocks.js';
 import { storedDoc } from '../../collab/test/support/collabWorld.js';
 import { runPendingJobsForTenant } from '../../worker/src/runner.js';
 import { InProcessCollabClient } from './support/inProcessCollab.js';
-import { bootstrapTenant, buildTestApp, useTestDb } from './support/testkit.js';
+import { bootstrapTenant, buildTestApp, signUpMember, useTestDb } from './support/testkit.js';
 
 type Headers = Record<string, string>;
 
@@ -128,6 +128,79 @@ describe('undo, wrong page and needs a home', () => {
     expect(statuses).toEqual([[w.billing, 'moved'], [w.runbook, 'applied']].sort());
     const [example] = await withTenantTx(w.tenant.id, (tx) => tx.select().from(routingExamples));
     expect(example).toMatchObject({ chosenDocumentId: w.runbook, wrongDocumentId: w.billing, spaceId: w.other, statement: 'Billing has a new dashboard.' });
+  });
+
+  test('an edit that lands just before undo applies is reported, not overwritten', async () => {
+    const w = await world();
+    const id = await capture(w, 'Billing moved to Adyen. Invoices now go out weekly.');
+    const changes = await changesOf(w.tenant.id, id);
+    const billingChange = changes.find((c) => c.afterMarkdown.includes('Adyen'))!;
+    const invoiceChange = changes.find((c) => c.afterMarkdown.includes('weekly'))!;
+    let raced = false;
+    const racing: CollabClient = {
+      flush: (n) => collab.flush(n),
+      replaceBlocks: (a) => collab.replaceBlocks(a),
+      setTitle: (a) => collab.setTitle(a),
+      revoke: (t) => collab.revoke(t),
+      async applyBlockOps(a) {
+        if (!raced) {
+          raced = true;
+          await collab.applyBlockOps({
+            tenantId: a.tenantId,
+            pageId: a.pageId,
+            actor: { type: 'user', id: w.owner.userId },
+            source: 'human',
+            ops: [{ op: 'replace', blockId: billingChange.blockId, blocks: [{ id: 'y', type: 'paragraph', props: {}, content: [{ type: 'text', text: 'Billing uses Adyen and PayPal.', styles: {} }], children: [] }] }],
+          });
+        }
+        return collab.applyBlockOps(a);
+      },
+    };
+    const racingApp = buildTestApp({ collab: racing, embeddingProvider: embedder });
+    const res = await racingApp.inject({ method: 'POST', url: `/api/v1/captures/${id}/undo`, headers: w.headers });
+    expect(res.statusCode, res.body).toBe(200);
+    expect(res.json()).toEqual({ undone: [invoiceChange.id], changedSince: [billingChange.id] });
+    expect(await live(w.tenant.id, w.billing)).toEqual(['Billing uses Adyen and PayPal.', 'Invoices go out monthly.']);
+    await racingApp.close();
+  });
+
+  test('move takes every block the fact added on that page', async () => {
+    const w = await world();
+    const id = await capture(w, 'Billing has a new dashboard.');
+    const [first] = await changesOf(w.tenant.id, id);
+    // The same fact also added a second block right after the first.
+    await collab.applyBlockOps({
+      tenantId: w.tenant.id,
+      pageId: w.billing,
+      actor: { type: 'user', id: w.owner.userId },
+      source: 'human',
+      ops: [{ op: 'insert_after', after: first!.blockId, blocks: [{ id: 'second-block', type: 'paragraph', props: {}, content: [{ type: 'text', text: 'It shows revenue.', styles: {} }], children: [] }] }],
+    });
+    await withTenantTx(w.tenant.id, (tx) =>
+      tx.insert(captureChanges).values({
+        tenantId: w.tenant.id, captureId: id, factId: first!.factId, documentId: w.billing, spaceId: first!.spaceId,
+        blockId: 'second-block', op: 'insert', afterMarkdown: 'It shows revenue.',
+      })
+    );
+    const res = await post(w.headers, `/api/v1/capture-changes/${first!.id}/move`, { target_page_id: w.runbook });
+    expect(res.statusCode, res.body).toBe(200);
+    expect(await live(w.tenant.id, w.billing)).toEqual(['Billing uses Stripe.', 'Invoices go out monthly.']);
+    const statuses = (await changesOf(w.tenant.id, id)).filter((c) => c.documentId === w.billing).map((c) => c.status);
+    expect(statuses).toEqual(['moved', 'moved']);
+  });
+
+  test('a sender who can no longer edit the page cannot undo there', async () => {
+    const w = await world();
+    const member = await signUpMember(app, w.tenant.id, 'member');
+    await post(w.headers, `/api/v1/spaces/${w.space}/grants`, { principal_type: 'user', principal_id: member.userId, role: 'editor' });
+    const res = await post(member.headers, '/api/v1/captures', { text: 'Billing moved to Adyen.', scope_page_id: w.billing });
+    expect(res.statusCode, res.body).toBe(201);
+    await run(w.tenant.id);
+    const [change] = await changesOf(w.tenant.id, res.json().id);
+    await post(w.headers, `/api/v1/spaces/${w.space}/grants`, { principal_type: 'user', principal_id: member.userId, role: 'viewer' });
+    const undo = await post(member.headers, `/api/v1/capture-changes/${change!.id}/undo`);
+    expect(undo.statusCode).toBe(404);
+    expect(await live(w.tenant.id, w.billing)).toContain('Billing moved to Adyen.');
   });
 
   test('placing a needs-home fact applies it to the chosen page', async () => {

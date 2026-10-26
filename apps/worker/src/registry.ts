@@ -85,6 +85,15 @@ export interface JobContext {
 /** How long a capture waits before trying again when another is being routed (R13). */
 export const CAPTURE_BUSY_RETRY_MS = 10_000;
 
+/**
+ * The routing lease holder for one attempt of a job: a reclaimed job (its
+ * lease expired while it still ran) gets a new holder, so it cannot take
+ * over the lease the first attempt still holds.
+ */
+function holderOf(job: Job): string {
+  return `job:${job.id}:${job.lockedAt?.toISOString() ?? 'unclaimed'}`;
+}
+
 /** Puts a running routing job back for CAPTURE_BUSY_RETRY_MS later (a rerun, not a failure). */
 async function requeueLater(job: Job) {
   await withTenantTx(job.tenantId, (tx) =>
@@ -131,7 +140,7 @@ export const handlers: Record<string, JobHandler> = {
     async run(job, ctx) {
       const captureId = captureIdOf(job);
       const result = await routeCapture(
-        { tenantId: job.tenantId, captureId, holder: `job:${job.id}` },
+        { tenantId: job.tenantId, captureId, holder: holderOf(job) },
         { model: ctx.placementModel, embedder: ctx.embeddingProvider, collab: ctx.collab, now: ctx.now }
       );
       if (result === 'busy') await requeueLater(job);
@@ -148,7 +157,7 @@ export const handlers: Record<string, JobHandler> = {
         throw new NonRetryableError('capture.place job without a factId and documentId');
       }
       const result = await placeFact(
-        { tenantId: job.tenantId, factId: payload.factId, documentId: payload.documentId, holder: `job:${job.id}` },
+        { tenantId: job.tenantId, factId: payload.factId, documentId: payload.documentId, holder: holderOf(job) },
         { model: ctx.placementModel, embedder: ctx.embeddingProvider, collab: ctx.collab, now: ctx.now }
       );
       if (result === 'busy') await requeueLater(job);

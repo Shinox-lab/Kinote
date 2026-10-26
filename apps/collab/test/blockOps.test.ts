@@ -55,6 +55,39 @@ describe('applyBlockOps', () => {
     expect(readBlocks(doc).map((b) => b.id)).toEqual(['a', 'b', 'x', 'c']);
   });
 
+  test('a replace keeps the block\'s nested children', () => {
+    const doc = new Y.Doc();
+    writeBlocks(doc, [
+      {
+        id: 'b', type: 'paragraph', props: {}, content: [{ type: 'text', text: 'Billing: Stripe', styles: {} }],
+        children: [paragraph('c1', 'Refunds handled by Ops'), paragraph('c2', 'Invoices monthly')],
+      },
+    ]);
+    applyBlockOps(doc.getXmlFragment(BLOCK_FRAGMENT), [
+      { op: 'replace', blockId: 'b', blocks: [paragraph('n', 'Billing: Adyen')] },
+    ]);
+    const [b] = readBlocks(doc);
+    expect(b.id).toBe('b');
+    expect(b.children.map((c: any) => c.id)).toEqual(['c1', 'c2']);
+  });
+
+  test('an op whose block no longer has the expected text throws block_changed and changes nothing', () => {
+    const doc = seeded();
+    let err: unknown;
+    try {
+      applyBlockOps(doc.getXmlFragment(BLOCK_FRAGMENT), [
+        { op: 'remove', blockId: 'a', expectedText: 'A' },
+        { op: 'replace', blockId: 'b', expectedText: 'B (old)', blocks: [paragraph('q', 'q')] },
+      ]);
+    } catch (e) {
+      err = e;
+    }
+    expect((err as AppError).code).toBe('block_changed');
+    expect(texts(doc)).toEqual(['A', 'B', 'C']);
+    applyBlockOps(doc.getXmlFragment(BLOCK_FRAGMENT), [{ op: 'remove', blockId: 'b', expectedText: 'B' }]);
+    expect(texts(doc)).toEqual(['A', 'C']);
+  });
+
   test('removes a block', () => {
     const doc = seeded();
     applyBlockOps(doc.getXmlFragment(BLOCK_FRAGMENT), [{ op: 'remove', blockId: 'b' }]);

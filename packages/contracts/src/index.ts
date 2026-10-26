@@ -506,7 +506,7 @@ export const ReviewItemSchema = z.object({
     .object({
       id: z.string().uuid(),
       senderName: z.string(),
-      /** The first 280 characters of the capture. */
+      /** The capture's facts that landed where the reviewer can read, up to 280 characters. */
       excerpt: z.string(),
       /** Other pages the capture changed that the reviewer can read. */
       alsoApplied: z.array(z.object({ pageId: z.string().uuid(), title: z.string() })),
@@ -857,8 +857,17 @@ export const CollabApplyBlockOpsRequestSchema = z
       .array(
         z.discriminatedUnion('op', [
           z.object({ op: z.literal('insert_after'), after: z.string().min(1).max(100).nullable(), blocks: BlocksSchema }),
-          z.object({ op: z.literal('replace'), blockId: z.string().min(1).max(100), blocks: BlocksSchema }),
-          z.object({ op: z.literal('remove'), blockId: z.string().min(1).max(100) }),
+          z.object({
+            op: z.literal('replace'),
+            blockId: z.string().min(1).max(100),
+            blocks: BlocksSchema,
+            expectedText: z.string().max(100_000).optional(),
+          }),
+          z.object({
+            op: z.literal('remove'),
+            blockId: z.string().min(1).max(100),
+            expectedText: z.string().max(100_000).optional(),
+          }),
         ])
       )
       .min(1)

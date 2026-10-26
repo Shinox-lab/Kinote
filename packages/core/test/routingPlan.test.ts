@@ -1,5 +1,5 @@
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { blockActivity, citations, suggestions, withTenantTx } from '@living-wiki/db';
+import { blockActivity, captureFacts, captureMessages, citations, suggestions, withTenantTx } from '@living-wiki/db';
 import { createTestDb, type TestDb } from '@living-wiki/db/testing';
 import { planCapture, type FactPlan, type RoutingModel } from '../src/index.js';
 import {
@@ -115,6 +115,26 @@ describe('planCapture', () => {
     expect(plan).toMatchObject({ status: 'already_known', documentId: billing.documentId });
   });
 
+  it('an insert of text the page already holds is already_known, whatever the model says', async () => {
+    const { w, billing } = await billingWorld();
+    const block = await liveBlockId(w, billing.documentId, 'Invoices go out monthly');
+    const repeating: RoutingModel = Object.assign(Object.create(model), {
+      async planEdits() {
+        return {
+          edits: [
+            {
+              op: { op: 'insert_after', documentId: billing.documentId, after: null, markdown: 'Invoices go out  monthly' },
+              confidence: 0.9,
+              reason: 'x',
+            },
+          ],
+        };
+      },
+    });
+    const plan = only(await planned(w.tenantId, await addCapture(w, w.userId, 'Invoices are monthly.'), repeating));
+    expect(plan).toMatchObject({ status: 'already_known', documentId: billing.documentId, blockId: block });
+  });
+
   it('two close candidates send the fact to needs_home', async () => {
     const { w, eng, billing } = await billingWorld();
     const other = await livePage(w, eng, 'Payments', 'Payments are handled by Billing.');
@@ -159,6 +179,65 @@ describe('planCapture', () => {
     );
     const plan = only(plans);
     expect(plan.status === 'planned' && plan.edits[0]!.edit.op).toMatchObject({ documentId: team.documentId });
+  });
+
+  it('a re-run plans neither facts waiting on a question nor facts a person placed', async () => {
+    const { w } = await billingWorld();
+    const captureId = await addCapture(w, w.userId, 'Billing moved to Adyen. Aisha owns Atlas. Lunch is at noon.');
+    await withTenantTx(w.tenantId, async (tx) => {
+      const [q] = await tx
+        .insert(captureMessages)
+        .values({ tenantId: w.tenantId, captureId, author: 'engine', body: 'Which Atlas?', options: [] })
+        .returning();
+      await tx.insert(captureFacts).values([
+        { tenantId: w.tenantId, captureId, ordinal: 0, statement: 'Billing moved to Adyen.', kind: 'change', names: ['Billing'] },
+        { tenantId: w.tenantId, captureId, ordinal: 1, statement: 'Aisha owns Atlas.', kind: 'new', names: ['Atlas'], waitingQuestionId: q!.id },
+        { tenantId: w.tenantId, captureId, ordinal: 2, statement: 'Lunch is at noon.', kind: 'new', placedBy: w.userId },
+      ]);
+    });
+    const plans = await planned(w.tenantId, captureId);
+    expect(plans.map((p) => p.ordinal)).toEqual([0]);
+  });
+
+  it('a long capture is split part by part, so no part loses its facts', async () => {
+    const { w } = await billingWorld();
+    const texts: string[] = [];
+    const counting: RoutingModel = Object.assign(Object.create(model), {
+      async splitCapture(input: { text: string }) {
+        texts.push(input.text);
+        return model.splitCapture(input);
+      },
+    });
+    const para = (n: number) => `Paragraph ${n} says ${'something '.repeat(240).trim()}.`;
+    const text = [para(1), para(2), para(3)].join('\n\n');
+    const plans = await planned(w.tenantId, await addCapture(w, w.userId, text), counting);
+    expect(texts.length).toBe(3);
+    expect(texts.join('\n\n')).toBe(text);
+    expect(plans.map((p) => p.ordinal)).toEqual([0, 1, 2]);
+  });
+
+  it('a capture the model splits into nothing goes to needs_home whole', async () => {
+    const { w } = await billingWorld();
+    const empty: RoutingModel = Object.assign(Object.create(model), {
+      async splitCapture() {
+        return { facts: [] };
+      },
+    });
+    const plans = await planned(w.tenantId, await addCapture(w, w.userId, 'Something the model could not read.'), empty);
+    expect(plans).toHaveLength(1);
+    expect(plans[0]!.fact.statement).toBe('Something the model could not read.');
+    expect(plans[0]!.plan.status).toBe('needs_home');
+  });
+
+  it('a block far down a long page is shown to the planner', async () => {
+    const w = await routingWorld();
+    const eng = await addRoutingSpace(w);
+    const filler = Array.from({ length: 50 }, (_, i) => `Filler line ${i + 1}.`);
+    filler.splice(45, 0, 'Billing uses Stripe.');
+    const page = await livePage(w, eng, 'Long page', filler.join('\n\n'));
+    const block = await liveBlockId(w, page.documentId, 'Billing uses Stripe');
+    const plan = only(await planned(w.tenantId, await addCapture(w, w.userId, 'Billing moved to Adyen.')));
+    expect(plan.status === 'planned' && plan.edits[0]!.edit.op).toMatchObject({ op: 'replace', blockId: block });
   });
 
   it('Inbox pages are never candidates', async () => {

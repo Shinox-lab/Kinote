@@ -2,6 +2,7 @@ import { and, asc, eq, inArray, isNull, ne } from 'drizzle-orm';
 import {
   withTenantTx,
   captureChanges,
+  captureFacts,
   captures,
   suggestions,
   documents,
@@ -261,7 +262,12 @@ async function captureBundles(tx: DbTransaction, actor: Actor, versionIds: strin
   );
   const { readable } = await senderAccess(tx, actor);
   const touched = await tx
-    .selectDistinct({ captureId: captureChanges.captureId, documentId: captureChanges.documentId, title: documents.title })
+    .selectDistinct({
+      captureId: captureChanges.captureId,
+      documentId: captureChanges.documentId,
+      factId: captureChanges.factId,
+      title: documents.title,
+    })
     .from(captureChanges)
     .innerJoin(documents, and(eq(documents.tenantId, captureChanges.tenantId), eq(documents.id, captureChanges.documentId)))
     .where(
@@ -272,13 +278,28 @@ async function captureBundles(tx: DbTransaction, actor: Actor, versionIds: strin
         ne(captureChanges.status, 'undone')
       )
     );
+  // The excerpt is built only from facts that landed where the reviewer can
+  // read: the raw capture may hold facts filed in spaces they cannot see.
+  const readableFacts = [...new Set(touched.map((t) => t.factId))];
+  const statements =
+    readableFacts.length === 0
+      ? []
+      : await tx
+          .select({ id: captureFacts.id, captureId: captureFacts.captureId, statement: captureFacts.statement })
+          .from(captureFacts)
+          .where(and(eq(captureFacts.tenantId, actor.tenantId), inArray(captureFacts.id, readableFacts)))
+          .orderBy(asc(captureFacts.ordinal));
   for (const link of links) {
     const capture = rows.find((c) => c.id === link.captureId);
     if (!capture || !link.versionId) continue;
     bundles.set(link.versionId, {
       id: capture.id,
       senderName: senders.get(`${capture.senderType}:${capture.senderId}`) ?? 'Former member',
-      excerpt: capture.text.slice(0, 280),
+      excerpt: statements
+        .filter((f) => f.captureId === capture.id)
+        .map((f) => f.statement)
+        .join(' ')
+        .slice(0, 280),
       alsoApplied: touched
         .filter((t) => t.captureId === capture.id && t.documentId !== link.documentId)
         .map((t) => ({ pageId: t.documentId, title: t.title })),

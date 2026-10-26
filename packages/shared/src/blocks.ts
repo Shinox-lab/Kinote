@@ -84,3 +84,13 @@ export function flattenBlocks(blocks: BlockLike[]): FlatBlock[] {
   walk(blocks, 0);
   return out;
 }
+
+/**
+ * A block's text with its nested children, one block per line: what the
+ * routing engine and collab compare to tell whether a block changed.
+ */
+export function blockFullText(block: BlockLike): string {
+  return flattenBlocks([block])
+    .map((b) => b.text)
+    .join('\n');
+}

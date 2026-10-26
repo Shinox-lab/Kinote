@@ -2,7 +2,7 @@ import { describe, test, beforeAll, afterEach, afterAll, expect } from 'vitest';
 import { and, eq } from 'drizzle-orm';
 import { withTenantTx, captures, suggestions, versions, spaces } from '@living-wiki/db';
 import { blockText } from '@living-wiki/core';
-import type { BlockLike } from '@living-wiki/shared';
+import { blockFullText, type BlockLike } from '@living-wiki/shared';
 import { collabSettle, type CollabServer } from '../../collab/src/server.js';
 import { startCollabServer } from '../../collab/test/support/wsClient.js';
 import { readBlocks } from '../../collab/test/support/blocks.js';
@@ -15,6 +15,7 @@ type Headers = Record<string, string>;
 describe('suggestions', () => {
   let server: CollabServer;
   let app: ReturnType<typeof buildTestApp>;
+  const collab = () => new InProcessCollabClient(server);
 
   beforeAll(async () => {
     ({ server } = await startCollabServer(undefined, { debounceMs: 60_000, maxDebounceMs: 60_000 }));
@@ -74,6 +75,7 @@ describe('suggestions', () => {
         .values({
           tenantId: w.tenant.id, documentId: pageId, spaceId, blockId: block.id, kind: 'remove',
           reason: 'Billing no longer uses Stripe.', blockedBy: 'removal', captureId: w.captureId,
+          expectedText: blockFullText(block),
         })
         .returning()
     );
@@ -149,6 +151,24 @@ describe('suggestions', () => {
     const res = await post(w.editor.headers, `/api/v1/suggestions/${s.id}/accept`);
     expect(res.statusCode).toBe(409);
     expect(res.json().error).toBe('suggestion_not_open');
+    const [row] = await withTenantTx(w.tenant.id, (tx) => tx.select().from(suggestions).where(eq(suggestions.id, s.id)));
+    expect(row!.status).toBe('stale');
+  });
+
+  test('a suggestion whose block someone changed since becomes stale instead of applying', async () => {
+    const w = await world();
+    const s = await suggestRemoval(w, w.openPage, w.open);
+    await collab().applyBlockOps({
+      tenantId: w.tenant.id,
+      pageId: w.openPage,
+      actor: { type: 'user', id: w.editor.userId },
+      source: 'human',
+      ops: [{ op: 'replace', blockId: s.blockId, blocks: [{ id: 'z', type: 'paragraph', props: {}, content: [{ type: 'text', text: 'Billing uses Stripe for EU; Adyen for US.', styles: {} }], children: [] }] }],
+    });
+    const res = await post(w.editor.headers, `/api/v1/suggestions/${s.id}/accept`);
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error).toBe('suggestion_not_open');
+    expect((await live(w.tenant.id, w.openPage)).map(blockText)).toContain('Billing uses Stripe for EU; Adyen for US.');
     const [row] = await withTenantTx(w.tenant.id, (tx) => tx.select().from(suggestions).where(eq(suggestions.id, s.id)));
     expect(row!.status).toBe('stale');
   });

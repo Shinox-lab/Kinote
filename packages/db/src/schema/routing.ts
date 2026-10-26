@@ -153,6 +153,8 @@ export const suggestions = pgTable(
     kind: text('kind', { enum: ['remove', 'replace', 'insert'] }).notNull(),
     proposedMarkdown: text('proposed_markdown'),
     proposedBlocks: jsonb('proposed_blocks'),
+    /** The addressed block's text with its children when proposed; accepting a changed block makes it stale. */
+    expectedText: text('expected_text'),
     reason: text('reason').notNull(),
     blockedBy: text('blocked_by', { enum: ['removal', 'protection', 'conflict', 'no_edit_access'] }).notNull(),
     conflictCitationId: uuid('conflict_citation_id'),

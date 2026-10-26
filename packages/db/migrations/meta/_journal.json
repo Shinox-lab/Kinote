@@ -183,6 +183,13 @@
       "when": 1793003408518,
       "tag": "0025_routing_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1793007683755,
+      "tag": "0026_suggestion_expected_text",
+      "breakpoints": true
     }
   ]
 }

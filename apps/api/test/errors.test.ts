@@ -274,6 +274,7 @@ describe('error model', () => {
       'change_already_undone',
       'suggestion_not_open',
       'fact_not_open',
+      'block_changed',
     ]) {
       expected[code] = 409;
     }

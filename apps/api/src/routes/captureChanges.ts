@@ -28,7 +28,7 @@ import {
   type Actor,
   type EmbeddingProvider,
 } from '@living-wiki/core';
-import { documentName, type BlockLike, type CollabClient } from '@living-wiki/shared';
+import { blockFullText, documentName, type BlockLike, type CollabClient } from '@living-wiki/shared';
 
 type ChangeRow = typeof captureChanges.$inferSelect;
 type CaptureRow = typeof captures.$inferSelect;
@@ -49,9 +49,12 @@ async function documentOf(tx: DbTransaction, tenantId: string, id: string) {
   return doc ?? null;
 }
 
-/** Whether `actor` may undo `change`: the capture's sender, or an editor of the page's space. */
-async function mayUndo(tx: DbTransaction, actor: Actor, capture: CaptureRow, change: ChangeRow): Promise<boolean> {
-  if (isSender(actor, capture)) return true;
+/**
+ * Whether `actor` may undo `change`: an editor of the page's space now. The
+ * capture's sender too only while they can still edit there (an undo is
+ * their own edit of the page).
+ */
+async function mayUndo(tx: DbTransaction, actor: Actor, _capture: CaptureRow, change: ChangeRow): Promise<boolean> {
   const doc = await documentOf(tx, actor.tenantId, change.documentId);
   if (!doc) return false;
   try {
@@ -85,35 +88,57 @@ async function undoChanges(
     await collab.flush(documentName(actor.tenantId, pageId));
     const live = await withTenantTx(actor.tenantId, (tx) => readLiveBlocks(tx, actor.tenantId, pageId));
     const blocks = new Map((live?.blocks ?? []).map((b) => [b.id, b]));
-    const ops: Parameters<CollabClient['applyBlockOps']>[0]['ops'] = [];
-    const undone: ChangeRow[] = [];
+    type Op = Parameters<CollabClient['applyBlockOps']>[0]['ops'][number];
+    const planned: Array<{ change: ChangeRow; op: Op }> = [];
     for (const change of list) {
       const block = blocks.get(change.blockId);
       if (!block || (await blockMarkdown(block)) !== change.afterMarkdown) {
         result.changedSince.push(change.id);
         continue;
       }
+      // Collab refuses the op if the block changes between this read and the call.
+      const expectedText = blockFullText(block);
       if (change.op === 'replace' && change.beforeMarkdown !== null) {
         const before: BlockLike[] = (await markdownBlocks(change.beforeMarkdown)).map((b) => ({ ...b, id: randomUUID() }));
         if (before.length === 0) {
-          ops.push({ op: 'remove', blockId: change.blockId });
+          planned.push({ change, op: { op: 'remove', blockId: change.blockId, expectedText } });
         } else {
           before[0] = { ...before[0]!, id: change.blockId };
-          ops.push({ op: 'replace', blockId: change.blockId, blocks: before as unknown as Record<string, unknown>[] });
+          planned.push({
+            change,
+            op: { op: 'replace', blockId: change.blockId, blocks: before as unknown as Record<string, unknown>[], expectedText },
+          });
         }
       } else {
-        ops.push({ op: 'remove', blockId: change.blockId });
+        planned.push({ change, op: { op: 'remove', blockId: change.blockId, expectedText } });
       }
-      undone.push(change);
     }
-    if (ops.length > 0) {
-      await collab.applyBlockOps({
-        tenantId: actor.tenantId,
-        pageId,
-        actor: { type: actor.principalType, id: actor.principalId },
-        source: actor.principalType === 'agent' ? 'agent' : 'human',
-        ops,
-      });
+    const as = {
+      tenantId: actor.tenantId,
+      pageId,
+      actor: { type: actor.principalType, id: actor.principalId },
+      source: actor.principalType === 'agent' ? ('agent' as const) : ('human' as const),
+    };
+    const undone: ChangeRow[] = [];
+    if (planned.length > 0) {
+      try {
+        await collab.applyBlockOps({ ...as, ops: planned.map((p) => p.op) });
+        undone.push(...planned.map((p) => p.change));
+      } catch (err) {
+        if (!(err instanceof AppError && (err.code === 'block_changed' || err.code === 'block_not_found'))) throw err;
+        // A block changed just now: undo the others one by one, report that one.
+        for (const p of planned) {
+          try {
+            await collab.applyBlockOps({ ...as, ops: [p.op] });
+            undone.push(p.change);
+          } catch (inner) {
+            if (!(inner instanceof AppError && (inner.code === 'block_changed' || inner.code === 'block_not_found'))) throw inner;
+            result.changedSince.push(p.change.id);
+          }
+        }
+      }
+    }
+    if (undone.length > 0) {
       await collab.flush(documentName(actor.tenantId, pageId));
       await takePageSnapshot({
         tenantId: actor.tenantId,
@@ -240,7 +265,7 @@ export async function moveCaptureChange(
 ): Promise<{ moved: string; factId: string }> {
   if (!deps.collab) throw new AppError('internal_error');
   const parsed = MoveChangeRequestSchema.safeParse(body);
-  const { change, fact } = await withTenantTx(actor.tenantId, async (tx) => {
+  const { change, fact, siblings } = await withTenantTx(actor.tenantId, async (tx) => {
     const { change } = await changeFor(tx, actor, id);
     const doc = await documentOf(tx, actor.tenantId, change.documentId);
     if (!doc) throw new AppError('capture_not_found');
@@ -253,11 +278,24 @@ export async function moveCaptureChange(
       .select()
       .from(captureFacts)
       .where(and(eq(captureFacts.tenantId, actor.tenantId), eq(captureFacts.id, change.factId)));
-    return { change, fact: fact! };
+    // Every block this fact added or changed on this page moves with it.
+    const siblings = await tx
+      .select()
+      .from(captureChanges)
+      .where(
+        and(
+          eq(captureChanges.tenantId, actor.tenantId),
+          eq(captureChanges.factId, change.factId),
+          eq(captureChanges.documentId, change.documentId),
+          eq(captureChanges.status, 'applied')
+        )
+      )
+      .orderBy(captureChanges.createdAt);
+    return { change, fact: fact!, siblings };
   });
   const target = parsed.success ? parsed.data.target_page_id : '';
 
-  const undone = await undoChanges(actor, [change], deps.collab, 'moved');
+  const undone = await undoChanges(actor, siblings, deps.collab, 'moved');
   if (undone.changedSince.length > 0) {
     throw new AppError('block_recently_edited', 'Someone changed this block since; edit it by hand instead.');
   }

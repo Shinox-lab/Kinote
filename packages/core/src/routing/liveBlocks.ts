@@ -34,9 +34,13 @@ export function blockText(block: BlockLike): string {
   return flattenBlocks([{ ...block, children: [] }])[0]?.text ?? '';
 }
 
-/** A block, children included, as Markdown: what receipts show before and after. */
+/**
+ * A block's own content as Markdown, its nested children left out: what
+ * receipts show before and after, and what Undo compares. Engine replaces
+ * keep a block's children, so they are never part of a change.
+ */
 export async function blockMarkdown(block: BlockLike): Promise<string> {
-  return (await editor.blocksToMarkdownLossy([block as any])).trim();
+  return (await editor.blocksToMarkdownLossy([{ ...block, children: [] } as any])).trim();
 }
 
 /** BlockNote blocks for engine-written Markdown. */

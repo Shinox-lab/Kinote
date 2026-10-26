@@ -15,7 +15,7 @@ import {
   type DbTransaction,
 } from '@living-wiki/db';
 import { AppError } from '@living-wiki/contracts';
-import type { BlockLike } from '@living-wiki/shared';
+import { blockFullText, type BlockLike } from '@living-wiki/shared';
 import type { EmbeddingProvider } from '../embedding.js';
 import type { Actor } from '../permissions.js';
 import type { CaptureFact, PlanCandidate, PlannedEdit, RoutingModel } from '../placement/model.js';
@@ -42,6 +42,8 @@ export interface CheckedEdit {
   gate: Gate;
   /** The block's Markdown before a replace or remove. */
   beforeMarkdown: string | null;
+  /** The block's text with its children when planned (replace, remove): collab refuses the op if it changed. */
+  expectedText: string | null;
   /** A still-valid version citation on the block (R4). */
   conflictCitationId: string | null;
 }
@@ -73,6 +75,8 @@ export interface PlanDeps {
   facts?: PlanFactInput[];
   /** Restrict candidates to this page and waive the confidence floor (a person chose the page). */
   onlyPage?: string;
+  /** Runs before each fact is planned; throws to stop (the routing run lost its lease). */
+  guard?: () => Promise<void>;
 }
 
 interface Context {
@@ -136,8 +140,10 @@ export async function planCapture(
   let facts: PlanFactInput[];
   if (deps.facts) facts = deps.facts;
   else if (loaded.stored && loaded.stored.length > 0) {
+    // Facts waiting on a question, or placed by a person (their capture.place
+    // job files them), are not this run's to plan.
     facts = loaded.stored
-      .filter((f) => f.outcome === 'pending')
+      .filter((f) => f.outcome === 'pending' && f.waitingQuestionId === null && f.placedBy === null)
       .map((f) => ({
         ordinal: f.ordinal,
         factId: f.id,
@@ -145,15 +151,90 @@ export async function planCapture(
         pinnedEntityIds: f.pinnedEntityIds,
       }));
   } else {
-    const split = await deps.model.splitCapture({ text: loaded.capture.text });
-    facts = split.facts.map((fact, ordinal) => ({ ordinal, factId: null, fact, pinnedEntityIds: [] }));
+    // Part by part, so a long capture never runs into the per-split fact limit.
+    const split: CaptureFact[] = [];
+    for (const part of captureParts(loaded.capture.text)) {
+      await deps.guard?.();
+      split.push(...(await deps.model.splitCapture({ text: part })).facts);
+    }
+    if (split.length === 0) {
+      // Nothing came out of it: the whole text waits for a person, never silently dropped.
+      const fact: CaptureFact = { statement: loaded.capture.text.slice(0, 4000), kind: 'new', names: [], date: null };
+      return [
+        {
+          ordinal: 0,
+          factId: null,
+          fact,
+          pinnedEntityIds: [],
+          plan: { status: 'needs_home', reason: 'This capture could not be split into facts.' },
+        },
+      ];
+    }
+    facts = split.map((fact, ordinal) => ({ ordinal, factId: null, fact, pinnedEntityIds: [] }));
   }
 
   const out: PlannedFact[] = [];
   for (const input of facts) {
+    await deps.guard?.();
     out.push({ ...input, plan: await planFact(tenantId, loaded.context, input, deps) });
   }
   return out;
+}
+
+/**
+ * The page's blocks the planner sees, at most ROUTING.blocksPerCandidate:
+ * blocks passage search matched first, then blocks naming the fact's names,
+ * then the rest from the top; shown in page order.
+ */
+function relevantBlocks(blocks: BlockLike[], hits: Set<string>, names: string[]): BlockLike[] {
+  if (blocks.length <= ROUTING.blocksPerCandidate) return blocks;
+  const lower = names.map((n) => n.toLowerCase()).filter((n) => n.length > 0);
+  const score = (b: BlockLike) => {
+    const text = blockText(b).toLowerCase();
+    return (hits.has(b.id) ? 2 : 0) + (lower.some((n) => text.includes(n)) ? 1 : 0);
+  };
+  const chosen = new Set(
+    blocks
+      .map((b, i) => ({ b, i, s: score(b) }))
+      .sort((x, y) => y.s - x.s || x.i - y.i)
+      .slice(0, ROUTING.blocksPerCandidate)
+      .map((x) => x.b.id)
+  );
+  return blocks.filter((b) => chosen.has(b.id));
+}
+
+/** Longest piece of a capture split in one model call. */
+const SPLIT_PART_CHARS = 3000;
+
+/**
+ * A capture cut into pieces of at most SPLIT_PART_CHARS, on paragraph
+ * breaks where possible (a longer paragraph is cut on sentence ends, then
+ * hard). Joined with blank lines they give the paragraphs back.
+ */
+export function captureParts(text: string): string[] {
+  const pieces: string[] = [];
+  for (const para of text.split(/\n\s*\n/)) {
+    if (para.length <= SPLIT_PART_CHARS) {
+      pieces.push(para);
+      continue;
+    }
+    let rest = para;
+    while (rest.length > SPLIT_PART_CHARS) {
+      const window = rest.slice(0, SPLIT_PART_CHARS);
+      const end = Math.max(window.lastIndexOf('. '), window.lastIndexOf('\n'));
+      const cut = end > SPLIT_PART_CHARS / 2 ? end + 1 : SPLIT_PART_CHARS;
+      pieces.push(rest.slice(0, cut));
+      rest = rest.slice(cut).trimStart();
+    }
+    if (rest) pieces.push(rest);
+  }
+  const parts: string[] = [];
+  for (const piece of pieces) {
+    const last = parts.at(-1);
+    if (last !== undefined && last.length + 2 + piece.length <= SPLIT_PART_CHARS) parts[parts.length - 1] = `${last}\n\n${piece}`;
+    else parts.push(piece);
+  }
+  return parts.filter((p) => p.trim().length > 0);
 }
 
 async function planFact(tenantId: string, ctx: Context, input: PlanFactInput, deps: PlanDeps): Promise<FactPlan> {
@@ -192,7 +273,7 @@ async function planFact(tenantId: string, ctx: Context, input: PlanFactInput, de
   // 2. Gather candidate pages from passages, cards and the graph, fused.
   const [vector] = await deps.embedder.embed([fact.statement], 'query');
   const { candidates, examples } = await withTenantTx(tenantId, async (tx) => {
-    const candidates = await gatherCandidates(tx, ctx, fact.statement, vector!, resolved);
+    const candidates = await gatherCandidates(tx, ctx, fact, vector!, resolved);
     const spaceIds = [...new Set([...candidates.values()].map((c) => c.spaceId))];
     return { candidates, examples: await similarExamples(tx, tenantId, spaceIds, vector!) };
   });
@@ -213,10 +294,13 @@ async function planFact(tenantId: string, ctx: Context, input: PlanFactInput, de
 async function gatherCandidates(
   tx: DbTransaction,
   ctx: Context,
-  statement: string,
+  fact: CaptureFact,
   vector: number[],
   entityIds: string[]
 ): Promise<Map<string, Candidate>> {
+  const statement = fact.statement;
+  /** Block ids passage search matched, per page: the blocks most about this fact. */
+  const hitBlocks = new Map<string, Set<string>>();
   let ids: string[];
   if (ctx.scopePageId) {
     ids = [ctx.scopePageId];
@@ -224,6 +308,11 @@ async function gatherCandidates(
     const passages = (
       await searchWiki(tx, ctx.actor, ctx.filter.spaceIds, ctx.inboxSpaceId, statement, vector, 20)
     ).filter((p) => p.documentKind === 'page');
+    for (const p of passages) {
+      const set = hitBlocks.get(p.documentId) ?? new Set<string>();
+      for (const id of p.blockIds) set.add(id);
+      hitBlocks.set(p.documentId, set);
+    }
     const cards = await searchPageCards(tx, ctx.filter, vector, 20);
     const graph = (await pagesForEntities(tx, ctx.filter, entityIds, 1)).sort((a, b) => a.hops - b.hops);
     const score = new Map<string, number>();
@@ -250,7 +339,7 @@ async function gatherCandidates(
     const live = await readLiveBlocks(tx, ctx.filter.tenantId, id);
     if (!live) continue;
     const card = cards.find((c) => c.documentId === id);
-    const top = live.blocks.slice(0, ROUTING.blocksPerCandidate);
+    const top = relevantBlocks(live.blocks, hitBlocks.get(id) ?? new Set(), fact.names);
     out.set(id, {
       spaceId: doc.spaceId,
       blocks: new Map(live.blocks.map((b) => [b.id, b])),
@@ -280,6 +369,16 @@ async function similarExamples(tx: DbTransaction, tenantId: string, spaceIds: st
        LIMIT 5`)
   );
   return rows.map((r) => ({ statement: r.statement, chosenTitle: r.title }));
+}
+
+/** Lower-cased, single spaces, no closing punctuation, no Markdown marks: how "the page already says this" compares. */
+function comparable(text: string): string {
+  return text
+    .replace(/[*_`#>]/g, '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .replace(/[.!?]+$/, '');
 }
 
 function targetOf(edit: PlannedEdit): string {
@@ -347,6 +446,7 @@ async function checkEdits(
       let gate: Gate = op.op === 'remove' ? 'removal' : null;
       let conflictCitationId: string | null = null;
       let beforeMarkdown: string | null = null;
+      let expectedText: string | null = null;
 
       if (op.op === 'replace' || op.op === 'remove') {
         const space = spaceRows.find((s) => s.id === spaceId)!;
@@ -380,15 +480,27 @@ async function checkEdits(
           conflictCitationId = cited.id;
           if (!gate) gate = 'conflict';
         }
-        beforeMarkdown = await blockMarkdown(candidates.get(op.documentId)!.blocks.get(op.blockId)!);
+        const block = candidates.get(op.documentId)!.blocks.get(op.blockId)!;
+        beforeMarkdown = await blockMarkdown(block);
+        expectedText = blockFullText(block);
       }
       if (!gate && !ctx.editable.has(spaceId)) gate = 'no_edit_access';
 
+      // Text the page already holds is never added again, whatever the model said
+      // (also what makes a retried run safe after its edit already landed).
+      if (op.op === 'insert_after' || op.op === 'replace') {
+        const wanted = comparable(op.markdown);
+        const same = candidates.get(op.documentId)!.card.blocks.find((b) => comparable(b.text) === wanted);
+        if (same) {
+          duplicateOf = { documentId: op.documentId, blockId: same.id };
+          continue;
+        }
+      }
       if (op.op !== 'create_page' && op.op !== 'already_known' && (await isDuplicate(tx, tenantId, op))) {
         duplicateOf = { documentId: op.documentId, blockId: op.op === 'insert_after' ? op.after ?? '' : op.blockId };
         continue;
       }
-      checked.push({ edit, spaceId, gate, beforeMarkdown, conflictCitationId });
+      checked.push({ edit, spaceId, gate, beforeMarkdown, expectedText, conflictCitationId });
     }
     if (checked.length === 0 && duplicateOf) return { status: 'already_known', ...duplicateOf };
     return { status: 'planned', edits: checked };

@@ -9,7 +9,7 @@ import {
 } from '@living-wiki/db';
 import { AppError } from '@living-wiki/contracts';
 import type { EmbeddingProvider } from '../embedding.js';
-import { applyPlannedFacts, finishCapture, ROUTING_LEASE_SECONDS, type RouteDeps } from './apply.js';
+import { applyPlannedFacts, finishCapture, leaseGuard, ROUTING_LEASE_SECONDS, type RouteDeps } from './apply.js';
 import { planCapture } from './plan.js';
 
 /**
@@ -25,6 +25,7 @@ export async function placeFact(
   const { tenantId, factId, documentId, holder } = params;
   const got = await withTenantTx(tenantId, (tx) => acquireRoutingLease(tx, tenantId, holder, ROUTING_LEASE_SECONDS));
   if (!got) return 'busy';
+  const guard = leaseGuard(tenantId, holder);
   try {
     const [fact] = await withTenantTx(tenantId, (tx) =>
       tx.select().from(captureFacts).where(and(eq(captureFacts.tenantId, tenantId), eq(captureFacts.id, factId)))
@@ -38,6 +39,7 @@ export async function placeFact(
         embedder: deps.embedder,
         now: deps.now,
         onlyPage: documentId,
+        guard,
         facts: [
           {
             ordinal: fact.ordinal,
@@ -48,7 +50,7 @@ export async function placeFact(
         ],
       }
     );
-    await applyPlannedFacts(tenantId, fact.captureId, planned, deps);
+    await applyPlannedFacts(tenantId, fact.captureId, planned, { ...deps, guard });
     await finishCapture(tenantId, fact.captureId);
     return 'done';
   } finally {

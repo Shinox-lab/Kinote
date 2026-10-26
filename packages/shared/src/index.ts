@@ -17,5 +17,5 @@ export {
   type ObjectStorage,
   type S3ObjectStorageOptions,
 } from './objectStorage.js';
-export { flattenBlocks, type FlatBlock, type BlockLike } from './blocks.js';
+export { flattenBlocks, blockFullText, type FlatBlock, type BlockLike } from './blocks.js';
 export { HttpCollabClient, COLLAB_CALL_TIMEOUT_MS, type CollabClient } from './collabClient.js';

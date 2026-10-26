@@ -2,6 +2,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { and, eq } from 'drizzle-orm';
 import {
   acquireRoutingLease,
+  routingLeases,
   blockActivity,
   captureChanges,
   captureFacts,
@@ -14,6 +15,8 @@ import {
   withTenantTx,
 } from '@living-wiki/db';
 import { routeCapture } from '@living-wiki/core';
+import { AppError } from '@living-wiki/contracts';
+import type { CollabClient } from '@living-wiki/shared';
 import { collabSettle, type CollabServer } from '../../collab/src/server.js';
 import { startCollabServer } from '../../collab/test/support/wsClient.js';
 import { InProcessCollabClient } from '../../api/test/support/inProcessCollab.js';
@@ -139,6 +142,36 @@ describe('routeCapture', () => {
     expect(await withTenantTx(w.tenantId, (tx) => tx.select().from(captureChanges))).toEqual([]);
   });
 
+  it('an edit a person makes just before the engine applies is never overwritten', async () => {
+    const { w, billing } = await billingWorld();
+    const block = await liveBlockId(w, billing.documentId, 'Billing uses Stripe');
+    const captureId = await addCapture(w, w.userId, 'Billing moved to Adyen.');
+    // The person's edit lands in collab after the recheck, right before the engine's own call.
+    const racing: CollabClient = {
+      flush: (n) => collab.flush(n),
+      replaceBlocks: (a) => collab.replaceBlocks(a),
+      setTitle: (a) => collab.setTitle(a),
+      revoke: (t) => collab.revoke(t),
+      async applyBlockOps(a) {
+        if (a.actor.type === 'agent') {
+          await collab.applyBlockOps({
+            tenantId: a.tenantId,
+            pageId: a.pageId,
+            actor: { type: 'user', id: w.userId },
+            source: 'human',
+            ops: [{ op: 'replace', blockId: block, blocks: [{ id: 'p', type: 'paragraph', props: {}, content: [{ type: 'text', text: 'Billing uses Stripe in the EU.', styles: {} }], children: [] }] }],
+          });
+        }
+        return collab.applyBlockOps(a);
+      },
+    };
+    expect(await routeCapture({ tenantId: w.tenantId, captureId, holder: 'test' }, { model, embedder, collab: racing })).toBe('done');
+    expect(texts(await liveBlocks(w, billing.documentId))).toContain('Billing uses Stripe in the EU.');
+    const [s] = await withTenantTx(w.tenantId, (tx) => tx.select().from(suggestions));
+    expect(s).toMatchObject({ kind: 'replace', blockId: block, blockedBy: 'protection' });
+    expect(await withTenantTx(w.tenantId, (tx) => tx.select().from(captureChanges))).toEqual([]);
+  });
+
   it('a second capture waits for the tenant lease', async () => {
     const { w } = await billingWorld();
     const captureId = await addCapture(w, w.userId, 'Billing moved to Adyen.');
@@ -160,6 +193,52 @@ describe('routeCapture', () => {
     );
     expect(job!.status).toBe('queued');
     expect(job!.runAt.getTime()).toBeGreaterThan(Date.now());
+  });
+
+  it('a run that loses the tenant lease stops before applying anything', async () => {
+    const { w, billing } = await billingWorld();
+    const captureId = await addCapture(w, w.userId, 'Billing moved to Adyen.');
+    await expect(
+      route(w.tenantId, captureId, {
+        async afterPlan() {
+          // The lease ran out and another run took it.
+          await withTenantTx(w.tenantId, async (tx) => {
+            await tx.update(routingLeases).set({ expiresAt: new Date(Date.now() - 1000) });
+            await acquireRoutingLease(tx, w.tenantId, 'other-run', 300);
+          });
+        },
+      })
+    ).rejects.toMatchObject({ code: 'router_unavailable' });
+    expect(texts(await liveBlocks(w, billing.documentId))).toContain('Billing uses Stripe.');
+    expect(await withTenantTx(w.tenantId, (tx) => tx.select().from(captureChanges))).toEqual([]);
+  });
+
+  it('a run retried after a failure past the edit neither repeats it nor loses its receipt', async () => {
+    const { w, billing } = await billingWorld();
+    const captureId = await addCapture(w, w.userId, 'Billing has a new dashboard.');
+    let failFlush = true;
+    const flaky: CollabClient = {
+      flush: async (n) => {
+        if (failFlush) {
+          failFlush = false;
+          throw new AppError('internal_error');
+        }
+        return collab.flush(n);
+      },
+      replaceBlocks: (a) => collab.replaceBlocks(a),
+      applyBlockOps: (a) => collab.applyBlockOps(a),
+      setTitle: (a) => collab.setTitle(a),
+      revoke: (t) => collab.revoke(t),
+    };
+    const once = () => routeCapture({ tenantId: w.tenantId, captureId, holder: 'test' }, { model, embedder, collab: flaky });
+    await expect(once()).rejects.toBeTruthy();
+    expect(await once()).toBe('done');
+    const live = texts(await liveBlocks(w, billing.documentId));
+    expect(live.filter((t) => t === 'Billing has a new dashboard.')).toHaveLength(1);
+    const changes = await withTenantTx(w.tenantId, (tx) => tx.select().from(captureChanges));
+    expect(changes).toHaveLength(1);
+    const [fact] = await withTenantTx(w.tenantId, (tx) => tx.select().from(captureFacts));
+    expect(fact!.outcome).toBe('applied');
   });
 
   it('a question pauses only the facts that need the answer', async () => {
