@@ -62,6 +62,13 @@ function cosineDistance(a: number[], b: number[]): number {
   return na === 0 || nb === 0 ? 1 : 1 - dot / Math.sqrt(na * nb);
 }
 
+/** Every word of the shorter normalized name appears in the longer one. */
+function tokensWithin(a: string, b: string): boolean {
+  const [short, long] = a.split(' ').length <= b.split(' ').length ? [a, b] : [b, a];
+  const words = new Set(long.split(' '));
+  return short.split(' ').every((w) => words.has(w));
+}
+
 /** Exact name or alias matches first, then up to three trigram candidates. */
 async function findCandidates(tx: DbTransaction, tenantId: string, normalized: string): Promise<{
   exact: Candidate | null;
@@ -119,8 +126,9 @@ async function memberFor(tx: DbTransaction, tenantId: string, normalized: string
  *
  * A. read the version, its document, space and chunks, and the extraction
  *    cache (skip unless still the indexed version outside the Inbox);
- * B. with no transaction open, extract uncached chunks, then resolve each
- *    distinct name: exact name or alias, else trigram candidates within
+ * B. with no transaction open, extract uncached chunks (caching each at
+ *    once), group this document's own spelling variants, then resolve each
+ *    group's fullest name: exact name or alias, else trigram candidates within
  *    `ENTITY_MATCH` that the model confirms are the same, else a new entity;
  * C. under the document lock, re-check, then replace the document's mentions
  *    and edges and delete entities the document alone mentioned.
@@ -213,8 +221,33 @@ export async function extractVersionEntities(
     throw new NonRetryableError('embedding provider returned malformed vectors for entity names');
   }
   const embeddingOf = new Map(keys.map((k, i) => [k, vectors[i]!]));
+
+  // Variants inside this document first ("Aisha Rahman" ... "Aisha"): the
+  // fullest name of a group stands for it, the others become its aliases.
+  const groupOf = new Map<string, string>();
+  const representatives: string[] = [];
+  const byFullness = [...keys].sort((a, b) => b.split(' ').length - a.split(' ').length || b.length - a.length);
+  for (const key of byFullness) {
+    let rep: string | null = null;
+    for (const candidate of representatives) {
+      if (!tokensWithin(key, candidate)) continue;
+      if (cosineDistance(embeddingOf.get(key)!, embeddingOf.get(candidate)!) > ENTITY_MATCH.maxCosineDistance) continue;
+      const { same } = await model.sameEntity({
+        a: named.get(key)!.entity,
+        b: named.get(candidate)!.entity,
+        context: named.get(key)!.context,
+      });
+      if (same) {
+        rep = candidate;
+        break;
+      }
+    }
+    if (rep) groupOf.set(key, rep);
+    else representatives.push(key);
+  }
+
   const resolution = new Map<string, Resolution>();
-  for (const key of keys) {
+  for (const key of representatives) {
     const found = candidates.get(key)!;
     if (found.exact) {
       resolution.set(key, { existingId: found.exact.id });
@@ -254,7 +287,7 @@ export async function extractVersionEntities(
       .where(and(eq(entityMentions.tenantId, tenantId), eq(entityMentions.documentId, doc.id)));
 
     const idOf = new Map<string, string>();
-    for (const key of keys) {
+    for (const key of representatives) {
       const { entity } = named.get(key)!;
       const resolved = resolution.get(key)!;
       if ('existingId' in resolved) {
@@ -292,6 +325,21 @@ export async function extractVersionEntities(
         })
         .returning({ id: entities.id });
       idOf.set(key, row!.id);
+    }
+    for (const [key, rep] of groupOf) {
+      const id = idOf.get(rep)!;
+      await tx
+        .update(entities)
+        .set({ aliases: sql`array_append(${entities.aliases}, ${key})` })
+        .where(
+          and(
+            eq(entities.tenantId, tenantId),
+            eq(entities.id, id),
+            sql`${entities.normalizedName} <> ${key}`,
+            sql`NOT (${key} = ANY(${entities.aliases}))`
+          )
+        );
+      idOf.set(key, id);
     }
 
     const mentionRows = [];

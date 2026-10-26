@@ -107,6 +107,19 @@ describe('extractVersionEntities', () => {
     );
   });
 
+  it('resolves spelling variants inside one document to one entity', async () => {
+    const w = await seedTenant();
+    const space = await addSpace(w);
+    const page = await indexPageVersion(w, space, 'billing', 'Aisha Rahman owns Billing Service. It was approved by Aisha.');
+    await run(w, page.versionId);
+    const { entities: rows, mentions } = await all(w);
+    const aisha = rows.filter((e) => e.normalizedName.startsWith('aisha'));
+    expect(aisha).toHaveLength(1);
+    expect(aisha[0]).toMatchObject({ name: 'Aisha Rahman', normalizedName: 'aisha rahman' });
+    expect(aisha[0]!.aliases).toContain('aisha');
+    expect(mentions.filter((m) => m.entityId === aisha[0]!.id)).toHaveLength(1);
+  });
+
   it('links a person to the one member with that name', async () => {
     const w = await seedTenant();
     const userId = randomUUID();
