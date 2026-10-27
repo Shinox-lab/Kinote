@@ -1,14 +1,13 @@
 import { useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
-import { ApiError, api, errorMessage } from '../../lib/api.js';
-import { slugify } from '../../lib/console.js';
+import { errorMessage } from '../../lib/api.js';
+import { createNamedPage } from '../../lib/newPage.js';
 import { useRefresh, useWorkspace } from '../../lib/queries.js';
 
 /**
  * A title field under a space or page row: Enter makes the page (in that space,
- * under that page) and opens it; Escape or an empty blur cancels. A slug that is
- * already taken is retried once with a short suffix, so the person never meets it.
+ * under that page) and opens it; Escape or an empty blur cancels.
  */
 export function NewPageRow({
   spaceId,
@@ -27,17 +26,7 @@ export function NewPageRow({
   const [title, setTitle] = useState('');
 
   const create = useMutation({
-    mutationFn: async () => {
-      const clean = title.trim();
-      const slug = slugify(clean) || 'page';
-      const body = { space_id: spaceId, parent_id: parentId, title: clean };
-      try {
-        return await api.createPage({ ...body, slug });
-      } catch (err) {
-        if (!(err instanceof ApiError) || err.code !== 'slug_taken') throw err;
-        return api.createPage({ ...body, slug: `${slug}-${Math.random().toString(36).slice(2, 6)}` });
-      }
-    },
+    mutationFn: () => createNamedPage({ space_id: spaceId, parent_id: parentId, title: title.trim() }),
     onSuccess: async (page) => {
       await refresh('tree', spaceId);
       onDone({ parentId });

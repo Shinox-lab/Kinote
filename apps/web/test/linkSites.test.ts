@@ -16,6 +16,9 @@ const PAGE_ONLY = [
   // The routing engine only ever changes pages: a receipt card and the capture banner name a page.
   'components/capture/Receipt.tsx',
   'components/capture/CaptureBanner.tsx',
+  // Connections and the side panel are about pages only: links in, and the routing engine's pages.
+  'components/PageConnections.tsx',
+  'components/PagePeek.tsx',
 ];
 
 function sources(dir: string): string[] {

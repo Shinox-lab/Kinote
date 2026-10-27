@@ -358,6 +358,27 @@ test.describe('Documents', () => {
     await expect(page).toHaveURL(/\/p\/[0-9a-f-]+\?capture=/);
   });
 
+  test('the meeting page and the client page link to each other', async ({ browser, request }) => {
+    const { parent } = await clientSpace(request, 'Brindle');
+    const page = await openCapture(browser);
+    await send(page, 'Brindle', note('Brindle'));
+    const lead = page.getByRole('link', { name: 'New page: Oct 14 meeting with Brindle under Client - Brindle' });
+    await expect(lead).toBeVisible({ timeout: 20_000 });
+
+    // The client page: its changed section says where it came from, and opens the meeting page beside it.
+    await page.goto(`/w/${world.slug}/p/${parent}`);
+    const chip = page.getByRole('button', { name: 'From: Oct 14 meeting with Brindle' }).first();
+    await expect(chip).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole('region', { name: 'Connections' }).getByText('Updated by')).toBeVisible();
+    await chip.click();
+    const peek = page.getByRole('complementary', { name: 'Page preview' });
+    await expect(peek.getByRole('heading', { level: 1, name: 'Oct 14 meeting with Brindle' })).toBeVisible();
+
+    // The meeting page lists the client page it updated.
+    await expect(peek.getByText('Updated from this page')).toBeVisible();
+    await expect(peek.getByRole('link', { name: /Client - Brindle/ })).toBeVisible();
+  });
+
   test('Undo on the new page archives it', async ({ browser, request }) => {
     await clientSpace(request, 'Quillon');
     const page = await openCapture(browser);

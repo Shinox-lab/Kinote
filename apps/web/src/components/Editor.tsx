@@ -1,4 +1,4 @@
-import * as Y from 'yjs';
+import { useEffect, useRef } from 'react';
 import { useCreateBlockNote } from '@blocknote/react';
 import { BlockNoteView } from '@blocknote/mantine';
 import '@blocknote/core/fonts/inter.css';
@@ -8,27 +8,59 @@ import { useResolvedTheme } from '../lib/useResolvedTheme.js';
 import { loadSession } from '../lib/session.js';
 import type { Live } from '../lib/useLivePage.js';
 import { authorColor } from '../lib/wiki.js';
+import { usePeek } from '../lib/usePeek.js';
 import { Button, ErrorNote, Loading } from './ui.js';
+import { blockSourcesExtension, setBlockSources, type BlockSource } from './editor/blockSources.js';
+import { linkTriggerExtension } from './editor/linkTrigger.js';
+import { WikiMenus, type EditorPlace } from './editor/menus.js';
+import { wikiSchema } from './editor/schema.js';
+
+export type { BlockSource, EditorPlace };
 
 /** The Y.XmlFragment that holds a page's blocks (BLOCK_FRAGMENT in apps/collab/src/fragment.ts). */
 const BLOCK_FRAGMENT = 'document-store';
 
 /** The BlockNote editor bound to the page's Yjs document. Mounted only once the provider exists. */
-function BoundEditor({ live, editable }: { live: Live; editable: boolean }) {
+function BoundEditor({
+  live,
+  editable,
+  place,
+  sources,
+}: {
+  live: Live;
+  editable: boolean;
+  place: EditorPlace;
+  sources: BlockSource[];
+}) {
   const user = loadSession()?.user;
+  const peek = usePeek();
+  // The chips are made once per editor; they open whatever page the latest render says.
+  const openRef = useRef(peek.open);
+  openRef.current = peek.open;
   const editor = useCreateBlockNote(
     {
+      schema: wikiSchema,
       collaboration: {
         // BlockNote only reads the awareness (cursors); the provider types it as nullable.
         provider: { awareness: live.provider.awareness ?? undefined },
         fragment: live.ydoc.getXmlFragment(BLOCK_FRAGMENT),
         user: { name: user?.name ?? 'Someone', color: authorColor(user?.id ?? '').accent },
       },
+      extensions: [blockSourcesExtension((pageId) => openRef.current(pageId)), linkTriggerExtension()],
     },
     [live]
   );
+  const sourceKey = sources.map((s) => `${s.blockId}:${s.pageId}:${s.title}`).join('|');
+  useEffect(() => {
+    setBlockSources(editor, sources);
+    // `sources` is a new array on every render; its content is the trigger.
+  }, [editor, sourceKey]);
   const theme = useResolvedTheme();
-  return <BlockNoteView editor={editor} editable={editable} theme={theme} />;
+  return (
+    <BlockNoteView editor={editor} editable={editable} theme={theme} slashMenu={false}>
+      {editable && <WikiMenus editor={editor} place={place} />}
+    </BlockNoteView>
+  );
 }
 
 /**
@@ -43,7 +75,12 @@ export function Editor({
   archived,
   error,
   retry,
+  place,
+  sources = [],
 }: {
+  place: EditorPlace;
+  /** Blocks the routing engine changed from a document page, shown with a "From:" chip. */
+  sources?: BlockSource[];
   live: Live | null;
   access: 'read' | 'write';
   archived: boolean;
@@ -69,7 +106,7 @@ export function Editor({
           (a screen wide enough for the sidebar and the page plus the indent) the indent hangs in the margin,
           so the text lines up with the title; narrower, it stays inside and nothing scrolls sideways. */}
       <div className="min-h-[16rem] min-[1100px]:-mx-[54px]">
-        {live ? <BoundEditor live={live} editable={editable} /> : <Loading what="editor" />}
+        {live ? <BoundEditor live={live} editable={editable} place={place} sources={sources} /> : <Loading what="editor" />}
       </div>
     </div>
   );

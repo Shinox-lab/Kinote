@@ -3,6 +3,7 @@ import { Link, useParams, useSearch } from '@tanstack/react-router';
 import {
   usePageCaptureChanges,
   usePageChanges,
+  usePageConnections,
   usePageSuggestions,
   useRefresh,
   useSpaceTree,
@@ -23,6 +24,8 @@ import { LifecycleMenu } from '../components/LifecycleMenu.js';
 import { PageHeader } from '../components/PageHeader.js';
 import { PageStatus } from '../components/PageStatus.js';
 import { PagePresence } from '../components/PagePresence.js';
+import { PageConnections } from '../components/PageConnections.js';
+import { blockSourcesOf } from '../lib/links.js';
 import { ErrorNote, Loading } from '../components/ui.js';
 
 const CRUMB = 'min-w-0 max-w-[12rem] truncate rounded px-1 py-0.5 text-muted hover:bg-hover hover:text-fg';
@@ -91,6 +94,7 @@ export function PagePage() {
   const { capture: captureId } = useSearch({ from: '/w/$tenantSlug/p/$pageId' });
   const { data: captureChanges } = usePageCaptureChanges(pageId, captureId);
   const { data: suggestions } = usePageSuggestions(pageId);
+  const { data: connections } = usePageConnections(pageId);
   const openSuggestions = (suggestions ?? []).filter((s) => s.status === 'open');
   const [showSuggestions, setShowSuggestions] = useState(false);
   const historyOpen = useHistoryOpen(pageId);
@@ -183,7 +187,10 @@ export function PagePage() {
           archived={archived}
           error={livePage.error}
           retry={livePage.retry}
+          place={{ pageId, spaceId: page.spaceId }}
+          sources={connections ? blockSourcesOf(connections) : []}
         />
+        <PageConnections pageId={pageId} />
         {historyOpen && (
           <HistoryDrawer
             pageId={pageId}

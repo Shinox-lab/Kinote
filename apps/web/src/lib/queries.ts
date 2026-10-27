@@ -6,6 +6,7 @@ import { canAdminister } from './console.js';
 import { loadSession } from './session.js';
 import { capturesBusy } from './capture.js';
 import { pagePoll } from './wiki.js';
+import { createTitleBatcher } from './links.js';
 
 // Query keys and hooks. Every key of a workspace starts with its tenant id, so
 // switching workspaces never shows another workspace's cached answers.
@@ -289,5 +290,24 @@ export function usePageCaptureChanges(pageId: string, captureId: string | undefi
     queryKey: useTenantKey('page', pageId, 'capture-changes', captureId),
     queryFn: () => api.pageCaptureChanges(pageId, captureId!),
     enabled: captureId !== undefined,
+  });
+}
+
+const loadTitle = createTitleBatcher((ids) => api.documentTitles(ids));
+
+/** A link target's current title; null when the reader can't open it (archived, or no access). */
+export function useDocumentTitle(documentId: string) {
+  return useQuery({
+    queryKey: useTenantKey('doc-title', documentId.toLowerCase()),
+    queryFn: () => loadTitle(documentId),
+    staleTime: 60_000,
+  });
+}
+
+/** Pages linking to a page, and the document pages the routing engine joined to it, both ways. */
+export function usePageConnections(pageId: string) {
+  return useQuery({
+    queryKey: useTenantKey('page', pageId, 'connections'),
+    queryFn: () => api.pageConnections(pageId),
   });
 }

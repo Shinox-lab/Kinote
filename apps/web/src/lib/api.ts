@@ -33,6 +33,9 @@ import {
   PageDetailsSchema,
   PageSummarySchema,
   RecentResponseSchema,
+  LinkTargetListSchema,
+  DocumentTitleListSchema,
+  PageConnectionsSchema,
   RetryVersionResponseSchema,
   ReviewListSchema,
   UpdatesResponseSchema,
@@ -286,6 +289,11 @@ export const api = {
     request(`/api/v1/reviews${spaceId ? `?space_id=${e(spaceId)}` : ''}`, ReviewListSchema),
   updates: (limit = 8) => request(`/api/v1/updates?limit=${limit}`, UpdatesResponseSchema),
   recent: (limit = 3) => request(`/api/v1/recent?limit=${limit}`, RecentResponseSchema),
+
+  // Links
+  linkTargets: (q: string) => request(`/api/v1/link-targets?q=${e(q)}`, LinkTargetListSchema),
+  documentTitles: (ids: string[]) => request(`/api/v1/documents/titles?ids=${ids.map(e).join(',')}`, DocumentTitleListSchema),
+  pageConnections: (pageId: string) => request(`/api/v1/pages/${e(pageId)}/connections`, PageConnectionsSchema),
   approveVersion: (id: string, body: ApproveVersionRequest = {}) =>
     request(`/api/v1/versions/${e(id)}/approve`, VersionSummarySchema, send('POST', body)),
   rejectVersion: (id: string, body: RejectVersionRequest) =>

@@ -21,6 +21,8 @@
     "mammoth": "1.13.0",
     "marked": "18.1.1",
     "pdfjs-dist": "6.4.299",
+    "prosemirror-state": "^1.4.4",
+    "prosemirror-view": "^1.42.6",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "read-excel-file": "9.3.12",

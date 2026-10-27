@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { Suspense, lazy, useEffect, useRef, useState } from 'react';
 import { Outlet, useRouterState } from '@tanstack/react-router';
 import { UploadPanel } from '../components/sidebar/UploadPanel.js';
 import { Sidebar } from '../components/sidebar/Sidebar.js';
@@ -17,6 +17,10 @@ import { UploadsProvider } from '../lib/useUploads.js';
 import { useWorkspace } from '../lib/queries.js';
 import { useFocusTrap } from '../lib/useFocusTrap.js';
 import { useMediaQuery } from '../lib/useMediaQuery.js';
+import { usePeek } from '../lib/usePeek.js';
+
+// The side panel carries the editor: load it only when a page is peeked.
+const PagePeek = lazy(() => import('../components/PagePeek.js').then((m) => ({ default: m.PagePeek })));
 
 /**
  * The shell of `/w/$tenantSlug`: one sidebar on the left (a column on a wide
@@ -33,6 +37,7 @@ export function WorkspaceLayout() {
 }
 
 function Shell() {
+  const { peekId } = usePeek();
   const isDesktop = useMediaQuery(`(min-width: ${SIDEBAR_BREAKPOINT_PX}px)`);
   const [collapsed, setCollapsed] = useState(() => loadCollapsed());
   const [slideOver, setSlideOver] = useState(false);
@@ -118,6 +123,12 @@ function Shell() {
               <Outlet />
             </main>
           </div>
+
+          {peekId && (
+            <Suspense fallback={null}>
+              <PagePeek pageId={peekId} />
+            </Suspense>
+          )}
 
           {/* The sidebar holds the upload panel; with it hidden, the panel floats so progress and refusals stay visible. */}
           {!column && !slideOver && <UploadPanel floating />}

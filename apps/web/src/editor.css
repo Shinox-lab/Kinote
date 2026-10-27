@@ -99,3 +99,43 @@
     padding-inline: 0;
   }
 }
+
+/* A page link: the target's title, underlined quietly; a missing target is struck through and inert. */
+.bn-container .bn-editor .page-link {
+  color: var(--accent-text);
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--accent-text) 35%, transparent);
+  text-underline-offset: 3px;
+}
+
+.bn-container .bn-editor .page-link:hover {
+  text-decoration-color: currentColor;
+}
+
+.bn-container .bn-editor .page-link-unavailable {
+  color: var(--muted);
+  cursor: default;
+  text-decoration: line-through;
+}
+
+/* "From: <document page>" after a block the routing engine changed from a document. */
+.bn-container .bn-editor .block-source {
+  background: var(--routing-tint);
+  border: 1px solid color-mix(in srgb, var(--routing) 35%, transparent);
+  border-radius: 999px;
+  color: var(--fg);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.5;
+  margin-left: 8px;
+  padding: 0 7px;
+  user-select: none;
+  vertical-align: 1px;
+  white-space: nowrap;
+}
+
+.bn-container .bn-editor .block-source:hover {
+  border-color: var(--routing);
+}

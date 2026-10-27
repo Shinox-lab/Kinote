@@ -21,6 +21,7 @@ import { SpacesPage } from './routes/admin/spaces.js';
 import { parseFileSearch } from './lib/documentLink.js';
 import { parseReviewSearch } from './lib/review.js';
 import { parseSearchSearch } from './lib/search.js';
+import { parsePeekSearch } from './lib/links.js';
 import { WorkspaceLayout } from './routes/layout.js';
 import { ReviewsPage } from './routes/reviews.js';
 import { CapturePage } from './routes/capture.js';
@@ -120,6 +121,8 @@ const indexRoute = createRoute({
 const workspaceRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/w/$tenantSlug',
+  // Any workspace screen can show a page in the side panel.
+  validateSearch: parsePeekSearch,
   beforeLoad: async ({ params, location }) => {
     const session = requireSession(location.href);
     const me = await loadMe(30_000);
