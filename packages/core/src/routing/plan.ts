@@ -345,6 +345,11 @@ async function gatherCandidates(
       blocks: new Map(live.blocks.map((b) => [b.id, b])),
       card: {
         documentId: id,
+        spaceId: doc.spaceId,
+        parentId: doc.parentId,
+        path: [],
+        siblings: [],
+        children: [],
         title: doc.title,
         summary: card?.summary ?? '',
         outline: card?.outline ?? [],

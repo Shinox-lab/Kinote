@@ -23,12 +23,30 @@ export interface CaptureFact {
   names: string[];
   date: string | null;
 }
-/** A page the planner may edit: its card, outline and live top-level blocks (at most 40). */
+/** Whether a capture is a document (it also gets its own page) or updates, as the split judged it. */
+export interface CaptureShape {
+  shape: 'document' | 'updates';
+  confidence: number;
+  /** Who or what the capture is about, e.g. the client in "meeting with Ryko". */
+  subject: string | null;
+  /** A title for a document's page. */
+  title: string | null;
+}
+/**
+ * A page the planner may edit: its card, outline and live top-level blocks
+ * (at most 40), and where it sits: its ancestors' titles (root first) and up
+ * to 10 sibling and 10 child titles, newest first.
+ */
 export interface PlanCandidate {
   documentId: string;
+  spaceId: string;
+  parentId: string | null;
   title: string;
   summary: string;
   outline: string[];
+  path: string[];
+  siblings: string[];
+  children: string[];
   blocks: Array<{ id: string; type: string; text: string }>;
 }
 export type PlannedOp =
@@ -46,6 +64,25 @@ export interface PlanEditsInput {
   fact: CaptureFact;
   candidates: PlanCandidate[];
   /** Earlier corrections in the candidates' spaces (R11). */
+  examples: Array<{ statement: string; chosenTitle: string }>;
+  writableSpaces: Array<{ id: string; name: string }>;
+  /** Set when the fact comes from a document already filed as its own page: only standing changes are wanted. */
+  fromDocument?: { title: string } | null;
+}
+/** Where a document's page goes: under `parentId` in `spaceId`, or at the top of the space. */
+export interface DocumentPlacement {
+  spaceId: string;
+  parentId: string | null;
+  title: string;
+  confidence: number;
+  reason: string;
+}
+export interface PlaceDocumentInput {
+  title: string;
+  subject: string | null;
+  /** The capture's first part (at most 3,000 characters). */
+  text: string;
+  candidates: PlanCandidate[];
   examples: Array<{ statement: string; chosenTitle: string }>;
   writableSpaces: Array<{ id: string; name: string }>;
 }
@@ -126,9 +163,27 @@ const FactItem = z.object({
     .transform((list) => validItems(list, Name, 10)),
   date: z.string().trim().min(1).max(40).nullable().catch(null).default(null),
 });
-const FactsSchema = z.object({
-  facts: z.array(z.unknown()).transform((list) => validItems(list, FactItem, MAX_FACTS)),
-});
+const FactsSchema = z
+  .object({
+    facts: z.array(z.unknown()).transform((list) => validItems(list, FactItem, MAX_FACTS)),
+    shape: z.unknown().optional(),
+    confidence: z.number().catch(0).optional(),
+    subject: z.string().trim().min(1).max(120).nullable().catch(null).optional(),
+    title: z.string().trim().min(1).max(200).nullable().catch(null).optional(),
+  })
+  .transform(({ facts, shape, confidence, subject, title }) => ({
+    facts,
+    // No shape in the answer at all: the caller treats the capture as updates.
+    shape:
+      shape === undefined
+        ? null
+        : {
+            shape: shape === 'document' ? ('document' as const) : ('updates' as const),
+            confidence: Math.min(1, Math.max(0, confidence ?? 0)),
+            subject: subject ?? null,
+            title: title ?? null,
+          },
+  }));
 const OpSchema: z.ZodType<PlannedOp, z.ZodTypeDef, unknown> = z.discriminatedUnion('op', [
   z.object({ op: z.literal('insert_after'), documentId: Id, after: Id.nullable(), markdown: Text }),
   z.object({ op: z.literal('replace'), documentId: Id, blockId: Id, markdown: Text }),
@@ -150,6 +205,22 @@ const EditItem = z.preprocess(
     reason: z.string().trim().max(300).catch(''),
   })
 );
+const PlacementItem = z.object({
+  spaceId: Id,
+  parentId: Id.nullable().catch(null),
+  title: Name,
+  confidence: z.number().transform((n) => Math.min(1, Math.max(0, n))),
+  reason: z.string().trim().max(300).catch(''),
+});
+const PlacementsSchema = z.object({
+  placements: z.array(z.unknown()).transform((list, ctx) => {
+    const placements = validItems(list, PlacementItem, 3);
+    if (list.length > 0 && placements.length === 0) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'no placement matched the shape asked for' });
+    }
+    return placements;
+  }),
+});
 const EditsSchema = z.object({
   edits: z.array(z.unknown()).transform((list, ctx) => {
     const edits = validItems(list, EditItem, MAX_EDITS);
@@ -167,8 +238,11 @@ const UNTRUSTED =
 
 /** The model behind page cards, entity extraction and routing captures into edits. */
 export interface RoutingModel extends PlacementModel {
-  splitCapture(input: { text: string }): Promise<{ facts: CaptureFact[] }>;
+  /** Facts, and the capture's shape (null when the answer gave none). */
+  splitCapture(input: { text: string }): Promise<{ facts: CaptureFact[]; shape: CaptureShape | null }>;
   planEdits(input: PlanEditsInput): Promise<{ edits: PlannedEdit[] }>;
+  /** Where a document's page goes, best first, at most 3. */
+  placeDocument(input: PlaceDocumentInput): Promise<{ placements: DocumentPlacement[] }>;
 }
 
 // --- Deterministic model (tests and local runs) -----------------------------
@@ -192,6 +266,25 @@ function sentences(text: string): string[] {
 }
 
 const REMOVAL_RE = /\bno longer\s+(.+?)[.!?]?$/i;
+/** A list item or heading line: what makes a note a document. */
+const MARKER_RE = /^(?:[-*#]+|\d+\.)\s*/;
+/** Capitalised words that are dates, never a document's subject. */
+const DATE_WORDS = new Set(
+  'Jan Feb Mar Apr May Jun Jul Aug Sep Sept Oct Nov Dec January February March April June July August September October November December Monday Tuesday Wednesday Thursday Friday Saturday Sunday'.split(' ')
+);
+
+/** The deterministic shape: at least 4 lines, 3 of them list items or headings. */
+function deterministicShape(text: string): CaptureShape {
+  const lines = text.split('\n').map((l) => l.trim()).filter((l) => l.length > 0);
+  const marked = lines.filter((l) => MARKER_RE.test(l)).length;
+  if (lines.length < 4 || marked < 3) return { shape: 'updates', confidence: 0.9, subject: null, title: null };
+  const title = lines[0]!.replace(/^[#*\-\s]+/, '').replace(/^\*\*(.*)\*\*$/, '$1').trim().slice(0, 120);
+  const subject =
+    [...title.matchAll(NAME_RE)]
+      .map((m) => m[0].split(' ').filter((w) => !SENTENCE_START_STOP_WORDS.has(w) && !DATE_WORDS.has(w)).join(' '))
+      .find((name) => name.length > 0) ?? null;
+  return { shape: 'document', confidence: 0.8, subject, title };
+}
 const CHANGE_RE = /\b(moved|changed|now|replaced|instead)\b/i;
 
 /** Lower-cased, single spaces, no closing punctuation: how "already says this" compares. */
@@ -242,13 +335,38 @@ export class DeterministicPlacementModel implements RoutingModel {
   }
 
   async splitCapture({ text }: { text: string }) {
+    const shape = deterministicShape(text);
+    let lines = text.split('\n').map((l) => l.trim().replace(MARKER_RE, ''));
+    // A document's title line names the page; it is not a fact.
+    if (shape.shape === 'document') lines = lines.slice(lines.findIndex((l) => l.length > 0) + 1);
     const facts: CaptureFact[] = [];
-    for (const statement of sentences(text)) {
+    for (const statement of sentences(lines.join('\n'))) {
       const { entities } = await this.extractEntities({ title: '', headingPath: [], text: statement });
       const kind = REMOVAL_RE.test(statement) ? 'removal' : CHANGE_RE.test(statement) ? 'change' : 'new';
-      facts.push({ statement, kind, names: entities.map((e) => e.name), date: null });
+      const names = entities.map((e) => e.name);
+      if (shape.subject && !names.some((n) => n.toLowerCase() === shape.subject!.toLowerCase())) names.push(shape.subject);
+      facts.push({ statement, kind, names, date: null });
     }
-    return { facts };
+    return { facts, shape };
+  }
+
+  /**
+   * Candidates naming the subject first, then the rest: the first with
+   * children becomes the parent; else the first with a parent and siblings
+   * puts the page beside it. Nothing qualifies: no placement.
+   */
+  async placeDocument({ title, subject, candidates }: PlaceDocumentInput) {
+    const s = subject?.toLowerCase();
+    const ordered = s
+      ? [...candidates.filter((c) => c.title.toLowerCase().includes(s)), ...candidates.filter((c) => !c.title.toLowerCase().includes(s))]
+      : candidates;
+    for (const c of ordered) {
+      const parentId = c.children.length > 0 ? c.documentId : c.parentId && c.siblings.length > 0 ? c.parentId : null;
+      if (parentId) {
+        return { placements: [{ spaceId: c.spaceId, parentId, title, confidence: 0.8, reason: 'Pages like this live here.' }] };
+      }
+    }
+    return { placements: [] as DocumentPlacement[] };
   }
 
   /**
@@ -258,7 +376,7 @@ export class DeterministicPlacementModel implements RoutingModel {
    * naming one of the fact's names; otherwise the fact goes after the last
    * block of the first candidate at 0.5. Never creates a page.
    */
-  async planEdits({ fact, candidates }: PlanEditsInput) {
+  async planEdits({ fact, candidates, fromDocument }: PlanEditsInput) {
     const edit = (op: PlannedOp, confidence: number, reason: string) => ({ edits: [{ op, confidence, reason }] });
     const blocks = candidates.flatMap((c) => c.blocks.map((b) => ({ ...b, documentId: c.documentId })));
     const statement = comparable(fact.statement);
@@ -293,7 +411,8 @@ export class DeterministicPlacementModel implements RoutingModel {
       );
     }
     const first = candidates[0];
-    if (!first) return { edits: [] };
+    // A document's fact with nothing named stays on the document's page.
+    if (!first || fromDocument) return { edits: [] };
     return edit(
       { op: 'insert_after', documentId: first.documentId, after: first.blocks.at(-1)?.id ?? null, markdown: fact.statement },
       0.5,
@@ -345,7 +464,12 @@ export class OpenAIPlacementModel implements RoutingModel {
     return chatJson(this.opts, {
       system:
         `You split a note someone sent into separate facts to file into their wiki. ${UNTRUSTED} ` +
-        'Return {"facts": [{"statement", "kind", "names", "date"}]}. statement is one self-contained sentence; ' +
+        'Return {"shape", "confidence", "subject", "title", "facts": [{"statement", "kind", "names", "date"}]}. ' +
+        'shape is "document" when the note stands on its own as a record (meeting notes, minutes, a report, a call summary), ' +
+        'or "updates" when it is statements about things the wiki already holds; confidence is 0 to 1; ' +
+        'subject is who or what the note is about (for example the client in "meeting with Ryko") or null; ' +
+        'title is a short title for the note as its own page, or null. ' +
+        'statement is one self-contained sentence that carries the subject (for example "On the RYKO website, ..."); ' +
         'kind is "new" (not known before), "change" (replaces something known) or "removal" (something stopped being true); ' +
         'names are the people, teams, systems, organisations, projects and places it mentions; date is ISO 8601 or null.',
       user: `Note:\n${text}`,
@@ -353,14 +477,19 @@ export class OpenAIPlacementModel implements RoutingModel {
     });
   }
 
-  planEdits({ fact, candidates, examples, writableSpaces }: PlanEditsInput) {
+  planEdits({ fact, candidates, examples, writableSpaces, fromDocument }: PlanEditsInput) {
     const pages = candidates
       .map(
         (c) =>
-          `## Page ${c.documentId}: ${c.title}\nSummary: ${c.summary}\nOutline: ${c.outline.join(' | ') || '(none)'}\n` +
+          `## Page ${c.documentId}: ${c.title}\n${treeLine(c)}\nSummary: ${c.summary}\nOutline: ${c.outline.join(' | ') || '(none)'}\n` +
           c.blocks.map((b) => `[${b.id}] (${b.type}) ${b.text}`).join('\n')
       )
       .join('\n\n');
+    const documentRule = fromDocument
+      ? ` This fact comes from the document "${fromDocument.title}", which is already filed as its own page. ` +
+        'Propose an edit only where the fact changes or adds to what another page states as standing information; ' +
+        'otherwise return no edits. Never create a page.'
+      : '';
     return chatJson(this.opts, {
       system:
         `You file one fact into a wiki by proposing edits to the pages given. ${UNTRUSTED} ` +
@@ -371,7 +500,8 @@ export class OpenAIPlacementModel implements RoutingModel {
         '{"op":"create_page","spaceId","parentId","title","markdown","confidence","reason"}, ' +
         '{"op":"already_known","documentId","blockId","confidence","reason"}. ' +
         'Prefer updating the block that already covers the subject; create a page only when no page fits. ' +
-        'Use only page and block ids shown. confidence is 0 to 1; reason is one short sentence.',
+        'Use only page and block ids shown. confidence is 0 to 1; reason is one short sentence.' +
+        documentRule,
       user:
         `Fact (${fact.kind}): ${fact.statement}\n` +
         (examples.length ? `Earlier corrections:\n${examples.map((e) => `- "${e.statement}" belongs on "${e.chosenTitle}"`).join('\n')}\n` : '') +
@@ -379,6 +509,31 @@ export class OpenAIPlacementModel implements RoutingModel {
       schema: EditsSchema,
     });
   }
+
+  placeDocument({ title, subject, text, candidates, examples, writableSpaces }: PlaceDocumentInput) {
+    const pages = candidates
+      .map((c) => `## Page ${c.documentId} in space ${c.spaceId}: ${c.title}\n${treeLine(c)}\nSummary: ${c.summary}`)
+      .join('\n\n');
+    return chatJson(this.opts, {
+      system:
+        `You choose where a document (meeting notes, minutes, a report) is filed as a new page in a wiki. ${UNTRUSTED} ` +
+        'Return {"placements": [{"spaceId","parentId","title","confidence","reason"}]}, best first, at most 3. ' +
+        'parentId is the page it goes under, or null for the top of the space. Choose the parent where pages like this ' +
+        'already live (look at each page\'s children and siblings), and title the page the way its siblings are titled. ' +
+        'Use only page and space ids shown. confidence is 0 to 1; reason is one short sentence.',
+      user:
+        `Document title: ${title}\nSubject: ${subject ?? '(none)'}\n` +
+        (examples.length ? `Earlier corrections:\n${examples.map((e) => `- "${e.statement}" went under "${e.chosenTitle}"`).join('\n')}\n` : '') +
+        `Spaces it may go in: ${writableSpaces.map((w) => `${w.id} (${w.name})`).join(', ') || '(none)'}\n\n` +
+        `${pages || '(no pages)'}\n\nDocument:\n${text}`,
+      schema: PlacementsSchema,
+    });
+  }
+}
+
+/** Where a candidate sits in the page tree, for the model. */
+function treeLine(c: PlanCandidate): string {
+  return `Path: ${c.path.join(' > ') || '(top)'} | Siblings: ${c.siblings.join(', ') || '(none)'} | Children: ${c.children.join(', ') || '(none)'}`;
 }
 
 export const defaultPlacementModel: RoutingModel = new DeterministicPlacementModel();
