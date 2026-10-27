@@ -9,6 +9,7 @@ import {
   captureMessages,
   captures,
   citations,
+  documents,
   jobs,
   suggestions,
   versions,
@@ -258,5 +259,114 @@ describe('routeCapture', () => {
     expect(texts(await liveBlocks(w, billing.documentId))).toEqual(['Billing moved to Adyen.']);
     const [capture] = await withTenantTx(w.tenantId, (tx) => tx.select().from(captures));
     expect(capture!.status).toBe('waiting_for_answer');
+  });
+
+  describe('documents', () => {
+    const NOTE = 'Oct 14 meeting with George\n- George hero video swap.\n- Shop the look.\n- George launch moved to December.';
+    const TITLE = 'Oct 14 meeting with George';
+
+    async function georgeWorld() {
+      const w = await routingWorld();
+      const clients = await addRoutingSpace(w, { name: 'Clients' });
+      const george = await livePage(w, clients, 'Client - George', 'George is a client. Launch is in November.');
+      await livePage(w, clients, 'Meeting 1', 'First meeting agenda.', { parentId: george.documentId });
+      await livePage(w, clients, '29Sep', 'Hero video notes.', { parentId: george.documentId });
+      return { w, clients, george };
+    }
+    const pagesTitled = (w: { tenantId: string }, title: string) =>
+      withTenantTx(w.tenantId, (tx) =>
+        tx.select().from(documents).where(and(eq(documents.tenantId, w.tenantId), eq(documents.title, title)))
+      );
+    const factsOf = (w: { tenantId: string }) =>
+      withTenantTx(w.tenantId, (tx) => tx.select().from(captureFacts).orderBy(captureFacts.ordinal));
+
+    it('a meeting note becomes a page under the client page and its facts update standing pages', async () => {
+      const { w, george } = await georgeWorld();
+      const captureId = await addCapture(w, w.userId, NOTE);
+      expect(await route(w.tenantId, captureId)).toBe('done');
+
+      const [page] = await pagesTitled(w, TITLE);
+      expect(page).toMatchObject({ parentId: george.documentId, archivedAt: null, createdByType: 'agent' });
+      expect(texts(await liveBlocks(w, page!.id))).toEqual(expect.arrayContaining(['George hero video swap.', 'Shop the look.', 'George launch moved to December.']));
+      const [capture] = await withTenantTx(w.tenantId, (tx) => tx.select().from(captures));
+      expect(capture).toMatchObject({ shape: 'document', documentOutcome: 'created', documentPageId: page!.id, documentTitle: TITLE, subject: 'George' });
+
+      const facts = await factsOf(w);
+      const outcome = (statement: string) => facts.find((f) => f.statement === statement)?.outcome;
+      expect(outcome('George launch moved to December.')).toBe('applied');
+      expect(outcome('Shop the look.')).toBe('filed_in_document');
+      expect(texts(await liveBlocks(w, george.documentId))).toContain('George launch moved to December.');
+
+      const changes = await withTenantTx(w.tenantId, (tx) => tx.select().from(captureChanges));
+      const own = changes.filter((c) => c.documentId === page!.id);
+      expect(own.length).toBeGreaterThan(0);
+      expect(own.every((c) => c.factId === null)).toBe(true);
+      expect(own[0]!.op).toBe('create_page');
+      const cites = await withTenantTx(w.tenantId, (tx) => tx.select().from(citations).where(eq(citations.pageId, page!.id)));
+      expect(cites.length).toBe(own.length);
+    });
+
+    it('a retried run makes no second page', async () => {
+      const { w } = await georgeWorld();
+      const captureId = await addCapture(w, w.userId, NOTE);
+      await route(w.tenantId, captureId);
+      await withTenantTx(w.tenantId, async (tx) => {
+        await tx.update(captures).set({ status: 'queued' }).where(eq(captures.id, captureId));
+        await tx.update(captureFacts).set({ outcome: 'pending' }).where(eq(captureFacts.outcome, 'applied'));
+      });
+      expect(await route(w.tenantId, captureId)).toBe('done');
+      expect(await pagesTitled(w, TITLE)).toHaveLength(1);
+    });
+
+    it('Updates only on a list makes no page; New page on one line does', async () => {
+      const { w, george } = await georgeWorld();
+      await route(w.tenantId, await addCapture(w, w.userId, NOTE, { shapeMode: 'updates' }));
+      expect(await pagesTitled(w, TITLE)).toHaveLength(0);
+      const [first] = await withTenantTx(w.tenantId, (tx) => tx.select().from(captures));
+      expect(first!.shape).toBe('updates');
+
+      await route(w.tenantId, await addCapture(w, w.userId, 'George video cost is RM200.', { shapeMode: 'document' }));
+      const [page] = await pagesTitled(w, 'George video cost is RM200.');
+      expect(page).toMatchObject({ parentId: george.documentId });
+    });
+
+    it('a document with no clear parent waits with its facts', async () => {
+      const w = await routingWorld();
+      const misc = await addRoutingSpace(w, { name: 'Misc' });
+      await livePage(w, misc, 'Lunch menu', 'Soup on Monday.');
+      const captureId = await addCapture(w, w.userId, NOTE);
+      expect(await route(w.tenantId, captureId)).toBe('done');
+      const [capture] = await withTenantTx(w.tenantId, (tx) => tx.select().from(captures));
+      expect(capture).toMatchObject({ shape: 'document', documentOutcome: 'needs_home', documentPageId: null, status: 'done' });
+      expect(capture!.documentReason).toBeTruthy();
+      const facts = await factsOf(w);
+      expect(facts.length).toBeGreaterThan(0);
+      expect(facts.every((f) => f.outcome === 'pending')).toBe(true);
+    });
+
+    it('a chosen parent creates the page and routes the waiting facts', async () => {
+      const w = await routingWorld();
+      const misc = await addRoutingSpace(w, { name: 'Misc' });
+      const lunch = await livePage(w, misc, 'Lunch menu', 'Soup on Monday.');
+      const captureId = await addCapture(w, w.userId, NOTE);
+      await route(w.tenantId, captureId);
+      await withTenantTx(w.tenantId, (tx) =>
+        tx.update(captures).set({ documentParentChoice: lunch.documentId, documentOutcome: 'pending' }).where(eq(captures.id, captureId))
+      );
+      expect(await route(w.tenantId, captureId)).toBe('done');
+      const [page] = await pagesTitled(w, TITLE);
+      expect(page).toMatchObject({ parentId: lunch.documentId, spaceId: misc });
+      expect((await factsOf(w)).some((f) => f.outcome === 'pending')).toBe(false);
+    });
+
+    it('a long document takes its shape from the first part and its facts from all parts', async () => {
+      const { w } = await georgeWorld();
+      const filler = Array.from({ length: 120 }, (_, i) => `Filler line number ${i} is here.`).join(' ');
+      const text = `${NOTE}\n\n${filler} Tail sentence marker.`;
+      expect(text.length).toBeGreaterThan(3000);
+      await route(w.tenantId, await addCapture(w, w.userId, text));
+      expect(await pagesTitled(w, TITLE)).toHaveLength(1);
+      expect((await factsOf(w)).some((f) => f.statement === 'Tail sentence marker.')).toBe(true);
+    });
   });
 });

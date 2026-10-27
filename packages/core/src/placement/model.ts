@@ -374,7 +374,9 @@ export class DeterministicPlacementModel implements RoutingModel {
    * removal removes the first block holding the phrase after "no longer"; a
    * change replaces, and a new fact goes after, the first non-heading block
    * naming one of the fact's names; otherwise the fact goes after the last
-   * block of the first candidate at 0.5. Never creates a page.
+   * block of the first candidate at 0.5. Never creates a page. From a
+   * document, a new fact and the 0.5 fallback plan nothing (they stay on the
+   * document's page).
    */
   async planEdits({ fact, candidates, fromDocument }: PlanEditsInput) {
     const edit = (op: PlannedOp, confidence: number, reason: string) => ({ edits: [{ op, confidence, reason }] });
@@ -385,6 +387,8 @@ export class DeterministicPlacementModel implements RoutingModel {
     if (known) {
       return edit({ op: 'already_known', documentId: known.documentId, blockId: known.id }, 1, 'The page already says this.');
     }
+    // From a document, only what changes standing knowledge leaves the document's page.
+    if (fromDocument && fact.kind === 'new') return { edits: [] };
     if (fact.kind === 'removal') {
       const phrase = REMOVAL_RE.exec(fact.statement)?.[1]?.toLowerCase();
       const holder = phrase ? blocks.find((b) => b.text.toLowerCase().includes(phrase)) : undefined;

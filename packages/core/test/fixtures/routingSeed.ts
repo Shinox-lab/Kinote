@@ -95,7 +95,7 @@ export async function addCapture(
   w: World,
   senderId: string,
   text: string,
-  scope: { spaceId?: string; pageId?: string } = {}
+  scope: { spaceId?: string; pageId?: string; shapeMode?: 'auto' | 'document' | 'updates' } = {}
 ) {
   const [row] = await withTenantTx(w.tenantId, (tx) =>
     tx
@@ -108,6 +108,7 @@ export async function addCapture(
         text,
         scopeSpaceId: scope.spaceId ?? null,
         scopePageId: scope.pageId ?? null,
+        shapeMode: scope.shapeMode ?? 'auto',
       })
       .returning()
   );

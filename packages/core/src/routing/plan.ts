@@ -18,7 +18,7 @@ import { AppError } from '@living-wiki/contracts';
 import { blockFullText, type BlockLike } from '@living-wiki/shared';
 import type { EmbeddingProvider } from '../embedding.js';
 import type { Actor } from '../permissions.js';
-import type { CaptureFact, PlanCandidate, PlannedEdit, RoutingModel } from '../placement/model.js';
+import type { CaptureFact, CaptureShape, PlanCandidate, PlannedEdit, RoutingModel } from '../placement/model.js';
 import { findEntities, pagesForEntities, searchPageCards, type PlacementFilter } from '../placement/queries.js';
 import { searchWiki } from '../search/hybridSearch.js';
 import { senderAccess, senderActor } from './access.js';
@@ -53,7 +53,9 @@ export type FactPlan =
   | { status: 'question'; names: string[]; question: string; options: Array<{ entityId: string; label: string }> }
   | { status: 'needs_home'; reason: string }
   | { status: 'already_known'; documentId: string; blockId: string }
-  | { status: 'planned'; edits: CheckedEdit[] };
+  | { status: 'planned'; edits: CheckedEdit[] }
+  /** A document's fact with no standing change, or one the engine was unsure of: kept on the document's page only. */
+  | { status: 'filed_in_document'; reason: string };
 
 export interface PlanFactInput {
   ordinal: number;
@@ -78,6 +80,12 @@ export interface PlanDeps {
   onlyPage?: string;
   /** Runs before each fact is planned; throws to stop (the routing run lost its lease). */
   guard?: () => Promise<void>;
+  /**
+   * The facts come from a document filed as its own page (`pageId`, null in a
+   * dry run): that page is never a candidate, no question is asked, no page
+   * is created, and anything unsure is filed on the document's page.
+   */
+  fromDocument?: { pageId: string | null; title: string };
 }
 
 export interface Context {
@@ -139,12 +147,7 @@ export async function planCapture(
         pinnedEntityIds: f.pinnedEntityIds,
       }));
   } else {
-    // Part by part, so a long capture never runs into the per-split fact limit.
-    const split: CaptureFact[] = [];
-    for (const part of captureParts(loaded.capture.text)) {
-      await deps.guard?.();
-      split.push(...(await deps.model.splitCapture({ text: part })).facts);
-    }
+    const split = (await splitCaptureText(loaded.capture.text, deps.model, deps.guard)).facts;
     if (split.length === 0) {
       // Nothing came out of it: the whole text waits for a person, never silently dropped.
       const fact: CaptureFact = { statement: loaded.capture.text.slice(0, 4000), kind: 'new', names: [], date: null };
@@ -164,9 +167,38 @@ export async function planCapture(
   const out: PlannedFact[] = [];
   for (const input of facts) {
     await deps.guard?.();
-    out.push({ ...input, plan: await planFact(tenantId, loaded.context, input, deps) });
+    let plan = await planFact(tenantId, loaded.context, input, deps);
+    if (deps.fromDocument && plan.status === 'needs_home') plan = { status: 'filed_in_document', reason: plan.reason };
+    out.push({ ...input, plan });
   }
   return out;
+}
+
+/**
+ * Splits a capture part by part, so a long capture never runs into the
+ * per-split fact limit. The shape is the first part's: that is where a
+ * document's title and structure are.
+ */
+export async function splitCaptureText(
+  text: string,
+  model: RoutingModel,
+  guard?: () => Promise<void>
+): Promise<{ facts: CaptureFact[]; shape: CaptureShape | null }> {
+  const facts: CaptureFact[] = [];
+  let shape: CaptureShape | null = null;
+  for (const [i, part] of captureParts(text).entries()) {
+    await guard?.();
+    const out = await model.splitCapture({ text: part });
+    facts.push(...out.facts);
+    if (i === 0) shape = out.shape;
+  }
+  return { facts, shape };
+}
+
+/** The sender's choice wins; on auto a capture is a document only when the model is sure enough. */
+export function decideShape(mode: 'auto' | 'document' | 'updates', shape: CaptureShape | null): 'document' | 'updates' {
+  if (mode !== 'auto') return mode;
+  return shape?.shape === 'document' && shape.confidence >= ROUTING.document ? 'document' : 'updates';
 }
 
 /** Who the capture's sender is, what they may read and edit, and the capture's scope. */
@@ -288,8 +320,17 @@ export function captureParts(text: string): string[] {
 async function planFact(tenantId: string, ctx: Context, input: PlanFactInput, deps: PlanDeps): Promise<FactPlan> {
   const { fact, pinnedEntityIds } = input;
 
-  // 1. Resolve the names, asking when two entities fit about equally well.
-  const { resolved, ambiguous } = await resolveNames(tenantId, ctx, fact.names, pinnedEntityIds);
+  // 1. Resolve the names, asking when two entities fit about equally well
+  //    (a document's facts never ask: an ambiguous name is skipped).
+  const resolved: string[] = [];
+  let ambiguous: Awaited<ReturnType<typeof resolveNames>>['ambiguous'] = null;
+  if (deps.fromDocument) {
+    for (const name of fact.names) resolved.push(...(await resolveNames(tenantId, ctx, [name], pinnedEntityIds)).resolved);
+  } else {
+    const r = await resolveNames(tenantId, ctx, fact.names, pinnedEntityIds);
+    resolved.push(...r.resolved);
+    ambiguous = r.ambiguous;
+  }
   if (ambiguous) {
     return {
       status: 'question',
@@ -302,19 +343,22 @@ async function planFact(tenantId: string, ctx: Context, input: PlanFactInput, de
   // 2. Gather candidate pages from passages, cards and the graph, fused.
   const [vector] = await deps.embedder.embed([fact.statement], 'query');
   const { candidates, examples } = await withTenantTx(tenantId, async (tx) => {
-    const candidates = await gatherCandidates(tx, ctx, fact, vector!, resolved);
+    const candidates = await gatherCandidates(tx, ctx, fact, vector!, resolved, deps.fromDocument?.pageId ?? undefined);
     const spaceIds = [...new Set([...candidates.values()].map((c) => c.spaceId))];
     return { candidates, examples: await similarExamples(tx, tenantId, spaceIds, vector!) };
   });
   if (candidates.size === 0) return { status: 'needs_home', reason: 'No page you can read is about this.' };
 
   // 3. Plan, shown how people corrected similar facts in these spaces (R11).
-  const { edits } = await deps.model.planEdits({
+  const planned = await deps.model.planEdits({
     fact,
     candidates: [...candidates.values()].map((c) => c.card),
     examples,
     writableSpaces: ctx.writableSpaces,
+    fromDocument: deps.fromDocument ? { title: deps.fromDocument.title } : null,
   });
+  // A document's facts never create pages: the document already is one.
+  const edits = deps.fromDocument ? planned.edits.filter((e) => e.op.op !== 'create_page') : planned.edits;
 
   // 4. Check.
   return checkEdits(tenantId, ctx, candidates, edits, deps);

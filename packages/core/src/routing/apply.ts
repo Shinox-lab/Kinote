@@ -24,7 +24,8 @@ import type { EmbeddingProvider } from '../embedding.js';
 import type { RoutingModel } from '../placement/model.js';
 import { takePageSnapshot } from '../snapshot.js';
 import { blockMarkdown, encodeBlocksYDoc, markdownBlocks, readLiveBlocks } from './liveBlocks.js';
-import { planCapture, type CheckedEdit, type Gate, type PlannedFact } from './plan.js';
+import { decideShape, planCapture, splitCaptureText, type CheckedEdit, type Gate, type PlannedFact } from './plan.js';
+import { planDocument, uniqueChildTitle } from './document.js';
 import { ensureRouterAgent } from './routerAgent.js';
 
 /** How long one routing run may hold the tenant's lease (R13). */
@@ -74,13 +75,177 @@ export async function routeCapture(
         .set({ status: 'routing', error: null })
         .where(and(eq(captures.tenantId, tenantId), eq(captures.id, captureId)))
     );
-    const planned = await planCapture({ tenantId, captureId }, { model: deps.model, embedder: deps.embedder, now, guard });
+    let capture = await ensureSplit(tenantId, captureId, { ...deps, guard });
+    if (capture.shape === 'document') {
+      // Waiting for a person to choose where the page goes: the facts wait with it.
+      if (capture.documentOutcome === 'needs_home') return await finishCapture(tenantId, captureId);
+      if (capture.documentOutcome !== 'created') {
+        capture = await placeDocumentPage(tenantId, capture, { ...deps, guard });
+        if (capture.documentOutcome !== 'created') return await finishCapture(tenantId, captureId);
+      }
+    }
+    const fromDocument =
+      capture.shape === 'document' && capture.documentPageId
+        ? { pageId: capture.documentPageId, title: capture.documentTitle ?? '' }
+        : undefined;
+    const planned = await planCapture(
+      { tenantId, captureId },
+      { model: deps.model, embedder: deps.embedder, now, guard, fromDocument }
+    );
     await deps.hooks?.afterPlan?.();
-    await applyPlannedFacts(tenantId, captureId, planned, { ...deps, guard });
+    await applyPlannedFacts(tenantId, captureId, planned, { ...deps, guard }, fromDocument ? 'filed_in_document' : 'needs_home');
     return await finishCapture(tenantId, captureId);
   } finally {
     await withTenantTx(tenantId, (tx) => releaseRoutingLease(tx, tenantId, holder));
   }
+}
+
+type CaptureRow = typeof captures.$inferSelect;
+
+/** Most characters of a capture kept as one fact when nothing could be split out of it. */
+const UNSPLIT_FACT_CHARS = 4000;
+
+/** A document's title when the model gave none: its first line without list or heading marks. */
+function firstLineTitle(text: string): string {
+  const line = text.split('\n').map((l) => l.trim()).find((l) => l.length > 0) ?? '';
+  return line.replace(/^[#*\-\s]+/, '').replace(/^\*\*(.*)\*\*$/, '$1').trim().slice(0, 120) || 'Capture';
+}
+
+/**
+ * Splits the capture once and stores what came out: its facts (pending) and
+ * its shape, subject and title, in one transaction. A capture already split
+ * is returned as it is, so a retried run never splits twice. An updates
+ * capture with nothing to split waits whole in Needs a home; a document
+ * with no facts still gets its page.
+ */
+export async function ensureSplit(tenantId: string, captureId: string, deps: RouteDeps): Promise<CaptureRow> {
+  const loaded = await withTenantTx(tenantId, async (tx) => {
+    const [capture] = await tx.select().from(captures).where(and(eq(captures.tenantId, tenantId), eq(captures.id, captureId)));
+    if (!capture) throw new AppError('capture_not_found');
+    const [fact] = await tx
+      .select({ id: captureFacts.id })
+      .from(captureFacts)
+      .where(and(eq(captureFacts.tenantId, tenantId), eq(captureFacts.captureId, captureId)))
+      .limit(1);
+    return { capture, split: !!fact || capture.shape !== null };
+  });
+  if (loaded.split) return loaded.capture;
+
+  const { facts, shape } = await splitCaptureText(loaded.capture.text, deps.model, deps.guard);
+  const decided = decideShape(loaded.capture.shapeMode, shape);
+  await deps.guard?.();
+  return withTenantTx(tenantId, async (tx) => {
+    if (facts.length > 0) {
+      await tx.insert(captureFacts).values(
+        facts.map((f, ordinal) => ({ tenantId, captureId, ordinal, statement: f.statement, kind: f.kind, names: f.names, date: f.date }))
+      );
+    } else if (decided === 'updates') {
+      await tx.insert(captureFacts).values({
+        tenantId,
+        captureId,
+        ordinal: 0,
+        statement: loaded.capture.text.slice(0, UNSPLIT_FACT_CHARS),
+        kind: 'new',
+        outcome: 'needs_home',
+        reason: 'This capture could not be split into facts.',
+      });
+    }
+    const [row] = await tx
+      .update(captures)
+      .set({
+        shape: decided,
+        subject: shape?.subject ?? null,
+        documentTitle: decided === 'document' ? (shape?.title ?? firstLineTitle(loaded.capture.text)) : null,
+      })
+      .where(and(eq(captures.tenantId, tenantId), eq(captures.id, captureId)))
+      .returning();
+    return row!;
+  });
+}
+
+/**
+ * Creates a document capture's page where a person chose, or where
+ * `planDocument` places it; when it cannot be placed the capture waits in
+ * Needs a home with the reason and parents to offer. The page id is stored
+ * in the transaction that creates the page, so a retried run never makes a
+ * second one. Returns the capture as it is now.
+ */
+async function placeDocumentPage(tenantId: string, capture: CaptureRow, deps: RouteDeps): Promise<CaptureRow> {
+  const title = capture.documentTitle ?? firstLineTitle(capture.text);
+  let place: { spaceId: string; parentId: string | null; title: string } | null = null;
+  let waiting: { reason: string; options: unknown[] } | null = null;
+
+  if (capture.documentParentChoice || capture.documentSpaceChoice) {
+    place = await withTenantTx(tenantId, async (tx) => {
+      let spaceId = capture.documentSpaceChoice;
+      const parentId = capture.documentParentChoice;
+      if (parentId) {
+        const [parent] = await tx.select().from(documents).where(and(eq(documents.tenantId, tenantId), eq(documents.id, parentId)));
+        if (!parent || parent.kind !== 'page' || parent.archivedAt) return null;
+        spaceId = parent.spaceId;
+      }
+      return { spaceId: spaceId!, parentId, title: await uniqueChildTitle(tx, tenantId, spaceId!, parentId, title) };
+    });
+    if (!place) waiting = { reason: 'The chosen page is no longer there.', options: [] };
+  } else {
+    const names = await withTenantTx(tenantId, async (tx) =>
+      (
+        await tx
+          .select({ names: captureFacts.names })
+          .from(captureFacts)
+          .where(and(eq(captureFacts.tenantId, tenantId), eq(captureFacts.captureId, capture.id)))
+      ).flatMap((f) => f.names)
+    );
+    const plan = await planDocument(
+      { tenantId, captureId: capture.id, title, subject: capture.subject, names: [...new Set(names)] },
+      { model: deps.model, embedder: deps.embedder }
+    );
+    if (plan.status === 'place') place = { spaceId: plan.spaceId, parentId: plan.parentId, title: plan.title };
+    else waiting = { reason: plan.reason, options: plan.options };
+  }
+
+  await deps.guard?.();
+  if (!place) {
+    return withTenantTx(tenantId, async (tx) => {
+      const [row] = await tx
+        .update(captures)
+        .set({ documentOutcome: 'needs_home', documentReason: waiting!.reason, documentOptions: waiting!.options })
+        .where(and(eq(captures.tenantId, tenantId), eq(captures.id, capture.id)))
+        .returning();
+      return row!;
+    });
+  }
+  const routerId = await withTenantTx(tenantId, (tx) => ensureRouterAgent(tx, tenantId));
+  const target = place;
+  await createEnginePage(
+    tenantId,
+    { ...target, markdown: capture.text },
+    {
+      captureId: capture.id,
+      factId: null,
+      quote: null,
+      routerId,
+      onCreated: async (tx, pageId) => {
+        await tx
+          .update(captures)
+          .set({ documentPageId: pageId, documentOutcome: 'created', documentTitle: target.title, documentReason: null })
+          .where(and(eq(captures.tenantId, tenantId), eq(captures.id, capture.id)));
+        await writeAuditEvent(tx, {
+          tenantId,
+          type: 'capture.document_created',
+          actorType: 'agent',
+          actorId: routerId,
+          subjectType: 'capture',
+          subjectId: capture.id,
+          payload: { pageId, parentId: target.parentId, spaceId: target.spaceId },
+        });
+      },
+    }
+  );
+  const [row] = await withTenantTx(tenantId, (tx) =>
+    tx.select().from(captures).where(and(eq(captures.tenantId, tenantId), eq(captures.id, capture.id)))
+  );
+  return row!;
 }
 
 /**
@@ -166,7 +331,9 @@ export async function applyPlannedFacts(
   tenantId: string,
   captureId: string,
   planned: PlannedFact[],
-  deps: RouteDeps
+  deps: RouteDeps,
+  /** Where a fact goes when its edits came to nothing (a document's facts stay on its page). */
+  fallback: 'needs_home' | 'filed_in_document' = 'needs_home'
 ): Promise<void> {
   const now = deps.now ?? new Date();
   await deps.guard?.();
@@ -212,6 +379,8 @@ export async function applyPlannedFacts(
         await tx.update(captureFacts).set({ outcome: 'needs_home', reason: plan.reason }).where(where);
       } else if (plan.status === 'already_known') {
         await tx.update(captureFacts).set({ outcome: 'already_known', reason: 'The wiki already says this.' }).where(where);
+      } else if (plan.status === 'filed_in_document') {
+        await tx.update(captureFacts).set({ outcome: 'filed_in_document', reason: plan.reason }).where(where);
       } else {
         await tx
           .update(captureFacts)
@@ -274,10 +443,10 @@ export async function applyPlannedFacts(
             : 'applied'
           : r.suggested > 0
             ? 'suggested'
-            : 'needs_home';
+            : fallback;
       await tx
         .update(captureFacts)
-        .set({ outcome, ...(outcome === 'needs_home' ? { reason: 'The page changed while this was being filed.' } : {}) })
+        .set({ outcome, ...(outcome === fallback ? { reason: 'The page changed while this was being filed.' } : {}) })
         .where(and(eq(captureFacts.tenantId, tenantId), eq(captureFacts.id, factId)));
     }
   });
@@ -498,81 +667,121 @@ async function createPageFor(
 ) {
   const op = item.checked.edit.op;
   if (op.op !== 'create_page') return;
-  const blocks = await freshBlocks(op.markdown);
-  if (blocks.length === 0) return;
-  const pageId = await withTenantTx(tenantId, async (tx) => {
+  const created = await createEnginePage(
+    tenantId,
+    { spaceId: op.spaceId, parentId: op.parentId, title: op.title, markdown: op.markdown },
+    { captureId, factId: item.factId, quote: item.statement, routerId }
+  );
+  if (created) resultOf(item.factId).applied.push(created.state);
+}
+
+/** Longest quote a document page's citation keeps of its block. */
+const DOCUMENT_QUOTE_CHARS = 280;
+
+/**
+ * Creates a page as the Routing engine holding `markdown`, with its receipt
+ * rows (the first block `create_page`, the rest `insert`) and a capture
+ * citation per block, in one transaction (`onCreated` runs in it too), then
+ * snapshots it. `quote` null cites each block with its own text (a
+ * document's page). Null when the Markdown has no blocks.
+ */
+export async function createEnginePage(
+  tenantId: string,
+  page: { spaceId: string; parentId: string | null; title: string; markdown: string },
+  ctx: {
+    captureId: string;
+    factId: string | null;
+    quote: string | null;
+    routerId: string;
+    onCreated?: (tx: DbTransaction, pageId: string) => Promise<void>;
+  }
+): Promise<{ pageId: string; state: 'pending_review' | 'indexing' } | null> {
+  const blocks = await freshBlocks(page.markdown);
+  if (blocks.length === 0) return null;
+  const { pageId, rowIds } = await withTenantTx(tenantId, async (tx) => {
     const [doc] = await tx
       .insert(documents)
       .values({
         tenantId,
-        spaceId: op.spaceId,
-        parentId: op.parentId,
+        spaceId: page.spaceId,
+        parentId: page.parentId,
         kind: 'page',
-        title: op.title,
+        title: page.title,
         placement: 'pinned',
         createdByType: 'agent',
-        createdBy: routerId,
+        createdBy: ctx.routerId,
       })
       .returning();
     await tx.insert(pages).values({
       documentId: doc!.id,
       tenantId,
-      spaceId: op.spaceId,
-      slug: slugFor(op.title, doc!.id),
-      ydocState: encodeBlocksYDoc(op.title, blocks),
+      spaceId: page.spaceId,
+      slug: slugFor(page.title, doc!.id),
+      ydocState: encodeBlocksYDoc(page.title, blocks),
       liveChangedSinceSnapshot: true,
       agentChangedAt: new Date(),
     });
     await tx
       .insert(pagePendingContributors)
-      .values({ tenantId, pageId: doc!.id, principalType: 'agent', principalId: routerId });
+      .values({ tenantId, pageId: doc!.id, principalType: 'agent', principalId: ctx.routerId });
     await writeAuditEvent(tx, {
       tenantId,
       type: 'page.created',
       actorType: 'agent',
-      actorId: routerId,
+      actorId: ctx.routerId,
       subjectType: 'page',
       subjectId: doc!.id,
-      payload: { spaceId: op.spaceId, title: op.title, captureId },
+      payload: { spaceId: page.spaceId, title: page.title, captureId: ctx.captureId },
     });
-    return doc!.id;
+    const rowIds: string[] = [];
+    for (const [i, block] of blocks.entries()) {
+      const markdown = await blockMarkdown(block);
+      const [row] = await tx
+        .insert(captureChanges)
+        .values({
+          tenantId,
+          captureId: ctx.captureId,
+          factId: ctx.factId,
+          documentId: doc!.id,
+          spaceId: page.spaceId,
+          blockId: block.id,
+          op: i === 0 ? 'create_page' : 'insert',
+          afterMarkdown: markdown,
+        })
+        .returning({ id: captureChanges.id });
+      rowIds.push(row!.id);
+      await tx.insert(citations).values({
+        tenantId,
+        pageId: doc!.id,
+        blockId: block.id,
+        sourceKind: 'capture',
+        captureId: ctx.captureId,
+        factId: ctx.factId,
+        quote: ctx.quote ?? (markdown.slice(0, DOCUMENT_QUOTE_CHARS) || page.title),
+        createdByType: 'agent',
+        createdBy: ctx.routerId,
+      });
+    }
+    await ctx.onCreated?.(tx, doc!.id);
+    return { pageId: doc!.id, rowIds };
   });
   const version = await takePageSnapshot({
     tenantId,
     pageId,
     reason: 'capture',
     actorType: 'agent',
-    actorId: routerId,
+    actorId: ctx.routerId,
     manual: false,
   });
-  const state = version?.status === 'pending_review' ? 'pending_review' : 'indexing';
-  await withTenantTx(tenantId, async (tx) => {
-    for (const [i, block] of blocks.entries()) {
-      await tx.insert(captureChanges).values({
-        tenantId,
-        captureId,
-        factId: item.factId,
-        documentId: pageId,
-        spaceId: op.spaceId,
-        blockId: block.id,
-        op: i === 0 ? 'create_page' : 'insert',
-        afterMarkdown: await blockMarkdown(block),
-        versionId: version?.id ?? null,
-      });
-      await tx.insert(citations).values({
-        tenantId,
-        pageId,
-        blockId: block.id,
-        sourceKind: 'capture',
-        captureId,
-        factId: item.factId,
-        quote: item.statement,
-        createdByType: 'agent',
-        createdBy: routerId,
-      });
-    }
-  });
-  resultOf(item.factId).applied.push(state);
+  if (version) {
+    await withTenantTx(tenantId, (tx) =>
+      tx
+        .update(captureChanges)
+        .set({ versionId: version.id })
+        .where(and(eq(captureChanges.tenantId, tenantId), inArray(captureChanges.id, rowIds)))
+    );
+  }
+  return { pageId, state: version?.status === 'pending_review' ? 'pending_review' : 'indexing' };
 }
 
 async function writeSuggestions(
