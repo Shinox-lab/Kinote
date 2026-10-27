@@ -994,7 +994,7 @@ export async function retryVersion(actor: Actor, versionId: string): Promise<Ret
  * after another per document) and returns it. Unknown, other-tenant and
  * non-page documents answer 404 `page_not_found`.
  */
-async function lockPage(tx: DbTransaction, tenantId: string, pageId: string): Promise<DocumentRow> {
+export async function lockPage(tx: DbTransaction, tenantId: string, pageId: string): Promise<DocumentRow> {
   let doc: DocumentRow;
   try {
     doc = await lockDocument(tx, tenantId, pageId);
@@ -1217,42 +1217,44 @@ export async function archivePage(actor: Actor, pageId: string): Promise<Documen
     const doc = await lockPage(tx, actor.tenantId, pageId);
 
     await requireDocumentRole(tx, actor, doc, 'admin', { notFound: 'page_not_found' });
-
-    const [liveChild] = await tx
-      .select({ id: documents.id })
-      .from(documents)
-      .where(
-        and(
-          eq(documents.tenantId, actor.tenantId),
-          eq(documents.parentId, pageId),
-          isNull(documents.archivedAt)
-        )
-      )
-      .limit(1);
-
-    if (liveChild) {
-      throw new AppError('has_children', 'Cannot archive a page while active child documents exist.');
-    }
-
-    await withdrawLiveVersions(tx, actor.tenantId, pageId);
-
-    const [updated] = await tx
-      .update(documents)
-      .set({ archivedAt: new Date(), indexedVersionId: null })
-      .where(and(eq(documents.tenantId, actor.tenantId), eq(documents.id, pageId)))
-      .returning();
-
-    await writeAuditEvent(tx, {
-      tenantId: actor.tenantId,
-      type: 'page.archived',
-      actorType: actor.principalType,
-      actorId: actor.principalId,
-      subjectType: 'page',
-      subjectId: pageId,
-    });
-
-    return toDocumentSummary(updated);
+    return toDocumentSummary(await archivePageTx(tx, actor, doc));
   });
+}
+
+/**
+ * Archives a locked page as `actor` without a role check (the caller
+ * decided who may): 409 `has_children` while a live child exists; its live
+ * versions are withdrawn. Shared by archivePage and capture undo.
+ */
+export async function archivePageTx(tx: DbTransaction, actor: Actor, doc: DocumentRow): Promise<DocumentRow> {
+  const pageId = doc.id;
+  const [liveChild] = await tx
+    .select({ id: documents.id })
+    .from(documents)
+    .where(and(eq(documents.tenantId, actor.tenantId), eq(documents.parentId, pageId), isNull(documents.archivedAt)))
+    .limit(1);
+  if (liveChild) {
+    throw new AppError('has_children', 'Cannot archive a page while active child documents exist.');
+  }
+
+  await withdrawLiveVersions(tx, actor.tenantId, pageId);
+
+  const [updated] = await tx
+    .update(documents)
+    .set({ archivedAt: new Date(), indexedVersionId: null })
+    .where(and(eq(documents.tenantId, actor.tenantId), eq(documents.id, pageId)))
+    .returning();
+
+  await writeAuditEvent(tx, {
+    tenantId: actor.tenantId,
+    type: 'page.archived',
+    actorType: actor.principalType,
+    actorId: actor.principalId,
+    subjectType: 'page',
+    subjectId: pageId,
+  });
+
+  return updated!;
 }
 
 /**

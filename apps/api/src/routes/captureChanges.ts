@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { and, desc, eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull } from 'drizzle-orm';
 import {
   withTenantTx,
   captureChanges,
@@ -13,7 +13,11 @@ import {
 import {
   AppError,
   MoveChangeRequestSchema,
+  MoveDocumentRequestSchema,
+  PlaceDocumentRequestSchema,
   PlaceFactRequestSchema,
+  type CaptureSummary,
+  type NeedsHomeDocument,
   type UndoChangesResponse,
 } from '@living-wiki/contracts';
 import {
@@ -24,11 +28,15 @@ import {
   readLiveBlocks,
   recordRoutingExample,
   requireDocumentRole,
+  requireSpaceRole,
   takePageSnapshot,
   type Actor,
   type EmbeddingProvider,
 } from '@living-wiki/core';
 import { blockFullText, documentName, type BlockLike, type CollabClient } from '@living-wiki/shared';
+import { enqueueCaptureRoute, toCaptureSummary, visibleCapture } from './captures.js';
+import { archivePageTx, lockPage, movePage } from './pages.js';
+import { resolveActorNames } from '../people.js';
 
 type ChangeRow = typeof captureChanges.$inferSelect;
 type CaptureRow = typeof captures.$inferSelect;
@@ -85,6 +93,10 @@ async function undoChanges(
   for (const c of changes) byPage.set(c.documentId, [...(byPage.get(c.documentId) ?? []), c]);
 
   for (const [pageId, list] of byPage) {
+    if (list.every((c) => c.factId === null) && (await isDocumentPage(actor.tenantId, list[0]!.captureId, pageId))) {
+      await undoDocumentPage(actor, pageId, list, collab, result);
+      continue;
+    }
     await collab.flush(documentName(actor.tenantId, pageId));
     const live = await withTenantTx(actor.tenantId, (tx) => readLiveBlocks(tx, actor.tenantId, pageId));
     const blocks = new Map((live?.blocks ?? []).map((b) => [b.id, b]));
@@ -189,6 +201,84 @@ async function undoChanges(
     result.undone.push(...undone.map((c) => c.id));
   }
   return result;
+}
+
+/** Whether `pageId` is the page capture `captureId` (a document) became. */
+async function isDocumentPage(tenantId: string, captureId: string, pageId: string): Promise<boolean> {
+  const [row] = await withTenantTx(tenantId, (tx) =>
+    tx
+      .select({ pageId: captures.documentPageId })
+      .from(captures)
+      .where(and(eq(captures.tenantId, tenantId), eq(captures.id, captureId)))
+  );
+  return row?.pageId === pageId;
+}
+
+/**
+ * Undoes a document capture's own page as one unit: archived when every one
+ * of its blocks still says what the engine wrote and it has no live child
+ * pages; otherwise left alone and all its changes reported as changed since.
+ * Undoing any of its changes undoes the page.
+ */
+async function undoDocumentPage(
+  actor: Actor,
+  pageId: string,
+  list: ChangeRow[],
+  collab: CollabClient,
+  result: UndoChangesResponse
+) {
+  const all = await withTenantTx(actor.tenantId, (tx) =>
+    tx
+      .select()
+      .from(captureChanges)
+      .where(
+        and(
+          eq(captureChanges.tenantId, actor.tenantId),
+          eq(captureChanges.documentId, pageId),
+          eq(captureChanges.captureId, list[0]!.captureId),
+          eq(captureChanges.status, 'applied')
+        )
+      )
+  );
+  await collab.flush(documentName(actor.tenantId, pageId));
+  const live = await withTenantTx(actor.tenantId, (tx) => readLiveBlocks(tx, actor.tenantId, pageId));
+  const blocks = new Map((live?.blocks ?? []).map((b) => [b.id, b]));
+  let unchanged = true;
+  for (const change of all) {
+    const block = blocks.get(change.blockId);
+    if (!block || (await blockMarkdown(block)) !== change.afterMarkdown) unchanged = false;
+  }
+  const archived =
+    unchanged &&
+    (await withTenantTx(actor.tenantId, async (tx) => {
+      const doc = await lockPage(tx, actor.tenantId, pageId);
+      if (doc.archivedAt) return true;
+      const [child] = await tx
+        .select({ id: documents.id })
+        .from(documents)
+        .where(and(eq(documents.tenantId, actor.tenantId), eq(documents.parentId, pageId), isNull(documents.archivedAt)))
+        .limit(1);
+      if (child) return false;
+      await archivePageTx(tx, actor, doc);
+      await tx
+        .update(captureChanges)
+        .set({ status: 'undone' })
+        .where(and(eq(captureChanges.tenantId, actor.tenantId), inArray(captureChanges.id, all.map((c) => c.id))));
+      for (const change of all) {
+        await writeAuditEvent(tx, {
+          tenantId: actor.tenantId,
+          type: 'capture.change_undone',
+          actorType: actor.principalType,
+          actorId: actor.principalId,
+          subjectType: 'capture_change',
+          subjectId: change.id,
+          payload: { captureId: change.captureId, documentId: change.documentId, op: change.op },
+        });
+      }
+      return true;
+    }));
+  if (archived) result.undone.push(...all.map((c) => c.id));
+  else result.changedSince.push(...all.map((c) => c.id));
 }
 
 async function changeFor(tx: DbTransaction, actor: Actor, id: string) {
@@ -430,7 +520,7 @@ export async function listPageCaptureChanges(actor: Actor, pageId: string, query
     const rows = await tx
       .select({ change: captureChanges, reason: captureFacts.reason })
       .from(captureChanges)
-      .innerJoin(captureFacts, and(eq(captureFacts.tenantId, captureChanges.tenantId), eq(captureFacts.id, captureChanges.factId)))
+      .leftJoin(captureFacts, and(eq(captureFacts.tenantId, captureChanges.tenantId), eq(captureFacts.id, captureChanges.factId)))
       .where(
         and(
           eq(captureChanges.tenantId, actor.tenantId),
@@ -450,5 +540,155 @@ export async function listPageCaptureChanges(actor: Actor, pageId: string, query
       status: change.status,
       reason,
     }));
+  });
+}
+
+/** A capture's summary with its sender's name. */
+async function summaryOf(tx: DbTransaction, tenantId: string, row: CaptureRow): Promise<CaptureSummary> {
+  const names = await resolveActorNames(tx, tenantId, [{ type: row.senderType, id: row.senderId }]);
+  return toCaptureSummary(row, names.get(`${row.senderType}:${row.senderId}`) ?? 'Former member');
+}
+
+/** The capture, locked, when its page waits for a place; 409 `document_not_waiting` otherwise. */
+async function waitingDocument(tx: DbTransaction, actor: Actor, id: string): Promise<CaptureRow> {
+  const capture = await visibleCapture(tx, actor, id, { lock: true });
+  if (capture.shape !== 'document' || capture.documentOutcome !== 'needs_home') throw new AppError('document_not_waiting');
+  return capture;
+}
+
+/** GET /api/v1/needs-home/documents: document captures waiting for a place (the actor's own; every one for admins). */
+export async function listNeedsHomeDocuments(actor: Actor): Promise<NeedsHomeDocument[]> {
+  return withTenantTx(actor.tenantId, async (tx) => {
+    const rows = await tx
+      .select()
+      .from(captures)
+      .where(
+        and(
+          eq(captures.tenantId, actor.tenantId),
+          eq(captures.shape, 'document'),
+          eq(captures.documentOutcome, 'needs_home'),
+          isTenantAdmin(actor)
+            ? undefined
+            : and(eq(captures.senderType, actor.principalType), eq(captures.senderId, actor.principalId))
+        )
+      )
+      .orderBy(desc(captures.createdAt))
+      .limit(200);
+    return rows.map((row) => ({
+      captureId: row.id,
+      title: row.documentTitle ?? '',
+      subject: row.subject,
+      reason: row.documentReason,
+      options: Array.isArray(row.documentOptions) ? (row.documentOptions as NeedsHomeDocument['options']) : [],
+      createdAt: row.createdAt.toISOString(),
+    }));
+  });
+}
+
+/**
+ * POST /api/v1/captures/:id/document/place: a person chooses where a waiting
+ * document's page goes (under a page they can edit, or at the top of a space
+ * they can edit), optionally retitled; the capture routes again. A chosen
+ * parent is saved as a document example (R11).
+ */
+export async function placeCaptureDocument(actor: Actor, id: string, body: unknown, deps: { embedder: EmbeddingProvider }) {
+  const parsed = PlaceDocumentRequestSchema.safeParse(body);
+  const { summary, example } = await withTenantTx(actor.tenantId, async (tx) => {
+    const capture = await waitingDocument(tx, actor, id);
+    if (!parsed.success) throw new AppError('validation_failed');
+    const { parent_page_id, space_id, title } = parsed.data;
+    if (parent_page_id) await targetPage(tx, actor, parent_page_id, 'editor');
+    else {
+      const { space, effectiveRole } = await requireSpaceRole(tx, actor, space_id!, 'editor');
+      if (space.kind !== 'normal' || space.archivedAt || effectiveRole === 'viewer') throw new AppError('space_not_found');
+    }
+    const [row] = await tx
+      .update(captures)
+      .set({
+        documentParentChoice: parent_page_id ?? null,
+        documentSpaceChoice: parent_page_id ? null : space_id!,
+        documentTitle: title ?? capture.documentTitle,
+        documentOutcome: 'pending',
+        documentReason: null,
+        status: 'queued',
+      })
+      .where(and(eq(captures.tenantId, actor.tenantId), eq(captures.id, capture.id)))
+      .returning();
+    await enqueueCaptureRoute(tx, actor.tenantId, capture.id);
+    await writeAuditEvent(tx, {
+      tenantId: actor.tenantId,
+      type: 'capture.document_placed',
+      actorType: actor.principalType,
+      actorId: actor.principalId,
+      subjectType: 'capture',
+      subjectId: capture.id,
+      payload: { parentId: parent_page_id ?? null, spaceId: space_id ?? null },
+    });
+    const statement = `${row!.subject ?? ''} ${row!.documentTitle ?? ''}`.trim();
+    return {
+      summary: await summaryOf(tx, actor.tenantId, row!),
+      example: parent_page_id && statement ? { statement, parent: parent_page_id } : null,
+    };
+  });
+  if (example) {
+    await recordRoutingExample(
+      actor.tenantId,
+      { statement: example.statement, chosenDocumentId: example.parent, wrongDocumentId: null, createdBy: actor.principalId, kind: 'document' },
+      deps.embedder
+    );
+  }
+  return summary;
+}
+
+/** POST /api/v1/captures/:id/document/as-updates: no page for this waiting document; its facts route as updates. */
+export async function routeCaptureAsUpdates(actor: Actor, id: string): Promise<CaptureSummary> {
+  return withTenantTx(actor.tenantId, async (tx) => {
+    const capture = await waitingDocument(tx, actor, id);
+    const [row] = await tx
+      .update(captures)
+      .set({ shape: 'updates', documentOutcome: null, documentReason: null, documentOptions: null, status: 'queued' })
+      .where(and(eq(captures.tenantId, actor.tenantId), eq(captures.id, capture.id)))
+      .returning();
+    await enqueueCaptureRoute(tx, actor.tenantId, capture.id);
+    return summaryOf(tx, actor.tenantId, row!);
+  });
+}
+
+/**
+ * POST /api/v1/captures/:id/document/move: "wrong place" for a document's
+ * page. Moves it under the chosen page (an editor of both) and saves the
+ * correction as a document example (R11).
+ */
+export async function moveCaptureDocument(actor: Actor, id: string, body: unknown, deps: { embedder: EmbeddingProvider }) {
+  const parsed = MoveDocumentRequestSchema.safeParse(body);
+  const { capture, parent, page } = await withTenantTx(actor.tenantId, async (tx) => {
+    const capture = await visibleCapture(tx, actor, id);
+    if (capture.shape !== 'document' || capture.documentOutcome !== 'created' || !capture.documentPageId) {
+      throw new AppError('document_not_waiting');
+    }
+    if (!parsed.success) throw new AppError('validation_failed');
+    const parent = await targetPage(tx, actor, parsed.data.parent_page_id, 'editor');
+    const page = await documentOf(tx, actor.tenantId, capture.documentPageId);
+    if (!page || page.archivedAt) throw new AppError('page_not_found');
+    return { capture, parent, page };
+  });
+  await movePage(actor, page.id, { target_space_id: parent.spaceId, target_parent_id: parent.id });
+  const statement = `${capture.subject ?? ''} ${page.title}`.trim();
+  await recordRoutingExample(
+    actor.tenantId,
+    { statement, chosenDocumentId: parent.id, wrongDocumentId: page.parentId, createdBy: actor.principalId, kind: 'document' },
+    deps.embedder
+  );
+  return withTenantTx(actor.tenantId, async (tx) => {
+    await writeAuditEvent(tx, {
+      tenantId: actor.tenantId,
+      type: 'capture.document_moved',
+      actorType: actor.principalType,
+      actorId: actor.principalId,
+      subjectType: 'capture',
+      subjectId: capture.id,
+      payload: { pageId: page.id, from: page.parentId, to: parent.id },
+    });
+    return summaryOf(tx, actor.tenantId, capture);
   });
 }

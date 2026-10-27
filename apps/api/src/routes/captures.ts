@@ -88,7 +88,7 @@ export async function createCapture(actor: Actor, body: unknown): Promise<Captur
   }
   const parsed = CreateCaptureRequestSchema.safeParse(body);
   if (!parsed.success) throw new AppError('validation_failed');
-  const { text, scope_space_id, scope_page_id } = parsed.data;
+  const { text, scope_space_id, scope_page_id, shape } = parsed.data;
 
   return withTenantTx(actor.tenantId, async (tx) => {
     const access = await senderAccess(tx, actor);
@@ -119,6 +119,7 @@ export async function createCapture(actor: Actor, body: unknown): Promise<Captur
         text,
         scopeSpaceId,
         scopePageId: scope_page_id ?? null,
+        shapeMode: shape,
       })
       .returning();
     await enqueueCaptureRoute(tx, actor.tenantId, row!.id);
@@ -158,7 +159,7 @@ export async function listCaptures(actor: Actor, query: unknown): Promise<Captur
 }
 
 /** The capture when the actor is its sender (or, unless `senderOnly`, a tenant admin); else 404. */
-async function visibleCapture(
+export async function visibleCapture(
   tx: DbTransaction,
   actor: Actor,
   id: string,
@@ -218,6 +219,12 @@ export async function conflictNames(tx: DbTransaction, tenantId: string, rows: S
 export async function captureReceipt(tx: DbTransaction, viewer: Actor, captureId: string): Promise<CaptureReceipt> {
   const { readable } = await senderAccess(tx, viewer);
   const visible = new Set(readable);
+  const [capture] = await tx
+    .select()
+    .from(captures)
+    .where(and(eq(captures.tenantId, viewer.tenantId), eq(captures.id, captureId)));
+  // A document capture's own page is shown as the receipt's lead, not among the pages it updated.
+  const documentPageId = capture?.shape === 'document' ? capture.documentPageId : null;
 
   const changes = await tx
     .select({
@@ -228,7 +235,7 @@ export async function captureReceipt(tx: DbTransaction, viewer: Actor, captureId
       versionStatus: versions.status,
     })
     .from(captureChanges)
-    .innerJoin(captureFacts, and(eq(captureFacts.tenantId, captureChanges.tenantId), eq(captureFacts.id, captureChanges.factId)))
+    .leftJoin(captureFacts, and(eq(captureFacts.tenantId, captureChanges.tenantId), eq(captureFacts.id, captureChanges.factId)))
     .innerJoin(documents, and(eq(documents.tenantId, captureChanges.tenantId), eq(documents.id, captureChanges.documentId)))
     .innerJoin(spaces, and(eq(spaces.tenantId, captureChanges.tenantId), eq(spaces.id, captureChanges.spaceId)))
     .leftJoin(versions, and(eq(versions.tenantId, captureChanges.tenantId), eq(versions.id, captureChanges.versionId)))
@@ -268,7 +275,49 @@ export async function captureReceipt(tx: DbTransaction, viewer: Actor, captureId
     return page;
   };
 
+  let document: CaptureReceipt['document'] = null;
+  if (capture?.shape === 'document' && capture.documentOutcome) {
+    if (documentPageId) {
+      const own = changes.filter((c) => c.change.documentId === documentPageId);
+      const [page] = await tx
+        .select({ title: documents.title, spaceId: documents.spaceId, parentId: documents.parentId, spaceName: spaces.name })
+        .from(documents)
+        .innerJoin(spaces, and(eq(spaces.tenantId, documents.tenantId), eq(spaces.id, documents.spaceId)))
+        .where(and(eq(documents.tenantId, viewer.tenantId), eq(documents.id, documentPageId)));
+      if (page && visible.has(page.spaceId)) {
+        const [parent] = page.parentId
+          ? await tx
+              .select({ title: documents.title })
+              .from(documents)
+              .where(and(eq(documents.tenantId, viewer.tenantId), eq(documents.id, page.parentId)))
+          : [];
+        document = {
+          pageId: documentPageId,
+          title: page.title,
+          outcome: 'created',
+          parentTitle: parent?.title ?? null,
+          spaceName: page.spaceName,
+          reason: null,
+          changeIds: own.filter((c) => c.change.status === 'applied').map((c) => c.change.id),
+        };
+      } else if (page) {
+        hiddenChanges += own.length > 0 ? 1 : 0;
+      }
+    } else {
+      document = {
+        pageId: null,
+        title: capture.documentTitle ?? '',
+        outcome: capture.documentOutcome,
+        parentTitle: null,
+        spaceName: null,
+        reason: capture.documentReason,
+        changeIds: [],
+      };
+    }
+  }
+
   for (const c of changes) {
+    if (documentPageId && c.change.documentId === documentPageId) continue;
     const page = pageOf(c.change.spaceId, c.spaceName, c.change.documentId, c.title);
     if (!page) continue;
     page.changes.push({
@@ -306,8 +355,10 @@ export async function captureReceipt(tx: DbTransaction, viewer: Actor, captureId
     needsHome: facts
       .filter((f) => f.outcome === 'needs_home')
       .map((f) => ({ factId: f.id, statement: f.statement, reason: f.reason })),
-    document: null,
-    filedInDocument: [],
+    document,
+    filedInDocument: facts
+      .filter((f) => f.outcome === 'filed_in_document')
+      .map((f) => ({ factId: f.id, statement: f.statement })),
   };
 }
 

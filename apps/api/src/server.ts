@@ -16,6 +16,7 @@ import {
   UndoChangesResponseSchema,
   MoveChangeResponseSchema,
   NeedsHomeListSchema,
+  NeedsHomeDocumentListSchema,
   FactStatusSchema,
   CaptureChangeListSchema,
   InviteMemberResponseSchema,
@@ -118,6 +119,10 @@ import { acceptSuggestion, declineSuggestion, listPageSuggestions } from './rout
 import {
   dismissCaptureFact,
   listNeedsHome,
+  listNeedsHomeDocuments,
+  placeCaptureDocument,
+  routeCaptureAsUpdates,
+  moveCaptureDocument,
   listPageCaptureChanges,
   moveCaptureChange,
   placeCaptureFact,
@@ -685,6 +690,27 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
     const { id } = req.params as { id: string };
     const res = await placeCaptureFact(actorOf(req), id, req.body, { embedder: embeddingProvider });
     return reply.send(parseReply(FactStatusSchema, res));
+  });
+
+  app.get('/api/v1/needs-home/documents', async (req, reply) => {
+    return reply.send(parseReply(NeedsHomeDocumentListSchema, await listNeedsHomeDocuments(actorOf(req))));
+  });
+
+  app.post('/api/v1/captures/:id/document/place', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const res = await placeCaptureDocument(actorOf(req), id, req.body, { embedder: embeddingProvider });
+    return reply.send(parseReply(CaptureSummarySchema, res));
+  });
+
+  app.post('/api/v1/captures/:id/document/as-updates', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    return reply.send(parseReply(CaptureSummarySchema, await routeCaptureAsUpdates(actorOf(req), id)));
+  });
+
+  app.post('/api/v1/captures/:id/document/move', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const res = await moveCaptureDocument(actorOf(req), id, req.body, { embedder: embeddingProvider });
+    return reply.send(parseReply(CaptureSummarySchema, res));
   });
 
   app.post('/api/v1/capture-facts/:id/dismiss', async (req, reply) => {
