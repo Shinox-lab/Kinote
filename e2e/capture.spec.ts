@@ -16,10 +16,20 @@ interface CaptureDetailRow {
 let world: World;
 
 /** A page made through the API, snapshotted and left until the worker has indexed it. */
-async function indexedPage(request: APIRequestContext, title: string, markdown: string, spaceId = world.spaceId): Promise<string> {
+async function indexedPage(
+  request: APIRequestContext,
+  title: string,
+  markdown: string,
+  spaceId = world.spaceId,
+  parentId: string | null = null
+): Promise<string> {
   const as = { account: world.owner, tenantId: world.tenantId };
   const slug = `${title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${Math.random().toString(36).slice(2, 7)}`;
-  const page = await call<{ id: string }>(request, '/pages', { ...as, method: 'POST', data: { space_id: spaceId, title, slug, markdown } });
+  const page = await call<{ id: string }>(request, '/pages', {
+    ...as,
+    method: 'POST',
+    data: { space_id: spaceId, parent_id: parentId, title, slug, markdown },
+  });
   await call(request, `/pages/${page.id}/snapshot`, { ...as, method: 'POST' });
   await expect
     .poll(async () => (await call<{ badge: string }>(request, `/pages/${page.id}`, as)).badge, { timeout: 30_000 })
@@ -313,3 +323,86 @@ test.describe('review bundles', () => {
     await expect(page.getByText('Nothing is waiting for your review.')).toBeVisible();
   });
 });
+
+test.describe('Documents', () => {
+  /** A space of its own, so the routing engine's candidates are only what the test made. */
+  async function clientSpace(request: APIRequestContext, client: string) {
+    const as = { account: world.owner, tenantId: world.tenantId };
+    const slug = `${client.toLowerCase()}-${Math.random().toString(36).slice(2, 7)}`;
+    const space = await call<{ id: string }>(request, '/spaces', { ...as, method: 'POST', data: { name: `${client} space`, slug } });
+    const parent = await indexedPage(request, `Client - ${client}`, `${client} is a client. Launch is in November.`, space.id);
+    await indexedPage(request, `${client} meeting 1`, 'First meeting agenda.', space.id, parent);
+    await indexedPage(request, `${client} 29Sep`, 'Hero video notes.', space.id, parent);
+    return { spaceId: space.id, parent };
+  }
+  const note = (client: string) =>
+    `Oct 14 meeting with ${client}\n- ${client} hero video swap.\n- Shop the look.\n- ${client} launch moved to December.`;
+
+  async function send(page: Page, client: string, text: string, fileAs?: string) {
+    await page.reload();
+    await page.getByLabel('Limit to').selectOption({ label: `${client} space` });
+    if (fileAs) await page.getByLabel('File as').selectOption({ label: fileAs });
+    await page.getByLabel('What do you want to file?').fill(text);
+    await page.getByRole('button', { name: 'Send', exact: true }).click();
+  }
+
+  test('a meeting note becomes its own page and the receipt leads with it', async ({ browser, request }) => {
+    await clientSpace(request, 'Zorblax');
+    const page = await openCapture(browser);
+    await send(page, 'Zorblax', note('Zorblax'));
+    const lead = page.getByRole('link', { name: 'New page: Oct 14 meeting with Zorblax under Client - Zorblax' });
+    await expect(lead).toBeVisible({ timeout: 20_000 });
+    const card = page.getByRole('article').filter({ has: lead });
+    await expect(card.getByText('Also updated')).toBeVisible();
+    await lead.click();
+    await expect(page).toHaveURL(/\/p\/[0-9a-f-]+\?capture=/);
+  });
+
+  test('Undo on the new page archives it', async ({ browser, request }) => {
+    await clientSpace(request, 'Quillon');
+    const page = await openCapture(browser);
+    await send(page, 'Quillon', note('Quillon'));
+    const lead = page.getByRole('region', { name: 'New page' }).filter({ hasText: 'Quillon' });
+    await expect(lead).toBeVisible({ timeout: 20_000 });
+    const href = await lead.getByRole('link').getAttribute('href');
+    const pageId = href!.match(/\/p\/([0-9a-f-]+)/)![1]!;
+    await lead.getByRole('button', { name: 'Undo' }).click();
+    await expect(page.getByRole('status').filter({ hasText: 'Undid' })).toBeVisible({ timeout: 15_000 });
+    const as = { account: world.owner, tenantId: world.tenantId };
+    await expect
+      .poll(async () => (await call<{ archivedAt: string | null }>(request, `/pages/${pageId}`, as)).archivedAt, { timeout: 15_000 })
+      .not.toBeNull();
+  });
+
+  test('File as Updates only makes no page', async ({ browser, request }) => {
+    await clientSpace(request, 'Vextra');
+    const page = await openCapture(browser);
+    await send(page, 'Vextra', note('Vextra'), 'Updates only');
+    const card = page.getByRole('article').filter({ hasText: 'Vextra launch moved to December.' }).first();
+    await expect(card.getByText('Applied', { exact: true })).toBeVisible({ timeout: 20_000 });
+    await expect(card.getByText(/New page:/)).toHaveCount(0);
+  });
+
+  test('a document with no clear home is placed from Needs a home', async ({ browser, request }) => {
+    const as = { account: world.owner, tenantId: world.tenantId };
+    const space = await call<{ id: string }>(request, '/spaces', {
+      ...as,
+      method: 'POST',
+      data: { name: 'Plimsoll space', slug: `plimsoll-${Math.random().toString(36).slice(2, 7)}` },
+    });
+    await indexedPage(request, 'Plimsoll lunch notes', 'Soup on Monday.', space.id);
+    const page = await openCapture(browser);
+    await send(page, 'Plimsoll', note('Plimsoll'));
+    const home = page.getByRole('region', { name: 'Needs a home' });
+    const item = home.getByRole('listitem').filter({ hasText: 'Where should “Oct 14 meeting with Plimsoll” go?' });
+    await expect(item).toBeVisible({ timeout: 20_000 });
+    await item.getByRole('button', { name: 'Another page…' }).click();
+    await item.getByLabel('Put it under').fill('Plimsoll lunch notes');
+    await item.getByRole('button', { name: 'Plimsoll lunch notes' }).click();
+    await item.getByRole('button', { name: 'Create page' }).click();
+    await expect(page.getByRole('link', { name: 'New page: Oct 14 meeting with Plimsoll under Plimsoll lunch notes' })).toBeVisible({
+      timeout: 20_000,
+    });
+  });
+});
+

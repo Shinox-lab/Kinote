@@ -269,6 +269,11 @@ export function useNeedsHome() {
   return useQuery({ queryKey: useTenantKey('needs-home'), queryFn: () => api.needsHome(), staleTime: 0 });
 }
 
+/** Document captures waiting for a person to choose where their page goes. */
+export function useNeedsHomeDocuments() {
+  return useQuery({ queryKey: useTenantKey('needs-home', 'documents'), queryFn: () => api.needsHomeDocuments(), staleTime: 0 });
+}
+
 /** A page's open suggestions. */
 export function usePageSuggestions(pageId: string) {
   return useQuery({

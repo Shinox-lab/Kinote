@@ -1,5 +1,6 @@
 import type {
   CaptureChange,
+  CaptureReceipt,
   CaptureSummary,
   ReviewItem,
   SuggestionSummary,
@@ -32,10 +33,35 @@ export function captureStatusLabel(status: CaptureSummary['status']): string {
   return STATUS[status];
 }
 
-const OUTCOME = { applied: 'Applied', waiting_review: 'Waiting for review', suggestion: 'Suggestion' } as const;
+const OUTCOME = {
+  applied: 'Applied',
+  waiting_review: 'Waiting for review',
+  suggestion: 'Suggestion',
+  filed_in_document: 'On the new page',
+} as const;
 
 export function outcomeLabel(outcome: keyof typeof OUTCOME): string {
   return OUTCOME[outcome];
+}
+
+/** The Capture box's "File as" choices: the engine decides, always a new page, or never one. */
+export const SHAPE_OPTIONS = [
+  { value: 'auto', label: 'Auto' },
+  { value: 'document', label: 'New page' },
+  { value: 'updates', label: 'Updates only' },
+] as const;
+
+/** The receipt's lead for a document capture: where its page went, or that it waits for a place. */
+export function documentHeadline(d: NonNullable<CaptureReceipt['document']>): string {
+  if (d.outcome === 'needs_home') return `Where should “${d.title}” go?`;
+  if (d.outcome === 'pending') return `Creating ${d.title}…`;
+  return d.parentTitle ? `New page: ${d.title} under ${d.parentTitle}` : `New page: ${d.title} in ${d.spaceName ?? ''}`;
+}
+
+/** Facts of a document kept only on its new page; null when there are none. */
+export function keptText(n: number): string | null {
+  if (n <= 0) return null;
+  return n === 1 ? '1 fact kept on the new page' : `${n} facts kept on the new page`;
 }
 
 /** Changes on pages the viewer cannot read, counted and never shown; null when there are none. */

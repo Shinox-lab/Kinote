@@ -7,6 +7,7 @@ import {
   FactStatusSchema,
   MoveChangeResponseSchema,
   NeedsHomeListSchema,
+  NeedsHomeDocumentListSchema,
   SuggestionListSchema,
   SuggestionSummarySchema,
   UndoChangesResponseSchema,
@@ -323,7 +324,12 @@ export const api = {
     request(`/api/v1/sources/${e(id)}/tokens/${e(tokenId)}`, SourceTokenSchema, del),
 
   // Captures (the routing engine)
-  createCapture: (body: { text: string; scope_space_id?: string; scope_page_id?: string }) =>
+  createCapture: (body: {
+    text: string;
+    scope_space_id?: string;
+    scope_page_id?: string;
+    shape?: 'auto' | 'document' | 'updates';
+  }) =>
     request('/api/v1/captures', CaptureSummarySchema, send('POST', body)),
   listCaptures: () => request('/api/v1/captures', CaptureListSchema),
   getCapture: (id: string) => request(`/api/v1/captures/${e(id)}`, CaptureDetailSchema),
@@ -336,6 +342,12 @@ export const api = {
   pageCaptureChanges: (pageId: string, captureId: string) =>
     request(`/api/v1/pages/${e(pageId)}/capture-changes?capture=${e(captureId)}`, CaptureChangeListSchema),
   needsHome: () => request('/api/v1/needs-home', NeedsHomeListSchema),
+  needsHomeDocuments: () => request('/api/v1/needs-home/documents', NeedsHomeDocumentListSchema),
+  placeDocument: (id: string, body: { parent_page_id?: string; space_id?: string; title?: string }) =>
+    request(`/api/v1/captures/${e(id)}/document/place`, CaptureSummarySchema, send('POST', body)),
+  routeAsUpdates: (id: string) => request(`/api/v1/captures/${e(id)}/document/as-updates`, CaptureSummarySchema, send('POST')),
+  moveDocument: (id: string, body: { parent_page_id: string }) =>
+    request(`/api/v1/captures/${e(id)}/document/move`, CaptureSummarySchema, send('POST', body)),
   placeFact: (id: string, body: { document_id: string }) =>
     request(`/api/v1/capture-facts/${e(id)}/place`, FactStatusSchema, send('POST', body)),
   dismissFact: (id: string) => request(`/api/v1/capture-facts/${e(id)}/dismiss`, FactStatusSchema, send('POST')),

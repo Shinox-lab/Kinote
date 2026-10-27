@@ -3,7 +3,7 @@ import { Link } from '@tanstack/react-router';
 import { useMutation } from '@tanstack/react-query';
 import type { CaptureReceipt, UndoChangesResponse } from '@living-wiki/contracts';
 import { ApiError, api } from '../../lib/api.js';
-import { hiddenChangesText, outcomeLabel, undoNotice, type CaptureChange } from '../../lib/capture.js';
+import { documentHeadline, hiddenChangesText, keptText, outcomeLabel, undoNotice, type CaptureChange } from '../../lib/capture.js';
 import { useRefresh, useWorkspace } from '../../lib/queries.js';
 import { Button, ErrorNote } from '../ui.js';
 import { PagePicker } from './PagePicker.js';
@@ -131,6 +131,86 @@ function PageCard({
   );
 }
 
+/** A document capture's lead: its new page (open, undo, move) or that it waits for a place. */
+function DocumentLead({
+  captureId,
+  document,
+  kept,
+  undoing,
+  onUndo,
+}: {
+  captureId: string;
+  document: NonNullable<CaptureReceipt['document']>;
+  kept: number;
+  undoing: boolean;
+  onUndo: (run: () => Promise<UndoChangesResponse>) => void;
+}) {
+  const { tenant } = useWorkspace();
+  const refresh = useRefresh();
+  const [picking, setPicking] = useState(false);
+  const move = useMutation({
+    mutationFn: (parentId: string) => api.moveDocument(captureId, { parent_page_id: parentId }),
+    onSuccess: () => {
+      setPicking(false);
+      void refresh('capture', captureId);
+      void refresh('page');
+      void refresh('tree');
+    },
+  });
+  const headline = documentHeadline(document);
+  const keptLine = keptText(kept);
+  const firstChange = document.changeIds[0];
+  return (
+    <section aria-label="New page" className="flex flex-col gap-2 rounded-md border border-[var(--routing)] bg-[var(--routing-tint)] p-3">
+      <div className="flex flex-wrap items-center gap-2">
+        {document.pageId ? (
+          <Link
+            to="/w/$tenantSlug/p/$pageId"
+            params={{ tenantSlug: tenant.slug, pageId: document.pageId }}
+            search={{ capture: captureId }}
+            className="min-w-0 break-words text-sm font-semibold text-fg hover:underline"
+          >
+            {headline}
+          </Link>
+        ) : (
+          <p className="min-w-0 break-words text-sm font-semibold text-fg">
+            {document.outcome === 'needs_home' ? (
+              <a href="#needs-home" className="hover:underline">
+                {headline}
+              </a>
+            ) : (
+              headline
+            )}
+          </p>
+        )}
+        {document.pageId && firstChange && (
+          <Button
+            variant="secondary"
+            className="ml-auto !px-2 !py-1 text-xs"
+            disabled={undoing}
+            onClick={() => onUndo(() => api.undoChange(firstChange))}
+          >
+            Undo
+          </Button>
+        )}
+      </div>
+      {document.reason && <p className="text-xs text-muted">{document.reason}</p>}
+      {keptLine && <p className="text-xs text-muted">{keptLine}</p>}
+      {document.pageId && firstChange && (
+        <button
+          type="button"
+          onClick={() => setPicking((v) => !v)}
+          className="self-start text-xs font-medium text-accent-text hover:underline max-md:min-h-11"
+        >
+          Wrong place → move to…
+        </button>
+      )}
+      {picking && <PagePicker label="Put it under" disabled={move.isPending} onPick={(p) => move.mutate(p.id)} />}
+      <ErrorNote error={move.error} />
+    </section>
+  );
+}
+
 /** What a capture did, grouped by space and page; pages in spaces the viewer cannot read are only counted. */
 export function Receipt({ captureId, receipt }: { captureId: string; receipt: CaptureReceipt }) {
   const [notice, setNotice] = useState<string | null>(null);
@@ -150,15 +230,31 @@ export function Receipt({ captureId, receipt }: { captureId: string; receipt: Ca
       void refresh('captures');
       void refresh('needs-home');
       void refresh('page');
+      void refresh('tree');
     },
   });
   const hidden = hiddenChangesText(receipt.hiddenChanges);
+  const document = receipt.document;
   const empty =
-    receipt.spaces.length === 0 && !hidden && receipt.alreadyKnown.length === 0 && receipt.needsHome.length === 0;
+    !document &&
+    receipt.spaces.length === 0 &&
+    !hidden &&
+    receipt.alreadyKnown.length === 0 &&
+    receipt.needsHome.length === 0;
   if (empty) return null;
+  const undoable = applied.length + (document && document.changeIds.length > 0 ? 1 : 0);
   return (
     <section aria-label="Receipt" className="flex flex-col gap-3">
-      {applied.length > 1 && (
+      {document && (
+        <DocumentLead
+          captureId={captureId}
+          document={document}
+          kept={receipt.filedInDocument.length}
+          undoing={undo.isPending}
+          onUndo={(run) => undo.mutate(run)}
+        />
+      )}
+      {undoable > 1 && (
         <Button variant="secondary" className="self-start" disabled={undo.isPending} onClick={() => undo.mutate(() => api.undoCapture(captureId))}>
           Undo all applied
         </Button>
@@ -169,6 +265,9 @@ export function Receipt({ captureId, receipt }: { captureId: string; receipt: Ca
         </p>
       )}
       <ErrorNote error={undo.error} />
+      {document && receipt.spaces.length > 0 && (
+        <h3 className="text-xs font-semibold uppercase tracking-wide text-muted">Also updated</h3>
+      )}
       {receipt.spaces.map((space) => (
         <div key={space.spaceId} className="flex flex-col gap-2">
           <h3 className="text-xs font-semibold uppercase tracking-wide text-muted">{space.spaceName}</h3>

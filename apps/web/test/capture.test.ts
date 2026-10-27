@@ -2,11 +2,14 @@ import { describe, expect, test } from 'vitest';
 import type { CaptureSummary, ReviewItem, SuggestionSummary } from '@living-wiki/contracts';
 import {
   CAPTURE_MAX,
+  SHAPE_OPTIONS,
   approvableInBundle,
   captureHighlightCss,
   captureStatusLabel,
   capturesBusy,
+  documentHeadline,
   hiddenChangesText,
+  keptText,
   outcomeLabel,
   parseCaptureSearch,
   parsePageCaptureSearch,
@@ -134,5 +137,28 @@ describe('capture helpers', () => {
     expect(suggestionAction(suggestion({ kind: 'remove' }))).toBe('Approve removal');
     expect(suggestionAction(suggestion({ kind: 'replace' }))).toBe('Accept');
     expect(suggestionAction(suggestion({ kind: 'insert' }))).toBe('Accept');
+  });
+
+  test('documentHeadline words where the page went, or that it waits', () => {
+    const doc = { pageId: ID, title: '14Oct', outcome: 'created' as const, parentTitle: 'Client - George', spaceName: 'Clients', reason: null, changeIds: [] };
+    expect(documentHeadline(doc)).toBe('New page: 14Oct under Client - George');
+    expect(documentHeadline({ ...doc, parentTitle: null })).toBe('New page: 14Oct in Clients');
+    expect(documentHeadline({ ...doc, outcome: 'needs_home', pageId: null })).toBe('Where should “14Oct” go?');
+    expect(documentHeadline({ ...doc, outcome: 'pending', pageId: null })).toBe('Creating 14Oct…');
+  });
+
+  test('keptText counts facts kept on the new page', () => {
+    expect(keptText(0)).toBeNull();
+    expect(keptText(1)).toBe('1 fact kept on the new page');
+    expect(keptText(3)).toBe('3 facts kept on the new page');
+    expect(outcomeLabel('filed_in_document')).toBe('On the new page');
+  });
+
+  test('the File as choices', () => {
+    expect(SHAPE_OPTIONS).toEqual([
+      { value: 'auto', label: 'Auto' },
+      { value: 'document', label: 'New page' },
+      { value: 'updates', label: 'Updates only' },
+    ]);
   });
 });

@@ -81,6 +81,14 @@ export function CaptureCard({ capture, defaultOpen }: { capture: CaptureSummary;
     }
     // `refresh` is a new function every render; the status is the trigger.
   }, [status]);
+  // Routing can finish before this card ever saw it run: a receipt with
+  // something waiting for a place refreshes Needs a home too.
+  const waiting = detail
+    ? detail.receipt.needsHome.length + (detail.receipt.document?.outcome === 'needs_home' ? 1 : 0)
+    : 0;
+  useEffect(() => {
+    if (waiting > 0) void refresh('needs-home');
+  }, [waiting]);
   return (
     <article aria-label={`Capture from ${relativeTime(capture.createdAt)}`} className="flex flex-col gap-3 rounded-lg border border-line bg-surface p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
