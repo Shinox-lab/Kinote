@@ -135,7 +135,8 @@ export async function planCapture(
 
   let facts: PlanFactInput[];
   if (deps.facts) facts = deps.facts;
-  else if (loaded.stored && loaded.stored.length > 0) {
+  // A capture with a shape was split already (ensureSplit), even when nothing came out of it.
+  else if (loaded.stored && (loaded.stored.length > 0 || loaded.capture.shape !== null)) {
     // Facts waiting on a question, or placed by a person (their capture.place
     // job files them), are not this run's to plan.
     facts = loaded.stored

@@ -359,6 +359,34 @@ describe('routeCapture', () => {
       expect((await factsOf(w)).some((f) => f.outcome === 'pending')).toBe(false);
     });
 
+    it('a document with no facts gets its page, is split once and leaves nothing in Needs a home', async () => {
+      const { w } = await georgeWorld();
+      let splits = 0;
+      const counting = Object.assign(Object.create(model), {
+        async splitCapture(input: { text: string }) {
+          splits += 1;
+          return model.splitCapture(input);
+        },
+      });
+      const captureId = await addCapture(w, w.userId, 'George notes\n-\n-\n-', { shapeMode: 'document' });
+      await routeCapture({ tenantId: w.tenantId, captureId, holder: 'test' }, { model: counting, embedder, collab });
+      expect(splits).toBe(1);
+      expect(await pagesTitled(w, 'George notes')).toHaveLength(1);
+      expect(await factsOf(w)).toEqual([]);
+    });
+
+    it('a run that lost the race to create the page rolls back instead of making a second one', async () => {
+      const { w } = await georgeWorld();
+      const captureId = await addCapture(w, w.userId, NOTE);
+      await route(w.tenantId, captureId);
+      // Another run created the page after this one read the capture: it still sees no outcome.
+      await withTenantTx(w.tenantId, (tx) =>
+        tx.update(captures).set({ documentOutcome: null, status: 'queued' }).where(eq(captures.id, captureId))
+      );
+      await expect(route(w.tenantId, captureId)).rejects.toThrow();
+      expect(await pagesTitled(w, TITLE)).toHaveLength(1);
+    });
+
     it('a long document takes its shape from the first part and its facts from all parts', async () => {
       const { w } = await georgeWorld();
       const filler = Array.from({ length: 120 }, (_, i) => `Filler line number ${i} is here.`).join(' ');

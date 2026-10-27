@@ -115,4 +115,31 @@ describe('planDocument', () => {
     await plan(w.tenantId, await addCapture(w, w.userId, NOTE), m);
     expect(calls[0]!.examples).toEqual([{ statement: 'George Oct 1 meeting', chosenTitle: 'Client - George' }]);
   });
+
+  it("the best match in a read-only space waits even when the model proposes a writable space", async () => {
+    const { w, clients } = await georgeWorld();
+    const other = await addRoutingSpace(w, { name: 'Other' });
+    const member = await addMember(w, [
+      [clients, 'viewer'],
+      [other, 'editor'],
+    ]);
+    const { m } = recordingModel({
+      placeDocument: async () => ({ placements: [{ spaceId: other, parentId: null, title: TITLE, confidence: 0.9, reason: 'only place allowed' }] }),
+    });
+    const result = await plan(w.tenantId, await addCapture(w, member, NOTE), m);
+    expect(result).toMatchObject({ status: 'needs_home', reason: "The best place is in a space you can't edit." });
+  });
+
+  it('a space scope limits where the page may go', async () => {
+    const { w, clients } = await georgeWorld();
+    const other = await addRoutingSpace(w, { name: 'Other' });
+    const elsewhere = await livePage(w, other, 'Elsewhere', 'Unrelated.');
+    const { m, calls } = recordingModel({
+      placeDocument: async () => ({ placements: [{ spaceId: other, parentId: elsewhere.documentId, title: TITLE, confidence: 0.9, reason: 'x' }] }),
+    });
+    const result = await plan(w.tenantId, await addCapture(w, w.userId, NOTE, { spaceId: clients }), m);
+    expect(calls[0]!.writableSpaces.map((s) => s.id)).toEqual([clients]);
+    expect(result).toMatchObject({ status: 'needs_home', reason: 'No place fits this page well enough.' });
+  });
 });
+

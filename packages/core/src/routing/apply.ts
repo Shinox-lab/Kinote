@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { and, eq, gt, inArray, isNotNull, lt, sql } from 'drizzle-orm';
+import { and, eq, gt, inArray, isNotNull, isNull, lt, sql } from 'drizzle-orm';
 import {
   withTenantTx,
   acquireRoutingLease,
@@ -226,10 +226,15 @@ async function placeDocumentPage(tenantId: string, capture: CaptureRow, deps: Ro
       quote: null,
       routerId,
       onCreated: async (tx, pageId) => {
-        await tx
+        // Fenced: if another run recorded a page meanwhile, this page is rolled back with the error.
+        const won = await tx
           .update(captures)
           .set({ documentPageId: pageId, documentOutcome: 'created', documentTitle: target.title, documentReason: null })
-          .where(and(eq(captures.tenantId, tenantId), eq(captures.id, capture.id)));
+          .where(and(eq(captures.tenantId, tenantId), eq(captures.id, capture.id), isNull(captures.documentPageId)))
+          .returning({ id: captures.id });
+        if (won.length === 0) {
+          throw new AppError('router_unavailable', "Another routing run already created this capture's page.");
+        }
         await writeAuditEvent(tx, {
           tenantId,
           type: 'capture.document_created',

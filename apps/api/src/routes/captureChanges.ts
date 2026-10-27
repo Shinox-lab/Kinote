@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { and, desc, eq, inArray, isNull } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, ne } from 'drizzle-orm';
 import {
   withTenantTx,
   captureChanges,
@@ -215,9 +215,10 @@ async function isDocumentPage(tenantId: string, captureId: string, pageId: strin
 }
 
 /**
- * Undoes a document capture's own page as one unit: archived when every one
- * of its blocks still says what the engine wrote and it has no live child
- * pages; otherwise left alone and all its changes reported as changed since.
+ * Undoes a document capture's own page as one unit: archived only while it
+ * is exactly as the engine wrote it (the same blocks, unchanged, the same
+ * title, no other capture's changes, no live child pages); otherwise left
+ * alone and all its changes reported as changed since.
  * Undoing any of its changes undoes the page.
  */
 async function undoDocumentPage(
@@ -241,42 +242,60 @@ async function undoDocumentPage(
       )
   );
   await collab.flush(documentName(actor.tenantId, pageId));
-  const live = await withTenantTx(actor.tenantId, (tx) => readLiveBlocks(tx, actor.tenantId, pageId));
-  const blocks = new Map((live?.blocks ?? []).map((b) => [b.id, b]));
-  let unchanged = true;
-  for (const change of all) {
-    const block = blocks.get(change.blockId);
-    if (!block || (await blockMarkdown(block)) !== change.afterMarkdown) unchanged = false;
-  }
-  const archived =
-    unchanged &&
-    (await withTenantTx(actor.tenantId, async (tx) => {
-      const doc = await lockPage(tx, actor.tenantId, pageId);
-      if (doc.archivedAt) return true;
-      const [child] = await tx
-        .select({ id: documents.id })
-        .from(documents)
-        .where(and(eq(documents.tenantId, actor.tenantId), eq(documents.parentId, pageId), isNull(documents.archivedAt)))
-        .limit(1);
-      if (child) return false;
-      await archivePageTx(tx, actor, doc);
-      await tx
-        .update(captureChanges)
-        .set({ status: 'undone' })
-        .where(and(eq(captureChanges.tenantId, actor.tenantId), inArray(captureChanges.id, all.map((c) => c.id))));
-      for (const change of all) {
-        await writeAuditEvent(tx, {
-          tenantId: actor.tenantId,
-          type: 'capture.change_undone',
-          actorType: actor.principalType,
-          actorId: actor.principalId,
-          subjectType: 'capture_change',
-          subjectId: change.id,
-          payload: { captureId: change.captureId, documentId: change.documentId, op: change.op },
-        });
-      }
-      return true;
-    }));
+  const archived = await withTenantTx(actor.tenantId, async (tx) => {
+    const doc = await lockPage(tx, actor.tenantId, pageId);
+    if (doc.archivedAt) return true;
+    // Only the page exactly as the engine wrote it is archived: its blocks
+    // and nothing else, its title, no other capture's changes, no child pages.
+    const live = await readLiveBlocks(tx, actor.tenantId, pageId);
+    const [capture] = await tx
+      .select({ title: captures.documentTitle })
+      .from(captures)
+      .where(and(eq(captures.tenantId, actor.tenantId), eq(captures.id, list[0]!.captureId)));
+    const liveBlocks = live?.blocks ?? [];
+    if (!live || doc.title !== capture?.title || live.title !== doc.title) return false;
+    if (liveBlocks.length !== all.length || !liveBlocks.every((b) => all.some((c) => c.blockId === b.id))) return false;
+    for (const block of liveBlocks) {
+      const change = all.find((c) => c.blockId === block.id)!;
+      if ((await blockMarkdown(block)) !== change.afterMarkdown) return false;
+    }
+    const [other] = await tx
+      .select({ id: captureChanges.id })
+      .from(captureChanges)
+      .where(
+        and(
+          eq(captureChanges.tenantId, actor.tenantId),
+          eq(captureChanges.documentId, pageId),
+          ne(captureChanges.captureId, list[0]!.captureId),
+          eq(captureChanges.status, 'applied')
+        )
+      )
+      .limit(1);
+    if (other) return false;
+    const [child] = await tx
+      .select({ id: documents.id })
+      .from(documents)
+      .where(and(eq(documents.tenantId, actor.tenantId), eq(documents.parentId, pageId), isNull(documents.archivedAt)))
+      .limit(1);
+    if (child) return false;
+    await archivePageTx(tx, actor, doc);
+    await tx
+      .update(captureChanges)
+      .set({ status: 'undone' })
+      .where(and(eq(captureChanges.tenantId, actor.tenantId), inArray(captureChanges.id, all.map((c) => c.id))));
+    for (const change of all) {
+      await writeAuditEvent(tx, {
+        tenantId: actor.tenantId,
+        type: 'capture.change_undone',
+        actorType: actor.principalType,
+        actorId: actor.principalId,
+        subjectType: 'capture_change',
+        subjectId: change.id,
+        payload: { captureId: change.captureId, documentId: change.documentId, op: change.op },
+      });
+    }
+    return true;
+  });
   if (archived) result.undone.push(...all.map((c) => c.id));
   else result.changedSince.push(...all.map((c) => c.id));
 }

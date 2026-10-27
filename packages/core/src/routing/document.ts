@@ -71,24 +71,40 @@ export async function planDocument(
     };
   });
 
+  // A space scope limits where the page may go, not only what is searched.
+  const scope = capture.scopeSpaceId;
+  const allowed = (spaceId: string) => ctx.editable.has(spaceId) && (!scope || spaceId === scope);
+  const writableSpaces = ctx.writableSpaces.filter((w) => allowed(w.id));
+
+  // The best match by retrieval (the subject's page first) decides, not the
+  // model: a model shown only writable spaces would never point at one the
+  // sender can only read.
+  const ranked = [...candidates.values()];
+  const s = subject?.toLowerCase();
+  const bestMatch = (s && ranked.find((c) => c.card.title.toLowerCase().includes(s))) || ranked[0];
+  if (bestMatch && !ctx.editable.has(bestMatch.spaceId)) {
+    const options = await withTenantTx(tenantId, (tx) => parentOptions(tx, tenantId, ctx, candidates, [], spaceNames, allowed));
+    return { status: 'needs_home', reason: "The best place is in a space you can't edit.", options };
+  }
+
   const { placements } = await deps.model.placeDocument({
     title,
     subject,
     text,
-    candidates: [...candidates.values()].map((c) => c.card),
+    candidates: ranked.map((c) => c.card),
     examples,
-    writableSpaces: ctx.writableSpaces,
+    writableSpaces,
   });
 
   return withTenantTx(tenantId, async (tx) => {
-    const options = await parentOptions(tx, tenantId, ctx, candidates, placements, spaceNames);
+    const options = await parentOptions(tx, tenantId, ctx, candidates, placements, spaceNames, allowed);
     const best = [...placements].sort((a, b) => b.confidence - a.confidence)[0];
     if (best && !ctx.editable.has(best.spaceId) && ctx.filter.spaceIds.includes(best.spaceId)) {
       return { status: 'needs_home', reason: "The best place is in a space you can't edit.", options };
     }
     const valid: DocumentPlacement[] = [];
     for (const p of placements) {
-      if (!ctx.editable.has(p.spaceId) || p.confidence < ROUTING.apply) continue;
+      if (!allowed(p.spaceId) || p.confidence < ROUTING.apply) continue;
       if (p.parentId !== null && !(await isParent(tx, tenantId, p.spaceId, p.parentId))) continue;
       valid.push(p);
     }
@@ -115,14 +131,15 @@ async function isParent(tx: DbTransaction, tenantId: string, spaceId: string, pa
   return !!doc && doc.kind === 'page' && !doc.archivedAt && doc.spaceId === spaceId;
 }
 
-/** Up to 3 parents to offer: the model's placements first, then candidates with children; editable spaces only. */
+/** Up to 3 parents to offer: the model's placements first, then candidates with children; allowed spaces only. */
 async function parentOptions(
   tx: DbTransaction,
   tenantId: string,
   ctx: Context,
   candidates: Map<string, Candidate>,
   placements: DocumentPlacement[],
-  spaceNames: Map<string, string>
+  spaceNames: Map<string, string>,
+  allowed: (spaceId: string) => boolean
 ) {
   const ids: string[] = [];
   for (const p of placements) if (p.parentId) ids.push(p.parentId);
@@ -131,7 +148,7 @@ async function parentOptions(
   for (const id of new Set(ids)) {
     if (out.options.length >= MAX_OPTIONS) break;
     const [doc] = await tx.select().from(documents).where(and(eq(documents.tenantId, tenantId), eq(documents.id, id)));
-    if (!doc || doc.kind !== 'page' || doc.archivedAt || !ctx.editable.has(doc.spaceId)) continue;
+    if (!doc || doc.kind !== 'page' || doc.archivedAt || !allowed(doc.spaceId)) continue;
     out.options.push({ pageId: doc.id, title: doc.title, spaceId: doc.spaceId, spaceName: spaceNames.get(doc.spaceId) ?? '' });
   }
   return out.options;

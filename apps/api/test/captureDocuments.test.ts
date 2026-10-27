@@ -209,4 +209,30 @@ describe('document captures', () => {
     expect(after[0]!.archivedAt).toBeNull();
     expect(await live(w.tenant.id, w.george!)).toEqual(['George is a client. Launch is in November.']);
   });
+
+  test('undo all leaves the new page alone after a person added to it', async () => {
+    const w = await world();
+    const id = await capture(w);
+    const page = await pageTitled(w.tenant.id, TITLE);
+    const { receipt } = await receiptOf(w.headers, id);
+    const blocks = readBlocks(await storedDoc(w.tenant.id, page!.id)) as BlockLike[];
+    await collab.applyBlockOps({
+      tenantId: w.tenant.id,
+      pageId: page!.id,
+      actor: { type: 'user', id: w.owner.userId },
+      source: 'human',
+      ops: [
+        {
+          op: 'insert_after',
+          after: blocks.at(-1)!.id,
+          blocks: [{ id: 'mine', type: 'paragraph', props: {}, content: [{ type: 'text', text: 'Follow-ups from me.', styles: {} }], children: [] }],
+        },
+      ],
+    });
+    const res = await post(w.headers, `/api/v1/captures/${id}/undo`);
+    expect(res.statusCode, res.body).toBe(200);
+    expect([...res.json().changedSince].sort()).toEqual([...receipt.document.changeIds].sort());
+    expect((await pageTitled(w.tenant.id, TITLE))!.archivedAt).toBeNull();
+  });
 });
+
