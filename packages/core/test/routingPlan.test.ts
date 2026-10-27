@@ -1,7 +1,7 @@
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { blockActivity, captureFacts, captureMessages, citations, suggestions, withTenantTx } from '@living-wiki/db';
 import { createTestDb, type TestDb } from '@living-wiki/db/testing';
-import { planCapture, type FactPlan, type RoutingModel } from '../src/index.js';
+import { planCapture, type FactPlan, type PlanEditsInput, type RoutingModel } from '../src/index.js';
 import {
   addCapture,
   addMember,
@@ -259,5 +259,26 @@ describe('planCapture', () => {
     expect(plan.status === 'planned' && plan.edits.map((e) => (e.edit.op as { documentId: string }).documentId)).toEqual([
       acme.documentId,
     ]);
+  });
+});
+
+describe('page tree', () => {
+  it("the planner sees each candidate's path, siblings and children", async () => {
+    const w = await routingWorld();
+    const clients = await addRoutingSpace(w, { name: 'Clients' });
+    const george = await livePage(w, clients, 'Client - George', 'George is a client.');
+    await livePage(w, clients, 'Meeting 1', 'Meeting one agenda.', { parentId: george.documentId });
+    const sep = await livePage(w, clients, '29Sep', 'George hero video notes.', { parentId: george.documentId });
+    const seen: PlanEditsInput[] = [];
+    const recording: RoutingModel = Object.assign(Object.create(model), {
+      async planEdits(input: PlanEditsInput) {
+        seen.push(input);
+        return model.planEdits(input);
+      },
+    });
+    await planned(w.tenantId, await addCapture(w, w.userId, 'George hero video moved to Friday.'), recording);
+    const byId = new Map(seen[0]!.candidates.map((c) => [c.documentId, c]));
+    expect(byId.get(sep.documentId)).toMatchObject({ path: ['Client - George'], siblings: ['Meeting 1'], children: [], parentId: george.documentId });
+    expect(byId.get(george.documentId)).toMatchObject({ path: [], siblings: [], children: ['29Sep', 'Meeting 1'] });
   });
 });

@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import * as Y from 'yjs';
 import { ServerBlockNoteEditor } from '@blocknote/server-util';
 import { and, eq } from 'drizzle-orm';
-import { captures, memberships, pages, spaceGrants, spaces, users, withTenantTx } from '@living-wiki/db';
+import { captures, documents, memberships, pages, spaceGrants, spaces, users, withTenantTx } from '@living-wiki/db';
 import { flattenBlocks, type BlockLike } from '@living-wiki/shared';
 import {
   DeterministicEmbeddingProvider,
@@ -55,8 +55,16 @@ export async function addRoutingSpace(w: World, opts: { name?: string; reviewReq
 }
 
 /** An indexed page with a card, entities and a live Yjs state holding `markdown`. */
-export async function livePage(w: World, spaceId: string, title: string, markdown: string) {
+export async function livePage(w: World, spaceId: string, title: string, markdown: string, opts: { parentId?: string } = {}) {
   const { documentId, versionId } = await indexPageVersion(w, spaceId, title, markdown);
+  if (opts.parentId) {
+    await withTenantTx(w.tenantId, (tx) =>
+      tx
+        .update(documents)
+        .set({ parentId: opts.parentId })
+        .where(and(eq(documents.tenantId, w.tenantId), eq(documents.id, documentId)))
+    );
+  }
   await buildPageCard({ tenantId: w.tenantId, versionId }, model, embedder);
   await extractVersionEntities({ tenantId: w.tenantId, versionId }, model, embedder);
   const ydocState = await encodePageYDoc(title, markdown);

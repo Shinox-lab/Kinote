@@ -1,4 +1,4 @@
-import { and, eq, gt, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, inArray, isNull, ne, sql } from 'drizzle-orm';
 import {
   withTenantTx,
   blockActivity,
@@ -347,9 +347,7 @@ async function gatherCandidates(
         documentId: id,
         spaceId: doc.spaceId,
         parentId: doc.parentId,
-        path: [],
-        siblings: [],
-        children: [],
+        ...(await pageTree(tx, ctx.filter.tenantId, doc)),
         title: doc.title,
         summary: card?.summary ?? '',
         outline: card?.outline ?? [],
@@ -358,6 +356,53 @@ async function gatherCandidates(
     });
   }
   return out;
+}
+
+/** How many sibling and child titles the planner sees per candidate. */
+const TREE_TITLES = 10;
+
+/**
+ * Where a page sits: its ancestors' titles (root first, at most 10 levels),
+ * and up to 10 live sibling and 10 live child page titles, newest first.
+ */
+export async function pageTree(
+  tx: DbTransaction,
+  tenantId: string,
+  doc: { id: string; parentId: string | null; spaceId: string }
+): Promise<{ path: string[]; siblings: string[]; children: string[] }> {
+  const path = rowsOf<{ title: string }>(
+    await tx.execute(sql`
+      WITH RECURSIVE up(id, parent_id, title, depth) AS (
+        SELECT id, parent_id, title, 1 FROM documents
+         WHERE tenant_id = ${tenantId}::uuid AND id = ${doc.parentId}::uuid
+        UNION ALL
+        SELECT d.id, d.parent_id, d.title, up.depth + 1 FROM documents d
+          JOIN up ON d.tenant_id = ${tenantId}::uuid AND d.id = up.parent_id
+         WHERE up.depth < 10
+      )
+      SELECT title FROM up ORDER BY depth DESC`)
+  ).map((r) => r.title);
+  const titlesUnder = async (parentId: string | null, except: string | null) =>
+    (
+      await tx
+        .select({ title: documents.title })
+        .from(documents)
+        .where(
+          and(
+            eq(documents.tenantId, tenantId),
+            eq(documents.spaceId, doc.spaceId),
+            eq(documents.kind, 'page'),
+            isNull(documents.archivedAt),
+            parentId === null ? isNull(documents.parentId) : eq(documents.parentId, parentId),
+            except ? ne(documents.id, except) : undefined
+          )
+        )
+        .orderBy(desc(documents.createdAt))
+        .limit(TREE_TITLES)
+    ).map((r) => r.title);
+  // Pages at the top of a space are not each other's siblings: that would be the whole space.
+  const siblings = doc.parentId === null ? [] : await titlesUnder(doc.parentId, doc.id);
+  return { path, siblings, children: await titlesUnder(doc.id, null) };
 }
 
 /** Up to 5 corrections in `spaceIds` most similar to the fact. */
