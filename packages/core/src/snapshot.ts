@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import * as Y from 'yjs';
-import { ServerBlockNoteEditor } from '@blocknote/server-util';
+import { createServerEditor } from '@living-wiki/shared';
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import {
   withTenantTx,
@@ -18,9 +18,9 @@ import {
   type DocumentRow,
 } from '@living-wiki/db';
 import { AppError } from '@living-wiki/contracts';
-import { flattenBlocks, type BlockLike } from '@living-wiki/shared';
+import { flattenBlocks, pageLinksOf, type BlockLike } from '@living-wiki/shared';
 
-const editor = ServerBlockNoteEditor.create();
+const editor = createServerEditor();
 
 const WIKI_LINK = /\[\[([0-9a-f-]{36})\]\]/gi;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -272,14 +272,21 @@ export async function takePageSnapshot(
       ON CONFLICT (tenant_id, version_id, principal_type, principal_id) DO NOTHING
     `);
 
-    // Rebuild internal wiki links ([[target-doc-id]]) from blocks
+    // Rebuild internal wiki links from blocks: page link nodes and the older [[target-doc-id]] text
     await tx
       .delete(links)
       .where(and(eq(links.tenantId, tenantId), eq(links.fromPageId, pageId)));
 
     // Only targets that exist as documents of this tenant are recorded: an
     // unknown id (or another tenant's) is plain text, not a failed snapshot.
-    const found = extractWikiLinks(blocks as BlockLike[], pageId);
+    const self = pageId.toLowerCase();
+    const seenLinks = new Set<string>();
+    const found = [...pageLinksOf(blocks as BlockLike[]), ...extractWikiLinks(blocks as BlockLike[], pageId)].filter((l) => {
+      const key = `${l.blockId}\u0000${l.targetId}`;
+      if (l.targetId === self || seenLinks.has(key)) return false;
+      seenLinks.add(key);
+      return true;
+    });
     if (found.length > 0) {
       const targetIds = [...new Set(found.map((l) => l.targetId))];
       const existing = await tx

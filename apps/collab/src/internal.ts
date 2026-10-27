@@ -1,7 +1,7 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import * as Y from 'yjs';
-import { ServerBlockNoteEditor } from '@blocknote/server-util';
+import { createServerEditor } from '@living-wiki/shared';
 import type { Hocuspocus } from '@hocuspocus/server';
 import { and, eq } from 'drizzle-orm';
 import { withTenantTx, documents, pages, spaces } from '@living-wiki/db';
@@ -45,7 +45,7 @@ export const REVOKED_CLOSE = { code: 4205, reason: 'Reset Connection' } as const
 /** Largest JSON body the internal endpoints read. */
 export const MAX_INTERNAL_BODY_BYTES = 2 * 1024 * 1024;
 
-const blockNote = ServerBlockNoteEditor.create();
+const blockNote = createServerEditor();
 
 function requireDocument(name: string): { tenantId: string; pageId: string } {
   const parsed = parseDocumentName(name);

@@ -1,10 +1,10 @@
 import type * as Y from 'yjs';
-import { ServerBlockNoteEditor } from '@blocknote/server-util';
+import { createServerEditor } from '@living-wiki/shared';
 import { BLOCK_FRAGMENT } from '../../src/server.js';
 
 export { BLOCK_FRAGMENT };
 
-const editor = ServerBlockNoteEditor.create();
+const editor = createServerEditor();
 
 /** The simplified block shape tests write: `{ id, type, text, level? }`. */
 export interface SimpleBlock {

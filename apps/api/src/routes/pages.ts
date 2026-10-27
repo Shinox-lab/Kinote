@@ -1,6 +1,6 @@
 import { isDeepStrictEqual } from 'node:util';
 import * as Y from 'yjs';
-import { ServerBlockNoteEditor } from '@blocknote/server-util';
+import { createServerEditor, restorePageLinks } from '@living-wiki/shared';
 import { and, desc, eq, inArray, isNull } from 'drizzle-orm';
 import {
   withTenantTx,
@@ -69,7 +69,7 @@ import { resolveActorNames } from '../people.js';
 import { canApprove } from '../pages/approval.js';
 import type { CollabClient } from '@living-wiki/shared';
 
-const blockNote = ServerBlockNoteEditor.create();
+const blockNote = createServerEditor();
 
 /** The `versions` columns a VersionSummary is built from (no markdown, blocks or Yjs bytes). */
 export const versionSummaryColumns = {
@@ -124,7 +124,7 @@ export function toDocumentSummary(row: DocumentRow): DocumentSummary {
 }
 
 export async function encodePageYDoc(title: string, markdown: string): Promise<Buffer> {
-  const blocks = await blockNote.tryParseMarkdownToBlocks(markdown);
+  const blocks = restorePageLinks(await blockNote.tryParseMarkdownToBlocks(markdown));
   const ydoc = blockNote.blocksToYDoc(blocks, 'document-store');
   ydoc.getMap('meta').set('title', title);
   return Buffer.from(Y.encodeStateAsUpdate(ydoc));

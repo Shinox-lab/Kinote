@@ -2,7 +2,7 @@ import { describe, test, beforeEach } from 'vitest';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import * as Y from 'yjs';
-import { ServerBlockNoteEditor } from '@blocknote/server-util';
+import { createServerEditor } from '@living-wiki/shared';
 import { and, eq } from 'drizzle-orm';
 import { withTenantTx, pages, links, versions } from '@living-wiki/db';
 import { flattenBlocks, type BlockLike } from '@living-wiki/shared';
@@ -16,7 +16,7 @@ import {
 
 type Headers = Record<string, string>;
 
-const editor = ServerBlockNoteEditor.create();
+const editor = createServerEditor();
 
 /**
  * Snapshot hardening: a change that lands while a snapshot is taken stays
@@ -274,6 +274,17 @@ describe('takePageSnapshot', () => {
       assert.deepEqual(await linkRows(pageId), [
         { fromBlockId: blockId, toDocumentId: targetId, kind: 'link' },
       ]);
+    });
+
+    test('a page link node is recorded, and reads as its title', async () => {
+      const targetId = await createPage(ctx.headers, ctx.open.id, 'target', 'Target page.');
+      const pageId = await createPage(ctx.headers, ctx.open.id, 'linking', 'Placeholder.');
+      await editLive(pageId, `Intro paragraph.\n\nSee [Target](/p/${targetId}) for details.`);
+      const blockId = await blockIdContaining(pageId, 'See Target for details');
+
+      await snap(pageId);
+
+      assert.deepEqual(await linkRows(pageId), [{ fromBlockId: blockId, toDocumentId: targetId, kind: 'link' }]);
     });
 
     test('a random uuid, a malformed id and another tenant document are ignored and the snapshot still succeeds', async () => {

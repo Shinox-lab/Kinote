@@ -1,6 +1,6 @@
 import { describe, test, beforeAll, afterEach, afterAll, expect } from 'vitest';
 import * as Y from 'yjs';
-import { ServerBlockNoteEditor } from '@blocknote/server-util';
+import { createServerEditor } from '@living-wiki/shared';
 import { and, eq, sql } from 'drizzle-orm';
 import {
   withTenantTx,
@@ -26,7 +26,7 @@ import { editBlockText, deleteBlock } from './support/editBlock.js';
 import { buildReviewWorld, waitFor } from './support/collabWorld.js';
 import { buildTestApp, useTestDb } from '../../api/test/support/testkit.js';
 
-const editor = ServerBlockNoteEditor.create();
+const editor = createServerEditor();
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 function paragraph(id: string, text: string, children: any[] = []) {

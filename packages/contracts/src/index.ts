@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 export * from './errors.js';
+export * from './editor.js';
 
 export const TenantRoleSchema = z.enum(['owner', 'admin', 'member', 'viewer']);
 export type TenantRole = z.infer<typeof TenantRoleSchema>;

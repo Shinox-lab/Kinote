@@ -1,10 +1,10 @@
 import * as Y from 'yjs';
-import { ServerBlockNoteEditor } from '@blocknote/server-util';
+import { createServerEditor } from '@living-wiki/shared';
 import { and, eq } from 'drizzle-orm';
 import { pages, type DbTransaction } from '@living-wiki/db';
-import { flattenBlocks, type BlockLike } from '@living-wiki/shared';
+import { flattenBlocks, restorePageLinks, type BlockLike } from '@living-wiki/shared';
 
-const editor = ServerBlockNoteEditor.create();
+const editor = createServerEditor();
 
 /**
  * The page's live title and top-level blocks, read from the stored Yjs state
@@ -45,7 +45,7 @@ export async function blockMarkdown(block: BlockLike): Promise<string> {
 
 /** BlockNote blocks for engine-written Markdown. */
 export async function markdownBlocks(markdown: string): Promise<BlockLike[]> {
-  return (await editor.tryParseMarkdownToBlocks(markdown)) as BlockLike[];
+  return restorePageLinks((await editor.tryParseMarkdownToBlocks(markdown)) as BlockLike[]);
 }
 
 /** A new page's stored Yjs state: `blocks` under `title`. */

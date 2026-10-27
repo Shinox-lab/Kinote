@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import * as Y from 'yjs';
-import { ServerBlockNoteEditor } from '@blocknote/server-util';
+import { createServerEditor } from '@living-wiki/shared';
 import { and, eq } from 'drizzle-orm';
 import { captures, documents, memberships, pages, spaceGrants, spaces, users, withTenantTx } from '@living-wiki/db';
 import { flattenBlocks, type BlockLike } from '@living-wiki/shared';
@@ -15,7 +15,7 @@ import { addSpace, indexPageVersion, seedTenant, type World } from './placementS
 
 export const model = new DeterministicPlacementModel();
 export const embedder = new DeterministicEmbeddingProvider();
-const editor = ServerBlockNoteEditor.create();
+const editor = createServerEditor();
 
 async function addUserRow(tenantId: string, userId: string, role: 'owner' | 'admin' | 'member' | 'viewer') {
   await withTenantTx(tenantId, async (tx) => {

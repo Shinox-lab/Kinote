@@ -38,6 +38,8 @@ function inlineText(content: unknown): string {
     } else if (isRecord(item)) {
       if (typeof item.text === 'string') out += item.text;
       else if (Array.isArray(item.content)) out += inlineText(item.content);
+      // A page link reads as its title (`pageLinkConfig`).
+      else if (item.type === 'pageLink' && isRecord(item.props)) out += String(item.props.title ?? '');
     }
   }
   return out;

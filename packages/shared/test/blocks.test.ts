@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { ServerBlockNoteEditor } from '@blocknote/server-util';
+import { createServerEditor } from '../src/editorSchema.js';
 import { flattenBlocks } from '../src/blocks.js';
 
-const editor = ServerBlockNoteEditor.create();
+const editor = createServerEditor();
 const parse = (md: string) => editor.tryParseMarkdownToBlocks(md);
 
 describe('flattenBlocks', () => {

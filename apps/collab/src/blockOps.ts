@@ -1,5 +1,5 @@
 import * as Y from 'yjs';
-import { ServerBlockNoteEditor } from '@blocknote/server-util';
+import { createServerEditor } from '@living-wiki/shared';
 import { AppError } from '@living-wiki/contracts';
 import { blockFullText, type BlockLike } from '@living-wiki/shared';
 import { BLOCK_FRAGMENT } from './fragment.js';
@@ -23,7 +23,7 @@ export type BlockOp =
 const BLOCK_CONTAINER = 'blockContainer';
 const BLOCK_GROUP = 'blockGroup';
 
-const blockNote = ServerBlockNoteEditor.create();
+const blockNote = createServerEditor();
 
 /** The fragment's top-level blockGroup, or null on a page that has never had content. */
 function rootGroup(fragment: Y.XmlFragment): Y.XmlElement | null {
