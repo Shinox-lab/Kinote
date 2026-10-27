@@ -136,13 +136,29 @@ const OpSchema: z.ZodType<PlannedOp, z.ZodTypeDef, unknown> = z.discriminatedUni
   z.object({ op: z.literal('create_page'), spaceId: Id, parentId: Id.nullable(), title: Name, markdown: Text }),
   z.object({ op: z.literal('already_known'), documentId: Id, blockId: Id }),
 ]);
-const EditItem = z.object({
-  op: OpSchema,
-  confidence: z.number().transform((n) => Math.min(1, Math.max(0, n))),
-  reason: z.string().trim().max(300).catch(''),
-});
+/** Models usually answer flat ({"op": "replace", "documentId", ..., "confidence"}); nest the op fields. */
+function nestOp(raw: unknown): unknown {
+  if (!raw || typeof raw !== 'object') return raw;
+  const { op, confidence, reason, ...fields } = raw as Record<string, unknown>;
+  return typeof op === 'string' ? { op: { op, ...fields }, confidence, reason } : raw;
+}
+const EditItem = z.preprocess(
+  nestOp,
+  z.object({
+    op: OpSchema,
+    confidence: z.number().transform((n) => Math.min(1, Math.max(0, n))),
+    reason: z.string().trim().max(300).catch(''),
+  })
+);
 const EditsSchema = z.object({
-  edits: z.array(z.unknown()).transform((list) => validItems(list, EditItem, MAX_EDITS)),
+  edits: z.array(z.unknown()).transform((list, ctx) => {
+    const edits = validItems(list, EditItem, MAX_EDITS);
+    // Edits it could not read at all are a wrong answer to ask again, not "no edit".
+    if (list.length > 0 && edits.length === 0) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'no edit matched the shape asked for' });
+    }
+    return edits;
+  }),
 });
 
 const UNTRUSTED =
@@ -348,10 +364,12 @@ export class OpenAIPlacementModel implements RoutingModel {
     return chatJson(this.opts, {
       system:
         `You file one fact into a wiki by proposing edits to the pages given. ${UNTRUSTED} ` +
-        'Return {"edits": [{"op", "confidence", "reason"}]}. op is one of ' +
-        '{"op":"insert_after","documentId","after" (block id or null for the start),"markdown"}, ' +
-        '{"op":"replace","documentId","blockId","markdown"}, {"op":"remove","documentId","blockId"}, ' +
-        '{"op":"create_page","spaceId","parentId","title","markdown"}, {"op":"already_known","documentId","blockId"}. ' +
+        'Return {"edits": [edit]} where each edit is one flat object, one of ' +
+        '{"op":"insert_after","documentId","after" (block id or null for the start),"markdown","confidence","reason"}, ' +
+        '{"op":"replace","documentId","blockId","markdown","confidence","reason"}, ' +
+        '{"op":"remove","documentId","blockId","confidence","reason"}, ' +
+        '{"op":"create_page","spaceId","parentId","title","markdown","confidence","reason"}, ' +
+        '{"op":"already_known","documentId","blockId","confidence","reason"}. ' +
         'Prefer updating the block that already covers the subject; create a page only when no page fits. ' +
         'Use only page and block ids shown. confidence is 0 to 1; reason is one short sentence.',
       user:
@@ -373,6 +391,7 @@ export function createPlacementModel(config: {
   ROUTER_MODEL?: string;
   ROUTER_TIMEOUT_MS: number;
   ROUTER_MAX_TOKENS: number;
+  ROUTER_REASONING?: 'off';
 }): RoutingModel {
   if (config.ROUTER_PROVIDER === 'deterministic') return new DeterministicPlacementModel();
   if (!config.ROUTER_BASE_URL || !config.ROUTER_MODEL) {
@@ -384,5 +403,6 @@ export function createPlacementModel(config: {
     model: config.ROUTER_MODEL,
     timeoutMs: config.ROUTER_TIMEOUT_MS,
     maxTokens: config.ROUTER_MAX_TOKENS,
+    reasoning: config.ROUTER_REASONING,
   });
 }

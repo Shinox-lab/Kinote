@@ -7,6 +7,8 @@ export interface ChatJsonOptions {
   model: string;
   timeoutMs: number;
   maxTokens: number;
+  /** `off` asks the model not to reason first (OpenRouter's `reasoning` field); unset sends nothing. */
+  reasoning?: 'off';
   fetchImpl?: typeof fetch;
 }
 
@@ -16,17 +18,21 @@ function unavailable(cause: string): AppError {
   return error;
 }
 
-function contentOf(body: unknown): string {
+function firstChoice(body: unknown): { finish_reason?: unknown; message?: { content?: unknown } } | undefined {
   const choices = (body as { choices?: unknown })?.choices;
-  const first = Array.isArray(choices) ? choices[0] : undefined;
-  const content = (first as { message?: { content?: unknown } })?.message?.content;
+  return Array.isArray(choices) ? choices[0] : undefined;
+}
+
+function contentOf(body: unknown): string {
+  const content = firstChoice(body)?.message?.content;
   return typeof content === 'string' ? content.trim() : '';
 }
 
 /**
  * One OpenAI-compatible `/chat/completions` call that must answer a JSON
  * object matching `schema`. A malformed or invalid answer is retried once with
- * the validation error added; a second one, or any transport failure, is
+ * the validation error added; a second one, an answer cut off at the token
+ * limit, or any transport failure, is
  * `router_unavailable` (the caller's job retries). The answer is untrusted
  * model output: only what `schema` accepts comes back.
  */
@@ -57,6 +63,7 @@ export async function chatJson<T>(
           max_tokens: opts.maxTokens,
           response_format: { type: 'json_object' },
           stream: false,
+          ...(opts.reasoning === 'off' ? { reasoning: { enabled: false } } : {}),
         }),
         signal: AbortSignal.timeout(opts.timeoutMs),
       });
@@ -71,6 +78,11 @@ export async function chatJson<T>(
       body = await response.json();
     } catch {
       throw unavailable('the routing model returned an unexpected answer');
+    }
+
+    // Cut off at max_tokens (a reasoning model can spend them all thinking): asking again pays for the same cut.
+    if (firstChoice(body)?.finish_reason === 'length') {
+      throw unavailable('the routing model ran out of tokens before answering: raise ROUTER_MAX_TOKENS or set ROUTER_REASONING=off');
     }
 
     let problem: string;

@@ -65,6 +65,8 @@ export const ConfigSchema = z.object({
   ROUTER_MODEL: z.string().min(1).optional(),
   ROUTER_TIMEOUT_MS: z.coerce.number().int().positive().max(120_000).default(60_000),
   ROUTER_MAX_TOKENS: z.coerce.number().int().positive().max(8192).default(2000),
+  /** `off`: ask a reasoning model not to think first (OpenRouter); its thinking counts toward ROUTER_MAX_TOKENS. */
+  ROUTER_REASONING: z.enum(['off']).optional(),
   S3_ENDPOINT: z.string().min(1).optional(),
   S3_BUCKET: z.string().min(1).optional(),
   S3_ACCESS_KEY: z.string().min(1).optional(),
@@ -161,4 +163,18 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     return missing ? `${name} (missing)` : `${name} (${issue.message})`;
   });
   throw new Error(`Invalid environment configuration: ${problems.join('; ')}`);
+}
+
+/**
+ * Why the worker must not start, or null. The deterministic router is a
+ * rule-based stand-in for tests: next to a real embedding or Ask model it means
+ * the routing settings were left out, and every capture would be filed by rules.
+ */
+export function routerProviderProblem(config: Config): string | null {
+  if (config.ROUTER_PROVIDER !== 'deterministic') return null;
+  if (config.EMBEDDING_PROVIDER === 'deterministic' && config.ASK_PROVIDER === 'deterministic') return null;
+  return (
+    'ROUTER_PROVIDER is deterministic (the rule-based test stand-in) while real embedding or Ask models are set: ' +
+    'set ROUTER_PROVIDER=openai with ROUTER_BASE_URL and ROUTER_MODEL'
+  );
 }

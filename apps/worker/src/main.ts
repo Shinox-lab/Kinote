@@ -5,13 +5,15 @@ import {
   createPlacementModel,
   EMBEDDING_DIMENSIONS,
 } from '@living-wiki/core';
-import { HttpCollabClient, createObjectStorage, loadConfig } from '@living-wiki/shared';
+import { HttpCollabClient, createObjectStorage, loadConfig, routerProviderProblem } from '@living-wiki/shared';
 import { runWorkerLoop } from './runner.js';
 
 const POLL_INTERVAL_MS = 1000;
 
 async function main(): Promise<void> {
   const config = loadConfig();
+  const routerProblem = routerProviderProblem(config);
+  if (routerProblem) throw new Error(routerProblem);
   const provider = createEmbeddingProvider(config);
   if (provider.dimensions !== EMBEDDING_DIMENSIONS) {
     throw new Error(
@@ -30,7 +32,7 @@ async function main(): Promise<void> {
   process.once('SIGTERM', stop);
   process.once('SIGINT', stop);
 
-  console.log('[worker] started');
+  console.log(`[worker] started (router: ${config.ROUTER_PROVIDER} ${config.ROUTER_MODEL ?? ''})`.trimEnd());
   try {
     await runWorkerLoop({
       intervalMs: POLL_INTERVAL_MS,

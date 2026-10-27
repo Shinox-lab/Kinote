@@ -99,6 +99,25 @@ describe('chatJson', () => {
     );
   });
 
+  it('an answer cut off at the token limit fails at once and says so', async () => {
+    const cut = new Response(JSON.stringify({ choices: [{ finish_reason: 'length', message: { content: null } }] }), { status: 200 });
+    const { impl, calls } = fakeFetch(cut, reply('{"summary":"ok"}'));
+    const err = await chatJson({ ...opts, fetchImpl: impl }, { system: 's', user: 'u', schema: Summary }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(AppError);
+    expect((err as AppError).code).toBe('router_unavailable');
+    expect(String((err as Error).cause)).toMatch(/ROUTER_MAX_TOKENS/);
+    expect(calls).toHaveLength(1);
+  });
+
+  it('asks the model not to reason only when reasoning is off', async () => {
+    const off = fakeFetch(reply('{"summary":"ok"}'));
+    await chatJson({ ...opts, reasoning: 'off', fetchImpl: off.impl }, { system: 's', user: 'u', schema: Summary });
+    expect(off.calls[0]!.body.reasoning).toEqual({ enabled: false });
+    const plain = fakeFetch(reply('{"summary":"ok"}'));
+    await chatJson({ ...opts, fetchImpl: plain.impl }, { system: 's', user: 'u', schema: Summary });
+    expect('reasoning' in plain.calls[0]!.body).toBe(false);
+  });
+
   it('a 500 or a timeout is router_unavailable', async () => {
     const failing = fakeFetch(reply('{}', 500));
     expect(await codeOf(chatJson({ ...opts, fetchImpl: failing.impl }, { system: 's', user: 'u', schema: Summary }))).toBe(
@@ -117,6 +136,12 @@ describe('router config', () => {
 
   it('defaults to the deterministic model', () => {
     expect(createPlacementModel(loadConfig(base))).toBeInstanceOf(DeterministicPlacementModel);
+  });
+
+  it('takes ROUTER_REASONING=off and refuses anything else', () => {
+    expect(loadConfig(base).ROUTER_REASONING).toBeUndefined();
+    expect(loadConfig({ ...base, ROUTER_REASONING: 'off' }).ROUTER_REASONING).toBe('off');
+    expect(() => loadConfig({ ...base, ROUTER_REASONING: 'maybe' })).toThrow(/ROUTER_REASONING/);
   });
 
   it('requires ROUTER_MODEL for the openai provider', () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_AUTH_RATE_LIMIT_MAX, loadConfig } from '../src/config.js';
+import { DEFAULT_AUTH_RATE_LIMIT_MAX, loadConfig, routerProviderProblem } from '../src/config.js';
 
 const base = {
   DATABASE_URL: 'postgres://x',
@@ -82,6 +82,30 @@ describe('loadConfig: auth rate limit and embeddings', () => {
         ASK_BASE_URL: 'https://chat.example/v1',
       })
     ).toThrow(/ASK_MODEL/);
+  });
+});
+
+describe('routerProviderProblem', () => {
+  const realEmbeddings = {
+    ...base,
+    EMBEDDING_PROVIDER: 'openai',
+    EMBEDDING_BASE_URL: 'https://models.example/v1',
+    EMBEDDING_MODEL: 'Qwen/Qwen3-Embedding-8B',
+  };
+  const realAsk = { ...base, ASK_PROVIDER: 'openai', ASK_BASE_URL: 'https://chat.example/v1', ASK_MODEL: 'm' };
+  const realRouter = { ROUTER_PROVIDER: 'openai', ROUTER_BASE_URL: 'https://chat.example/v1', ROUTER_MODEL: 'm' };
+
+  it('allows the stand-in router when every provider is the stand-in (tests and local e2e)', () => {
+    expect(routerProviderProblem(loadConfig(base))).toBeNull();
+  });
+
+  it('refuses the stand-in router when embeddings or Ask use a real model', () => {
+    expect(routerProviderProblem(loadConfig(realEmbeddings))).toMatch(/ROUTER_PROVIDER/);
+    expect(routerProviderProblem(loadConfig(realAsk))).toMatch(/ROUTER_PROVIDER/);
+  });
+
+  it('accepts a real router next to real embeddings', () => {
+    expect(routerProviderProblem(loadConfig({ ...realEmbeddings, ...realRouter }))).toBeNull();
   });
 });
 

@@ -116,6 +116,40 @@ describe('OpenAIPlacementModel routing', () => {
     expect(edits).toEqual([{ op: { op: 'remove', documentId: 'doc-billing', blockId: 'p1' }, confidence: 1, reason: 'gone' }]);
   });
 
+  it('reads the flat edit shape models answer with', async () => {
+    const m = new OpenAIPlacementModel({
+      ...opts,
+      fetchImpl: replying({
+        edits: [
+          { op: 'replace', documentId: 'doc-billing', blockId: 'p1', markdown: 'Billing uses Adyen.', confidence: 0.95, reason: 'moved' },
+          { op: 'insert_after', documentId: 'doc-billing', after: null, markdown: 'Note.', confidence: 0.7, reason: 'r' },
+        ],
+      }),
+    });
+    const { edits } = await m.planEdits({ fact: fact('Billing moved to Adyen.', 'change', []), candidates: [billing], examples: [], writableSpaces: [] });
+    expect(edits).toEqual([
+      { op: { op: 'replace', documentId: 'doc-billing', blockId: 'p1', markdown: 'Billing uses Adyen.' }, confidence: 0.95, reason: 'moved' },
+      { op: { op: 'insert_after', documentId: 'doc-billing', after: null, markdown: 'Note.' }, confidence: 0.7, reason: 'r' },
+    ]);
+  });
+
+  it('asks again when it can read none of the edits, instead of planning nothing', async () => {
+    const answers = [
+      { edits: [{ action: 'replace', page: 'doc-billing', confidence: 0.9 }] },
+      { edits: [{ op: 'remove', documentId: 'doc-billing', blockId: 'p1', confidence: 0.9, reason: 'gone' }] },
+    ];
+    const bodies: string[] = [];
+    const fetchImpl = (async (_url: string, init: RequestInit) => {
+      bodies.push(String(init.body));
+      return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(answers.shift()) } }] }), { status: 200 });
+    }) as unknown as typeof fetch;
+    const m = new OpenAIPlacementModel({ ...opts, fetchImpl });
+    const { edits } = await m.planEdits({ fact: fact('Billing no longer uses Stripe.', 'removal', []), candidates: [billing], examples: [], writableSpaces: [] });
+    expect(bodies).toHaveLength(2);
+    expect(bodies[1]).toContain('rejected');
+    expect(edits).toEqual([{ op: { op: 'remove', documentId: 'doc-billing', blockId: 'p1' }, confidence: 0.9, reason: 'gone' }]);
+  });
+
   it('reads facts leniently', async () => {
     const m = new OpenAIPlacementModel({
       ...opts,
