@@ -27,9 +27,10 @@ import { blockMarkdown, blockText, readLiveBlocks } from './liveBlocks.js';
 /**
  * Routing settings. Thresholds are to be tuned on the evaluation set:
  * `apply` for an insert or replace, `create` for a new page (R9), and
- * `margin`, how far ahead the best target (or entity) must be (R10).
+ * `margin`, how far ahead the best target (or entity) must be (R10), and
+ * `document`, the shape confidence that makes a capture a document.
  */
-export const ROUTING = { candidates: 8, blocksPerCandidate: 40, apply: 0.6, create: 0.85, margin: 0.1, rrfK: 60 } as const;
+export const ROUTING = { candidates: 8, blocksPerCandidate: 40, apply: 0.6, create: 0.85, margin: 0.1, rrfK: 60, document: 0.6 } as const;
 
 /** Why an edit became a suggestion instead of being applied. */
 export type Gate = null | 'removal' | 'protection' | 'conflict' | 'no_edit_access';
@@ -79,7 +80,7 @@ export interface PlanDeps {
   guard?: () => Promise<void>;
 }
 
-interface Context {
+export interface Context {
   actor: Actor;
   filter: PlacementFilter;
   inboxSpaceId: string;
@@ -88,7 +89,7 @@ interface Context {
   scopePageId: string | null;
 }
 
-interface Candidate {
+export interface Candidate {
   spaceId: string;
   card: PlanCandidate;
   blocks: Map<string, BlockLike>;
@@ -113,12 +114,7 @@ export async function planCapture(
       .from(captures)
       .where(and(eq(captures.tenantId, tenantId), eq(captures.id, captureId)));
     if (!capture) throw new AppError('capture_not_found');
-    const actor = await senderActor(tx, { tenantId, type: capture.senderType, id: capture.senderId });
-    const access = await senderAccess(tx, actor);
-    let spaceIds = access.readable;
-    // A page a person chose overrides the capture's scope.
-    if (capture.scopeSpaceId && !deps.onlyPage) spaceIds = spaceIds.filter((id) => id === capture.scopeSpaceId);
-    const all = await tx.select({ id: spaces.id, kind: spaces.kind, name: spaces.name }).from(spaces).where(eq(spaces.tenantId, tenantId));
+    const context = await captureContext(tx, tenantId, capture, deps.onlyPage);
     const stored = deps.facts
       ? null
       : await tx
@@ -126,14 +122,6 @@ export async function planCapture(
           .from(captureFacts)
           .where(and(eq(captureFacts.tenantId, tenantId), eq(captureFacts.captureId, captureId)))
           .orderBy(captureFacts.ordinal);
-    const context: Context = {
-      actor,
-      filter: { tenantId, spaceIds },
-      inboxSpaceId: all.find((s) => s.kind === 'inbox')?.id ?? '00000000-0000-0000-0000-000000000000',
-      editable: new Set(access.editable),
-      writableSpaces: all.filter((s) => access.editable.includes(s.id)).map((s) => ({ id: s.id, name: s.name })),
-      scopePageId: deps.onlyPage ?? capture.scopePageId,
-    };
     return { capture, context, stored };
   });
 
@@ -179,6 +167,66 @@ export async function planCapture(
     out.push({ ...input, plan: await planFact(tenantId, loaded.context, input, deps) });
   }
   return out;
+}
+
+/** Who the capture's sender is, what they may read and edit, and the capture's scope. */
+export async function captureContext(
+  tx: DbTransaction,
+  tenantId: string,
+  capture: typeof captures.$inferSelect,
+  onlyPage?: string
+): Promise<Context> {
+  const actor = await senderActor(tx, { tenantId, type: capture.senderType, id: capture.senderId });
+  const access = await senderAccess(tx, actor);
+  let spaceIds = access.readable;
+  // A page a person chose overrides the capture's scope.
+  if (capture.scopeSpaceId && !onlyPage) spaceIds = spaceIds.filter((id) => id === capture.scopeSpaceId);
+  const all = await tx.select({ id: spaces.id, kind: spaces.kind, name: spaces.name }).from(spaces).where(eq(spaces.tenantId, tenantId));
+  return {
+    actor,
+    filter: { tenantId, spaceIds },
+    inboxSpaceId: all.find((s) => s.kind === 'inbox')?.id ?? '00000000-0000-0000-0000-000000000000',
+    editable: new Set(access.editable),
+    writableSpaces: all.filter((s) => access.editable.includes(s.id)).map((s) => ({ id: s.id, name: s.name })),
+    scopePageId: onlyPage ?? capture.scopePageId,
+  };
+}
+
+/**
+ * Entities for `names`: an exact or clearly-ahead match per name. The first
+ * name two entities fit about equally well is returned as `ambiguous`
+ * (with the close options), and resolving stops there.
+ */
+export async function resolveNames(
+  tenantId: string,
+  ctx: Context,
+  names: string[],
+  pinnedEntityIds: string[]
+): Promise<{ resolved: string[]; ambiguous: { name: string; options: Array<{ entityId: string; label: string }> } | null }> {
+  const resolved: string[] = [];
+  const hitsByName = await withTenantTx(tenantId, async (tx) => {
+    const found: Array<[string, Awaited<ReturnType<typeof findEntities>>]> = [];
+    for (const name of names) found.push([name, await findEntities(tx, ctx.filter, name, 5)]);
+    return found;
+  });
+  for (const [name, hits] of hitsByName) {
+    const pinned = hits.find((h) => pinnedEntityIds.includes(h.entityId));
+    if (pinned) {
+      resolved.push(pinned.entityId);
+      continue;
+    }
+    const [top, second] = hits;
+    if (!top) continue;
+    const clearlyAhead =
+      !second || (top.match === 'exact' && second.match !== 'exact') || top.score - second.score > ROUTING.margin;
+    if (clearlyAhead) {
+      resolved.push(top.entityId);
+      continue;
+    }
+    const close = hits.filter((h) => h.match === top.match && top.score - h.score <= ROUTING.margin);
+    return { resolved, ambiguous: { name, options: close.map((h) => ({ entityId: h.entityId, label: h.name })) } };
+  }
+  return { resolved, ambiguous: null };
 }
 
 /**
@@ -241,32 +289,13 @@ async function planFact(tenantId: string, ctx: Context, input: PlanFactInput, de
   const { fact, pinnedEntityIds } = input;
 
   // 1. Resolve the names, asking when two entities fit about equally well.
-  const resolved: string[] = [];
-  const hitsByName = await withTenantTx(tenantId, async (tx) => {
-    const found: Array<[string, Awaited<ReturnType<typeof findEntities>>]> = [];
-    for (const name of fact.names) found.push([name, await findEntities(tx, ctx.filter, name, 5)]);
-    return found;
-  });
-  for (const [name, hits] of hitsByName) {
-    const pinned = hits.find((h) => pinnedEntityIds.includes(h.entityId));
-    if (pinned) {
-      resolved.push(pinned.entityId);
-      continue;
-    }
-    const [top, second] = hits;
-    if (!top) continue;
-    const clearlyAhead =
-      !second || (top.match === 'exact' && second.match !== 'exact') || top.score - second.score > ROUTING.margin;
-    if (clearlyAhead) {
-      resolved.push(top.entityId);
-      continue;
-    }
-    const close = hits.filter((h) => h.match === top.match && top.score - h.score <= ROUTING.margin);
+  const { resolved, ambiguous } = await resolveNames(tenantId, ctx, fact.names, pinnedEntityIds);
+  if (ambiguous) {
     return {
       status: 'question',
-      names: [name],
-      question: `Which ${name} do you mean?`,
-      options: close.map((h) => ({ entityId: h.entityId, label: h.name })),
+      names: [ambiguous.name],
+      question: `Which ${ambiguous.name} do you mean?`,
+      options: ambiguous.options,
     };
   }
 
@@ -291,12 +320,14 @@ async function planFact(tenantId: string, ctx: Context, input: PlanFactInput, de
   return checkEdits(tenantId, ctx, candidates, edits, deps);
 }
 
-async function gatherCandidates(
+/** Candidate pages for `fact`: passages, cards and the graph fused, at most ROUTING.candidates; `exclude` never is one. */
+export async function gatherCandidates(
   tx: DbTransaction,
   ctx: Context,
   fact: CaptureFact,
   vector: number[],
-  entityIds: string[]
+  entityIds: string[],
+  exclude?: string
 ): Promise<Map<string, Candidate>> {
   const statement = fact.statement;
   /** Block ids passage search matched, per page: the blocks most about this fact. */
@@ -334,6 +365,7 @@ async function gatherCandidates(
   const out = new Map<string, Candidate>();
   for (const id of ids) {
     if (out.size >= ROUTING.candidates) break;
+    if (id === exclude) continue;
     const doc = docs.find((d) => d.id === id);
     if (!doc || doc.kind !== 'page' || doc.archivedAt || !ctx.filter.spaceIds.includes(doc.spaceId)) continue;
     const live = await readLiveBlocks(tx, ctx.filter.tenantId, id);
@@ -414,7 +446,7 @@ async function similarExamples(tx: DbTransaction, tenantId: string, spaceIds: st
       SELECT e.statement, d.title
         FROM routing_examples e
         JOIN documents d ON d.tenant_id = e.tenant_id AND d.id = e.chosen_document_id
-       WHERE e.tenant_id = ${tenantId}::uuid AND e.space_id = ANY(${sql.param(spaceIds)}::uuid[])
+       WHERE e.tenant_id = ${tenantId}::uuid AND e.kind = 'fact' AND e.space_id = ANY(${sql.param(spaceIds)}::uuid[])
        ORDER BY e.statement_embedding <=> ${literal}::halfvec
        LIMIT 5`)
   );

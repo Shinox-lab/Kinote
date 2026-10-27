@@ -58,10 +58,17 @@ export async function placeFact(
   }
 }
 
-/** Saves a person's correction for the planner to see next time (R11). */
+/** Saves a person's correction for the planner (or, for a document, the placement step) to see next time (R11). */
 export async function recordRoutingExample(
   tenantId: string,
-  example: { statement: string; chosenDocumentId: string; wrongDocumentId: string | null; createdBy: string },
+  example: {
+    statement: string;
+    chosenDocumentId: string;
+    wrongDocumentId: string | null;
+    createdBy: string;
+    /** `document`: the chosen page is the parent a document's page went under. */
+    kind?: 'fact' | 'document';
+  },
   embedder: EmbeddingProvider
 ): Promise<void> {
   const [vector] = await embedder.embed([example.statement], 'document');
@@ -74,6 +81,7 @@ export async function recordRoutingExample(
     await tx.insert(routingExamples).values({
       tenantId,
       spaceId: doc.spaceId,
+      kind: example.kind ?? 'fact',
       statement: example.statement,
       statementEmbedding: vector!,
       chosenDocumentId: example.chosenDocumentId,

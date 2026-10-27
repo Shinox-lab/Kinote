@@ -79,6 +79,9 @@ export {
   type PlannedOp,
   type PlannedEdit,
   type PlanEditsInput,
+  type CaptureShape,
+  type DocumentPlacement,
+  type PlaceDocumentInput,
   type EntityKind,
   type EdgeType,
   type ExtractedEntity,
@@ -134,3 +137,4 @@ export {
   type RouteDeps,
 } from './routing/apply.js';
 export { placeFact, recordRoutingExample } from './routing/place.js';
+export { planDocument, uniqueChildTitle, similarDocumentExamples, type DocumentPlan } from './routing/document.js';
