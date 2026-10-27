@@ -60,8 +60,8 @@ picker listing people first, then pages. *(my call)*
 
 **D3. Backlinks** appear in a "Linked from" section at the end of each page, collapsed when empty. Each entry shows the
 source page title, the space, and the text of the linking block (up to 160 characters). They are read from `links`
-joined with read access, and use the reviewed snapshot like search does. *(my call: links in waiting snapshots don't
-show until approved, consistent with search)*
+joined with read access. `links` is rebuilt from each page's latest snapshot. *(my call, changed while building:
+anyone who can read a page already sees its live text, so holding backlinks until review protects nothing)*
 
 **D4. Routing both sides is derived from `capture_changes`** joined with `captures.document_page_id`:
 - On the document page, an "Updated from this page" section lists each standing page and how many sections changed,

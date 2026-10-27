@@ -77,7 +77,10 @@ export const documents = pgTable('documents', {
   createdByType: text('created_by_type', { enum: ['user', 'agent', 'connector'] }).notNull(),
   createdBy: uuid('created_by').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-});
+}, (t) => [
+  // The `[[` picker matches titles by trigram similarity.
+  index('documents_title_trgm_idx').using('gin', t.title.op('gin_trgm_ops')),
+]);
 
 export const pages = pgTable(
   'pages',
@@ -297,4 +300,8 @@ export const links = pgTable('links', {
     .notNull()
     .references(() => documents.id, { onDelete: 'cascade' }),
   kind: text('kind', { enum: ['link', 'mention', 'embed'] }).notNull().default('link'),
-});
+}, (t) => [
+  // Backlinks read links by target; snapshots rebuild them by source page.
+  index('links_to_document_idx').on(t.tenantId, t.toDocumentId),
+  index('links_from_page_idx').on(t.tenantId, t.fromPageId),
+]);

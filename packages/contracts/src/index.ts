@@ -1267,3 +1267,55 @@ export const FactStatusSchema = z.object({
     'filed_in_document',
   ]),
 });
+
+/** GET /api/v1/link-targets: pages for the `[[` picker, best title match first (recent pages when `q` is empty). */
+export const LinkTargetQuerySchema = z.object({
+  q: z.string().max(200).default(''),
+  limit: z.coerce.number().int().min(1).max(20).default(8),
+});
+export const LinkTargetSchema = z.object({
+  id: z.string().uuid(),
+  title: z.string(),
+  icon: z.string().nullable(),
+  spaceId: z.string().uuid(),
+  spaceName: z.string(),
+  /** The parent page's title, to tell same-named pages apart. */
+  parentTitle: z.string().nullable(),
+});
+export type LinkTarget = z.infer<typeof LinkTargetSchema>;
+export const LinkTargetListSchema = z.array(LinkTargetSchema);
+
+/** GET /api/v1/documents/titles?ids=a,b: the current titles of link targets the caller can read. */
+export const DocumentTitlesQuerySchema = z.object({
+  ids: z
+    .string()
+    .transform((s) => [...new Set(s.split(',').map((x) => x.trim().toLowerCase()).filter(Boolean))])
+    .pipe(z.array(z.string().uuid()).min(1).max(100)),
+});
+export const DocumentTitleSchema = z.object({
+  id: z.string().uuid(),
+  kind: z.enum(['page', 'file']),
+  title: z.string(),
+  icon: z.string().nullable(),
+});
+export type DocumentTitle = z.infer<typeof DocumentTitleSchema>;
+/** Only readable, live documents are listed: a missing id shows as "Page unavailable". */
+export const DocumentTitleListSchema = z.array(DocumentTitleSchema);
+
+const ConnectedPageSchema = z.object({
+  pageId: z.string().uuid(),
+  title: z.string(),
+  icon: z.string().nullable(),
+  spaceName: z.string(),
+});
+
+/** GET /api/v1/pages/:id/connections: how the page connects to others, readable pages only. */
+export const PageConnectionsSchema = z.object({
+  /** Pages whose blocks link here (from their latest snapshot). */
+  linkedFrom: z.array(ConnectedPageSchema.extend({ blockId: z.string(), excerpt: z.string() })),
+  /** Document pages whose facts the routing engine wrote onto this page. */
+  updatedBy: z.array(ConnectedPageSchema.extend({ blockIds: z.array(z.string()) })),
+  /** For a document page: the standing pages its facts updated, with how many sections changed. */
+  updated: z.array(ConnectedPageSchema.extend({ captureId: z.string().uuid(), sections: z.number().int() })),
+});
+export type PageConnections = z.infer<typeof PageConnectionsSchema>;

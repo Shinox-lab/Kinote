@@ -47,6 +47,9 @@ import {
   ReviewListSchema,
   UpdatesResponseSchema,
   RecentResponseSchema,
+  LinkTargetListSchema,
+  DocumentTitleListSchema,
+  PageConnectionsSchema,
   RetryVersionResponseSchema,
   UploadFileResponseSchema,
   SourcePutResponseSchema,
@@ -147,6 +150,7 @@ import {
 } from './routes/files.js';
 import { listUpdates } from './routes/updates.js';
 import { listRecent } from './routes/recent.js';
+import { getPageConnections, listDocumentTitles, listLinkTargets } from './routes/connections.js';
 import { authRoutes, type AuthRateLimit } from './routes/auth.js';
 import { requireSession, resolveActor, resolveSourceActor, type AuthSession, type SourceActor } from './auth/actor.js';
 import { registerErrorHandler } from './errors.js';
@@ -637,6 +641,19 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
 
   app.get('/api/v1/updates', async (req, reply) => {
     return reply.send(parseReply(UpdatesResponseSchema, await listUpdates(actorOf(req), req.query)));
+  });
+
+  app.get('/api/v1/link-targets', async (req, reply) => {
+    return reply.send(parseReply(LinkTargetListSchema, await listLinkTargets(actorOf(req), req.query)));
+  });
+
+  app.get('/api/v1/documents/titles', async (req, reply) => {
+    return reply.send(parseReply(DocumentTitleListSchema, await listDocumentTitles(actorOf(req), req.query)));
+  });
+
+  app.get('/api/v1/pages/:id/connections', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    return reply.send(parseReply(PageConnectionsSchema, await getPageConnections(actorOf(req), id)));
   });
 
   app.get('/api/v1/recent', async (req, reply) => {
