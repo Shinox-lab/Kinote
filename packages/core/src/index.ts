@@ -118,6 +118,9 @@ export { senderActor, senderAccess, type SenderAccess } from './routing/access.j
 export { readLiveBlocks, blockText, blockMarkdown, markdownBlocks, encodeBlocksYDoc } from './routing/liveBlocks.js';
 export {
   planCapture,
+  splitCaptureText,
+  decideShape,
+  pageTree,
   ROUTING,
   type CheckedEdit,
   type FactPlan,

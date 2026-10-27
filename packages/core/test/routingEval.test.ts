@@ -16,3 +16,12 @@ it('the deterministic model meets the bar on the fixture', async () => {
   expect(result.wrongRemovals).toBe(0);
   expect(result.duplicates).toBe(0);
 }, 60_000);
+
+it('documents are placed under their expected parent and updates stay updates', async () => {
+  const result = await runRoutingEval(new DeterministicPlacementModel(), new DeterministicEmbeddingProvider());
+  expect(result.documents).toBe(3);
+  expect(result.documentHits).toBe(3);
+  expect(result.shapeMisses).toBe(0);
+  expect(result.hitRate).toBeGreaterThanOrEqual(0.9);
+  expect(result.wrongRemovals).toBe(0);
+}, 60_000);

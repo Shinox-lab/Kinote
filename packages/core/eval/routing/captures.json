@@ -26,5 +26,20 @@
     ]
   },
   { "text": "Daniel Okoro joined the on-call rota.", "expect": [{ "fact": 0, "documentTitle": "Search team", "op": "insert" }] },
-  { "text": "Postgres was upgraded to version 17.", "expect": [{ "fact": 0, "documentTitle": "Search service", "op": "insert" }] }
+  { "text": "Postgres was upgraded to version 17.", "expect": [{ "fact": 0, "documentTitle": "Search service", "op": "insert" }] },
+  {
+    "text": "Acme call 30 Sep\n- Acme now pays monthly.\n- Priya Shah asked for the March report.\n- Next call in two weeks.",
+    "document": { "parent": "Acme account" },
+    "expect": [{ "fact": 0, "documentTitle": "Acme account", "op": "replace" }]
+  },
+  {
+    "text": "Globex call 3 Oct\n- Globex is renewing in March.\n- Globex changed to the Growth plan.\n- Send the contract next week.",
+    "document": { "parent": "Globex account" },
+    "expect": [{ "fact": 0, "documentTitle": "Globex account", "op": "replace" }]
+  },
+  {
+    "text": "Deploy review 5 Oct\n- Deploys now go out through Flux.\n- Rollbacks need two approvals.\n- Review again next month.",
+    "document": { "parent": "Deploy runbook" },
+    "expect": [{ "fact": 0, "documentTitle": "Deploy runbook", "op": "replace" }]
+  }
 ]
