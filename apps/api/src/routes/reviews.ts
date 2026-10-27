@@ -280,7 +280,7 @@ async function captureBundles(tx: DbTransaction, actor: Actor, versionIds: strin
     );
   // The excerpt is built only from facts that landed where the reviewer can
   // read: the raw capture may hold facts filed in spaces they cannot see.
-  const readableFacts = [...new Set(touched.map((t) => t.factId))];
+  const readableFacts = [...new Set(touched.map((t) => t.factId).filter((id): id is string => id !== null))];
   const statements =
     readableFacts.length === 0
       ? []

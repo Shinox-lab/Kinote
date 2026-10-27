@@ -155,7 +155,7 @@ async function undoChanges(
         .update(captureChanges)
         .set({ status: finalStatus })
         .where(and(eq(captureChanges.tenantId, actor.tenantId), inArray(captureChanges.id, undone.map((c) => c.id))));
-      for (const factId of new Set(undone.map((c) => c.factId))) {
+      for (const factId of new Set(undone.map((c) => c.factId).filter((id): id is string => id !== null))) {
         const [still] = await tx
           .select({ id: captureChanges.id })
           .from(captureChanges)
@@ -274,10 +274,13 @@ export async function moveCaptureChange(
     if (change.status !== 'applied') throw new AppError('change_already_undone');
     if (parsed.data.target_page_id === change.documentId) throw new AppError('validation_failed', 'Pick another page.');
     await targetPage(tx, actor, parsed.data.target_page_id, 'editor');
+    // A document page's own blocks move with the page (POST /captures/:id/document/move), not one by one.
+    const factId = change.factId;
+    if (factId === null) throw new AppError('validation_failed', 'Move the whole page instead.');
     const [fact] = await tx
       .select()
       .from(captureFacts)
-      .where(and(eq(captureFacts.tenantId, actor.tenantId), eq(captureFacts.id, change.factId)));
+      .where(and(eq(captureFacts.tenantId, actor.tenantId), eq(captureFacts.id, factId)));
     // Every block this fact added or changed on this page moves with it.
     const siblings = await tx
       .select()
@@ -285,7 +288,7 @@ export async function moveCaptureChange(
       .where(
         and(
           eq(captureChanges.tenantId, actor.tenantId),
-          eq(captureChanges.factId, change.factId),
+          eq(captureChanges.factId, factId),
           eq(captureChanges.documentId, change.documentId),
           eq(captureChanges.status, 'applied')
         )

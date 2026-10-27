@@ -4,10 +4,13 @@ import { createTestDb } from '../src/testing.js';
 import {
   acquireRoutingLease,
   agents,
+  captureChanges,
+  captureFacts,
   captures,
   citations,
   documents,
   releaseRoutingLease,
+  routingExamples,
   routingLeases,
   spaces,
   tenants,
@@ -89,5 +92,87 @@ describe('routing schema', () => {
     );
     const rows = await withTenantTx(tenantId, (tx) => tx.select().from(agents));
     expect(rows[0]!.kind).toBe('router');
+  });
+
+  it('a capture keeps its shape and document fields; a document change has no fact', async () => {
+    const { reset } = await createTestDb();
+    await reset();
+    const tenantId = await seedTenant();
+    const userId = randomUUID();
+    const options = [{ pageId: randomUUID(), title: 'Client - George', spaceId: randomUUID(), spaceName: 'Clients' }];
+    await withTenantTx(tenantId, async (tx) => {
+      const [space] = await tx.insert(spaces).values({ tenantId, name: 'Clients', slug: 'clients', createdBy: userId }).returning();
+      const [doc] = await tx
+        .insert(documents)
+        .values({ tenantId, spaceId: space!.id, kind: 'page', title: '14Oct', createdByType: 'user', createdBy: userId })
+        .returning();
+      const [capture] = await tx
+        .insert(captures)
+        .values({
+          tenantId,
+          senderType: 'user',
+          senderId: userId,
+          channel: 'console',
+          text: 'Oct 14 meeting',
+          shapeMode: 'document',
+          shape: 'document',
+          subject: 'Ryko',
+          documentTitle: '14Oct',
+          documentPageId: doc!.id,
+          documentOutcome: 'created',
+          documentReason: null,
+          documentOptions: options,
+        })
+        .returning();
+      const [fact] = await tx
+        .insert(captureFacts)
+        .values({ tenantId, captureId: capture!.id, ordinal: 0, statement: 'Shop the look.', kind: 'new', outcome: 'filed_in_document' })
+        .returning();
+      await tx.insert(captureChanges).values({
+        tenantId,
+        captureId: capture!.id,
+        factId: null,
+        documentId: doc!.id,
+        spaceId: space!.id,
+        blockId: 'b1',
+        op: 'create_page',
+        afterMarkdown: 'Oct 14 meeting',
+      });
+      await tx.insert(routingExamples).values({
+        tenantId,
+        spaceId: space!.id,
+        kind: 'document',
+        statement: 'Ryko 14Oct',
+        statementEmbedding: new Array(2560).fill(0.01),
+        chosenDocumentId: doc!.id,
+        createdBy: userId,
+      });
+      expect(fact!.outcome).toBe('filed_in_document');
+    });
+    const [capture] = await withTenantTx(tenantId, (tx) => tx.select().from(captures));
+    expect(capture).toMatchObject({
+      shapeMode: 'document',
+      shape: 'document',
+      subject: 'Ryko',
+      documentTitle: '14Oct',
+      documentOutcome: 'created',
+      documentOptions: options,
+      documentParentChoice: null,
+      documentSpaceChoice: null,
+    });
+    const [change] = await withTenantTx(tenantId, (tx) => tx.select().from(captureChanges));
+    expect(change!.factId).toBeNull();
+    const [example] = await withTenantTx(tenantId, (tx) => tx.select().from(routingExamples));
+    expect(example!.kind).toBe('document');
+  });
+
+  it('a capture defaults to the auto shape mode', async () => {
+    const { reset } = await createTestDb();
+    await reset();
+    const tenantId = await seedTenant();
+    const [row] = await withTenantTx(tenantId, (tx) =>
+      tx.insert(captures).values({ tenantId, senderType: 'user', senderId: randomUUID(), channel: 'console', text: 'x' }).returning()
+    );
+    expect(row).toMatchObject({ shapeMode: 'auto', shape: null, documentOutcome: null });
   });
 });

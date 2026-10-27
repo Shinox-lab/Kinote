@@ -62,6 +62,9 @@ export const AuditEventTypeSchema = z.enum([
   'capture.change_undone',
   'capture.change_moved',
   'capture.fact_placed',
+  'capture.document_created',
+  'capture.document_placed',
+  'capture.document_moved',
   'suggestion.accepted',
   'suggestion.declined',
   'version.created',
@@ -1099,6 +1102,8 @@ export const CreateCaptureRequestSchema = z.object({
   text: z.string().trim().min(1),
   scope_space_id: z.string().uuid().optional(),
   scope_page_id: z.string().uuid().optional(),
+  /** auto: the engine decides; document: always also a new page; updates: never a new page. */
+  shape: z.enum(['auto', 'document', 'updates']).default('auto'),
 });
 
 export const CaptureSummarySchema = z.object({
@@ -1113,6 +1118,9 @@ export const CaptureSummarySchema = z.object({
   scopePageId: z.string().uuid().nullable(),
   status: z.enum(['queued', 'routing', 'waiting_for_answer', 'done', 'failed']),
   error: z.string().nullable(),
+  shapeMode: z.enum(['auto', 'document', 'updates']),
+  /** Null until the capture is split. */
+  shape: z.enum(['document', 'updates']).nullable(),
   createdAt: z.string(),
   finishedAt: z.string().nullable(),
 });
@@ -1134,7 +1142,8 @@ export const CaptureMessageSchema = z.object({
 
 export const CaptureChangeSchema = z.object({
   id: z.string().uuid(),
-  factId: z.string().uuid(),
+  /** Null for the blocks of a document capture's own page. */
+  factId: z.string().uuid().nullable(),
   documentId: z.string().uuid(),
   op: z.enum(['insert', 'replace', 'create_page']),
   blockId: z.string(),
@@ -1167,6 +1176,21 @@ export const CaptureReceiptSchema = z.object({
   hiddenChanges: z.number().int().nonnegative(),
   alreadyKnown: z.array(z.object({ factId: z.string().uuid(), statement: z.string() })),
   needsHome: z.array(z.object({ factId: z.string().uuid(), statement: z.string(), reason: z.string().nullable() })),
+  /** The page a document capture became (or is waiting to become); null for updates or a page the viewer cannot read. */
+  document: z
+    .object({
+      pageId: z.string().uuid().nullable(),
+      title: z.string(),
+      outcome: z.enum(['pending', 'needs_home', 'created']),
+      parentTitle: z.string().nullable(),
+      spaceName: z.string().nullable(),
+      reason: z.string().nullable(),
+      /** The page's own changes (Undo archives the page). */
+      changeIds: z.array(z.string().uuid()),
+    })
+    .nullable(),
+  /** Facts kept only on the document's page. */
+  filedInDocument: z.array(z.object({ factId: z.string().uuid(), statement: z.string() })),
 });
 export type CaptureReceipt = z.infer<typeof CaptureReceiptSchema>;
 
@@ -1203,7 +1227,42 @@ export const NeedsHomeItemSchema = z.object({
 });
 export type NeedsHomeItem = z.infer<typeof NeedsHomeItemSchema>;
 export const NeedsHomeListSchema = z.array(NeedsHomeItemSchema);
+
+/** A document capture waiting for a person to choose where its page goes. */
+export const NeedsHomeDocumentSchema = z.object({
+  captureId: z.string().uuid(),
+  title: z.string(),
+  subject: z.string().nullable(),
+  reason: z.string().nullable(),
+  options: z.array(z.object({ pageId: z.string().uuid(), title: z.string(), spaceId: z.string().uuid(), spaceName: z.string() })),
+  createdAt: z.string(),
+});
+export type NeedsHomeDocument = z.infer<typeof NeedsHomeDocumentSchema>;
+export const NeedsHomeDocumentListSchema = z.array(NeedsHomeDocumentSchema);
+
+/** Where a waiting document's page goes: under a page, or at the top of a space. */
+export const PlaceDocumentRequestSchema = z
+  .object({
+    parent_page_id: z.string().uuid().optional(),
+    space_id: z.string().uuid().optional(),
+    title: z.string().trim().min(1).max(200).optional(),
+  })
+  .refine((b) => (b.parent_page_id === undefined) !== (b.space_id === undefined), {
+    message: 'Give a parent page or a space, not both.',
+  });
+
+export const MoveDocumentRequestSchema = z.object({ parent_page_id: z.string().uuid() });
 export const FactStatusSchema = z.object({
   factId: z.string().uuid(),
-  outcome: z.enum(['pending', 'applied', 'waiting_review', 'suggested', 'needs_home', 'already_known', 'dismissed', 'undone']),
+  outcome: z.enum([
+    'pending',
+    'applied',
+    'waiting_review',
+    'suggested',
+    'needs_home',
+    'already_known',
+    'dismissed',
+    'undone',
+    'filed_in_document',
+  ]),
 });

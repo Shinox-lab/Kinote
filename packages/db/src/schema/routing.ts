@@ -24,6 +24,21 @@ export const captures = pgTable(
       .notNull()
       .default('queued'),
     error: text('error'),
+    /** What the sender asked for: auto, always a new page, or updates only. */
+    shapeMode: text('shape_mode', { enum: ['auto', 'document', 'updates'] }).notNull().default('auto'),
+    /** Decided when the capture is split: a document also gets its own page. */
+    shape: text('shape', { enum: ['document', 'updates'] }),
+    subject: text('subject'),
+    documentTitle: text('document_title'),
+    /** The page a document capture became. */
+    documentPageId: uuid('document_page_id').references(() => documents.id, { onDelete: 'set null' }),
+    documentOutcome: text('document_outcome', { enum: ['pending', 'needs_home', 'created'] }),
+    documentReason: text('document_reason'),
+    /** Parents offered when the document waits for a person: `[{ pageId, title, spaceId, spaceName }]`. */
+    documentOptions: jsonb('document_options'),
+    /** Where a person chose to put the waiting document: a parent page, or the top of a space. */
+    documentParentChoice: uuid('document_parent_choice'),
+    documentSpaceChoice: uuid('document_space_choice'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     finishedAt: timestamp('finished_at', { withTimezone: true }),
   },
@@ -62,6 +77,7 @@ export const FACT_OUTCOMES = [
   'already_known',
   'dismissed',
   'undone',
+  'filed_in_document',
 ] as const;
 
 /** One statement a capture was split into, and what became of it. */
@@ -107,9 +123,8 @@ export const captureChanges = pgTable(
     captureId: uuid('capture_id')
       .notNull()
       .references(() => captures.id, { onDelete: 'cascade' }),
-    factId: uuid('fact_id')
-      .notNull()
-      .references(() => captureFacts.id, { onDelete: 'cascade' }),
+    /** Null for the blocks of a document capture's own page. */
+    factId: uuid('fact_id').references(() => captureFacts.id, { onDelete: 'cascade' }),
     documentId: uuid('document_id')
       .notNull()
       .references(() => documents.id, { onDelete: 'cascade' }),
@@ -209,6 +224,8 @@ export const routingExamples = pgTable(
     spaceId: uuid('space_id')
       .notNull()
       .references(() => spaces.id),
+    /** `fact`: where a fact belongs; `document`: where a document's page belongs (its parent). */
+    kind: text('kind', { enum: ['fact', 'document'] }).notNull().default('fact'),
     statement: text('statement').notNull(),
     statementEmbedding: halfvec(2560)('statement_embedding').notNull(),
     chosenDocumentId: uuid('chosen_document_id')

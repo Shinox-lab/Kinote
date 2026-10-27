@@ -45,6 +45,8 @@ export function toCaptureSummary(row: CaptureRow, senderName: string): CaptureSu
     scopePageId: row.scopePageId,
     status: row.status,
     error: row.error,
+    shapeMode: row.shapeMode,
+    shape: row.shape,
     createdAt: row.createdAt.toISOString(),
     finishedAt: row.finishedAt?.toISOString() ?? null,
   };
@@ -304,6 +306,8 @@ export async function captureReceipt(tx: DbTransaction, viewer: Actor, captureId
     needsHome: facts
       .filter((f) => f.outcome === 'needs_home')
       .map((f) => ({ factId: f.id, statement: f.statement, reason: f.reason })),
+    document: null,
+    filedInDocument: [],
   };
 }
 
