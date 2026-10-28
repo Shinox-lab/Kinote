@@ -1,7 +1,7 @@
 import { Link } from '@tanstack/react-router';
 import { adminScreens } from '../../lib/console.js';
-import { useReviews, useWorkspace } from '../../lib/queries.js';
-import { CaptureIcon, HomeIcon, SearchIcon, SettingsIcon, SidebarIcon, ReviewsIcon } from '../icons.js';
+import { useNotifications, useReviews, useWorkspace } from '../../lib/queries.js';
+import { BellIcon, CaptureIcon, HomeIcon, SearchIcon, SettingsIcon, SidebarIcon, ReviewsIcon } from '../icons.js';
 import { AccountRow } from './AccountRow.js';
 import { ROW, ROW_ACTIVE, RowContent } from './NavRow.js';
 import { UploadPanel } from './UploadPanel.js';
@@ -9,13 +9,14 @@ import { SpacesSection } from './SpacesSection.js';
 import { WorkspaceMenu } from './WorkspaceMenu.js';
 
 /**
- * The one sidebar of the console: the workspace, search and reviews, the
+ * The one sidebar of the console: the workspace, search, reviews and notifications, the
  * spaces, and the account foot. `onCollapse` is set where the sidebar is a
  * column that can be hidden.
  */
 export function Sidebar({ onCollapse }: { onCollapse?: () => void }) {
   const { tenant, role } = useWorkspace();
   const { data: waiting } = useReviews();
+  const { data: notes } = useNotifications();
   const screens = adminScreens(role);
 
   return (
@@ -78,6 +79,16 @@ export function Sidebar({ onCollapse }: { onCollapse?: () => void }) {
               activeProps={{ className: ROW_ACTIVE, 'aria-current': 'page' }}
             >
               <RowContent icon={<ReviewsIcon />} label="Reviews" count={waiting?.length ?? 0} countLabel="waiting" />
+            </Link>
+          </li>
+          <li>
+            <Link
+              to="/w/$tenantSlug/notifications"
+              params={{ tenantSlug: tenant.slug }}
+              className={ROW}
+              activeProps={{ className: ROW_ACTIVE, 'aria-current': 'page' }}
+            >
+              <RowContent icon={<BellIcon />} label="Notifications" count={notes?.unread ?? 0} countLabel="unread" />
             </Link>
           </li>
           {screens.length > 0 && (

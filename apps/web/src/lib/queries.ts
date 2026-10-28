@@ -311,3 +311,23 @@ export function usePageConnections(pageId: string) {
     queryFn: () => api.pageConnections(pageId),
   });
 }
+
+/** A page's comment threads, for the comments panel. */
+export function usePageThreads(pageId: string, enabled = true) {
+  return useQuery({
+    queryKey: useTenantKey('page', pageId, 'threads'),
+    queryFn: () => api.pageThreads(pageId),
+    enabled,
+  });
+}
+
+/** The caller's notifications: asked again every 30 seconds and on focus. */
+export function useNotifications() {
+  return useQuery({
+    queryKey: useTenantKey('notifications'),
+    queryFn: () => api.notifications(),
+    staleTime: 0,
+    refetchInterval: 30_000,
+    refetchOnWindowFocus: true,
+  });
+}

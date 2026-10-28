@@ -5,6 +5,7 @@ import { usePageConnections, useWorkspace } from '../lib/queries.js';
 import { useLivePage } from '../lib/useLivePage.js';
 import { usePageView } from '../lib/usePageView.js';
 import { usePeek } from '../lib/usePeek.js';
+import { usePageThreadStore } from '../lib/useThreadStore.js';
 import { Editor } from './Editor.js';
 import { ConnectionsList } from './PageConnections.js';
 import { ErrorNote, Loading } from './ui.js';
@@ -15,11 +16,15 @@ import { ErrorNote, Loading } from './ui.js';
  * shuts it; "Open as full page" goes to the page itself.
  */
 export function PagePeek({ pageId }: { pageId: string }) {
-  const { tenant } = useWorkspace();
+  const { tenant, role: tenantRole } = useWorkspace();
   const peek = usePeek();
   const { page, error, isPending, space, archived, reload } = usePageView(pageId);
   const livePage = useLivePage(pageId, reload);
   const { data: connections } = usePageConnections(pageId);
+  const threads = usePageThreadStore(pageId, {
+    canEdit: livePage.access === 'write' && !archived,
+    moderates: space?.myRole === 'admin' || tenantRole === 'owner' || tenantRole === 'admin',
+  });
   const panelRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
@@ -80,6 +85,7 @@ export function PagePeek({ pageId }: { pageId: string }) {
               retry={livePage.retry}
               place={{ pageId, spaceId: page.spaceId }}
               sources={connections ? blockSourcesOf(connections) : []}
+              threads={threads}
             />
             {connections && <ConnectionsList connections={connections} />}
           </div>

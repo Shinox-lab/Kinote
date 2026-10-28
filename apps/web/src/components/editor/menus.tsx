@@ -23,8 +23,9 @@ function insertLink(editor: WikiEditor, documentId: string, title: string) {
 }
 
 /**
- * The `[[` page picker and the slash menu with the wiki's extras (Link to
- * page, New sub-page). Only for an editable editor.
+ * The `[[` page picker, the `@` mention picker and the slash menu with the
+ * wiki's extras (Link to page, New sub-page, Mention a person). Only for an
+ * editable editor.
  */
 export function WikiMenus({ editor, place }: { editor: WikiEditor; place: EditorPlace }) {
   const refresh = useRefresh();
@@ -72,6 +73,14 @@ export function WikiMenus({ editor, place }: { editor: WikiEditor; place: Editor
           }),
       },
       {
+        title: 'Mention a person',
+        subtext: 'Tell someone about this',
+        aliases: ['mention', 'person', '@'],
+        group: 'Pages',
+        onItemClick: () =>
+          editor.getExtension(SuggestionMenu)?.openSuggestionMenu('@', { deleteTriggerCharacter: true, ignoreQueryLength: true }),
+      },
+      {
         title: 'New sub-page',
         subtext: 'A page under this one, linked here',
         aliases: ['subpage', 'child', 'page'],
@@ -82,8 +91,37 @@ export function WikiMenus({ editor, place }: { editor: WikiEditor; place: Editor
     return filterSuggestionItems([...getDefaultReactSlashMenuItems(editor), ...extras], query);
   };
 
+  // `@`: people first (greyed when they can't read this page: they would not be told), then pages.
+  const mentionItems = async (query: string): Promise<DefaultReactSuggestionItem[]> => {
+    const [people, pages] = await Promise.all([
+      api.mentionable(place.pageId, query).catch(() => []),
+      query.trim() ? api.linkTargets(query).catch(() => []) : Promise.resolve([]),
+    ]);
+    return [
+      ...people.map((p) => ({
+        title: p.name,
+        subtext: p.canRead ? undefined : 'No access to this space',
+        group: 'People',
+        onItemClick: () => editor.insertInlineContent([{ type: 'mention', props: { userId: p.userId, name: p.name } }, ' ']),
+      })),
+      ...linkMenuEntries(pages.slice(0, 3), query, { canCreate: false, selfId: place.pageId }).flatMap((entry) =>
+        entry.kind === 'target'
+          ? [
+              {
+                title: entry.title,
+                subtext: entry.subtext,
+                group: 'Pages',
+                onItemClick: () => insertLink(editor, entry.target.id, entry.target.title),
+              },
+            ]
+          : []
+      ),
+    ];
+  };
+
   return (
     <>
+      <SuggestionMenuController triggerCharacter="@" getItems={mentionItems} />
       <SuggestionMenuController triggerCharacter="/" getItems={slashItems} />
       <SuggestionMenuController triggerCharacter={LINK_TRIGGER} getItems={linkItems} />
     </>

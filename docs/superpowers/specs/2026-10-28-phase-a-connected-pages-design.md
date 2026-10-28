@@ -143,6 +143,20 @@ Divider, toggle, quote and code already exist in BlockNote 0.49 and stay as they
   *(my call: never lose the original)*
 - The capture card shows the file name and type, plus "Reading the file…" while extraction runs.
 
+## Changes made while building A2 *(my calls)*
+
+- **Mentions in comments are `@Full Name` in the text.** BlockNote's comment composer is its own editor and takes no
+  menus, so there is no picker in comments. A member's full name after `@` is a mention. A name two members share
+  mentions neither. Pages get the `@` picker as designed.
+- **The bell is a "Notifications" row in the sidebar with the unread count, and its own screen**, the same way as
+  Reviews. It works the same on a phone and needs no popover.
+- **One notification per person per comment.** Someone mentioned in a reply to a thread they are in is told once, as a
+  mention, not also as a reply.
+- **Server editors carry the comment mark.** Without it a server editor read a commented page as no blocks at all.
+  Server writes rebuild only the blocks they change, so an engine edit drops the comment mark of the block it replaces.
+  A restore drops all marks. Those threads stay and show "On removed text" in the comments panel.
+- **Mentions are a link to `/u/<id>` in Markdown**, like page links, so they survive the router's round trip.
+
 ## Delivery
 
 Phase A comes as three plans, each mergeable on its own:

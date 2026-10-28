@@ -25,6 +25,8 @@ import { PageHeader } from '../components/PageHeader.js';
 import { PageStatus } from '../components/PageStatus.js';
 import { PagePresence } from '../components/PagePresence.js';
 import { PageConnections } from '../components/PageConnections.js';
+import { CommentsPanel } from '../components/CommentsPanel.js';
+import { usePageThreadStore, useThreads } from '../lib/useThreadStore.js';
 import { blockSourcesOf } from '../lib/links.js';
 import { ErrorNote, Loading } from '../components/ui.js';
 
@@ -84,6 +86,22 @@ function Breadcrumb({
   );
 }
 
+/** A `#block-<id>` address (a mention notification) scrolls to that block once the editor shows it. */
+function useBlockFromHash(pageId: string) {
+  useEffect(() => {
+    const match = /^#block-(.+)$/.exec(window.location.hash);
+    if (!match) return;
+    const blockId = decodeURIComponent(match[1]!);
+    let tries = 0;
+    const timer = setInterval(() => {
+      const el = document.querySelector<HTMLElement>(`[data-node-type="blockContainer"][data-id="${CSS.escape(blockId)}"]`);
+      if (el || ++tries > 50) clearInterval(timer);
+      el?.scrollIntoView({ block: 'center' });
+    }, 100);
+    return () => clearInterval(timer);
+  }, [pageId]);
+}
+
 /** `/w/$tenantSlug/p/$pageId`: a quiet page: where it is, its status, its title, and the live editor. */
 export function PagePage() {
   const { tenant } = useWorkspace();
@@ -91,7 +109,7 @@ export function PagePage() {
   const refresh = useRefresh();
   const { page, error, isPending, spaces, space, archived, controls, reload, changed } = usePageView(pageId);
   const { data: entries } = usePageChanges(pageId);
-  const { capture: captureId } = useSearch({ from: '/w/$tenantSlug/p/$pageId' });
+  const { capture: captureId, comments: commentsOpen } = useSearch({ from: '/w/$tenantSlug/p/$pageId' });
   const { data: captureChanges } = usePageCaptureChanges(pageId, captureId);
   const { data: suggestions } = usePageSuggestions(pageId);
   const { data: connections } = usePageConnections(pageId);
@@ -100,6 +118,15 @@ export function PagePage() {
   const historyOpen = useHistoryOpen(pageId);
   const historyTab = useHistoryTab(pageId);
   const livePage = useLivePage(pageId, reload);
+  const { role: tenantRole } = useWorkspace();
+  const threads = usePageThreadStore(pageId, {
+    canEdit: livePage.access === 'write' && !archived,
+    moderates: space?.myRole === 'admin' || tenantRole === 'owner' || tenantRole === 'admin',
+  });
+  const openThreads = [...useThreads(threads).values()].filter((t) => !t.resolved).length;
+  const [showComments, setShowComments] = useState(commentsOpen === 1);
+  useEffect(() => setShowComments(commentsOpen === 1), [pageId, commentsOpen]);
+  useBlockFromHash(pageId);
   const selfId = loadSession()?.user.id ?? null;
   const authored = page?.latestVersion?.createdByType === 'user' && page.latestVersion.createdBy === selfId;
   const canReview =
@@ -163,6 +190,14 @@ export function PagePage() {
                 onHistory={(tab) => openHistory(pageId, tab)}
               />
               {archived && <span className="rounded-full bg-hover px-2 py-0.5 text-xs text-muted">Archived</span>}
+              <button
+                type="button"
+                aria-expanded={showComments}
+                onClick={() => setShowComments((v) => !v)}
+                className="rounded-full px-2 py-0.5 text-xs font-medium text-muted hover:bg-hover hover:text-fg max-md:min-h-11"
+              >
+                {openThreads > 0 ? `${openThreads} ${openThreads === 1 ? 'comment' : 'comments'}` : 'Comments'}
+              </button>
               {openSuggestions.length > 0 && (
                 <button
                   type="button"
@@ -178,6 +213,9 @@ export function PagePage() {
         />
         {captureId && <CaptureBanner pageId={pageId} captureId={captureId} changes={captureChanges ?? []} />}
         {showSuggestions && openSuggestions.length > 0 && <SuggestionsPanel pageId={pageId} suggestions={openSuggestions} />}
+        {showComments && (
+          <CommentsPanel store={threads} canEdit={livePage.access === 'write' && !archived} onClose={() => setShowComments(false)} />
+        )}
         {/* A failed refetch keeps the last page on screen and says so. */}
         <ErrorNote error={error} />
         <Editor
@@ -189,6 +227,7 @@ export function PagePage() {
           retry={livePage.retry}
           place={{ pageId, spaceId: page.spaceId }}
           sources={connections ? blockSourcesOf(connections) : []}
+          threads={threads}
         />
         <PageConnections pageId={pageId} />
         {historyOpen && (

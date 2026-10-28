@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { CommentsExtension } from '@blocknote/core/comments';
 import { useCreateBlockNote } from '@blocknote/react';
 import { BlockNoteView } from '@blocknote/mantine';
 import '@blocknote/core/fonts/inter.css';
@@ -8,6 +9,7 @@ import { useResolvedTheme } from '../lib/useResolvedTheme.js';
 import { loadSession } from '../lib/session.js';
 import type { Live } from '../lib/useLivePage.js';
 import { authorColor } from '../lib/wiki.js';
+import type { ApiThreadStore } from '../lib/threadStore.js';
 import { usePeek } from '../lib/usePeek.js';
 import { Button, ErrorNote, Loading } from './ui.js';
 import { blockSourcesExtension, setBlockSources, type BlockSource } from './editor/blockSources.js';
@@ -26,11 +28,13 @@ function BoundEditor({
   editable,
   place,
   sources,
+  threads,
 }: {
   live: Live;
   editable: boolean;
   place: EditorPlace;
   sources: BlockSource[];
+  threads?: ApiThreadStore;
 }) {
   const user = loadSession()?.user;
   const peek = usePeek();
@@ -46,10 +50,29 @@ function BoundEditor({
         fragment: live.ydoc.getXmlFragment(BLOCK_FRAGMENT),
         user: { name: user?.name ?? 'Someone', color: authorColor(user?.id ?? '').accent },
       },
-      extensions: [blockSourcesExtension((pageId) => openRef.current(pageId)), linkTriggerExtension()],
+      extensions: [
+        blockSourcesExtension((pageId) => openRef.current(pageId)),
+        linkTriggerExtension(),
+        ...(threads
+          ? [
+              CommentsExtension({
+                threadStore: threads,
+                resolveUsers: async (ids: string[]) =>
+                  ids.map((id) => ({ id, username: threads.userName(id) ?? 'Someone', avatarUrl: '' })),
+              }),
+            ]
+          : []),
+      ],
     },
-    [live]
+    [live, threads]
   );
+  // A new thread remembers the block and the text it was started on.
+  useEffect(() => {
+    threads?.setWhere(() => ({
+      blockId: editor.getTextCursorPosition().block.id,
+      quote: editor.getSelectedText() || null,
+    }));
+  }, [editor, threads]);
   const sourceKey = sources.map((s) => `${s.blockId}:${s.pageId}:${s.title}`).join('|');
   useEffect(() => {
     setBlockSources(editor, sources);
@@ -77,8 +100,11 @@ export function Editor({
   retry,
   place,
   sources = [],
+  threads,
 }: {
   place: EditorPlace;
+  /** The page's comment store: comment marks and floating threads; none for no comments. */
+  threads?: ApiThreadStore;
   /** Blocks the routing engine changed from a document page, shown with a "From:" chip. */
   sources?: BlockSource[];
   live: Live | null;
@@ -106,7 +132,7 @@ export function Editor({
           (a screen wide enough for the sidebar and the page plus the indent) the indent hangs in the margin,
           so the text lines up with the title; narrower, it stays inside and nothing scrolls sideways. */}
       <div className="min-h-[16rem] min-[1100px]:-mx-[54px]">
-        {live ? <BoundEditor live={live} editable={editable} place={place} sources={sources} /> : <Loading what="editor" />}
+        {live ? <BoundEditor live={live} editable={editable} place={place} sources={sources} threads={threads} /> : <Loading what="editor" />}
       </div>
     </div>
   );

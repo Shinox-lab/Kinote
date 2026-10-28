@@ -22,8 +22,10 @@ import { parseFileSearch } from './lib/documentLink.js';
 import { parseReviewSearch } from './lib/review.js';
 import { parseSearchSearch } from './lib/search.js';
 import { parsePeekSearch } from './lib/links.js';
+import { parseCommentsSearch } from './lib/comments.js';
 import { WorkspaceLayout } from './routes/layout.js';
 import { ReviewsPage } from './routes/reviews.js';
+import { NotificationsPage } from './routes/notifications.js';
 import { CapturePage } from './routes/capture.js';
 import { parseCaptureSearch, parsePageCaptureSearch } from './lib/capture.js';
 import { SearchPage } from './routes/search.js';
@@ -149,7 +151,7 @@ const spaceRoute = createRoute({
 const pageRoute = createRoute({
   getParentRoute: () => workspaceRoute,
   path: 'p/$pageId',
-  validateSearch: parsePageCaptureSearch,
+  validateSearch: (search: Record<string, unknown>) => ({ ...parsePageCaptureSearch(search), ...parseCommentsSearch(search) }),
   // The editor and its dependencies are heavy: load them only when a page is opened.
   component: lazyRouteComponent(() => import('./routes/page.js'), 'PagePage'),
 });
@@ -167,6 +169,12 @@ const reviewsRoute = createRoute({
   path: 'reviews',
   validateSearch: parseReviewSearch,
   component: ReviewsPage,
+});
+
+const notificationsRoute = createRoute({
+  getParentRoute: () => workspaceRoute,
+  path: 'notifications',
+  component: NotificationsPage,
 });
 
 const captureRoute = createRoute({
@@ -218,6 +226,7 @@ const routeTree = rootRoute.addChildren([
     pageRoute,
     fileRoute,
     reviewsRoute,
+    notificationsRoute,
     captureRoute,
     searchRoute,
     adminRoute.addChildren([adminIndexRoute, membersRoute, groupsRoute, spacesRoute, sourcesRoute]),

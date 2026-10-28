@@ -36,6 +36,10 @@ import {
   LinkTargetListSchema,
   DocumentTitleListSchema,
   PageConnectionsSchema,
+  CommentThreadSchema,
+  CommentThreadListSchema,
+  MentionableListSchema,
+  NotificationListSchema,
   RetryVersionResponseSchema,
   ReviewListSchema,
   UpdatesResponseSchema,
@@ -294,6 +298,25 @@ export const api = {
   linkTargets: (q: string) => request(`/api/v1/link-targets?q=${e(q)}`, LinkTargetListSchema),
   documentTitles: (ids: string[]) => request(`/api/v1/documents/titles?ids=${ids.map(e).join(',')}`, DocumentTitleListSchema),
   pageConnections: (pageId: string) => request(`/api/v1/pages/${e(pageId)}/connections`, PageConnectionsSchema),
+
+  // Comments, mentions and notifications
+  pageThreads: (pageId: string) => request(`/api/v1/pages/${e(pageId)}/threads`, CommentThreadListSchema),
+  createThread: (pageId: string, body: { block_id: string | null; quote: string | null; body: unknown[] }) =>
+    request(`/api/v1/pages/${e(pageId)}/threads`, CommentThreadSchema, send('POST', body)),
+  replyToThread: (threadId: string, body: unknown[]) =>
+    request(`/api/v1/threads/${e(threadId)}/comments`, CommentThreadSchema, send('POST', { body })),
+  updateComment: (commentId: string, body: unknown[]) =>
+    request(`/api/v1/comments/${e(commentId)}`, CommentThreadSchema, send('PATCH', { body })),
+  deleteComment: (commentId: string) => request(`/api/v1/comments/${e(commentId)}`, NO_CONTENT, del),
+  deleteThread: (threadId: string) => request(`/api/v1/threads/${e(threadId)}`, NO_CONTENT, del),
+  resolveThread: (threadId: string) => request(`/api/v1/threads/${e(threadId)}/resolve`, CommentThreadSchema, send('POST')),
+  unresolveThread: (threadId: string) =>
+    request(`/api/v1/threads/${e(threadId)}/unresolve`, CommentThreadSchema, send('POST')),
+  mentionable: (pageId: string, q: string) =>
+    request(`/api/v1/mentionable?page_id=${e(pageId)}&q=${e(q)}`, MentionableListSchema),
+  notifications: () => request('/api/v1/notifications', NotificationListSchema),
+  markNotificationsRead: (ids?: string[]) =>
+    request('/api/v1/notifications/read', NO_CONTENT, send('POST', ids ? { ids } : {})),
   approveVersion: (id: string, body: ApproveVersionRequest = {}) =>
     request(`/api/v1/versions/${e(id)}/approve`, VersionSummarySchema, send('POST', body)),
   rejectVersion: (id: string, body: RejectVersionRequest) =>

@@ -139,3 +139,12 @@
 .bn-container .bn-editor .block-source:hover {
   border-color: var(--routing);
 }
+
+/* A mentioned person. */
+.bn-container .bn-editor .mention {
+  background: var(--hover);
+  border-radius: 4px;
+  color: var(--fg);
+  font-weight: 500;
+  padding: 0 3px;
+}
