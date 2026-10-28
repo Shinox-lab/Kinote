@@ -68,6 +68,13 @@ test('the file identity, rail, rename and the Info sheet below 1200', async ({ b
   await expect(page.getByRole('heading', { name: 'Policies 2026.txt', level: 1 })).toBeVisible();
   await expect(treeLink(page, 'Policies 2026.txt')).toBeVisible();
 
+  // The top title renames in place too, not only the menu and the sidebar.
+  await page.getByRole('heading', { name: 'Policies 2026.txt', level: 1 }).click();
+  await page.getByLabel('New title').fill('Policies 2027.txt');
+  await page.getByLabel('New title').press('Enter');
+  await expect(page.getByRole('heading', { name: 'Policies 2027.txt', level: 1 })).toBeVisible();
+  await expect(treeLink(page, 'Policies 2027.txt')).toBeVisible();
+
   await page.setViewportSize({ width: 1100, height: 900 });
   await page.getByRole('button', { name: 'Info' }).click();
   const sheet = page.getByRole('dialog', { name: 'File information' });

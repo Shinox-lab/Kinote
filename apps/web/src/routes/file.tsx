@@ -26,6 +26,7 @@ import { FileMenu } from '../components/FileMenu.js';
 import { FileRail } from '../components/FileRail.js';
 import { FileTypeTile } from '../components/FileTypeTile.js';
 import { FileViewer } from '../viewers/FileViewer.js';
+import { TitleInput } from '../components/sidebar/TitleInput.js';
 import { Button, ErrorNote, Loading } from '../components/ui.js';
 
 const CRUMB = 'min-w-0 max-w-[12rem] truncate rounded px-1 py-0.5 text-muted hover:bg-hover hover:text-fg';
@@ -102,6 +103,7 @@ export function FilePage() {
   const refresh = useRefresh();
   const wide = useMediaQuery('(min-width: 1200px)');
   const [railOpen, setRailOpen] = useState(wide);
+  const [renaming, setRenaming] = useState(false);
   const { data: spaces = [] } = useSpaces();
   const { data: file, error, isPending } = useFile(fileId);
   const { role, shown } = useShownVersion(file, search.v);
@@ -152,6 +154,20 @@ export function FilePage() {
     onSettled: changed,
   });
   const save = useMutation({ mutationFn: () => saveVersion(shown!.id, shown!.fileName) });
+  const rename = useMutation({
+    mutationFn: (title: string) => api.renameFile(fileId, title),
+    onSuccess: () => {
+      setRenaming(false);
+      changed();
+    },
+    // Keep the old title and let the page's error note say why; click again to retry.
+    onError: () => setRenaming(false),
+  });
+  useEffect(() => {
+    setRenaming(false);
+    rename.reset();
+    // A different file starts with its own title, not the one being edited.
+  }, [fileId]);
 
   if (isPending) return <Loading what="file" />;
   if (error || !file) {
@@ -246,9 +262,32 @@ export function FilePage() {
 
       <header className="flex flex-col gap-2">
         <FileTypeTile name={file.title} mimeType={shown?.mimeType ?? latest?.mimeType} />
-        <h1 className="min-w-0 break-words text-[24px] font-semibold leading-tight tracking-[-0.02em] text-fg md:text-[1.875rem]">
-          {file.title}
-        </h1>
+        {renaming ? (
+          <TitleInput
+            title={file.title}
+            onCancel={() => setRenaming(false)}
+            onSave={(title) => rename.mutate(title)}
+            className="text-[24px] font-semibold leading-tight tracking-[-0.02em] md:text-[1.875rem]"
+          />
+        ) : (
+          <h1 className="min-w-0 break-words text-[24px] font-semibold leading-tight tracking-[-0.02em] text-fg md:text-[1.875rem]">
+            {controls.replace ? (
+              <button
+                type="button"
+                title="Rename file"
+                onClick={() => {
+                  rename.reset();
+                  setRenaming(true);
+                }}
+                className="block w-full max-w-full rounded px-1 text-left hover:bg-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+              >
+                {file.title}
+              </button>
+            ) : (
+              file.title
+            )}
+          </h1>
+        )}
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
           <Badge badge={file.badge} label="File status" />
           {archived && <span className="rounded-full bg-hover px-2 py-0.5 text-fg">Archived</span>}
@@ -275,7 +314,7 @@ export function FilePage() {
           )}
         </div>
       )}
-      <ErrorNote error={save.error ?? replace.error ?? retry.error} />
+      <ErrorNote error={save.error ?? replace.error ?? retry.error ?? rename.error} />
       {replace.data?.unchanged && (
         <p role="status" className="text-sm text-muted">
           That is the same file that is already here.

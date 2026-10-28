@@ -9,11 +9,14 @@ export function TitleInput({
   title,
   onSave,
   onCancel,
+  className = 'text-sm',
 }: {
   /** The name the row has now. */
   title: string;
   onSave: (title: string) => void;
   onCancel: () => void;
+  /** Overrides the small row size; the file screen's title uses its heading size. */
+  className?: string;
 }) {
   const [value, setValue] = useState(title);
   const done = useRef(false);
@@ -44,7 +47,7 @@ export function TitleInput({
         }
       }}
       onBlur={save}
-      className="w-full min-w-0 flex-1 rounded-md border border-line bg-page px-2 py-1 text-sm text-fg"
+      className={`w-full min-w-0 flex-1 rounded-md border border-line bg-page px-2 py-1 text-fg ${className}`}
     />
   );
 }
