@@ -33,7 +33,9 @@ type SuggestionRow = typeof suggestions.$inferSelect;
 
 const LIST_LIMIT = 50;
 
-export function toCaptureSummary(row: CaptureRow, senderName: string): CaptureSummary {
+type CaptureFile = CaptureSummary['file'];
+
+export function toCaptureSummary(row: CaptureRow, senderName: string, file: CaptureFile = null): CaptureSummary {
   return {
     id: row.id,
     senderType: row.senderType,
@@ -47,19 +49,62 @@ export function toCaptureSummary(row: CaptureRow, senderName: string): CaptureSu
     error: row.error,
     shapeMode: row.shapeMode,
     shape: row.shape,
+    file,
     createdAt: row.createdAt.toISOString(),
     finishedAt: row.finishedAt?.toISOString() ?? null,
   };
 }
 
-/** Captures as the API shows them, each with its sender's display name. */
-async function summaries(tx: DbTransaction, tenantId: string, rows: CaptureRow[]): Promise<CaptureSummary[]> {
+/** The files sent with captures: name and type of each file's latest version. */
+async function captureFiles(tx: DbTransaction, tenantId: string, rows: CaptureRow[]): Promise<Map<string, NonNullable<CaptureFile>>> {
+  const ids = [...new Set(rows.map((r) => r.fileId).filter((id): id is string => id !== null))];
+  if (ids.length === 0) return new Map();
+  const found = await tx
+    .select({ id: documents.id, name: documents.title, mimeType: versions.mimeType })
+    .from(documents)
+    .leftJoin(versions, and(eq(versions.tenantId, documents.tenantId), eq(versions.id, documents.latestVersionId)))
+    .where(and(eq(documents.tenantId, tenantId), inArray(documents.id, ids)));
+  return new Map(found.map((f) => [f.id, { id: f.id, name: f.name, mimeType: f.mimeType ?? null }]));
+}
+
+/** Captures as the API shows them, each with its sender's display name and its file. */
+export async function summaries(tx: DbTransaction, tenantId: string, rows: CaptureRow[]): Promise<CaptureSummary[]> {
   const names = await resolveActorNames(
     tx,
     tenantId,
     rows.map((r) => ({ type: r.senderType, id: r.senderId }))
   );
-  return rows.map((r) => toCaptureSummary(r, names.get(`${r.senderType}:${r.senderId}`) ?? 'Former member'));
+  const files = await captureFiles(tx, tenantId, rows);
+  return rows.map((r) =>
+    toCaptureSummary(r, names.get(`${r.senderType}:${r.senderId}`) ?? 'Former member', r.fileId ? files.get(r.fileId) ?? null : null)
+  );
+}
+
+
+/**
+ * The file a sender attaches: a live file in their own Inbox (404 otherwise,
+ * as for any document they can't see), of a type whose text can be read.
+ */
+async function captureFile(tx: DbTransaction, actor: Actor, fileId: string) {
+  const [row] = await tx
+    .select({ doc: documents, spaceKind: spaces.kind, mimeType: versions.mimeType })
+    .from(documents)
+    .innerJoin(spaces, and(eq(spaces.tenantId, documents.tenantId), eq(spaces.id, documents.spaceId)))
+    .leftJoin(versions, and(eq(versions.tenantId, documents.tenantId), eq(versions.id, documents.latestVersionId)))
+    .where(and(eq(documents.tenantId, actor.tenantId), eq(documents.id, fileId)));
+  const mine =
+    row &&
+    row.doc.kind === 'file' &&
+    row.doc.archivedAt === null &&
+    row.spaceKind === 'inbox' &&
+    row.doc.createdByType === actor.principalType &&
+    row.doc.createdBy === actor.principalId;
+  if (!mine) throw new AppError('document_not_found');
+  // Audio and video are only stored: there is no text to read yet.
+  if (row.mimeType && /^(audio|video)\//.test(row.mimeType)) {
+    throw new AppError('unsupported_file_type', "Audio and video can't be read yet.");
+  }
+  return row.doc;
 }
 
 function isSender(actor: Actor, row: CaptureRow): boolean {
@@ -88,7 +133,7 @@ export async function createCapture(actor: Actor, body: unknown): Promise<Captur
   }
   const parsed = CreateCaptureRequestSchema.safeParse(body);
   if (!parsed.success) throw new AppError('validation_failed');
-  const { text, scope_space_id, scope_page_id, shape } = parsed.data;
+  const { text, file_id, scope_space_id, scope_page_id, shape } = parsed.data;
 
   return withTenantTx(actor.tenantId, async (tx) => {
     const access = await senderAccess(tx, actor);
@@ -109,6 +154,8 @@ export async function createCapture(actor: Actor, body: unknown): Promise<Captur
       scopeSpaceId = doc.spaceId;
     }
 
+    if (file_id) await captureFile(tx, actor, file_id);
+
     const [row] = await tx
       .insert(captures)
       .values({
@@ -120,6 +167,7 @@ export async function createCapture(actor: Actor, body: unknown): Promise<Captur
         scopeSpaceId,
         scopePageId: scope_page_id ?? null,
         shapeMode: shape,
+        fileId: file_id ?? null,
       })
       .returning();
     await enqueueCaptureRoute(tx, actor.tenantId, row!.id);
@@ -130,7 +178,7 @@ export async function createCapture(actor: Actor, body: unknown): Promise<Captur
       actorId: actor.principalId,
       subjectType: 'capture',
       subjectId: row!.id,
-      payload: { scopeSpaceId, scopePageId: scope_page_id ?? null, length: text.length },
+      payload: { scopeSpaceId, scopePageId: scope_page_id ?? null, length: text.length, fileId: file_id ?? null },
     });
     return (await summaries(tx, actor.tenantId, [row!]))[0]!;
   });

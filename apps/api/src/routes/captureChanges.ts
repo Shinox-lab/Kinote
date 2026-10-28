@@ -29,14 +29,14 @@ import {
   recordRoutingExample,
   requireDocumentRole,
   requireSpaceRole,
+  returnCaptureFile,
   takePageSnapshot,
   type Actor,
   type EmbeddingProvider,
 } from '@living-wiki/core';
 import { blockFullText, documentName, type BlockLike, type CollabClient } from '@living-wiki/shared';
-import { enqueueCaptureRoute, toCaptureSummary, visibleCapture } from './captures.js';
+import { enqueueCaptureRoute, summaries, visibleCapture } from './captures.js';
 import { archivePageTx, lockPage, movePage } from './pages.js';
-import { resolveActorNames } from '../people.js';
 
 type ChangeRow = typeof captureChanges.$inferSelect;
 type CaptureRow = typeof captures.$inferSelect;
@@ -246,14 +246,15 @@ async function undoDocumentPage(
     const doc = await lockPage(tx, actor.tenantId, pageId);
     if (doc.archivedAt) return true;
     // Only the page exactly as the engine wrote it is archived: its blocks
-    // and nothing else, its title, no other capture's changes, no child pages.
+    // and nothing else, its title, no other capture's changes, no child pages
+    // (the capture's own file aside).
     const live = await readLiveBlocks(tx, actor.tenantId, pageId);
     const [capture] = await tx
-      .select({ title: captures.documentTitle })
+      .select()
       .from(captures)
       .where(and(eq(captures.tenantId, actor.tenantId), eq(captures.id, list[0]!.captureId)));
     const liveBlocks = live?.blocks ?? [];
-    if (!live || doc.title !== capture?.title || live.title !== doc.title) return false;
+    if (!live || doc.title !== capture?.documentTitle || live.title !== doc.title) return false;
     if (liveBlocks.length !== all.length || !liveBlocks.every((b) => all.some((c) => c.blockId === b.id))) return false;
     for (const block of liveBlocks) {
       const change = all.find((c) => c.blockId === block.id)!;
@@ -272,12 +273,21 @@ async function undoDocumentPage(
       )
       .limit(1);
     if (other) return false;
+    // The file the capture came with doesn't count: it goes back to the sender's Inbox.
     const [child] = await tx
       .select({ id: documents.id })
       .from(documents)
-      .where(and(eq(documents.tenantId, actor.tenantId), eq(documents.parentId, pageId), isNull(documents.archivedAt)))
+      .where(
+        and(
+          eq(documents.tenantId, actor.tenantId),
+          eq(documents.parentId, pageId),
+          isNull(documents.archivedAt),
+          capture!.fileId ? ne(documents.id, capture!.fileId) : undefined
+        )
+      )
       .limit(1);
     if (child) return false;
+    await returnCaptureFile(tx, actor.tenantId, capture!);
     await archivePageTx(tx, actor, doc);
     await tx
       .update(captureChanges)
@@ -564,8 +574,7 @@ export async function listPageCaptureChanges(actor: Actor, pageId: string, query
 
 /** A capture's summary with its sender's name. */
 async function summaryOf(tx: DbTransaction, tenantId: string, row: CaptureRow): Promise<CaptureSummary> {
-  const names = await resolveActorNames(tx, tenantId, [{ type: row.senderType, id: row.senderId }]);
-  return toCaptureSummary(row, names.get(`${row.senderType}:${row.senderId}`) ?? 'Former member');
+  return (await summaries(tx, tenantId, [row]))[0]!;
 }
 
 /** The capture, locked, when its page waits for a place; 409 `document_not_waiting` otherwise. */

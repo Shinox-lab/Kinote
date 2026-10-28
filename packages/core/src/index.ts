@@ -154,3 +154,13 @@ export {
   type NotificationInput,
   type NotificationKind,
 } from './talk/notify.js';
+export { relocateFile, returnToReview, type RelocateTarget } from './files/relocate.js';
+export {
+  prepareCaptureFile,
+  routedText,
+  attachCaptureFile,
+  returnCaptureFile,
+  CAPTURE_FILE_MAX_CHARS,
+  CAPTURE_FILE_MESSAGES,
+  type CaptureFileState,
+} from './routing/captureFile.js';

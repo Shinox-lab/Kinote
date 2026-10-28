@@ -10,6 +10,7 @@ import {
   routeCapture,
   placeFact,
   failCapture,
+  prepareCaptureFile,
   type EmbeddingProvider,
   type Extractor,
   type RoutingModel,
@@ -139,6 +140,10 @@ export const handlers: Record<string, JobHandler> = {
   'capture.route': {
     async run(job, ctx) {
       const captureId = captureIdOf(job);
+      // A capture with a file routes once the file has been read (the upload's own job reads it).
+      const file = await prepareCaptureFile(job.tenantId, captureId, ctx.storage);
+      if (file.state === 'reading') return requeueLater(job);
+      if (file.state === 'failed') return failCapture(job.tenantId, captureId, file.message);
       const result = await routeCapture(
         { tenantId: job.tenantId, captureId, holder: holderOf(job) },
         { model: ctx.placementModel, embedder: ctx.embeddingProvider, collab: ctx.collab, now: ctx.now }

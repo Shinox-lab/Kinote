@@ -1105,13 +1105,18 @@ export type VersionText = z.infer<typeof VersionTextSchema>;
 /** Longest capture text accepted (`capture_too_long` above it). */
 export const MAX_CAPTURE_CHARS = 20_000;
 
-export const CreateCaptureRequestSchema = z.object({
-  text: z.string().trim().min(1),
-  scope_space_id: z.string().uuid().optional(),
-  scope_page_id: z.string().uuid().optional(),
-  /** auto: the engine decides; document: always also a new page; updates: never a new page. */
-  shape: z.enum(['auto', 'document', 'updates']).default('auto'),
-});
+export const CreateCaptureRequestSchema = z
+  .object({
+    /** What was typed; may be empty when a file is sent. */
+    text: z.string().trim().default(''),
+    /** A file in the sender's Inbox (uploaded first): its text is read and routed after the typed text. */
+    file_id: z.string().uuid().optional(),
+    scope_space_id: z.string().uuid().optional(),
+    scope_page_id: z.string().uuid().optional(),
+    /** auto: the engine decides (a file is a document); document: always also a new page; updates: never a new page. */
+    shape: z.enum(['auto', 'document', 'updates']).default('auto'),
+  })
+  .refine((c) => c.text !== '' || c.file_id !== undefined, { message: 'Write something or attach a file.' });
 
 export const CaptureSummarySchema = z.object({
   id: z.string().uuid(),
@@ -1128,6 +1133,8 @@ export const CaptureSummarySchema = z.object({
   shapeMode: z.enum(['auto', 'document', 'updates']),
   /** Null until the capture is split. */
   shape: z.enum(['document', 'updates']).nullable(),
+  /** The file sent with it; null for typed text only, or when the file is gone. */
+  file: z.object({ id: z.string().uuid(), name: z.string(), mimeType: z.string().nullable() }).nullable(),
   createdAt: z.string(),
   finishedAt: z.string().nullable(),
 });

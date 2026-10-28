@@ -26,6 +26,7 @@ import { takePageSnapshot } from '../snapshot.js';
 import { blockMarkdown, encodeBlocksYDoc, markdownBlocks, readLiveBlocks } from './liveBlocks.js';
 import { decideShape, planCapture, splitCaptureText, type CheckedEdit, type Gate, type PlannedFact } from './plan.js';
 import { planDocument, uniqueChildTitle } from './document.js';
+import { attachCaptureFile, fileTitle, routedText } from './captureFile.js';
 import { excerptOf, hasUnreadAbout, notify } from '../talk/notify.js';
 import { ensureRouterAgent } from './routerAgent.js';
 
@@ -106,6 +107,12 @@ type CaptureRow = typeof captures.$inferSelect;
 /** Most characters of a capture kept as one fact when nothing could be split out of it. */
 const UNSPLIT_FACT_CHARS = 4000;
 
+/** The current name of a capture's file ('' when it is gone). */
+async function fileNameOf(tx: DbTransaction, tenantId: string, fileId: string): Promise<string> {
+  const [row] = await tx.select({ title: documents.title }).from(documents).where(and(eq(documents.tenantId, tenantId), eq(documents.id, fileId)));
+  return row?.title ?? '';
+}
+
 /** A document's title when the model gave none: its first line without list or heading marks. */
 function firstLineTitle(text: string): string {
   const line = text.split('\n').map((l) => l.trim()).find((l) => l.length > 0) ?? '';
@@ -132,8 +139,19 @@ export async function ensureSplit(tenantId: string, captureId: string, deps: Rou
   });
   if (loaded.split) return loaded.capture;
 
-  const { facts, shape } = await splitCaptureText(loaded.capture.text, deps.model, deps.guard);
-  const decided = decideShape(loaded.capture.shapeMode, shape);
+  const text = routedText(loaded.capture);
+  const { facts, shape } = await splitCaptureText(text, deps.model, deps.guard);
+  // A file is a document of its own unless the sender asked for updates only.
+  const withFile = loaded.capture.fileId !== null;
+  const decided = withFile && loaded.capture.shapeMode === 'auto' ? 'document' : decideShape(loaded.capture.shapeMode, shape);
+  // Its page is named by what was typed, else by the file.
+  const fileName = withFile ? await withTenantTx(tenantId, (tx) => fileNameOf(tx, tenantId, loaded.capture.fileId!)) : null;
+  const title =
+    fileName !== null
+      ? loaded.capture.text.trim()
+        ? firstLineTitle(loaded.capture.text)
+        : fileTitle(fileName)
+      : (shape?.title ?? firstLineTitle(text));
   await deps.guard?.();
   return withTenantTx(tenantId, async (tx) => {
     if (facts.length > 0) {
@@ -145,7 +163,7 @@ export async function ensureSplit(tenantId: string, captureId: string, deps: Rou
         tenantId,
         captureId,
         ordinal: 0,
-        statement: loaded.capture.text.slice(0, UNSPLIT_FACT_CHARS),
+        statement: text.slice(0, UNSPLIT_FACT_CHARS),
         kind: 'new',
         outcome: 'needs_home',
         reason: 'This capture could not be split into facts.',
@@ -156,7 +174,7 @@ export async function ensureSplit(tenantId: string, captureId: string, deps: Rou
       .set({
         shape: decided,
         subject: shape?.subject ?? null,
-        documentTitle: decided === 'document' ? (shape?.title ?? firstLineTitle(loaded.capture.text)) : null,
+        documentTitle: decided === 'document' ? title : null,
       })
       .where(and(eq(captures.tenantId, tenantId), eq(captures.id, captureId)))
       .returning();
@@ -172,7 +190,7 @@ export async function ensureSplit(tenantId: string, captureId: string, deps: Rou
  * second one. Returns the capture as it is now.
  */
 async function placeDocumentPage(tenantId: string, capture: CaptureRow, deps: RouteDeps): Promise<CaptureRow> {
-  const title = capture.documentTitle ?? firstLineTitle(capture.text);
+  const title = capture.documentTitle ?? firstLineTitle(routedText(capture));
   let place: { spaceId: string; parentId: string | null; title: string } | null = null;
   let waiting: { reason: string; options: unknown[] } | null = null;
 
@@ -220,7 +238,7 @@ async function placeDocumentPage(tenantId: string, capture: CaptureRow, deps: Ro
   const target = place;
   await createEnginePage(
     tenantId,
-    { ...target, markdown: capture.text },
+    { ...target, markdown: routedText(capture) },
     {
       captureId: capture.id,
       factId: null,
@@ -236,6 +254,8 @@ async function placeDocumentPage(tenantId: string, capture: CaptureRow, deps: Ro
         if (won.length === 0) {
           throw new AppError('router_unavailable', "Another routing run already created this capture's page.");
         }
+        // The file the capture came with lives under its page from now on.
+        await attachCaptureFile(tx, tenantId, capture, pageId);
         await writeAuditEvent(tx, {
           tenantId,
           type: 'capture.document_created',

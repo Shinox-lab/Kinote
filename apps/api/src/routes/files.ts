@@ -29,7 +29,6 @@ import {
   requireSpaceRole,
   requireDocumentRole,
   assertValidUuid,
-  chunkInboxOwner,
   cleanFileName,
   detectFileType,
   isTenantAdmin,
@@ -39,12 +38,11 @@ import {
   type Actor,
   type DetectedFile,
   type VersionRow,
-  movePlacementIndex,
+  relocateFile,
 } from '@living-wiki/core';
 import type { ObjectStorage } from '@living-wiki/shared';
 import {
   requireVisibleParent,
-  returnToReview,
   withdrawLiveVersions,
   wouldCreateCycle,
 } from '../documents/lifecycle.js';
@@ -489,36 +487,14 @@ export async function moveFile(actor: Actor, fileId: string, input: unknown): Pr
       }
     }
 
-    const crossSpace = doc.spaceId !== parsed.target_space_id;
-    const isTargetReviewer = targetRole === 'reviewer' || targetRole === 'admin';
-    let nextIndexedVersionId = doc.indexedVersionId;
-    if (crossSpace) {
-      if (targetSpace.reviewRequired && !isTargetReviewer) {
-        await returnToReview(tx, actor.tenantId, doc);
-        nextIndexedVersionId = null;
-      } else {
-        await tx
-          .update(chunks)
-          .set({
-            spaceId: parsed.target_space_id,
-            inboxOwner: chunkInboxOwner(targetSpace.kind, doc),
-          })
-          .where(and(eq(chunks.tenantId, actor.tenantId), eq(chunks.documentId, fileId)));
-        await movePlacementIndex(tx, actor.tenantId, doc, { spaceId: parsed.target_space_id, kind: targetSpace.kind });
-      }
-    }
-
-    const [updated] = await tx
-      .update(documents)
-      .set({
-        spaceId: parsed.target_space_id,
-        parentId: parsed.target_parent_id,
-        position: parsed.position,
-        placement: 'pinned',
-        indexedVersionId: nextIndexedVersionId,
-      })
-      .where(and(eq(documents.tenantId, actor.tenantId), eq(documents.id, fileId)))
-      .returning();
+    const updated = await relocateFile(tx, actor.tenantId, doc, {
+      spaceId: parsed.target_space_id,
+      spaceKind: targetSpace.kind,
+      reviewRequired: targetSpace.reviewRequired,
+      moverReviews: targetRole === 'reviewer' || targetRole === 'admin',
+      parentId: parsed.target_parent_id,
+      position: parsed.position,
+    });
 
     await writeAuditEvent(tx, {
       tenantId: actor.tenantId,
@@ -533,7 +509,7 @@ export async function moveFile(actor: Actor, fileId: string, input: unknown): Pr
         parentId: parsed.target_parent_id,
       },
     });
-    return toDocumentSummary(updated!);
+    return toDocumentSummary(updated);
   });
 }
 

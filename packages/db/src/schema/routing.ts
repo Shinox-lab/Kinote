@@ -33,6 +33,10 @@ export const captures = pgTable(
     /** The page a document capture became. */
     documentPageId: uuid('document_page_id').references(() => documents.id, { onDelete: 'set null' }),
     documentOutcome: text('document_outcome', { enum: ['pending', 'needs_home', 'created'] }),
+    /** A file sent with the capture (kept in the sender's Inbox until its page is made). */
+    fileId: uuid('file_id').references(() => documents.id, { onDelete: 'set null' }),
+    /** The text read from the file, once it was read: routed after the typed text. */
+    fileText: text('file_text'),
     documentReason: text('document_reason'),
     /** Parents offered when the document waits for a person: `[{ pageId, title, spaceId, spaceName }]`. */
     documentOptions: jsonb('document_options'),
