@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 export * from './errors.js';
 export * from './editor.js';
+export * from './collections.js';
 
 export const TenantRoleSchema = z.enum(['owner', 'admin', 'member', 'viewer']);
 export type TenantRole = z.infer<typeof TenantRoleSchema>;
@@ -56,6 +57,11 @@ export const AuditEventTypeSchema = z.enum([
   'page.archived',
   'page.restored',
   'page.withdrawn',
+  'collection.created',
+  'collection.removed',
+  'collection.field_added',
+  'collection.field_changed',
+  'collection.field_removed',
   'capture.created',
   'capture.routed',
   'capture.question_asked',
