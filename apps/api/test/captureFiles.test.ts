@@ -134,6 +134,37 @@ describe('file captures', () => {
     expect(back).toMatchObject({ spaceId: w.inbox, parentId: null, archivedAt: null });
   });
 
+  test('undo leaves the file where a person moved it since', async () => {
+    const w = await world();
+    const file = await upload(w.headers, w.inbox, 'Oct 14 meeting with George.md', MEETING, 'text/markdown');
+    const id = (await post(w.headers, '/api/v1/captures', { file_id: file })).json().id as string;
+    await run(w.tenant.id);
+    const moved = await post(w.headers, `/api/v1/files/${file}/move`, { target_space_id: w.clients, target_parent_id: w.george });
+    expect(moved.statusCode, moved.body).toBe(200);
+    expect((await post(w.headers, `/api/v1/captures/${id}/undo`)).statusCode).toBe(200);
+    expect(await fileRow(w.tenant.id, file)).toMatchObject({ spaceId: w.clients, parentId: w.george });
+  });
+
+  test('a file moved out of the Inbox before routing stays where it was put', async () => {
+    const w = await world();
+    const file = await upload(w.headers, w.inbox, 'Oct 14 meeting with George.md', MEETING, 'text/markdown');
+    const id = (await post(w.headers, '/api/v1/captures', { file_id: file })).json().id as string;
+    const moved = await post(w.headers, `/api/v1/files/${file}/move`, { target_space_id: w.clients, target_parent_id: w.george });
+    expect(moved.statusCode, moved.body).toBe(200);
+    await run(w.tenant.id);
+    expect((await get(w.headers, `/api/v1/captures/${id}`)).json().receipt.document).toMatchObject({ outcome: 'created' });
+    expect(await fileRow(w.tenant.id, file)).toMatchObject({ spaceId: w.clients, parentId: w.george });
+  });
+
+  test('a file already sent with another capture is refused', async () => {
+    const w = await world();
+    const file = await upload(w.headers, w.inbox, 'notes.md', MEETING, 'text/markdown');
+    expect((await post(w.headers, '/api/v1/captures', { file_id: file })).statusCode).toBe(201);
+    const again = await post(w.headers, '/api/v1/captures', { file_id: file });
+    expect(again.statusCode).toBe(409);
+    expect(again.json().error).toBe('capture_file_in_use');
+  });
+
   test('a file with no readable text fails the capture and stays in the Inbox', async () => {
     const w = await world();
     const file = await upload(w.headers, w.inbox, 'scan.pdf', '%PDF-1.7\nFAKE-EXTRACT-EMPTY');

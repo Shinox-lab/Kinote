@@ -273,6 +273,7 @@ describe('error model', () => {
       'source_name_taken',
       'capture_not_waiting',
       'document_not_waiting',
+      'capture_file_in_use',
       'change_already_undone',
       'suggestion_not_open',
       'fact_not_open',

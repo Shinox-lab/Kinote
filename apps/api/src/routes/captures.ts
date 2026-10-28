@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, lt, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, lt, ne, sql } from 'drizzle-orm';
 import {
   withTenantTx,
   captures,
@@ -154,7 +154,16 @@ export async function createCapture(actor: Actor, body: unknown): Promise<Captur
       scopeSpaceId = doc.spaceId;
     }
 
-    if (file_id) await captureFile(tx, actor, file_id);
+    if (file_id) {
+      await captureFile(tx, actor, file_id);
+      // One capture per file: a second would take the file from the first one's page.
+      const [taken] = await tx
+        .select({ id: captures.id })
+        .from(captures)
+        .where(and(eq(captures.tenantId, actor.tenantId), eq(captures.fileId, file_id), ne(captures.status, 'failed')))
+        .limit(1);
+      if (taken) throw new AppError('capture_file_in_use');
+    }
 
     const [row] = await tx
       .insert(captures)

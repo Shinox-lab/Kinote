@@ -273,7 +273,7 @@ async function undoDocumentPage(
       )
       .limit(1);
     if (other) return false;
-    // The file the capture came with doesn't count: it goes back to the sender's Inbox.
+    // The file the capture came with doesn't count: it goes back to the sender's Inbox, only once nothing else stops the archive.
     const [child] = await tx
       .select({ id: documents.id })
       .from(documents)
@@ -287,7 +287,7 @@ async function undoDocumentPage(
       )
       .limit(1);
     if (child) return false;
-    await returnCaptureFile(tx, actor.tenantId, capture!);
+    await returnCaptureFile(tx, actor.tenantId, capture!, pageId);
     await archivePageTx(tx, actor, doc);
     await tx
       .update(captureChanges)

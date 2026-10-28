@@ -18,8 +18,6 @@ export const CAPTURE_FILE_MESSAGES = {
 
 export type CaptureFileState = { state: 'ready' } | { state: 'reading' } | { state: 'failed'; message: string };
 
-/** Version statuses after which the file's text is (or was) there to read. */
-const READ = new Set(['pending_review', 'indexing', 'indexed', 'stored', 'superseded', 'withdrawn']);
 
 /**
  * Makes a capture's file text ready to route: once the file has been read,
@@ -47,7 +45,8 @@ export async function prepareCaptureFile(tenantId: string, captureId: string, st
   if ('failed' in found) return { state: 'failed', message: found.failed! };
   const { ver } = found;
   if (ver.status === 'extracting') return { state: 'reading' };
-  if (!READ.has(ver.status) || !ver.extractedKey) return { state: 'failed', message: CAPTURE_FILE_MESSAGES.unreadable };
+  // Read once its text was extracted, whatever happened after (indexing can fail on its own).
+  if (!ver.extractedKey) return { state: 'failed', message: CAPTURE_FILE_MESSAGES.unreadable };
 
   const extracted = ExtractedDocumentSchema.parse(JSON.parse(new TextDecoder().decode((await storage.get(tenantId, ver.extractedKey)).bytes)));
   const text = extracted.sections
@@ -69,14 +68,25 @@ export function routedText(capture: { text: string; fileText: string | null }): 
 
 /** A file's name without its extension: a document page's title when nothing was typed. */
 export function fileTitle(name: string): string {
-  return name.replace(/\.[A-Za-z0-9]{1,5}$/, '').trim() || name;
+  return name.replace(/\.[A-Za-z0-9]{1,5}$/, '').trim() || name || 'File';
 }
 
+/** Whether the file is still where the capture left it: live, in its sender's Inbox, made by the sender. */
+async function stillInSendersInbox(tx: DbTransaction, tenantId: string, capture: CaptureRow, file: typeof documents.$inferSelect) {
+  if (file.archivedAt || file.createdByType !== capture.senderType || file.createdBy !== capture.senderId) return false;
+  const [space] = await tx.select({ kind: spaces.kind }).from(spaces).where(and(eq(spaces.tenantId, tenantId), eq(spaces.id, file.spaceId)));
+  return space?.kind === 'inbox';
+}
+
+type CaptureRow = typeof captures.$inferSelect;
+
 /**
- * Puts a capture's file under the page made for it (in that page's space, as
- * the sender: a review space they can't approve in takes it to review).
+ * Puts a capture's file under the page made for it, when the file is still
+ * in its sender's Inbox and the sender may edit where the page is (a review
+ * space they can't approve in takes it to review). Otherwise the file stays
+ * where it is: never a reason to fail the page.
  */
-export async function attachCaptureFile(tx: DbTransaction, tenantId: string, capture: typeof captures.$inferSelect, pageId: string) {
+export async function attachCaptureFile(tx: DbTransaction, tenantId: string, capture: CaptureRow, pageId: string) {
   if (!capture.fileId) return;
   const [page] = await tx.select().from(documents).where(and(eq(documents.tenantId, tenantId), eq(documents.id, pageId)));
   const [file] = await tx
@@ -84,28 +94,37 @@ export async function attachCaptureFile(tx: DbTransaction, tenantId: string, cap
     .from(documents)
     .where(and(eq(documents.tenantId, tenantId), eq(documents.id, capture.fileId)))
     .for('update');
-  if (!page || !file || file.archivedAt) return;
+  if (!page || !file || !(await stillInSendersInbox(tx, tenantId, capture, file))) return;
   const [space] = await tx.select().from(spaces).where(and(eq(spaces.tenantId, tenantId), eq(spaces.id, page.spaceId)));
-  const actor = await senderActor(tx, { tenantId, type: capture.senderType, id: capture.senderId });
-  const { effectiveRole } = await requireSpaceRole(tx, actor, page.spaceId, 'viewer');
+  let role: string;
+  try {
+    const actor = await senderActor(tx, { tenantId, type: capture.senderType, id: capture.senderId });
+    role = (await requireSpaceRole(tx, actor, page.spaceId, 'editor')).effectiveRole;
+  } catch {
+    // Placed (by an admin) where the sender can't edit: the file stays in their Inbox.
+    return;
+  }
   await relocateFile(tx, tenantId, file, {
     spaceId: page.spaceId,
     spaceKind: space!.kind,
     reviewRequired: space!.reviewRequired,
-    moverReviews: effectiveRole === 'reviewer' || effectiveRole === 'admin',
+    moverReviews: role === 'reviewer' || role === 'admin',
     parentId: page.id,
   });
 }
 
-/** Puts a capture's file back at the top of its sender's Inbox (its page was undone). */
-export async function returnCaptureFile(tx: DbTransaction, tenantId: string, capture: typeof captures.$inferSelect) {
-  if (!capture.fileId || capture.senderType !== 'user') return;
+/**
+ * Puts a capture's file back in its sender's Inbox when its page is undone,
+ * if it is still under that page (moved elsewhere since, it stays there).
+ */
+export async function returnCaptureFile(tx: DbTransaction, tenantId: string, capture: CaptureRow, pageId: string) {
+  if (!capture.fileId) return;
   const [file] = await tx
     .select()
     .from(documents)
     .where(and(eq(documents.tenantId, tenantId), eq(documents.id, capture.fileId)))
     .for('update');
   const [inbox] = await tx.select().from(spaces).where(and(eq(spaces.tenantId, tenantId), eq(spaces.kind, 'inbox')));
-  if (!file || !inbox) return;
+  if (!file || !inbox || file.archivedAt || file.parentId !== pageId) return;
   await relocateFile(tx, tenantId, file, { spaceId: inbox.id, spaceKind: 'inbox', reviewRequired: false, moverReviews: true, parentId: null });
 }
