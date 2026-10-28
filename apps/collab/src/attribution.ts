@@ -101,9 +101,39 @@ export function changedBlockIds(tx: Y.Transaction): string[] {
 /**
  * True when the transaction changed the page: its block fragment or its
  * `meta` map (the title). Other shared types of the document are not page
- * content and are not attributed.
+ * content and are not attributed, and neither is a change of comment marks only.
  */
+/**
+ * True when every item the transaction added or deleted is a `comment`
+ * format (BlockNote's comment mark, its `orphan` flips included): a comment
+ * is talk about the page, kept by the API, not a change to the page.
+ */
+function onlyCommentMarks(tx: Y.Transaction): boolean {
+  // Structural, not `instanceof`: the document may come from another copy of Yjs. A format item's content has ref 6.
+  const isCommentFormat = (s: Y.Item | Y.GC) => {
+    const content = (s as { content?: { getRef?: () => number; key?: string } }).content;
+    return content?.getRef?.() === 6 && content.key === 'comment';
+  };
+  let any = false;
+  for (const [client, after] of tx.afterState) {
+    const before = tx.beforeState.get(client) ?? 0;
+    if (after <= before) continue;
+    for (const struct of tx.doc.store.clients.get(client) ?? []) {
+      if (struct.id.clock + struct.length <= before || struct.id.clock >= after) continue;
+      if (!isCommentFormat(struct)) return false;
+      any = true;
+    }
+  }
+  let onlyComments = true;
+  Y.iterateDeletedStructs(tx, tx.deleteSet, (struct) => {
+    if (!isCommentFormat(struct as Y.Item)) onlyComments = false;
+    any = true;
+  });
+  return any && onlyComments;
+}
+
 export function changesPage(tx: Y.Transaction): boolean {
+  if (onlyCommentMarks(tx)) return false;
   const fragment = tx.doc.share.get(BLOCK_FRAGMENT);
   const meta = tx.doc.share.get(META);
   for (const type of tx.changed.keys()) {

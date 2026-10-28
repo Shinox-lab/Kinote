@@ -80,6 +80,27 @@ describe('ApiThreadStore', () => {
     expect(store.getThread(T1).comments[0]).toMatchObject({ body: undefined, deletedAt: expect.any(Date) });
   });
 
+  test('loaded once the first answer is in; an unchanged answer tells no one', async () => {
+    const store = new ApiThreadStore(PAGE, fakeApi(), new WikiThreadAuth(ME, { canEdit: true, moderates: false }), () => ({ blockId: null, quote: null }));
+    expect(store.loaded).toBe(false);
+    const seen = vi.fn();
+    store.subscribe(seen);
+    await store.refresh();
+    expect(store.loaded).toBe(true);
+    await store.refresh();
+    expect(seen).toHaveBeenCalledTimes(1);
+  });
+
+  test('a failed first load still counts as loaded, so the page opens', async () => {
+    const api = fakeApi();
+    api.list = vi.fn(async () => {
+      throw new Error('down');
+    });
+    const store = new ApiThreadStore(PAGE, api, new WikiThreadAuth(ME, { canEdit: true, moderates: false }), () => ({ blockId: null, quote: null }));
+    await expect(store.refresh()).rejects.toThrow('down');
+    expect(store.loaded).toBe(true);
+  });
+
   test('reactions are not offered', async () => {
     const store = new ApiThreadStore(PAGE, fakeApi(), new WikiThreadAuth(ME, { canEdit: true, moderates: false }), () => ({ blockId: null, quote: null }));
     await expect(store.addReaction()).rejects.toThrow();
@@ -100,6 +121,12 @@ describe('WikiThreadAuth', () => {
     expect(auth.canUpdateComment(theirs)).toBe(false);
     expect(auth.canDeleteComment(theirs)).toBe(false);
     expect(auth.canAddReaction()).toBe(false);
+  });
+
+  test('rights change in place', () => {
+    const auth = new WikiThreadAuth(ME, { canEdit: false, moderates: false });
+    auth.setRights({ canEdit: true, moderates: false });
+    expect(auth.canCreateThread()).toBe(true);
   });
 
   test('viewers only read; a space admin may delete what others wrote', () => {

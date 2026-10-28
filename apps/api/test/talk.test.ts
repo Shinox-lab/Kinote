@@ -98,6 +98,13 @@ describe('comments, mentions and notifications', () => {
       expect((await inbox(outsider.headers)).items).toEqual([]);
     });
 
+    test('only people who may edit the page list who can be mentioned', async () => {
+      const w = await world();
+      const viewer = await w.member('Val Viewer', 'viewer');
+      const pageId = await w.page('Plan', 'x');
+      expect((await get(viewer.headers, `/api/v1/mentionable?page_id=${pageId}`)).statusCode).toBe(403);
+    });
+
     test('mentionable people: names matching the query, with whether they can read the page', async () => {
       const w = await world();
       await w.member('Ed Editor', 'editor');
@@ -178,6 +185,31 @@ describe('comments, mentions and notifications', () => {
 
       expect((await send('DELETE', ed.headers, `/api/v1/threads/${t.id}`)).statusCode).toBe(204);
       expect((await get(ed.headers, `/api/v1/pages/${pageId}/threads`)).json()).toEqual([]);
+    });
+
+    test('deleting a comment, or its thread, takes its notifications with it', async () => {
+      const w = await world();
+      const ed = await w.member('Ed Editor', 'editor');
+      const pageId = await w.page('Plan', 'x');
+      const t = (await post(w.headers, `/api/v1/pages/${pageId}/threads`, { body: body('Hi @Ed Editor, salary is 90k') })).json();
+      expect((await inbox(ed.headers)).items).toHaveLength(1);
+      expect((await send('DELETE', w.headers, `/api/v1/comments/${t.comments[0].id}`)).statusCode).toBe(204);
+      expect((await inbox(ed.headers)).items).toEqual([]);
+
+      const t2 = (await post(w.headers, `/api/v1/pages/${pageId}/threads`, { body: body('Again @Ed Editor') })).json();
+      expect((await inbox(ed.headers)).items).toHaveLength(1);
+      expect((await send('DELETE', w.headers, `/api/v1/threads/${t2.id}`)).statusCode).toBe(204);
+      expect((await inbox(ed.headers)).items).toEqual([]);
+    });
+
+    test('an author who can no longer edit the page cannot rewrite their comment', async () => {
+      const w = await world();
+      const ed = await w.member('Ed Editor', 'editor');
+      const pageId = await w.page('Plan', 'x');
+      const t = (await post(ed.headers, `/api/v1/pages/${pageId}/threads`, { body: body('First') })).json();
+      const g = await post(w.headers, `/api/v1/spaces/${w.space}/grants`, { principal_type: 'user', principal_id: ed.userId, role: 'viewer' });
+      expect(g.statusCode, g.body).toBeLessThan(300);
+      expect((await send('PATCH', ed.headers, `/api/v1/comments/${t.comments[0].id}`, { body: body('Changed') })).statusCode).toBe(403);
     });
 
     test('a comment over 5,000 characters is refused', async () => {

@@ -21,9 +21,13 @@ export interface ThreadApi {
 export class WikiThreadAuth extends ThreadStoreAuth {
   constructor(
     private readonly userId: string,
-    private readonly rights: { canEdit: boolean; moderates: boolean }
+    private rights: { canEdit: boolean; moderates: boolean }
   ) {
     super();
+  }
+  /** Rights change in place (a token re-fetch, the space role loading), so the editor is not rebuilt. */
+  setRights(rights: { canEdit: boolean; moderates: boolean }) {
+    this.rights = rights;
   }
   canCreateThread() {
     return this.rights.canEdit;
@@ -100,6 +104,10 @@ function toThreadData(t: CommentThread): ThreadData {
  */
 export class ApiThreadStore extends ThreadStore {
   private threads = new Map<string, ThreadData>();
+  /** The last answer, to tell no one when it did not change. */
+  private lastAnswer = '';
+  /** True once the first refresh is over (answered or failed): before, the store knows no threads. */
+  loaded = false;
   private names = new Map<string, string>();
   private listeners = new Set<(threads: Map<string, ThreadData>) => void>();
 
@@ -140,7 +148,22 @@ export class ApiThreadStore extends ThreadStore {
   }
 
   async refresh(): Promise<void> {
-    const list = this.take(await this.api.list(this.pageId));
+    let list: CommentThread[];
+    try {
+      list = this.take(await this.api.list(this.pageId));
+    } catch (err) {
+      if (!this.loaded) {
+        // Subscribers learn the store is ready even when its first answer failed.
+        this.loaded = true;
+        this.threads = new Map(this.threads);
+        this.emit();
+      }
+      throw err;
+    }
+    this.loaded = true;
+    const answer = JSON.stringify(list);
+    if (answer === this.lastAnswer) return;
+    this.lastAnswer = answer;
     this.threads = new Map(list.map((t) => [t.id, toThreadData(t)]));
     this.emit();
   }

@@ -674,7 +674,6 @@ export async function restorePageVersion(
   return toVersionSummary(created);
 }
 
-/** Test seam for approve and reject: `beforeLock` runs after the version was found, before its document is locked. */
 /** Tells the people who wrote a version (its author and every contributor) how the review went. */
 async function notifyContributors(
   tx: DbTransaction,
@@ -704,6 +703,7 @@ async function notifyContributors(
   );
 }
 
+/** Test seam for approve and reject: `beforeLock` runs after the version was found, before its document is locked. */
 export interface ReviewHooks {
   beforeLock?: () => Promise<void>;
 }

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useSyncExternalStore } from 'react';
 import type { ThreadData } from '@blocknote/core/comments';
 import { api } from './api.js';
 import { loadSession } from './session.js';
@@ -24,11 +24,10 @@ const threadApi: ThreadApi = {
  */
 export function usePageThreadStore(pageId: string, rights: { canEdit: boolean; moderates: boolean }): ApiThreadStore {
   const userId = loadSession()?.user.id ?? '';
-  const store = useMemo(
-    () => new ApiThreadStore(pageId, threadApi, new WikiThreadAuth(userId, rights), () => ({ blockId: null, quote: null })),
-    // Rights change rarely (a role change); a new store re-reads the threads.
-    [pageId, userId, rights.canEdit, rights.moderates]
-  );
+  const auth = useMemo(() => new WikiThreadAuth(userId, rights), [pageId, userId]);
+  // One store per page: rights change in place (a token re-fetch, the space role loading), so the editor is kept.
+  auth.setRights(rights);
+  const store = useMemo(() => new ApiThreadStore(pageId, threadApi, auth, () => ({ blockId: null, quote: null })), [auth]);
   useEffect(() => {
     const refresh = () => void store.refresh().catch(() => undefined);
     refresh();
@@ -44,8 +43,6 @@ export function usePageThreadStore(pageId: string, rights: { canEdit: boolean; m
 
 /** The store's threads, re-rendering when they change. */
 export function useThreads(store: ApiThreadStore): Map<string, ThreadData> {
-  return useSyncExternalStore(
-    (cb) => store.subscribe(cb),
-    () => store.getThreads()
-  );
+  const subscribe = useCallback((cb: () => void) => store.subscribe(cb), [store]);
+  return useSyncExternalStore(subscribe, () => store.getThreads());
 }

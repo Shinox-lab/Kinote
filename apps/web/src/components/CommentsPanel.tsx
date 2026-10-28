@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { ThreadData } from '@blocknote/core/comments';
 import { commentBody, commentText } from '../lib/comments.js';
 import { relativeTime } from '../lib/pageStatus.js';
@@ -12,17 +12,26 @@ function showBlock(blockId: string) {
   el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
 
-/** Whether the thread's comment mark is still in the page: otherwise its text was removed or rewritten. */
+/** Whether the thread's comment mark is still in this page (not a side panel's): otherwise its text was removed or rewritten. */
 function anchored(threadId: string): boolean {
-  return document.querySelector(`[data-bn-thread-id="${CSS.escape(threadId)}"]`) !== null;
+  return document.querySelector(`article [data-bn-thread-id="${CSS.escape(threadId)}"]`) !== null;
 }
 
-function ThreadCard({ thread, store, canEdit }: { thread: ThreadData; store: ApiThreadStore; canEdit: boolean }) {
+function ThreadCard({
+  thread,
+  store,
+  canEdit,
+  onPage,
+}: {
+  thread: ThreadData;
+  store: ApiThreadStore;
+  canEdit: boolean;
+  onPage: boolean;
+}) {
   const [reply, setReply] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const meta = thread.metadata as { blockId: string | null; quote: string | null };
-  const onPage = anchored(thread.id);
   const act = async (fn: () => Promise<unknown>) => {
     setBusy(true);
     setError(null);
@@ -59,7 +68,8 @@ function ThreadCard({ thread, store, canEdit }: { thread: ThreadData; store: Api
           </li>
         ))}
       </ol>
-      {canEdit && !thread.resolved && (
+      {/* A thread on removed text is kept to read, not to carry on. */}
+      {canEdit && !thread.resolved && onPage && (
         <form
           className="flex flex-col gap-1.5"
           onSubmit={(e) => {
@@ -117,6 +127,13 @@ function ThreadCard({ thread, store, canEdit }: { thread: ThreadData; store: Api
 export function CommentsPanel({ store, canEdit, onClose }: { store: ApiThreadStore; canEdit: boolean; onClose: () => void }) {
   const threads = [...useThreads(store).values()].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
   const [showResolved, setShowResolved] = useState(false);
+  // Which threads still have their text is read from the editor's marks: look again while the panel is open
+  // (the editor may mount after the panel, and edits remove text).
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const timer = setInterval(() => setTick((n) => n + 1), 2_000);
+    return () => clearInterval(timer);
+  }, []);
   const open = threads.filter((t) => !t.resolved);
   const resolved = threads.filter((t) => t.resolved);
   const shown = showResolved ? [...open, ...resolved] : open;
@@ -151,7 +168,7 @@ export function CommentsPanel({ store, canEdit, onClose }: { store: ApiThreadSto
       ) : (
         <ul className="flex flex-col gap-2">
           {shown.map((t) => (
-            <ThreadCard key={t.id} thread={t} store={store} canEdit={canEdit} />
+            <ThreadCard key={t.id} thread={t} store={store} canEdit={canEdit} onPage={anchored(t.id)} />
           ))}
         </ul>
       )}

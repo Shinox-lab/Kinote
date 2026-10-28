@@ -22,6 +22,7 @@ export interface NotificationInput {
   documentId?: string | null;
   blockId?: string | null;
   threadId?: string | null;
+  commentId?: string | null;
   captureId?: string | null;
   excerpt?: string | null;
 }
@@ -55,6 +56,7 @@ export async function notify(tx: DbTransaction, tenantId: string, items: Notific
       documentId: n.documentId ?? null,
       blockId: n.blockId ?? null,
       threadId: n.threadId ?? null,
+      commentId: n.commentId ?? null,
       captureId: n.captureId ?? null,
       excerpt: n.excerpt ?? null,
     }))

@@ -114,6 +114,8 @@ export const notifications = pgTable(
     documentId: uuid('document_id').references(() => documents.id, { onDelete: 'cascade' }),
     blockId: text('block_id'),
     threadId: uuid('thread_id').references(() => commentThreads.id, { onDelete: 'cascade' }),
+    /** The comment it is about, so deleting the comment takes the notification (and its excerpt) with it. */
+    commentId: uuid('comment_id').references(() => comments.id, { onDelete: 'cascade' }),
     captureId: uuid('capture_id').references(() => captures.id, { onDelete: 'cascade' }),
     /** A short plain-text line: the comment or the mentioning sentence. */
     excerpt: text('excerpt'),

@@ -1,5 +1,5 @@
 {
-  "id": "8295306d-7b41-4050-ac56-c849a3142715",
+  "id": "30c54672-4204-4bba-acc2-b18da5b1c700",
   "prevId": "ca907818-88f1-45b5-b8b3-e02b5c16dfcf",
   "version": "7",
   "dialect": "postgresql",
@@ -5483,6 +5483,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "comment_id": {
+          "name": "comment_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "capture_id": {
           "name": "capture_id",
           "type": "uuid",
@@ -5584,6 +5590,19 @@
           "tableTo": "comment_threads",
           "columnsFrom": [
             "thread_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "notifications_comment_id_comments_id_fk": {
+          "name": "notifications_comment_id_comments_id_fk",
+          "tableFrom": "notifications",
+          "tableTo": "comments",
+          "columnsFrom": [
+            "comment_id"
           ],
           "columnsTo": [
             "id"

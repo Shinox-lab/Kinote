@@ -3,6 +3,7 @@ import {
   commentThreads,
   comments,
   documents,
+  notifications,
   memberships,
   userMentions,
   users,
@@ -171,6 +172,7 @@ async function tellAboutComment(
     documentId: doc.id,
     blockId: thread.blockId,
     threadId: thread.id,
+    commentId: comment.id,
     excerpt: excerptOf(text),
   };
   const mentioned = textMentions(text, await memberNames(tx, tenantId)).filter((id) => id !== actor.principalId);
@@ -273,6 +275,8 @@ export async function updateComment(actor: Actor, commentId: string, input: unkn
   return withTenantTx(actor.tenantId, async (tx) => {
     const { comment, thread, doc } = await commentFor(tx, actor, commentId);
     if (comment.authorId !== actor.principalId) throw new AppError('forbidden');
+    // Rewriting is writing: it needs edit rights on a live page, like a reply.
+    await pageFor(tx, actor, doc.id, 'editor');
     const [updated] = await tx
       .update(comments)
       .set({ body: req.body, updatedAt: new Date() })
@@ -304,6 +308,8 @@ export async function deleteComment(actor: Actor, commentId: string): Promise<vo
     const { comment, thread, doc, access } = await commentFor(tx, actor, commentId);
     if (comment.authorId !== actor.principalId && !moderates(actor, access.effectiveRole)) throw new AppError('forbidden');
     await tx.update(comments).set({ deletedAt: new Date() }).where(eq(comments.id, comment.id));
+    // What it said goes with it: notifications carry an excerpt.
+    await tx.delete(notifications).where(and(eq(notifications.tenantId, actor.tenantId), eq(notifications.commentId, comment.id)));
     await writeAuditEvent(tx, {
       tenantId: actor.tenantId,
       type: 'comment.deleted',
@@ -323,6 +329,7 @@ export async function deleteThread(actor: Actor, threadId: string): Promise<void
     const { thread, doc, access } = await threadFor(tx, actor, threadId, 'viewer');
     if (thread.createdBy !== actor.principalId && !moderates(actor, access.effectiveRole)) throw new AppError('forbidden');
     await tx.update(commentThreads).set({ deletedAt: new Date() }).where(eq(commentThreads.id, thread.id));
+    await tx.delete(notifications).where(and(eq(notifications.tenantId, actor.tenantId), eq(notifications.threadId, thread.id)));
     await writeAuditEvent(tx, {
       tenantId: actor.tenantId,
       type: 'thread.deleted',
@@ -361,11 +368,13 @@ export async function setThreadResolved(actor: Actor, threadId: string, resolved
   });
 }
 
-/** GET /api/v1/mentionable: the workspace's people by name, and whether each can read the page. */
+/** GET /api/v1/mentionable: for an editor of the page, the workspace's people by name, and whether each can read the page. */
 export async function listMentionable(actor: Actor, query: unknown): Promise<Mentionable[]> {
+  requireUser(actor);
   const { page_id, q, limit } = MentionableQuerySchema.parse(query);
   return withTenantTx(actor.tenantId, async (tx) => {
-    const { doc } = await pageFor(tx, actor, page_id, 'viewer');
+    // Only people who can mention (editors of the page) see who is in the workspace.
+    const { doc } = await pageFor(tx, actor, page_id, 'editor');
     const term = q.trim().toLowerCase();
     const people = (
       await tx

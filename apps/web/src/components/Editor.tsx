@@ -10,6 +10,7 @@ import { loadSession } from '../lib/session.js';
 import type { Live } from '../lib/useLivePage.js';
 import { authorColor } from '../lib/wiki.js';
 import type { ApiThreadStore } from '../lib/threadStore.js';
+import { useThreads } from '../lib/useThreadStore.js';
 import { usePeek } from '../lib/usePeek.js';
 import { Button, ErrorNote, Loading } from './ui.js';
 import { blockSourcesExtension, setBlockSources, type BlockSource } from './editor/blockSources.js';
@@ -18,6 +19,10 @@ import { WikiMenus, type EditorPlace } from './editor/menus.js';
 import { wikiSchema } from './editor/schema.js';
 
 export type { BlockSource, EditorPlace };
+
+/** A store with no threads, for an editor without comments (hooks can't be skipped). */
+const NO_THREADS = { subscribe: () => () => undefined, getThreads: () => EMPTY_THREADS } as unknown as ApiThreadStore;
+const EMPTY_THREADS = new Map();
 
 /** The Y.XmlFragment that holds a page's blocks (BLOCK_FRAGMENT in apps/collab/src/fragment.ts). */
 const BLOCK_FRAGMENT = 'document-store';
@@ -125,6 +130,9 @@ export function Editor({
   }
 
   const editable = access === 'write' && !archived;
+  // The editor waits for the first thread answer: BlockNote marks every comment it doesn't know as orphaned.
+  useThreads(threads ?? NO_THREADS);
+  const threadsReady = !threads || threads.loaded;
   return (
     <div className="flex flex-col gap-2">
       {!editable && live && <span className="w-fit rounded-full bg-hover px-2 py-0.5 text-xs text-fg">Read only</span>}
@@ -132,7 +140,11 @@ export function Editor({
           (a screen wide enough for the sidebar and the page plus the indent) the indent hangs in the margin,
           so the text lines up with the title; narrower, it stays inside and nothing scrolls sideways. */}
       <div className="min-h-[16rem] min-[1100px]:-mx-[54px]">
-        {live ? <BoundEditor live={live} editable={editable} place={place} sources={sources} threads={threads} /> : <Loading what="editor" />}
+        {live && threadsReady ? (
+          <BoundEditor live={live} editable={editable} place={place} sources={sources} threads={threads} />
+        ) : (
+          <Loading what="editor" />
+        )}
       </div>
     </div>
   );
