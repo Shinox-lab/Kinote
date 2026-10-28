@@ -357,6 +357,7 @@ export const api = {
   // Captures (the routing engine)
   createCapture: (body: {
     text: string;
+    file_id?: string;
     scope_space_id?: string;
     scope_page_id?: string;
     shape?: 'auto' | 'document' | 'updates';

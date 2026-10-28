@@ -135,3 +135,19 @@ export function approvableInBundle(items: ReviewItem[], captureId: string): { ap
 export function suggestionAction(s: Pick<SuggestionSummary, 'kind'>): 'Approve removal' | 'Accept' {
   return s.kind === 'remove' ? 'Approve removal' : 'Accept';
 }
+
+/** What a capture can read from a file: documents, slides, sheets, text and pictures (by extension, as the server checks). */
+const CAPTURE_FILE_EXTENSIONS = new Set(['pdf', 'docx', 'pptx', 'xlsx', 'csv', 'txt', 'md', 'markdown', 'png', 'jpg', 'jpeg', 'webp', 'gif']);
+const AUDIO_VIDEO = /\.(mp3|wav|m4a|ogg|mp4|mov|webm)$/i;
+
+/** Why a file can't go with a capture, or null when it can. */
+export function captureFileProblem(file: { name: string; type: string }): string | null {
+  if (/^(audio|video)\//.test(file.type) || AUDIO_VIDEO.test(file.name)) return "Audio and video can't be read yet.";
+  const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
+  return CAPTURE_FILE_EXTENSIONS.has(ext) ? null : "This kind of file can't be read.";
+}
+
+/** A capture still waiting for its file to be read. */
+export function captureWaitingOnFile(capture: Pick<CaptureSummary, 'status' | 'file'>): boolean {
+  return capture.status === 'queued' && capture.file !== null;
+}

@@ -7,6 +7,8 @@ import {
   captureHighlightCss,
   captureStatusLabel,
   capturesBusy,
+  captureFileProblem,
+  captureWaitingOnFile,
   documentHeadline,
   hiddenChangesText,
   keptText,
@@ -160,5 +162,26 @@ describe('capture helpers', () => {
       { value: 'document', label: 'New page' },
       { value: 'updates', label: 'Updates only' },
     ]);
+  });
+});
+
+describe('captureFileProblem', () => {
+  test('documents, slides, sheets, text and pictures can be attached', () => {
+    for (const name of ['a.pdf', 'b.docx', 'c.pptx', 'd.xlsx', 'e.md', 'f.txt', 'g.csv', 'h.png', 'i.jpeg', 'j.webp', 'k.gif', 'l.jpg']) {
+      expect(captureFileProblem({ name, type: '' })).toBeNull();
+    }
+  });
+  test('audio and video are refused, as is anything else', () => {
+    expect(captureFileProblem({ name: 'song.mp3', type: 'audio/mpeg' })).toBe("Audio and video can't be read yet.");
+    expect(captureFileProblem({ name: 'clip.mov', type: 'video/quicktime' })).toBe("Audio and video can't be read yet.");
+    expect(captureFileProblem({ name: 'tool.exe', type: '' })).toBe("This kind of file can't be read.");
+  });
+});
+
+describe('captureWaitingOnFile', () => {
+  test('a queued capture with a file is reading it', () => {
+    expect(captureWaitingOnFile({ status: 'queued', file: { id: ID, name: 'a.pdf', mimeType: null } } as CaptureSummary)).toBe(true);
+    expect(captureWaitingOnFile({ status: 'routing', file: { id: ID, name: 'a.pdf', mimeType: null } } as CaptureSummary)).toBe(false);
+    expect(captureWaitingOnFile({ status: 'queued', file: null } as CaptureSummary)).toBe(false);
   });
 });

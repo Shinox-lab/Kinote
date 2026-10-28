@@ -112,3 +112,15 @@ test('a link to a page the reader cannot open says so, without its title', async
   await expect(link).toHaveText('Page unavailable');
   await expect(editorOf(page)).not.toContainText('Secret plan');
 });
+
+test('the slash menu makes a callout; its emoji changes on click', async ({ browser }) => {
+  const page = await openAs(browser, world, ed);
+  await createPageInSpace(page, world, 'Callout page');
+  await typeAtEnd(page, '/callout');
+  await page.getByRole('option', { name: /^Callout/ }).click();
+  await page.keyboard.type('Mind the gap');
+  const callout = editorOf(page).locator('.callout');
+  await expect(callout).toContainText('Mind the gap');
+  await callout.getByRole('button', { name: /Callout icon 💡/ }).click();
+  await expect(callout.getByRole('button', { name: /Callout icon ⚠️/ })).toBeVisible();
+});

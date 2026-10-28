@@ -1,6 +1,6 @@
 import { BlockNoteSchema, defaultBlockSpecs, defaultInlineContentSpecs } from '@blocknote/core';
 import { createReactBlockSpec, createReactInlineContentSpec } from '@blocknote/react';
-import { fileEmbedConfig, mentionConfig, mentionPath, pageLinkConfig, pageLinkPath } from '@living-wiki/contracts';
+import { calloutConfig, fileEmbedConfig, mentionConfig, mentionPath, pageLinkConfig, pageLinkPath } from '@living-wiki/contracts';
 import { FileEmbedView } from './FileEmbedView.js';
 import { PageLinkView } from './PageLinkView.js';
 
@@ -34,9 +34,35 @@ const fileEmbed = createReactBlockSpec(fileEmbedConfig, {
   ),
 })();
 
-/** The wiki's block schema: BlockNote's defaults plus page links, mentions and embedded files (the same as the server's). */
+/** The emoji a callout cycles through when its emoji is clicked. */
+export const CALLOUT_EMOJI = ['💡', '⚠️', '✅', '❗', '📌', 'ℹ️'];
+
+/** A callout: a tinted block led by an emoji (`calloutConfig`; the server's has the same type and props). */
+const callout = createReactBlockSpec(calloutConfig, {
+  render: ({ block, editor, contentRef }) => {
+    const next = CALLOUT_EMOJI[(CALLOUT_EMOJI.indexOf(block.props.emoji) + 1) % CALLOUT_EMOJI.length]!;
+    return (
+      <div className="callout" data-emoji={block.props.emoji}>
+        <button
+          type="button"
+          contentEditable={false}
+          className="callout-emoji"
+          aria-label={`Callout icon ${block.props.emoji}; change it`}
+          disabled={!editor.isEditable}
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => editor.updateBlock(block, { props: { emoji: next } })}
+        >
+          {block.props.emoji}
+        </button>
+        <div className="callout-text" ref={contentRef} />
+      </div>
+    );
+  },
+})();
+
+/** The wiki's block schema: BlockNote's defaults plus page links, mentions, embedded files and callouts (the same as the server's). */
 export const wikiSchema = BlockNoteSchema.create({
-  blockSpecs: { ...defaultBlockSpecs, fileEmbed },
+  blockSpecs: { ...defaultBlockSpecs, fileEmbed, callout },
   inlineContentSpecs: { ...defaultInlineContentSpecs, pageLink, mention },
 });
 

@@ -1,7 +1,7 @@
 import { BlockNoteSchema, createBlockSpec, createExtension, createInlineContentSpec, defaultBlockSpecs, defaultInlineContentSpecs } from '@blocknote/core';
 import { CommentMark } from '@blocknote/core/comments';
 import { ServerBlockNoteEditor } from '@blocknote/server-util';
-import { MENTION_PATH, PAGE_LINK_PATH, fileEmbedConfig, mentionConfig, mentionPath, pageLinkConfig, pageLinkPath } from '@living-wiki/contracts';
+import { MENTION_PATH, PAGE_LINK_PATH, calloutConfig, fileEmbedConfig, mentionConfig, mentionPath, pageLinkConfig, pageLinkPath } from '@living-wiki/contracts';
 import type { BlockLike } from './blocks.js';
 
 /**
@@ -45,9 +45,21 @@ const fileEmbed = createBlockSpec(fileEmbedConfig, {
   },
 })();
 
+/** A callout on the server: its emoji, then its text (Markdown reads it as one paragraph). */
+const callout = createBlockSpec(calloutConfig, {
+  render: (block) => {
+    const dom = document.createElement('p');
+    const emoji = document.createElement('span');
+    emoji.textContent = `${block.props.emoji} `;
+    const contentDOM = document.createElement('span');
+    dom.append(emoji, contentDOM);
+    return { dom, contentDOM };
+  },
+})();
+
 /** The wiki's block schema: BlockNote's defaults plus page links and mentions. */
 export const wikiSchema = BlockNoteSchema.create({
-  blockSpecs: { ...defaultBlockSpecs, fileEmbed },
+  blockSpecs: { ...defaultBlockSpecs, fileEmbed, callout },
   inlineContentSpecs: { ...defaultInlineContentSpecs, pageLink, mention },
 });
 

@@ -113,3 +113,18 @@ describe('mentions', () => {
     expect(mentionsOf([b])).toEqual([{ blockId: 'm1', userId: USER }]);
   });
 });
+
+describe('callouts', () => {
+  it('a callout keeps its emoji and text through the Yjs document', () => {
+    const doc = editor.blocksToYDoc([{ type: 'callout', props: { emoji: '⚠️' }, content: 'Mind the gap' } as any], 'document-store');
+    const [b] = editor.yDocToBlocks(doc, 'document-store') as any[];
+    expect(b).toMatchObject({ type: 'callout', props: { emoji: '⚠️' } });
+    expect(flattenBlocks([b])[0]!.text).toBe('Mind the gap');
+  });
+
+  it('reads as its emoji and text in Markdown', async () => {
+    const md = await editor.blocksToMarkdownLossy([{ type: 'callout', props: { emoji: '💡' }, content: 'Tip here' } as any]);
+    expect(md).toContain('💡');
+    expect(md).toContain('Tip here');
+  });
+});

@@ -379,6 +379,34 @@ test.describe('Documents', () => {
     await expect(peek.getByRole('link', { name: /Client - Brindle/ })).toBeVisible();
   });
 
+  test('a file attached alone becomes its own page, with the file under it', async ({ browser, request }) => {
+    await clientSpace(request, 'Tavros');
+    const page = await openCapture(browser);
+    await page.reload();
+    await page.getByLabel('Limit to').selectOption({ label: 'Tavros space' });
+    await page.getByLabel('Attach a file').setInputFiles({
+      name: 'Oct 14 meeting with Tavros.md',
+      mimeType: 'text/markdown',
+      buffer: Buffer.from(note('Tavros')),
+    });
+    await expect(page.getByText('Oct 14 meeting with Tavros.md')).toBeVisible();
+    await page.getByRole('button', { name: 'Send', exact: true }).click();
+    const lead = page.getByRole('link', { name: 'New page: Oct 14 meeting with Tavros under Client - Tavros' });
+    await expect(lead).toBeVisible({ timeout: 30_000 });
+    await lead.click();
+    // The file is the new page's child in the tree.
+    const tree = page.getByRole('navigation', { name: 'Workspace' });
+    await tree.getByRole('button', { name: 'Expand Oct 14 meeting with Tavros' }).click();
+    await expect(tree.getByText('Oct 14 meeting with Tavros.md')).toBeVisible();
+  });
+
+  test('audio is refused before it is sent', async ({ browser }) => {
+    const page = await openCapture(browser);
+    await page.getByLabel('Attach a file').setInputFiles({ name: 'voice.mp3', mimeType: 'audio/mpeg', buffer: Buffer.from('ID3') });
+    await expect(page.getByRole('alert').filter({ hasText: "Audio and video can't be read yet." })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Send', exact: true })).toBeDisabled();
+  });
+
   test('Undo on the new page archives it', async ({ browser, request }) => {
     await clientSpace(request, 'Quillon');
     const page = await openCapture(browser);

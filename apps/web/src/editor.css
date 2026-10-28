@@ -148,3 +148,36 @@
   font-weight: 500;
   padding: 0 3px;
 }
+
+/* A callout: tinted, led by its emoji (a button that changes it). */
+.bn-container .bn-editor .callout {
+  align-items: flex-start;
+  background: var(--hover);
+  border-radius: 8px;
+  display: flex;
+  gap: 10px;
+  padding: 10px 14px;
+  width: 100%;
+}
+
+.bn-container .bn-editor .callout-emoji {
+  border-radius: 4px;
+  cursor: pointer;
+  flex-shrink: 0;
+  font-size: 18px;
+  line-height: 1.5;
+  user-select: none;
+}
+
+.bn-container .bn-editor .callout-emoji:hover:not(:disabled) {
+  background: var(--line);
+}
+
+.bn-container .bn-editor .callout-emoji:disabled {
+  cursor: default;
+}
+
+.bn-container .bn-editor .callout-text {
+  flex: 1;
+  min-width: 0;
+}

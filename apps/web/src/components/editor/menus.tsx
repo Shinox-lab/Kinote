@@ -24,8 +24,8 @@ function insertLink(editor: WikiEditor, documentId: string, title: string) {
 
 /**
  * The `[[` page picker, the `@` mention picker and the slash menu with the
- * wiki's extras (Link to page, New sub-page, Mention a person). Only for an
- * editable editor.
+ * wiki's extras (Link to page, New sub-page, Mention a person, Callout).
+ * Only for an editable editor.
  */
 export function WikiMenus({ editor, place }: { editor: WikiEditor; place: EditorPlace }) {
   const refresh = useRefresh();
@@ -71,6 +71,22 @@ export function WikiMenus({ editor, place }: { editor: WikiEditor; place: Editor
             deleteTriggerCharacter: true,
             ignoreQueryLength: true,
           }),
+      },
+      {
+        title: 'Callout',
+        subtext: 'A note that stands out',
+        aliases: ['callout', 'note', 'tip', 'warning'],
+        group: 'Basic blocks',
+        onItemClick: () => {
+          const here = editor.getTextCursorPosition().block;
+          const empty = Array.isArray(here.content) && here.content.length === 0;
+          // An empty line becomes the callout; otherwise it goes below.
+          if (empty) editor.updateBlock(here, { type: 'callout', props: { emoji: '💡' } });
+          else {
+            const [made] = editor.insertBlocks([{ type: 'callout', props: { emoji: '💡' } }], here, 'after');
+            if (made) editor.setTextCursorPosition(made, 'end');
+          }
+        },
       },
       {
         title: 'Mention a person',

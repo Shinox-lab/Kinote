@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import type { CaptureDetail, CaptureSummary } from '@living-wiki/contracts';
 import { api } from '../../lib/api.js';
-import { captureStatusLabel } from '../../lib/capture.js';
+import { captureStatusLabel, captureWaitingOnFile } from '../../lib/capture.js';
 import { useCapture, useRefresh } from '../../lib/queries.js';
 import { relativeTime } from '../../lib/pageStatus.js';
 import { ErrorNote, Loading } from '../ui.js';
@@ -93,11 +93,22 @@ export function CaptureCard({ capture, defaultOpen }: { capture: CaptureSummary;
     <article aria-label={`Capture from ${relativeTime(capture.createdAt)}`} className="flex flex-col gap-3 rounded-lg border border-line bg-surface p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${STATUS_TONE[status]}`}>
-          {captureStatusLabel(status)}
+          {captureWaitingOnFile({ status, file: capture.file }) ? 'Reading the file…' : captureStatusLabel(status)}
         </span>
         <span className="text-xs text-muted">{relativeTime(capture.createdAt)}</span>
       </div>
-      <p className="whitespace-pre-wrap break-words text-sm text-fg">{capture.text}</p>
+      {capture.text && <p className="whitespace-pre-wrap break-words text-sm text-fg">{capture.text}</p>}
+      {capture.file && (
+        <p className="flex min-w-0 items-center gap-1.5 text-xs text-muted">
+          <span aria-hidden="true">📎</span>
+          <span className="min-w-0 truncate">{capture.file.name}</span>
+        </p>
+      )}
+      {status === 'failed' && (detail?.capture.error ?? capture.error) && (
+        <p role="alert" className="text-xs text-danger">
+          {detail?.capture.error ?? capture.error}
+        </p>
+      )}
       {open ? (
         isPending ? (
           <Loading what="what happened" />

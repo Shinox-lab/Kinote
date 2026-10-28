@@ -47,3 +47,12 @@ export const fileEmbedConfig = {
   },
   content: 'none',
 } as const;
+
+/** A callout: a tinted block with an emoji, for a note that should stand out. */
+export const calloutConfig = {
+  type: 'callout',
+  propSchema: {
+    emoji: { default: '💡' },
+  },
+  content: 'inline',
+} as const;
