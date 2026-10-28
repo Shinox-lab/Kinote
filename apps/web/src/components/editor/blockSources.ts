@@ -38,10 +38,12 @@ function decorate(doc: PMNode, sources: BlockSource[], onOpen: (pageId: string) 
     if (node.type.name !== 'blockContainer') return true;
     const mine = byBlock.get(String(node.attrs.id));
     const content = node.firstChild;
-    if (mine && content) {
+    // Text blocks only: a table or an image has no "after its last word" to sit at.
+    if (mine && content?.isTextblock) {
       // The end of the block's own content, inside it: the chip sits after its last word.
       const at = pos + 1 + content.nodeSize - 1;
-      const id = mine.map((s) => s.pageId).join(',');
+      // The titles are part of the key, so a renamed document page redraws its chip.
+      const id = mine.map((s) => `${s.pageId}:${s.title}`).join(',');
       decorations.push(
         Decoration.widget(at, () => chip(mine, onOpen), { side: 1, ignoreSelection: true, key: `${node.attrs.id}:${id}` })
       );

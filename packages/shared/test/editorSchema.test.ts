@@ -33,6 +33,14 @@ describe('the wiki editor schema', () => {
     expect(b.content[3]).toMatchObject({ type: 'link', href: 'https://a.b' });
   });
 
+  it.each(['a]b', '[x', 'x](evil)', '<b>hi</b>', '*star*', 'back\\slash'])('a title with Markdown punctuation (%s) survives the round trip', async (title) => {
+    const md = await editor.blocksToMarkdownLossy([
+      { type: 'paragraph', content: ['See ', { type: 'pageLink', props: { documentId: ID, title } }] },
+    ] as any);
+    const [b] = restorePageLinks((await editor.tryParseMarkdownToBlocks(md)) as any) as any[];
+    expect(b.content.find((c: any) => c.type === 'pageLink')).toEqual({ type: 'pageLink', props: { documentId: ID, title } });
+  });
+
   it('lists the page links of blocks, nested ones included, once per block and target', () => {
     const child = { id: 'c1', type: 'paragraph', content: [{ type: 'pageLink', props: { documentId: ID.toUpperCase(), title: 'x' } }], children: [] };
     const blocks = [

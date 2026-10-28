@@ -1,5 +1,6 @@
 import { Link } from '@tanstack/react-router';
 import type { PageConnections as Connections } from '@living-wiki/contracts';
+import { documentHref } from '../lib/documentLink.js';
 import { connectionCount } from '../lib/links.js';
 import { usePageConnections, useWorkspace } from '../lib/queries.js';
 import { usePeek } from '../lib/usePeek.js';
@@ -24,10 +25,28 @@ function Group({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
+/** A row that opens its page in the side panel; Cmd/Ctrl-click or a middle click opens the full page. */
+function PeekRow({ pageId, children }: { pageId: string; children: React.ReactNode }) {
+  const { tenant } = useWorkspace();
+  const peek = usePeek();
+  return (
+    <a
+      href={documentHref(tenant.slug, 'page', pageId)}
+      className={ROW}
+      onClick={(e) => {
+        if (e.metaKey || e.ctrlKey || e.shiftKey) return;
+        e.preventDefault();
+        peek.open(pageId);
+      }}
+    >
+      {children}
+    </a>
+  );
+}
+
 /** The sections of a page's connections, given what the API returned. */
 export function ConnectionsList({ connections }: { connections: Connections }) {
   const { tenant } = useWorkspace();
-  const peek = usePeek();
   const { linkedFrom, updatedBy, updated } = connections;
   return (
     <div className="flex flex-col gap-3">
@@ -55,12 +74,12 @@ export function ConnectionsList({ connections }: { connections: Connections }) {
         <Group label="Updated by">
           {updatedBy.map((u) => (
             <li key={u.pageId}>
-              <button type="button" className={ROW} onClick={() => peek.open(u.pageId)}>
+              <PeekRow pageId={u.pageId}>
                 <PageName icon={u.icon} title={u.title} />
                 <span className="text-xs text-muted">
                   {u.spaceName} · {u.blockIds.length} {u.blockIds.length === 1 ? 'section' : 'sections'} here
                 </span>
-              </button>
+              </PeekRow>
             </li>
           ))}
         </Group>
@@ -69,13 +88,13 @@ export function ConnectionsList({ connections }: { connections: Connections }) {
         <Group label="Linked from">
           {linkedFrom.map((l) => (
             <li key={l.pageId}>
-              <button type="button" className={ROW} onClick={() => peek.open(l.pageId)}>
+              <PeekRow pageId={l.pageId}>
                 <PageName icon={l.icon} title={l.title} />
                 <span className="line-clamp-2 text-xs text-muted">
                   {l.spaceName}
                   {l.excerpt && ` · ${l.excerpt}`}
                 </span>
-              </button>
+              </PeekRow>
             </li>
           ))}
         </Group>

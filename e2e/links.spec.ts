@@ -64,8 +64,8 @@ test('[[ links a page; the link follows a rename, opens in the side panel, and s
   }).toPass({ timeout: 30_000 });
   await page.goto(`/w/${world.slug}/p/${target.id}`);
   const connections = page.getByRole('region', { name: 'Connections' });
-  await expect(connections.getByRole('button', { name: /Weekly notes/ })).toContainText('See Client George');
-  await connections.getByRole('button', { name: /Weekly notes/ }).click();
+  await expect(connections.getByRole('link', { name: /Weekly notes/ })).toContainText('See Client George');
+  await connections.getByRole('link', { name: /Weekly notes/ }).click();
   await expect(page.getByRole('complementary', { name: 'Page preview' }).getByRole('heading', { name: 'Weekly notes' })).toBeVisible();
 });
 

@@ -4,6 +4,14 @@ import { PAGE_LINK_PATH, pageLinkConfig, pageLinkPath } from '@living-wiki/contr
 import type { BlockLike } from './blocks.js';
 
 /**
+ * A page link's text in Markdown: Markdown punctuation is escaped, so a title
+ * like `a]b` or `x](y)` can't end the link early and lose it.
+ */
+function linkLabel(title: string): string {
+  return (title || 'Untitled').replace(/[\\`*_[\]<>]/g, (c) => `\\${c}`);
+}
+
+/**
  * The server side of a page link: rendered as a link to the page, so
  * Markdown and HTML conversions keep the title and the target.
  */
@@ -11,7 +19,7 @@ const pageLink = createInlineContentSpec(pageLinkConfig, {
   render: (inline) => {
     const a = document.createElement('a');
     a.href = pageLinkPath(inline.props.documentId);
-    a.textContent = inline.props.title || 'Untitled';
+    a.textContent = linkLabel(inline.props.title);
     return { dom: a };
   },
 });

@@ -53,6 +53,11 @@ Calls marked *(my call)* were made by me while writing this design; the owner ca
 renders the target's live title, so it follows renames. Snapshot indexing (`packages/core/src/snapshot.ts`) fills
 `links` from these nodes (kind `link`), and still reads the old `[[uuid]]` text form. An archived or unreadable target
 shows as "Page unavailable" with no title. *(my call: unreadable and archived look the same, so nothing leaks)*
+The node also stores the title it had when the link was made, which is what plain text, search, Ask and the router
+read. That stored title is part of the linking page's own text, written by someone who could read the target. A reader
+of the linking page sees it the same way they would see the title typed out, and the link itself still shows "Page
+unavailable". *(my call, made after review: the alternative, a link that reads as nothing in search and to the router,
+makes linked text meaningless to both)*
 
 **D2. The `[[` picker** searches page titles in spaces the reader can see, by trigram similarity (`pg_trgm` is installed; a trigram index on document titles is new), best match
 first, with recent pages when the query is empty. It also offers "New page '…'" under the current page. `@` opens one

@@ -48,8 +48,9 @@ export async function listLinkTargets(actor: Actor, query: unknown): Promise<Lin
     if (!visible) return [];
     const parent = alias(documents, 'parent');
     const escaped = term.replace(/[\\%_]/g, (c) => `\\${c}`);
+    // `%` (similarity above pg_trgm's limit, 0.3 by default) and ILIKE can both use the trigram index.
     const match = term
-      ? or(ilike(documents.title, `%${escaped}%`), sql`similarity(${documents.title}, ${term}) > 0.3`)
+      ? or(ilike(documents.title, `%${escaped}%`), sql`${documents.title} % ${term}`)
       : undefined;
     const order = term
       ? [
@@ -127,7 +128,8 @@ export async function getPageConnections(actor: Actor, pageId: string): Promise<
       .innerJoin(spaces, spaceOfDocument)
       .leftJoin(versions, and(eq(versions.tenantId, documents.tenantId), eq(versions.id, documents.latestVersionId)))
       .where(and(visible, eq(links.tenantId, actor.tenantId), eq(links.toDocumentId, pageId), ne(links.fromPageId, pageId)))
-      .orderBy(asc(documents.title));
+      // The first linking block of each page, the same one every time.
+      .orderBy(asc(documents.title), asc(documents.id), asc(links.fromBlockId));
     const seen = new Set<string>();
     const linkedFrom = linkRows
       .filter((r) => (seen.has(r.pageId) ? false : (seen.add(r.pageId), true)))

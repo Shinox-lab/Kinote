@@ -29,15 +29,20 @@ function insertLink(editor: WikiEditor, documentId: string, title: string) {
 export function WikiMenus({ editor, place }: { editor: WikiEditor; place: EditorPlace }) {
   const refresh = useRefresh();
 
-  // A page that can't be made (no rights, offline) leaves the text as it was.
-  const newChildPage = (title: string) =>
-    createNamedPage({ space_id: place.spaceId, parent_id: place.pageId, title }).then(
+  // A page that can't be made (no rights, offline) leaves the text as it was. The link goes into the
+  // block the person asked from, even if they moved on while the page was being made.
+  const newChildPage = (title: string) => {
+    const asked = editor.getTextCursorPosition().block;
+    return createNamedPage({ space_id: place.spaceId, parent_id: place.pageId, title }).then(
       (page) => {
         void refresh('tree', place.spaceId);
+        const here = editor.getTextCursorPosition().block;
+        if (here.id !== asked.id && editor.getBlock(asked.id)) editor.setTextCursorPosition(asked.id, 'end');
         insertLink(editor, page.id, page.title);
       },
       (err) => console.warn('[editor] new page failed', err)
     );
+  };
 
   const linkItems = async (query: string): Promise<DefaultReactSuggestionItem[]> => {
     const targets = await api.linkTargets(query).catch(() => []);
