@@ -18,6 +18,7 @@ import {
   type DocumentRow,
 } from '@living-wiki/db';
 import { AppError } from '@living-wiki/contracts';
+import { notify, recordPageMentions, usersWithSpaceRole } from './talk/notify.js';
 import { flattenBlocks, pageLinksOf, type BlockLike } from '@living-wiki/shared';
 
 const editor = createServerEditor();
@@ -304,6 +305,17 @@ export async function takePageSnapshot(
           kind: 'link' as const,
         }));
       if (rows.length > 0) await tx.insert(links).values(rows);
+    }
+
+    // People newly mentioned are told; a review that starts (not one superseded by a newer draft) tells the reviewers.
+    await recordPageMentions(tx, docRow, blocks as BlockLike[], { type: actorType, id: actorId });
+    if (initialStatus === 'pending_review' && latestVersion?.status !== 'pending_review') {
+      const reviewers = await usersWithSpaceRole(tx, tenantId, spaceRow.id, 'reviewer');
+      await notify(
+        tx,
+        tenantId,
+        reviewers.map((recipientId) => ({ recipientId, kind: 'review_requested' as const, actorType, actorId, documentId: pageId }))
+      );
     }
 
     await tx

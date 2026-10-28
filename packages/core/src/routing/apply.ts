@@ -26,6 +26,7 @@ import { takePageSnapshot } from '../snapshot.js';
 import { blockMarkdown, encodeBlocksYDoc, markdownBlocks, readLiveBlocks } from './liveBlocks.js';
 import { decideShape, planCapture, splitCaptureText, type CheckedEdit, type Gate, type PlannedFact } from './plan.js';
 import { planDocument, uniqueChildTitle } from './document.js';
+import { excerptOf, hasUnreadAbout, notify } from '../talk/notify.js';
 import { ensureRouterAgent } from './routerAgent.js';
 
 /** How long one routing run may hold the tenant's lease (R13). */
@@ -303,6 +304,30 @@ async function settleStatus(tx: DbTransaction, tenantId: string, captureId: stri
   return status;
 }
 
+/**
+ * Tells a person who sent a capture that something in it waits for them (a
+ * question, or a fact or page that needs a home), once until they read it.
+ */
+async function notifyWaiting(tx: DbTransaction, tenantId: string, captureId: string, routerId: string, factsWait: boolean) {
+  const [capture] = await tx
+    .select({ senderType: captures.senderType, senderId: captures.senderId, text: captures.text, documentOutcome: captures.documentOutcome })
+    .from(captures)
+    .where(and(eq(captures.tenantId, tenantId), eq(captures.id, captureId)));
+  if (!capture || capture.senderType !== 'user') return;
+  if (!factsWait && capture.documentOutcome !== 'needs_home') return;
+  if (await hasUnreadAbout(tx, tenantId, capture.senderId, 'capture_waiting', captureId)) return;
+  await notify(tx, tenantId, [
+    {
+      recipientId: capture.senderId,
+      kind: 'capture_waiting',
+      actorType: 'agent',
+      actorId: routerId,
+      captureId,
+      excerpt: excerptOf(capture.text),
+    },
+  ]);
+}
+
 /** Settles the capture's status and audits the run. */
 export async function finishCapture(tenantId: string, captureId: string) {
   return withTenantTx(tenantId, async (tx) => {
@@ -314,6 +339,7 @@ export async function finishCapture(tenantId: string, captureId: string) {
     const counts: Record<string, number> = {};
     for (const f of facts) counts[f.outcome] = (counts[f.outcome] ?? 0) + 1;
     const routerId = await ensureRouterAgent(tx, tenantId);
+    await notifyWaiting(tx, tenantId, captureId, routerId, status === 'waiting_for_answer' || (counts.needs_home ?? 0) > 0);
     await writeAuditEvent(tx, {
       tenantId,
       type: 'capture.routed',

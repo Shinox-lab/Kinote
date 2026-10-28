@@ -204,6 +204,20 @@
       "when": 1793144055644,
       "tag": "0028_a1_links_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1793146363978,
+      "tag": "0029_a2_talk",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1793146364322,
+      "tag": "0030_a2_talk_rls",
+      "breakpoints": true
     }
   ]
 }

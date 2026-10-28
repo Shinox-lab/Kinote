@@ -1,6 +1,7 @@
-import { BlockNoteSchema, createInlineContentSpec, defaultInlineContentSpecs } from '@blocknote/core';
+import { BlockNoteSchema, createExtension, createInlineContentSpec, defaultInlineContentSpecs } from '@blocknote/core';
+import { CommentMark } from '@blocknote/core/comments';
 import { ServerBlockNoteEditor } from '@blocknote/server-util';
-import { PAGE_LINK_PATH, pageLinkConfig, pageLinkPath } from '@living-wiki/contracts';
+import { MENTION_PATH, PAGE_LINK_PATH, mentionConfig, mentionPath, pageLinkConfig, pageLinkPath } from '@living-wiki/contracts';
 import type { BlockLike } from './blocks.js';
 
 /**
@@ -8,7 +9,7 @@ import type { BlockLike } from './blocks.js';
  * like `a]b` or `x](y)` can't end the link early and lose it.
  */
 function linkLabel(title: string): string {
-  return (title || 'Untitled').replace(/[\\`*_[\]<>]/g, (c) => `\\${c}`);
+  return title.replace(/[\\`*_[\]<>]/g, (c) => `\\${c}`);
 }
 
 /**
@@ -19,23 +20,40 @@ const pageLink = createInlineContentSpec(pageLinkConfig, {
   render: (inline) => {
     const a = document.createElement('a');
     a.href = pageLinkPath(inline.props.documentId);
-    a.textContent = linkLabel(inline.props.title);
+    a.textContent = linkLabel(inline.props.title || 'Untitled');
     return { dom: a };
   },
 });
 
-/** The wiki's block schema: BlockNote's defaults plus page links. */
+/** The server side of a mention: a link to the person, so Markdown keeps who it is. */
+const mention = createInlineContentSpec(mentionConfig, {
+  render: (inline) => {
+    const a = document.createElement('a');
+    a.href = mentionPath(inline.props.userId);
+    a.textContent = linkLabel(`@${inline.props.name || 'Someone'}`);
+    return { dom: a };
+  },
+});
+
+/** The wiki's block schema: BlockNote's defaults plus page links and mentions. */
 export const wikiSchema = BlockNoteSchema.create({
-  inlineContentSpecs: { ...defaultInlineContentSpecs, pageLink },
+  inlineContentSpecs: { ...defaultInlineContentSpecs, pageLink, mention },
 });
 
 /**
  * A server-side editor on the wiki's schema. Every server conversion must use
- * it: an editor on the default schema silently drops page links.
+ * it: an editor on the default schema silently drops page links, and one
+ * without the comment mark reads a commented page as empty.
  */
 export function createServerEditor() {
-  return ServerBlockNoteEditor.create({ schema: wikiSchema });
+  return ServerBlockNoteEditor.create({ schema: wikiSchema, extensions: [commentMarks] });
 }
+
+/**
+ * The comment mark alone (threads live in the API, not here). Without it a
+ * server editor reads a page that has a comment as no blocks at all.
+ */
+const commentMarks = createExtension({ key: 'commentMarks', tiptapExtensions: [CommentMark] });
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null;
@@ -58,21 +76,23 @@ function inlineArrays(content: unknown): unknown[][] {
   return out;
 }
 
-/** The page links of blocks (children included), one per (block, target), ids lower-cased. */
-export function pageLinksOf(blocks: BlockLike[]): Array<{ blockId: string; targetId: string }> {
+/** The inline nodes of one type in blocks (children included), once per (block, key), keys lower-cased. */
+function inlineNodesOf(
+  blocks: BlockLike[],
+  type: string,
+  keyProp: string
+): Array<{ blockId: string; key: string }> {
   const seen = new Set<string>();
-  const out: Array<{ blockId: string; targetId: string }> = [];
+  const out: Array<{ blockId: string; key: string }> = [];
   const walk = (list: BlockLike[]) => {
     for (const b of list) {
       for (const inline of inlineArrays(b.content)) {
         for (const item of inline) {
-          if (!isRecord(item) || item.type !== pageLinkConfig.type || !isRecord(item.props)) continue;
-          const targetId = String(item.props.documentId ?? '').toLowerCase();
-          if (!UUID.test(targetId)) continue;
-          const key = `${b.id}\u0000${targetId}`;
-          if (seen.has(key)) continue;
-          seen.add(key);
-          out.push({ blockId: b.id, targetId });
+          if (!isRecord(item) || item.type !== type || !isRecord(item.props)) continue;
+          const key = String(item.props[keyProp] ?? '').toLowerCase();
+          if (!UUID.test(key) || seen.has(`${b.id}\u0000${key}`)) continue;
+          seen.add(`${b.id}\u0000${key}`);
+          out.push({ blockId: b.id, key });
         }
       }
       if (Array.isArray(b.children)) walk(b.children);
@@ -82,6 +102,16 @@ export function pageLinksOf(blocks: BlockLike[]): Array<{ blockId: string; targe
   return out;
 }
 
+/** The page links of blocks (children included), one per (block, target), ids lower-cased. */
+export function pageLinksOf(blocks: BlockLike[]): Array<{ blockId: string; targetId: string }> {
+  return inlineNodesOf(blocks, pageLinkConfig.type, 'documentId').map((n) => ({ blockId: n.blockId, targetId: n.key }));
+}
+
+/** Who is mentioned in which block (children included), once per (block, person), ids lower-cased. */
+export function mentionsOf(blocks: BlockLike[]): Array<{ blockId: string; userId: string }> {
+  return inlineNodesOf(blocks, mentionConfig.type, 'userId').map((n) => ({ blockId: n.blockId, userId: n.key }));
+}
+
 function linkText(content: unknown): string {
   if (!Array.isArray(content)) return '';
   return content.map((c) => (isRecord(c) && typeof c.text === 'string' ? c.text : '')).join('');
@@ -89,15 +119,20 @@ function linkText(content: unknown): string {
 
 /**
  * Blocks parsed from Markdown with their `/p/<id>` links turned back into
- * page links: how a page link survives the router's Markdown round trip.
+ * page links and `/u/<id>` links into mentions: how both survive the router's
+ * Markdown round trip.
  */
 export function restorePageLinks<T extends BlockLike>(blocks: T[]): T[] {
   const fix = (inline: unknown[]) =>
     inline.map((item) => {
       if (!isRecord(item) || item.type !== 'link' || typeof item.href !== 'string') return item;
-      const match = PAGE_LINK_PATH.exec(item.href);
-      if (!match) return item;
-      return { type: pageLinkConfig.type, props: { documentId: match[1]!.toLowerCase(), title: linkText(item.content) } };
+      const page = PAGE_LINK_PATH.exec(item.href);
+      if (page) return { type: pageLinkConfig.type, props: { documentId: page[1]!.toLowerCase(), title: linkText(item.content) } };
+      const person = MENTION_PATH.exec(item.href);
+      if (person) {
+        return { type: mentionConfig.type, props: { userId: person[1]!.toLowerCase(), name: linkText(item.content).replace(/^@/, '') } };
+      }
+      return item;
     });
   const fixContent = (content: unknown): unknown => {
     if (Array.isArray(content)) return fix(content);

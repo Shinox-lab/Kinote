@@ -40,6 +40,8 @@ function inlineText(content: unknown): string {
       else if (Array.isArray(item.content)) out += inlineText(item.content);
       // A page link reads as its title (`pageLinkConfig`).
       else if (item.type === 'pageLink' && isRecord(item.props)) out += String(item.props.title ?? '');
+      // A mention reads as `@name` (`mentionConfig`).
+      else if (item.type === 'mention' && isRecord(item.props)) out += `@${String(item.props.name ?? '')}`;
     }
   }
   return out;

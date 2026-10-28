@@ -66,6 +66,12 @@ export const AuditEventTypeSchema = z.enum([
   'capture.document_created',
   'capture.document_placed',
   'capture.document_moved',
+  'comment.created',
+  'comment.updated',
+  'comment.deleted',
+  'thread.resolved',
+  'thread.reopened',
+  'thread.deleted',
   'suggestion.accepted',
   'suggestion.declined',
   'version.created',
@@ -1319,3 +1325,91 @@ export const PageConnectionsSchema = z.object({
   updated: z.array(ConnectedPageSchema.extend({ captureId: z.string().uuid(), sections: z.number().int() })),
 });
 export type PageConnections = z.infer<typeof PageConnectionsSchema>;
+
+/** A comment's body: the comment editor's blocks (BlockNote JSON). Its text is at most 5,000 characters. */
+export const CommentBodySchema = z.array(z.record(z.unknown())).min(1).max(100);
+
+export const CommentSchema = z.object({
+  id: z.string().uuid(),
+  authorId: z.string().uuid(),
+  /** The author's display name (Former member for someone who left). */
+  authorName: z.string(),
+  /** Null once deleted: the comment keeps its place in the thread. */
+  body: CommentBodySchema.nullable(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  deletedAt: z.string().nullable(),
+});
+export type Comment = z.infer<typeof CommentSchema>;
+
+export const CommentThreadSchema = z.object({
+  id: z.string().uuid(),
+  documentId: z.string().uuid(),
+  /** The block the thread was started on, and its text: where it was if the comment mark is gone. */
+  blockId: z.string().nullable(),
+  quote: z.string().nullable(),
+  createdBy: z.string().uuid(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  resolved: z.boolean(),
+  resolvedBy: z.string().uuid().nullable(),
+  resolvedAt: z.string().nullable(),
+  comments: z.array(CommentSchema),
+});
+export type CommentThread = z.infer<typeof CommentThreadSchema>;
+export const CommentThreadListSchema = z.array(CommentThreadSchema);
+
+export const CreateThreadRequestSchema = z.object({
+  block_id: z.string().max(100).nullable().default(null),
+  quote: z
+    .string()
+    .nullable()
+    .default(null)
+    .transform((q) => (q === null ? null : q.replace(/\s+/g, ' ').trim().slice(0, 200) || null)),
+  body: CommentBodySchema,
+});
+export const CommentRequestSchema = z.object({ body: CommentBodySchema });
+
+/** GET /api/v1/mentionable: people to mention on a page, best name match first. */
+export const MentionableQuerySchema = z.object({
+  page_id: z.string().uuid(),
+  q: z.string().max(100).default(''),
+  limit: z.coerce.number().int().min(1).max(20).default(8),
+});
+export const MentionableSchema = z.object({
+  userId: z.string().uuid(),
+  name: z.string(),
+  /** False when they can't read the page: they would not be told. */
+  canRead: z.boolean(),
+});
+export type Mentionable = z.infer<typeof MentionableSchema>;
+export const MentionableListSchema = z.array(MentionableSchema);
+
+export const NotificationKindSchema = z.enum([
+  'mention',
+  'comment_reply',
+  'review_requested',
+  'review_approved',
+  'review_rejected',
+  'capture_waiting',
+]);
+export const NotificationSchema = z.object({
+  id: z.string().uuid(),
+  kind: NotificationKindSchema,
+  actorName: z.string(),
+  documentId: z.string().uuid().nullable(),
+  documentKind: z.enum(['page', 'file']).nullable(),
+  documentTitle: z.string().nullable(),
+  blockId: z.string().nullable(),
+  threadId: z.string().uuid().nullable(),
+  captureId: z.string().uuid().nullable(),
+  excerpt: z.string().nullable(),
+  createdAt: z.string(),
+  readAt: z.string().nullable(),
+});
+export type Notification = z.infer<typeof NotificationSchema>;
+/** The newest 50 the reader may still see, and how many of all those are unread. */
+export const NotificationListSchema = z.object({ unread: z.number().int(), items: z.array(NotificationSchema) });
+export type NotificationList = z.infer<typeof NotificationListSchema>;
+/** Marks the given notifications read, or all of them when `ids` is left out. */
+export const MarkNotificationsReadRequestSchema = z.object({ ids: z.array(z.string().uuid()).max(200).optional() });

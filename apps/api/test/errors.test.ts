@@ -236,6 +236,7 @@ describe('error model', () => {
       invalid_credentials: 401,
       validation_failed: 400,
       capture_too_long: 400,
+      comment_too_long: 400,
       empty_file: 400,
       file_too_large: 413,
       unsupported_file_type: 415,

@@ -16,3 +16,18 @@ export const pageLinkConfig = {
 /** The Markdown form of a page link is a link to this path, so it survives a Markdown round trip. */
 export const pageLinkPath = (documentId: string) => `/p/${documentId}`;
 export const PAGE_LINK_PATH = /^\/p\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
+
+/** A person mentioned in a page: `@name`, notified once per place. */
+export const mentionConfig = {
+  type: 'mention',
+  propSchema: {
+    userId: { default: '' },
+    /** The person's name when they were mentioned: what plain text reads. */
+    name: { default: '' },
+  },
+  content: 'none',
+} as const;
+
+/** The Markdown form of a mention is a link to this path, as for page links. */
+export const mentionPath = (userId: string) => `/u/${userId}`;
+export const MENTION_PATH = /^\/u\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;

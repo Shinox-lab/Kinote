@@ -141,3 +141,16 @@ export {
 } from './routing/apply.js';
 export { placeFact, recordRoutingExample } from './routing/place.js';
 export { planDocument, uniqueChildTitle, similarDocumentExamples, type DocumentPlan } from './routing/document.js';
+export {
+  notify,
+  excerptOf,
+  memberActors,
+  memberNames,
+  canOpen,
+  usersWithSpaceRole,
+  recordPageMentions,
+  textMentions,
+  hasUnreadAbout,
+  type NotificationInput,
+  type NotificationKind,
+} from './talk/notify.js';

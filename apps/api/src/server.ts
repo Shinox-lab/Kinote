@@ -50,6 +50,10 @@ import {
   LinkTargetListSchema,
   DocumentTitleListSchema,
   PageConnectionsSchema,
+  CommentThreadSchema,
+  CommentThreadListSchema,
+  MentionableListSchema,
+  NotificationListSchema,
   RetryVersionResponseSchema,
   UploadFileResponseSchema,
   SourcePutResponseSchema,
@@ -151,6 +155,17 @@ import {
 import { listUpdates } from './routes/updates.js';
 import { listRecent } from './routes/recent.js';
 import { getPageConnections, listDocumentTitles, listLinkTargets } from './routes/connections.js';
+import {
+  addComment,
+  createThread,
+  deleteComment,
+  deleteThread,
+  listMentionable,
+  listThreads,
+  setThreadResolved,
+  updateComment,
+} from './routes/talk.js';
+import { listNotifications, markNotificationsRead } from './routes/notifications.js';
 import { authRoutes, type AuthRateLimit } from './routes/auth.js';
 import { requireSession, resolveActor, resolveSourceActor, type AuthSession, type SourceActor } from './auth/actor.js';
 import { registerErrorHandler } from './errors.js';
@@ -654,6 +669,60 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
   app.get('/api/v1/pages/:id/connections', async (req, reply) => {
     const { id } = req.params as { id: string };
     return reply.send(parseReply(PageConnectionsSchema, await getPageConnections(actorOf(req), id)));
+  });
+
+  app.get('/api/v1/pages/:id/threads', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    return reply.send(parseReply(CommentThreadListSchema, await listThreads(actorOf(req), id)));
+  });
+
+  app.post('/api/v1/pages/:id/threads', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    return reply.status(201).send(parseReply(CommentThreadSchema, await createThread(actorOf(req), id, req.body)));
+  });
+
+  app.post('/api/v1/threads/:id/comments', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    return reply.status(201).send(parseReply(CommentThreadSchema, await addComment(actorOf(req), id, req.body)));
+  });
+
+  app.post('/api/v1/threads/:id/resolve', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    return reply.send(parseReply(CommentThreadSchema, await setThreadResolved(actorOf(req), id, true)));
+  });
+
+  app.post('/api/v1/threads/:id/unresolve', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    return reply.send(parseReply(CommentThreadSchema, await setThreadResolved(actorOf(req), id, false)));
+  });
+
+  app.delete('/api/v1/threads/:id', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    await deleteThread(actorOf(req), id);
+    return reply.status(204).send();
+  });
+
+  app.patch('/api/v1/comments/:id', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    return reply.send(parseReply(CommentThreadSchema, await updateComment(actorOf(req), id, req.body)));
+  });
+
+  app.delete('/api/v1/comments/:id', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    await deleteComment(actorOf(req), id);
+    return reply.status(204).send();
+  });
+
+  app.get('/api/v1/mentionable', async (req, reply) => {
+    return reply.send(parseReply(MentionableListSchema, await listMentionable(actorOf(req), req.query)));
+  });
+
+  app.get('/api/v1/notifications', async (req, reply) => {
+    return reply.send(parseReply(NotificationListSchema, await listNotifications(actorOf(req))));
+  });
+
+  app.post('/api/v1/notifications/read', async (req, reply) => {
+    return reply.send(await markNotificationsRead(actorOf(req), req.body ?? {}));
   });
 
   app.get('/api/v1/recent', async (req, reply) => {

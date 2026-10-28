@@ -19,7 +19,7 @@ const EXCERPT_CHARS = 160;
  * joined with its `spaces` row: not archived, in a readable space, and an
  * Inbox document only for its creator (tenant admins excepted).
  */
-async function visibleDocuments(tx: DbTransaction, actor: Actor): Promise<SQL | null> {
+export async function visibleDocuments(tx: DbTransaction, actor: Actor): Promise<SQL | null> {
   const { readableSpaceIds } = await getReadableSpaceIds(tx, actor);
   if (readableSpaceIds.length === 0) return null;
   const inboxRule = isTenantAdmin(actor)
@@ -37,7 +37,7 @@ async function visibleDocuments(tx: DbTransaction, actor: Actor): Promise<SQL | 
   )!;
 }
 
-const spaceOfDocument = and(eq(spaces.tenantId, documents.tenantId), eq(spaces.id, documents.spaceId));
+export const spaceOfDocument = and(eq(spaces.tenantId, documents.tenantId), eq(spaces.id, documents.spaceId));
 
 /** GET /api/v1/link-targets: pages for the `[[` picker. */
 export async function listLinkTargets(actor: Actor, query: unknown): Promise<LinkTarget[]> {

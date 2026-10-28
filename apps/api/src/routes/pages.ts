@@ -49,6 +49,7 @@ import {
   isTenantAdmin,
   type Actor,
   movePlacementIndex,
+  notify,
 } from '@living-wiki/core';
 import {
   signCollabToken,
@@ -674,6 +675,35 @@ export async function restorePageVersion(
 }
 
 /** Test seam for approve and reject: `beforeLock` runs after the version was found, before its document is locked. */
+/** Tells the people who wrote a version (its author and every contributor) how the review went. */
+async function notifyContributors(
+  tx: DbTransaction,
+  actor: Actor,
+  ver: { id: string; createdByType: string; createdBy: string },
+  documentId: string,
+  kind: 'review_approved' | 'review_rejected',
+  note: string | null
+) {
+  const rows = await tx
+    .select({ type: versionContributors.principalType, id: versionContributors.principalId })
+    .from(versionContributors)
+    .where(and(eq(versionContributors.tenantId, actor.tenantId), eq(versionContributors.versionId, ver.id)));
+  const people = new Set(rows.filter((r) => r.type === 'user').map((r) => r.id));
+  if (ver.createdByType === 'user') people.add(ver.createdBy);
+  await notify(
+    tx,
+    actor.tenantId,
+    [...people].map((recipientId) => ({
+      recipientId,
+      kind,
+      actorType: actor.principalType,
+      actorId: actor.principalId,
+      documentId,
+      excerpt: note,
+    }))
+  );
+}
+
 export interface ReviewHooks {
   beforeLock?: () => Promise<void>;
 }
@@ -823,6 +853,7 @@ export async function approveVersion(
       payload: { versionId: ver.id },
     });
 
+    await notifyContributors(tx, actor, ver, doc.id, 'review_approved', parsed.review_note ?? null);
     await writeAuditEvent(tx, {
       tenantId: actor.tenantId,
       type: 'version.approved',
@@ -885,6 +916,7 @@ export async function rejectVersion(
     }
     const [updated] = updatedRows;
 
+    await notifyContributors(tx, actor, ver, doc.id, 'review_rejected', parsed.review_note ?? null);
     await writeAuditEvent(tx, {
       tenantId: actor.tenantId,
       type: 'version.rejected',
