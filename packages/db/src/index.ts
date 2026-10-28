@@ -4,6 +4,7 @@ export * from './schema/pages_and_index.js';
 export * from './schema/placement.js';
 export * from './schema/routing.js';
 export * from './schema/talk.js';
+export * from './schema/collections.js';
 export * from './client.js';
 export * from './context.js';
 export * from './audit.js';

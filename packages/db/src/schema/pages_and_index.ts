@@ -149,6 +149,8 @@ export const versions = pgTable(
     error: text('error'),
     markdown: text('markdown'),
     blocks: jsonb('blocks'),
+    /** A page version's field values (`{ [fieldId]: value }`, raw), or null when it had none. */
+    fields: jsonb('fields'),
     ydocSnapshot: bytea('ydoc_snapshot'),
     // File versions only (page versions leave these null).
     objectKey: text('object_key'),

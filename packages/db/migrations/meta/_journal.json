@@ -225,6 +225,20 @@
       "when": 1793150224725,
       "tag": "0031_a3_capture_files",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1793223556246,
+      "tag": "0032_c1a_collections",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1793223556701,
+      "tag": "0033_c1a_collections_rls",
+      "breakpoints": true
     }
   ]
 }
