@@ -34,6 +34,12 @@ export function viewerFor(mimeType: string, sizeBytes: number): ViewerKind {
   return Object.hasOwn(KIND, mimeType) ? KIND[mimeType]! : 'download';
 }
 
+/** The viewer a page shows inline for a pasted file; null leaves the compact file card. */
+export function inlineViewerFor(mimeType: string, sizeBytes: number): ViewerKind | null {
+  const kind = viewerFor(mimeType, sizeBytes);
+  return kind === 'image' || kind === 'text' || kind === 'markdown' ? kind : null;
+}
+
 /** The first `max` characters of `text`, never ending in half of a surrogate pair. */
 export function capText(text: string, max: number): { text: string; truncated: boolean } {
   if (text.length <= max) return { text, truncated: false };

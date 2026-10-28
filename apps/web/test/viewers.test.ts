@@ -6,6 +6,7 @@ import {
   VIEWER_TIMEOUT_MS,
   ViewerTimeout,
   capText,
+  inlineViewerFor,
   viewerFor,
   withTimeout,
 } from '../src/lib/viewers.js';
@@ -41,6 +42,25 @@ describe('viewerFor', () => {
     expect(viewerFor(MIME.pdf, PREVIEW_LIMIT_BYTES)).toBe('pdf');
     expect(viewerFor(MIME.pdf, PREVIEW_LIMIT_BYTES + 1)).toBe('download');
     expect(viewerFor(MIME.png, 26 * 1024 * 1024)).toBe('download');
+  });
+});
+
+describe('inlineViewerFor', () => {
+  test('a page embeds pictures, plain text and Markdown', () => {
+    expect(inlineViewerFor(MIME.png, 10)).toBe('image');
+    expect(inlineViewerFor(MIME.jpeg, 10)).toBe('image');
+    expect(inlineViewerFor(MIME.txt, 10)).toBe('text');
+    expect(inlineViewerFor(MIME.md, 10)).toBe('markdown');
+  });
+
+  test('every other type is a file card', () => {
+    for (const mime of [MIME.pdf, MIME.csv, MIME.xlsx, MIME.docx, MIME.pptx, 'audio/mpeg', 'video/mp4', '']) {
+      expect(inlineViewerFor(mime, 10)).toBeNull();
+    }
+  });
+
+  test('a file too big to preview is a card too', () => {
+    expect(inlineViewerFor(MIME.png, PREVIEW_LIMIT_BYTES + 1)).toBeNull();
   });
 });
 

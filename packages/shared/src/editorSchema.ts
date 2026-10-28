@@ -1,7 +1,7 @@
-import { BlockNoteSchema, createExtension, createInlineContentSpec, defaultInlineContentSpecs } from '@blocknote/core';
+import { BlockNoteSchema, createBlockSpec, createExtension, createInlineContentSpec, defaultBlockSpecs, defaultInlineContentSpecs } from '@blocknote/core';
 import { CommentMark } from '@blocknote/core/comments';
 import { ServerBlockNoteEditor } from '@blocknote/server-util';
-import { MENTION_PATH, PAGE_LINK_PATH, mentionConfig, mentionPath, pageLinkConfig, pageLinkPath } from '@living-wiki/contracts';
+import { MENTION_PATH, PAGE_LINK_PATH, fileEmbedConfig, mentionConfig, mentionPath, pageLinkConfig, pageLinkPath } from '@living-wiki/contracts';
 import type { BlockLike } from './blocks.js';
 
 /**
@@ -35,8 +35,19 @@ const mention = createInlineContentSpec(mentionConfig, {
   },
 });
 
+/** A pasted file renders as a link to its file document on the server (Yjs snapshots, Markdown). */
+const fileEmbed = createBlockSpec(fileEmbedConfig, {
+  render: (block) => {
+    const a = document.createElement('a');
+    a.href = pageLinkPath(block.props.documentId);
+    a.textContent = block.props.error || block.props.name || 'File';
+    return { dom: a };
+  },
+})();
+
 /** The wiki's block schema: BlockNote's defaults plus page links and mentions. */
 export const wikiSchema = BlockNoteSchema.create({
+  blockSpecs: { ...defaultBlockSpecs, fileEmbed },
   inlineContentSpecs: { ...defaultInlineContentSpecs, pageLink, mention },
 });
 

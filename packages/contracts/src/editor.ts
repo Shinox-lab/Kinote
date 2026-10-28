@@ -31,3 +31,19 @@ export const mentionConfig = {
 /** The Markdown form of a mention is a link to this path, as for page links. */
 export const mentionPath = (userId: string) => `/u/${userId}`;
 export const MENTION_PATH = /^\/u\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
+
+/**
+ * A file pasted into a page: a link to the file document (never a raw storage
+ * URL), so permissions, renames and new versions keep working.
+ */
+export const fileEmbedConfig = {
+  type: 'fileEmbed',
+  propSchema: {
+    documentId: { default: '' },
+    /** The stored name, shown while the file is being read or when it is gone. */
+    name: { default: '' },
+    /** A failed upload's sentence; empty once the file is stored. */
+    error: { default: '' },
+  },
+  content: 'none',
+} as const;

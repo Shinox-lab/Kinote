@@ -34,6 +34,18 @@ describe('the wiki editor schema', () => {
     expect(b.content[3]).toMatchObject({ type: 'link', href: 'https://a.b' });
   });
 
+  it('keeps a pasted file embed through the Yjs document and writes it as a link to the file', async () => {
+    const embed = {
+      id: 'f1',
+      type: 'fileEmbed',
+      props: { documentId: ID, name: 'Report.pdf', error: '' },
+    };
+    const doc = editor.blocksToYDoc([embed] as any, 'document-store');
+    expect(editor.yDocToBlocks(doc, 'document-store')[0]).toMatchObject(embed);
+    const md = await editor.blocksToMarkdownLossy([embed] as any);
+    expect(md.trim()).toBe(`[Report.pdf](/p/${ID})`);
+  });
+
   it.each(['a]b', '[x', 'x](evil)', '<b>hi</b>', '*star*', 'back\\slash'])('a title with Markdown punctuation (%s) survives the round trip', async (title) => {
     const md = await editor.blocksToMarkdownLossy([
       { type: 'paragraph', content: ['See ', { type: 'pageLink', props: { documentId: ID, title } }] },

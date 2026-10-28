@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, type ClipboardEvent, type DragEvent } from 'react';
 import { CommentsExtension } from '@blocknote/core/comments';
 import { useCreateBlockNote } from '@blocknote/react';
 import { BlockNoteView } from '@blocknote/mantine';
@@ -12,9 +12,11 @@ import { authorColor } from '../lib/wiki.js';
 import type { ApiThreadStore } from '../lib/threadStore.js';
 import { useThreads } from '../lib/useThreadStore.js';
 import { usePeek } from '../lib/usePeek.js';
+import { useRefresh } from '../lib/queries.js';
 import { Button, ErrorNote, Loading } from './ui.js';
 import { blockSourcesExtension, setBlockSources, type BlockSource } from './editor/blockSources.js';
 import { linkTriggerExtension } from './editor/linkTrigger.js';
+import { dropTarget, filesOf, insertFiles } from './editor/filePaste.js';
 import { WikiMenus, type EditorPlace } from './editor/menus.js';
 import { wikiSchema } from './editor/schema.js';
 
@@ -84,10 +86,44 @@ function BoundEditor({
     // `sources` is a new array on every render; its content is the trigger.
   }, [editor, sourceKey]);
   const theme = useResolvedTheme();
+  const refresh = useRefresh();
+
+  // Pasted and dropped files are uploaded into the page's space, under the page.
+  // The capture phase runs before BlockNote's own paste/drop handling, which
+  // would otherwise consume a file paste without doing anything.
+  const onPasteCapture = (e: ClipboardEvent) => {
+    if (!editable) return;
+    const files = filesOf(e.clipboardData);
+    if (files.length === 0 || (e.target as HTMLElement).closest?.('input, textarea')) return;
+    e.preventDefault();
+    e.stopPropagation();
+    insertFiles(editor, files, { reference: editor.getTextCursorPosition().block.id, placement: 'after' }, place, refresh);
+  };
+  const onDropCapture = (e: DragEvent) => {
+    if (!editable) return;
+    const files = filesOf(e.dataTransfer);
+    if (files.length === 0 || (e.target as HTMLElement).closest?.('input, textarea')) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const at = dropTarget(editor, { left: e.clientX, top: e.clientY }) ?? {
+      reference: editor.getTextCursorPosition().block.id,
+      placement: 'after' as const,
+    };
+    insertFiles(editor, files, at, place, refresh);
+  };
+
   return (
-    <BlockNoteView editor={editor} editable={editable} theme={theme} slashMenu={false}>
-      {editable && <WikiMenus editor={editor} place={place} />}
-    </BlockNoteView>
+    <div
+      onPasteCapture={onPasteCapture}
+      onDropCapture={onDropCapture}
+      onDragOverCapture={(e) => {
+        if (editable && e.dataTransfer.types.includes('Files')) e.preventDefault();
+      }}
+    >
+      <BlockNoteView editor={editor} editable={editable} theme={theme} slashMenu={false}>
+        {editable && <WikiMenus editor={editor} place={place} />}
+      </BlockNoteView>
+    </div>
   );
 }
 

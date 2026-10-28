@@ -1,6 +1,7 @@
-import { BlockNoteSchema, defaultInlineContentSpecs } from '@blocknote/core';
-import { createReactInlineContentSpec } from '@blocknote/react';
-import { mentionConfig, mentionPath, pageLinkConfig, pageLinkPath } from '@living-wiki/contracts';
+import { BlockNoteSchema, defaultBlockSpecs, defaultInlineContentSpecs } from '@blocknote/core';
+import { createReactBlockSpec, createReactInlineContentSpec } from '@blocknote/react';
+import { fileEmbedConfig, mentionConfig, mentionPath, pageLinkConfig, pageLinkPath } from '@living-wiki/contracts';
+import { FileEmbedView } from './FileEmbedView.js';
 import { PageLinkView } from './PageLinkView.js';
 
 /** The web side of a page link (`pageLinkConfig`); the server editors share its type and props. */
@@ -26,8 +27,16 @@ const mention = createReactInlineContentSpec(mentionConfig, {
   ),
 });
 
-/** The wiki's block schema: BlockNote's defaults plus page links and mentions (the same as the server's). */
+/** A pasted file: a card or an inline preview, always pointing at the file document. */
+const fileEmbed = createReactBlockSpec(fileEmbedConfig, {
+  render: ({ block }) => (
+    <FileEmbedView documentId={block.props.documentId} name={block.props.name} error={block.props.error} />
+  ),
+})();
+
+/** The wiki's block schema: BlockNote's defaults plus page links, mentions and embedded files (the same as the server's). */
 export const wikiSchema = BlockNoteSchema.create({
+  blockSpecs: { ...defaultBlockSpecs, fileEmbed },
   inlineContentSpecs: { ...defaultInlineContentSpecs, pageLink, mention },
 });
 
