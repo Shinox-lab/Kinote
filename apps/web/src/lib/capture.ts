@@ -2,6 +2,7 @@ import type {
   CaptureChange,
   CaptureReceipt,
   CaptureSummary,
+  FieldChange,
   ReviewItem,
   SuggestionSummary,
   UndoChangesResponse,
@@ -87,7 +88,7 @@ export function undoNotice(result: UndoChangesResponse): string {
  */
 export function captureHighlightCss(list: readonly CaptureChange[]): string {
   return list
-    .filter((c) => c.status === 'applied')
+    .filter((c) => c.status === 'applied' && c.op !== 'set_field')
     .map(
       (c) =>
         `[data-id="${cssString(c.blockId)}"] > .bn-block > .bn-block-content ` +
@@ -99,7 +100,7 @@ export function captureHighlightCss(list: readonly CaptureChange[]): string {
 /** A dashed margin marker on every block an open suggestion is about. */
 export function suggestionMarkerCss(list: readonly SuggestionSummary[]): string {
   return list
-    .filter((s) => s.status === 'open' && s.blockId !== null)
+    .filter((s) => s.status === 'open' && s.blockId !== null && s.kind !== 'set_field')
     .map(
       (s) =>
         `[data-id="${cssString(s.blockId!)}"] > .bn-block > .bn-block-content ` +
@@ -131,9 +132,14 @@ export function approvableInBundle(items: ReviewItem[], captureId: string): { ap
   return { approve: bundle.filter((i) => i.canApprove), skipped: bundle.filter((i) => !i.canApprove) };
 }
 
-/** The button that accepts a suggestion: a removal is approved, anything else accepted. */
-export function suggestionAction(s: Pick<SuggestionSummary, 'kind'>): 'Approve removal' | 'Accept' {
-  return s.kind === 'remove' ? 'Approve removal' : 'Accept';
+/** The button that accepts a suggestion: a removal (a block, or clearing a field) is approved, anything else accepted. */
+export function suggestionAction(s: Pick<SuggestionSummary, 'kind' | 'proposedMarkdown'>): 'Approve removal' | 'Accept' {
+  return s.kind === 'remove' || (s.kind === 'set_field' && s.proposedMarkdown === 'null') ? 'Approve removal' : 'Accept';
+}
+
+/** A routed field change in one line: `Launch date: 2026-11-15 → 2026-12-01`. */
+export function fieldChangeText(field: FieldChange): string {
+  return `${field.name ?? 'Removed field'}: ${field.before ?? 'empty'} → ${field.after ?? 'empty'}`;
 }
 
 /** What a capture can read from a file: documents, slides, sheets, text and pictures (by extension, as the server checks). */

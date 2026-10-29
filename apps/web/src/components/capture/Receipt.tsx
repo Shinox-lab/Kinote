@@ -3,7 +3,7 @@ import { Link } from '@tanstack/react-router';
 import { useMutation } from '@tanstack/react-query';
 import type { CaptureReceipt, UndoChangesResponse } from '@kinote/contracts';
 import { ApiError, api } from '../../lib/api.js';
-import { documentHeadline, hiddenChangesText, keptText, outcomeLabel, undoNotice, type CaptureChange } from '../../lib/capture.js';
+import { documentHeadline, fieldChangeText, hiddenChangesText, keptText, outcomeLabel, undoNotice, type CaptureChange } from '../../lib/capture.js';
 import { useRefresh, useWorkspace } from '../../lib/queries.js';
 import { Button, ErrorNote } from '../ui.js';
 import { PagePicker } from './PagePicker.js';
@@ -47,10 +47,16 @@ function ChangeRow({ change, kept, onMoved }: { change: CaptureChange; kept: boo
   const movable = change.status === 'applied' && (change.op === 'insert' || change.op === 'replace');
   return (
     <div className="flex flex-col gap-1 text-sm">
-      {change.beforeMarkdown && <p className="break-words text-muted line-through">{change.beforeMarkdown}</p>}
-      <p className={`whitespace-pre-wrap break-words ${change.status === 'applied' ? 'text-fg' : 'text-muted line-through'}`}>
-        {change.afterMarkdown}
-      </p>
+      {change.field ? (
+        <p className={`break-words ${change.status === 'applied' ? 'text-fg' : 'text-muted line-through'}`}>{fieldChangeText(change.field)}</p>
+      ) : (
+        <>
+          {change.beforeMarkdown && <p className="break-words text-muted line-through">{change.beforeMarkdown}</p>}
+          <p className={`whitespace-pre-wrap break-words ${change.status === 'applied' ? 'text-fg' : 'text-muted line-through'}`}>
+            {change.afterMarkdown}
+          </p>
+        </>
+      )}
       {change.status !== 'applied' && <p className="text-xs text-muted">{change.status === 'moved' ? 'Moved' : 'Undone'}</p>}
       {kept && change.status === 'applied' && <p className="text-xs font-medium text-warn-text">Changed since, not undone</p>}
       {change.reason && <p className="text-xs text-muted">Why here: {change.reason}</p>}
@@ -124,7 +130,11 @@ function PageCard({
       ))}
       {page.suggestions.map((s) => (
         <p key={s.id} className="rounded border border-dashed border-[var(--routing)] px-2 py-1 text-xs text-fg">
-          Suggestion ({s.kind}): {s.proposedMarkdown ?? 'remove this block'} · {s.status}
+          {s.field ? (
+            <>Suggestion: {fieldChangeText(s.field)} · {s.status}</>
+          ) : (
+            <>Suggestion ({s.kind}): {s.proposedMarkdown ?? 'remove this block'} · {s.status}</>
+          )}
         </p>
       ))}
     </section>

@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { Link } from '@tanstack/react-router';
 import type { CaptureChange } from '@kinote/contracts';
 import { cssString } from '../../lib/wiki.js';
+import { fieldChangeText } from '../../lib/capture.js';
 import { useCapture, useWorkspace } from '../../lib/queries.js';
 
 /** How long the banner waits for the editor to show the first change before it gives up scrolling. */
@@ -17,7 +18,7 @@ export function CaptureBanner({ pageId, captureId, changes }: { pageId: string; 
   // Only the sender (or an admin) may read the capture; anyone else sees "a teammate".
   const { data: capture } = useCapture(captureId);
   const sender = capture?.capture.senderName ?? 'a teammate';
-  const first = changes.find((c) => c.status === 'applied')?.blockId;
+  const first = changes.find((c) => c.status === 'applied' && c.op !== 'set_field')?.blockId;
 
   useEffect(() => {
     if (!first) return;
@@ -57,8 +58,14 @@ export function CaptureBanner({ pageId, captureId, changes }: { pageId: string; 
       <ul className="flex flex-col gap-1 text-xs">
         {changes.map((c) => (
           <li key={c.id} className={c.status === 'applied' ? 'text-fg' : 'text-muted'}>
-            {c.beforeMarkdown && <span className="mr-1 line-through">{c.beforeMarkdown}</span>}
-            <span>{c.afterMarkdown}</span>
+            {c.field ? (
+              <span>{fieldChangeText(c.field)}</span>
+            ) : (
+              <>
+                {c.beforeMarkdown && <span className="mr-1 line-through">{c.beforeMarkdown}</span>}
+                <span>{c.afterMarkdown}</span>
+              </>
+            )}
             {c.status !== 'applied' && <span className="ml-1">({c.status === 'moved' ? 'moved' : 'undone'})</span>}
           </li>
         ))}

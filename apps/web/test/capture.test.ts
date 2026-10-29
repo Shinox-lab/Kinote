@@ -18,6 +18,7 @@ import {
   suggestionAction,
   suggestionMarkerCss,
   undoNotice,
+  fieldChangeText,
   type CaptureChange,
 } from '../src/lib/capture.js';
 
@@ -185,5 +186,23 @@ describe('captureWaitingOnFile', () => {
     expect(captureWaitingOnFile({ status: 'queued', file: { id: ID, name: 'a.pdf', mimeType: null } } as CaptureSummary)).toBe(true);
     expect(captureWaitingOnFile({ status: 'routing', file: { id: ID, name: 'a.pdf', mimeType: null } } as CaptureSummary)).toBe(false);
     expect(captureWaitingOnFile({ status: 'queued', file: null } as CaptureSummary)).toBe(false);
+  });
+});
+
+describe('field changes', () => {
+  test('fieldChangeText', () => {
+    expect(fieldChangeText({ fieldId: 'f', name: 'Launch date', before: '2026-11-15', after: '2026-12-01' })).toBe('Launch date: 2026-11-15 → 2026-12-01');
+    expect(fieldChangeText({ fieldId: 'f', name: null, before: null, after: 'Active' })).toBe('Removed field: empty → Active');
+  });
+
+  test('field changes are not tinted or marked as blocks', () => {
+    const field = { ...change('field:f1', 'applied'), op: 'set_field' as const };
+    expect(captureHighlightCss([field])).toBe('');
+    expect(suggestionMarkerCss([suggestion({ kind: 'set_field', blockId: 'field:f1' })])).toBe('');
+  });
+
+  test('clearing a field is approved like a removal', () => {
+    expect(suggestionAction({ kind: 'set_field', proposedMarkdown: 'null' })).toBe('Approve removal');
+    expect(suggestionAction({ kind: 'set_field', proposedMarkdown: '"x"' })).toBe('Accept');
   });
 });

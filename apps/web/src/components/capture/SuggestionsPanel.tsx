@@ -1,7 +1,7 @@
 import { useMutation } from '@tanstack/react-query';
 import type { SuggestionSummary } from '@kinote/contracts';
 import { api } from '../../lib/api.js';
-import { suggestionAction } from '../../lib/capture.js';
+import { fieldChangeText, suggestionAction } from '../../lib/capture.js';
 import { useRefresh } from '../../lib/queries.js';
 import { Button, ErrorNote } from '../ui.js';
 
@@ -24,7 +24,11 @@ export function SuggestionEntry({ suggestion, onDone }: { suggestion: Suggestion
       <p className="font-medium text-fg">{KIND[suggestion.kind]}</p>
       <p className="text-xs text-muted">{BLOCKED_BY[suggestion.blockedBy]}</p>
       {suggestion.conflictWith && <p className="text-xs text-warn-text">Cited by {suggestion.conflictWith}, still valid</p>}
-      {suggestion.proposedMarkdown && <p className="whitespace-pre-wrap break-words text-fg">{suggestion.proposedMarkdown}</p>}
+      {suggestion.field ? (
+        <p className="break-words text-fg">{fieldChangeText(suggestion.field)}</p>
+      ) : (
+        suggestion.proposedMarkdown && <p className="whitespace-pre-wrap break-words text-fg">{suggestion.proposedMarkdown}</p>
+      )}
       <p className="text-xs text-muted">Why: {suggestion.reason}</p>
       <div className="flex flex-wrap gap-2">
         <Button disabled={busy} onClick={() => accept.mutate()}>
