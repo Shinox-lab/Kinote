@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ClipboardEvent, type DragEvent } from 'react';
+import { useEffect, useMemo, useRef, type ClipboardEvent, type DragEvent } from 'react';
 import { CommentsExtension } from '@blocknote/core/comments';
 import { useCreateBlockNote } from '@blocknote/react';
 import { BlockNoteView } from '@blocknote/mantine';
@@ -20,6 +20,8 @@ import { dropTarget, filesOf, insertFiles } from './editor/filePaste.js';
 import { WikiMenus, type EditorPlace } from './editor/menus.js';
 import { EditorPlaceContext } from './editor/place.js';
 import { wikiSchema } from './editor/schema.js';
+import { copyDrawing } from './drawing/binding.js';
+import { LiveDocContext, duplicateDrawingIds } from './drawing/drawingRules.js';
 
 export type { BlockSource, EditorPlace };
 
@@ -88,6 +90,21 @@ function BoundEditor({
   }, [editor, sourceKey]);
   const theme = useResolvedTheme();
   const refresh = useRefresh();
+  const liveDoc = useMemo(() => ({ ydoc: live.ydoc, awareness: live.provider.awareness }), [live]);
+
+  // A duplicated or pasted drawing block gets its own drawing (D12): two blocks never share a scene.
+  useEffect(() => {
+    if (!editable) return;
+    return editor.onChange(() => {
+      for (const { blockId, drawingId } of duplicateDrawingIds(editor.document as any)) {
+        const block = editor.getBlock(blockId);
+        if (block?.type !== 'drawing') continue;
+        const fresh = crypto.randomUUID();
+        copyDrawing(live.ydoc, drawingId, fresh);
+        editor.updateBlock(block, { props: { drawingId: fresh } });
+      }
+    });
+  }, [editor, editable, live]);
 
   // Pasted and dropped files are uploaded into the page's space, under the page.
   // The capture phase runs before BlockNote's own paste/drop handling, which
@@ -95,7 +112,8 @@ function BoundEditor({
   const onPasteCapture = (e: ClipboardEvent) => {
     if (!editable) return;
     const files = filesOf(e.clipboardData);
-    if (files.length === 0 || (e.target as HTMLElement).closest?.('input, textarea')) return;
+    // Inside a drawing, Excalidraw decides (and refuses images with its own notice).
+    if (files.length === 0 || (e.target as HTMLElement).closest?.('input, textarea, .drawing-block')) return;
     e.preventDefault();
     e.stopPropagation();
     insertFiles(editor, files, { reference: editor.getTextCursorPosition().block.id, placement: 'after' }, place, refresh);
@@ -103,7 +121,7 @@ function BoundEditor({
   const onDropCapture = (e: DragEvent) => {
     if (!editable) return;
     const files = filesOf(e.dataTransfer);
-    if (files.length === 0 || (e.target as HTMLElement).closest?.('input, textarea')) return;
+    if (files.length === 0 || (e.target as HTMLElement).closest?.('input, textarea, .drawing-block')) return;
     e.preventDefault();
     e.stopPropagation();
     const at = dropTarget(editor, { left: e.clientX, top: e.clientY }) ?? {
@@ -122,9 +140,11 @@ function BoundEditor({
       }}
     >
       <EditorPlaceContext.Provider value={place}>
-        <BlockNoteView editor={editor} editable={editable} theme={theme} slashMenu={false}>
-          {editable && <WikiMenus editor={editor} place={place} />}
-        </BlockNoteView>
+        <LiveDocContext.Provider value={liveDoc}>
+          <BlockNoteView editor={editor} editable={editable} theme={theme} slashMenu={false}>
+            {editable && <WikiMenus editor={editor} place={place} />}
+          </BlockNoteView>
+        </LiveDocContext.Provider>
       </EditorPlaceContext.Provider>
     </div>
   );

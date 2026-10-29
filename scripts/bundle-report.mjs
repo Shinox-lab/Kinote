@@ -18,6 +18,7 @@ const SIGNATURES = {
   '@extend-ai/react-xlsx': 'react-xlsx-viewer',
   marked: 'markedjs',
   dompurify: 'ALLOWED_URI_REGEXP',
+  excalidraw: 'EXCALIDRAW_ASSET_PATH',
 };
 
 const html = readFileSync(path.join(dist, 'index.html'), 'utf8');

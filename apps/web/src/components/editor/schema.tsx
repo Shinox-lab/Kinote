@@ -1,9 +1,10 @@
 import { BlockNoteSchema, defaultBlockSpecs, defaultInlineContentSpecs } from '@blocknote/core';
 import { createReactBlockSpec, createReactInlineContentSpec } from '@blocknote/react';
-import { calloutConfig, collectionViewConfig, fileEmbedConfig, mentionConfig, mentionPath, pageLinkConfig, pageLinkPath } from '@kinote/contracts';
+import { UNTITLED_DRAWING, calloutConfig, collectionViewConfig, drawingConfig, fileEmbedConfig, mentionConfig, mentionPath, pageLinkConfig, pageLinkPath } from '@kinote/contracts';
 import { FileEmbedView } from './FileEmbedView.js';
 import { PageLinkView } from './PageLinkView.js';
 import { CollectionViewBlock } from '../views/CollectionViewBlock.js';
+import { DrawingBlock } from '../drawing/DrawingBlock.js';
 
 /** The web side of a page link (`pageLinkConfig`); the server editors share its type and props. */
 const pageLink = createReactInlineContentSpec(pageLinkConfig, {
@@ -83,9 +84,27 @@ const collectionView = createReactBlockSpec(collectionViewConfig, {
   ),
 })();
 
-/** The wiki's block schema: BlockNote's defaults plus page links, mentions, embedded files, callouts and collection views (the same as the server's). */
+/** An Excalidraw drawing (`drawingConfig`): the scene lives beside the blocks in the page document. */
+const drawing = createReactBlockSpec(drawingConfig, {
+  render: ({ block, editor }) => (
+    <DrawingBlock
+      drawingId={block.props.drawingId}
+      title={block.props.title}
+      height={Number(block.props.height)}
+      editable={editor.isEditable}
+      update={(props) => {
+        const now = editor.getBlock(block.id);
+        if (now?.type === 'drawing') editor.updateBlock(now, { props });
+      }}
+    />
+  ),
+  // Copied out of Kinote, a drawing is its title (its scene stays on the page).
+  toExternalHTML: ({ block }) => <p>Drawing: {block.props.title || UNTITLED_DRAWING}</p>,
+})();
+
+/** The wiki's block schema: BlockNote's defaults plus page links, mentions, embedded files, callouts, collection views and drawings (the same as the server's). */
 export const wikiSchema = BlockNoteSchema.create({
-  blockSpecs: { ...defaultBlockSpecs, fileEmbed, callout, collectionView },
+  blockSpecs: { ...defaultBlockSpecs, fileEmbed, callout, collectionView, drawing },
   inlineContentSpecs: { ...defaultInlineContentSpecs, pageLink, mention },
 });
 

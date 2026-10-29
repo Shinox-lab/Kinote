@@ -11,6 +11,7 @@ import { createNamedPage } from '../../lib/newPage.js';
 import { useRefresh } from '../../lib/queries.js';
 import { LINK_TRIGGER } from './linkTrigger.js';
 import type { WikiEditor } from './schema.js';
+import { drawingMenuItem, useLiveDoc } from '../drawing/drawingRules.js';
 
 
 /** Where the page being edited lives: new pages made from a menu go under it. */
@@ -25,11 +26,12 @@ function insertLink(editor: WikiEditor, documentId: string, title: string) {
 
 /**
  * The `[[` page picker, the `@` mention picker and the slash menu with the
- * wiki's extras (Link to page, New sub-page, Mention a person, Callout).
+ * wiki's extras (Link to page, New sub-page, Mention a person, Callout, Drawing).
  * Only for an editable editor.
  */
 export function WikiMenus({ editor, place }: { editor: WikiEditor; place: EditorPlace }) {
   const refresh = useRefresh();
+  const live = useLiveDoc();
 
   // A page that can't be made (no rights, offline) leaves the text as it was. The link goes into the
   // block the person asked from, even if they moved on while the page was being made.
@@ -89,6 +91,7 @@ export function WikiMenus({ editor, place }: { editor: WikiEditor; place: Editor
           }
         },
       },
+      drawingMenuItem(editor, live?.ydoc ?? null),
       {
         title: 'Collection view',
         subtext: 'A table, board, calendar or timeline of a collection',
