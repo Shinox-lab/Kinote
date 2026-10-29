@@ -5,6 +5,7 @@ import {
   groupKeysOf,
   parseViews,
   prefill,
+  prefillTitle,
   rowMatches,
   type FieldDef,
   type ViewFilter,
@@ -89,6 +90,14 @@ describe('rowMatches', () => {
     expect(matches(bare, { fieldId: 'count', op: 'gt', value: 'many' })).toBe(true);
   });
 
+  test('a filter on a deleted choice, or with no value chosen yet, is ignored', () => {
+    expect(matches(george, { fieldId: 'status', op: 'is', value: 'gone' })).toBe(true);
+    expect(matches(george, { fieldId: 'tags', op: 'contains', value: 'gone' })).toBe(true);
+    expect(matches(george, { fieldId: 'status', op: 'is', value: '' })).toBe(true);
+    expect(matches(george, { fieldId: 'note', op: 'is', value: '' })).toBe(true);
+    expect(matches(george, { fieldId: 'title', op: 'contains', value: '' })).toBe(true);
+  });
+
   test('a value that doesn’t fit its field counts as empty', () => {
     expect(matches(row('x', { count: 'three' }), { fieldId: 'count', op: 'is_empty' })).toBe(true);
   });
@@ -121,8 +130,24 @@ describe('prefill', () => {
         { fieldId: 'launch', op: 'is', value: '2026-11-04' },
         { fieldId: 'count', op: 'gt', value: 2 },
         { fieldId: 'status', op: 'is_not', value: 'lead' },
-      ], ME)
-    ).toEqual({ status: 'active', owner: [ME], done: true, launch: { start: '2026-11-04' } });
+      ], ME, ctx.today)
+    ).toEqual({ status: 'active', owner: [ME], done: true, launch: { start: '2026-11-04' }, count: 3 });
+  });
+});
+
+describe('prefill keeps a new row in the view', () => {
+  const kept = (filter: ViewFilter, title = 'Untitled') => {
+    const values = prefill(defs, [filter], ME, ctx.today);
+    return rowMatches(defs, { title: prefillTitle([filter]) ?? title, values }, [filter], ctx);
+  };
+  test('for windows, comparisons and trimmed text too', () => {
+    for (const op of ['this_week', 'this_month', 'next_month'] as const) expect(kept({ fieldId: 'launch', op })).toBe(true);
+    expect(kept({ fieldId: 'launch', op: 'before', value: '2026-11-04' })).toBe(true);
+    expect(kept({ fieldId: 'launch', op: 'after', value: '2026-11-04' })).toBe(true);
+    expect(kept({ fieldId: 'count', op: 'lt', value: 2 })).toBe(true);
+    expect(kept({ fieldId: 'count', op: 'gt', value: 2 })).toBe(true);
+    expect(kept({ fieldId: 'note', op: 'is', value: 'Foo ' })).toBe(true);
+    expect(kept({ fieldId: 'title', op: 'contains', value: 'Acme' })).toBe(true);
   });
 });
 

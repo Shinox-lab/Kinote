@@ -117,9 +117,11 @@ export function TimelineView(p: LayoutProps) {
                       onPointerDown={(e) => begin(e, row, 'move')}
                       onPointerMove={track}
                       onPointerUp={() => finish(row)}
+                      onPointerCancel={() => setDrag(null)}
+                      onLostPointerCapture={() => setDrag((d) => (d?.rowId === row.id ? null : d))}
                       onDoubleClick={() => p.open(row.id)}
                       onKeyDown={(e) => e.key === 'Enter' && p.open(row.id)}
-                      style={{ left: bar.left, width: Math.max(bar.width, 6) }}
+                      style={{ left: bar.left, width: Math.max(bar.width, 6), touchAction: 'none' }}
                       className={`absolute top-1 bottom-1 flex items-center truncate rounded bg-accent px-1.5 text-accent-fg ${p.canEdit ? 'cursor-grab' : ''}`}
                     >
                       <span className="truncate">{row.title || 'Untitled'}</span>
@@ -127,8 +129,15 @@ export function TimelineView(p: LayoutProps) {
                         <span
                           aria-hidden="true"
                           onPointerDown={(e) => begin(e, row, 'resize')}
-                          onPointerMove={track}
-                          onPointerUp={() => finish(row)}
+                          onPointerMove={(e) => {
+                            e.stopPropagation();
+                            track(e);
+                          }}
+                          onPointerUp={(e) => {
+                            // The bar's own handler would save the same change a second time.
+                            e.stopPropagation();
+                            finish(row);
+                          }}
                           className="absolute top-0 right-0 bottom-0 w-2 cursor-ew-resize"
                         />
                       )}

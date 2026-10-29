@@ -228,7 +228,7 @@ export function ViewToolbar({
       </div>
 
       {panel === 'filter' && (
-        <div className={PANEL} aria-label="Filters" role="group">
+        <div key={view.id} className={PANEL} aria-label="Filters" role="group">
           {view.filters.length === 0 && <p className="text-xs text-muted">No filters. Every page shows.</p>}
           {view.filters.map((f, i) => {
             const type = typeOf(fields, f.fieldId);
@@ -257,7 +257,7 @@ export function ViewToolbar({
                   ))}
                 </select>
                 <FilterValue
-                  key={`${f.fieldId}:${f.op}`}
+                  key={`${view.id}:${i}:${f.fieldId}:${f.op}`}
                   filter={f}
                   fields={fields}
                   names={names}
@@ -285,7 +285,7 @@ export function ViewToolbar({
       )}
 
       {panel === 'sort' && (
-        <div className={PANEL} aria-label="Sorts" role="group">
+        <div key={view.id} className={PANEL} aria-label="Sorts" role="group">
           {view.sorts.map((s, i) => (
             <div key={i} className="flex flex-wrap items-center gap-1">
               <select
@@ -329,7 +329,7 @@ export function ViewToolbar({
       )}
 
       {panel === 'fields' && (
-        <div className={PANEL} aria-label="Shown fields" role="group">
+        <div key={view.id} className={PANEL} aria-label="Shown fields" role="group">
           {fields.length === 0 && <p className="text-xs text-muted">This collection has no fields yet.</p>}
           {(() => {
             const shownIds = (view.visible ?? fields.map((f) => f.id)).filter((id) => fields.some((f) => f.id === id));
@@ -372,7 +372,7 @@ export function ViewToolbar({
       )}
 
       {panel === 'view' && (
-        <div className={PANEL} aria-label="This view" role="group">
+        <div key={view.id} className={PANEL} aria-label="This view" role="group">
           <label className="flex items-center gap-2 text-sm">
             <span className="text-muted">Name</span>
             <input

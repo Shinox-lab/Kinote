@@ -74,7 +74,7 @@ const collectionView = createReactBlockSpec(collectionViewConfig, {
   ),
   toExternalHTML: ({ block }) => (
     <p>
-      Collection view: <a href={pageLinkPath(block.props.collectionId)}>{block.props.title || 'Untitled'}</a>
+      Collection view: <a href={pageLinkPath(block.props.collectionId)}>collection</a>
     </p>
   ),
 })();

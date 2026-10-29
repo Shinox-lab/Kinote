@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { defaultView, parseViews, prefill, type Choice, type CollectionPick, type View } from '@living-wiki/contracts';
+import { defaultView, parseViews, prefill, prefillTitle, type Choice, type CollectionPick, type View } from '@living-wiki/contracts';
 import { api, ApiError } from '../../lib/api.js';
 import { useFieldNames } from '../../lib/fieldNames.js';
 import { nextChoiceColor } from '../../lib/fields.js';
 import { createNamedPage } from '../../lib/newPage.js';
 import { usePeek } from '../../lib/usePeek.js';
+import { todayIso } from '../../lib/views.js';
 import { useRefresh, useTenantKey, useWorkspace } from '../../lib/queries.js';
 import { loadSession } from '../../lib/session.js';
 import { useEditorPlace } from '../editor/place.js';
@@ -49,8 +50,8 @@ function ViewChooser({ editable, update }: ViewBlockProps) {
     queryFn: () => api.listCollections(q),
     enabled: editable,
   });
-  const choose = (c: { id: string; title: string }) =>
-    update({ collectionId: c.id, title: c.title, views: JSON.stringify([defaultView()]) });
+  // The title is not stored: the block may sit where readers can't open the collection (it shows live, to readers who can).
+  const choose = (c: { id: string }) => update({ collectionId: c.id, title: '', views: JSON.stringify([defaultView()]) });
   const make = useMutation({
     mutationFn: () => api.createCollection(place!.pageId),
     onSuccess: (c) => {
@@ -92,7 +93,7 @@ function ViewChooser({ editable, update }: ViewBlockProps) {
   );
 }
 
-function ViewBody({ collectionId, title, views: viewsJson, editable, update }: ViewBlockProps) {
+function ViewBody({ collectionId, views: viewsJson, editable, update }: ViewBlockProps) {
   const { tenant } = useWorkspace();
   const qc = useQueryClient();
   const peek = usePeek();
@@ -128,8 +129,8 @@ function ViewBody({ collectionId, title, views: viewsJson, editable, update }: V
   });
   const add = useMutation({
     mutationFn: async (extra: Record<string, unknown>) => {
-      const page = await createNamedPage({ space_id: data!.spaceId, parent_id: collectionId, title: 'Untitled' });
-      const values = { ...prefill(fields, view.filters, me), ...extra };
+      const page = await createNamedPage({ space_id: data!.spaceId, parent_id: collectionId, title: prefillTitle(view.filters) ?? 'Untitled' });
+      const values = { ...prefill(fields, view.filters, me, todayIso()), ...extra };
       if (Object.keys(values).length > 0) await api.setPageFields(page.id, values);
       return page;
     },
@@ -183,7 +184,7 @@ function ViewBody({ collectionId, title, views: viewsJson, editable, update }: V
           params={{ tenantSlug: tenant.slug, pageId: collectionId }}
           className="text-sm font-semibold text-fg hover:underline"
         >
-          {data?.collection.title || title || 'Untitled'}
+          {data?.collection.title || 'Untitled'}
         </Link>
         {!editable && local && <span className="text-xs text-muted">Your changes to this view aren't saved.</span>}
       </div>

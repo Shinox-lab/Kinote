@@ -145,6 +145,8 @@ function monthOf(day: string, offset = 0): [string, string] {
 function holds(defs: FieldDef[], row: ViewRow, filter: ViewFilter, ctx: FilterContext): boolean | null {
   const { op } = filter;
   let value = filter.value;
+  // A value not chosen yet (or cleared) says nothing: the filter is ignored.
+  if (!VALUELESS_OPS.includes(op) && (value === '' || value === undefined || value === null)) return null;
   if (filter.fieldId === TITLE_FIELD) {
     if (!OPS_BY_TYPE.title.includes(op)) return null;
     if (op === 'is_empty') return row.title.trim() === '';
@@ -187,12 +189,14 @@ function holds(defs: FieldDef[], row: ViewRow, filter: ViewFilter, ctx: FilterCo
       return op === 'is' ? start <= day && day <= end : op === 'before' ? start < day : end > day;
     }
     case 'select':
-      if (typeof value !== 'string') return null;
+      // A choice that was deleted can't be matched or excluded: the filter is ignored.
+      if (typeof value !== 'string' || !(def.options.choices ?? []).some((c) => c.id === value)) return null;
       return op === 'is' ? v === value : v !== value;
     case 'multi_select':
     case 'person':
     case 'page': {
       if (typeof value !== 'string') return null;
+      if (def.type === 'multi_select' && !(def.options.choices ?? []).some((c) => c.id === value)) return null;
       const has = Array.isArray(v) && (v as string[]).includes(value);
       return op === 'contains' ? has : !has;
     }
@@ -249,24 +253,42 @@ export function compareRows<R extends ViewRow>(defs: FieldDef[], sorts: ViewSort
   };
 }
 
-/** The values a new row gets from filters that pin one value, so it shows in the view it was added from. */
-export function prefill(defs: FieldDef[], filters: ViewFilter[], me: string | null): Record<string, unknown> {
+/**
+ * The values a new row gets from the view's filters, so it shows in the view
+ * it was added from: the pinned value, or one inside a window or a
+ * comparison (today for "this week", the day after for "after", one more for
+ * "> n").
+ */
+export function prefill(defs: FieldDef[], filters: ViewFilter[], me: string | null, today: string): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const filter of filters) {
     const def = defs.find((d) => d.id === filter.fieldId);
     if (!def) continue;
     let value = filter.value;
     if (def.type === 'person' && value === ME) value = me ?? undefined;
+    const op = filter.op;
     let candidate: unknown;
-    if (filter.op === 'checked' && def.type === 'checkbox') candidate = true;
-    else if (filter.op === 'is' && def.type === 'select') candidate = value;
-    else if (filter.op === 'is' && def.type === 'text') candidate = value;
-    else if (filter.op === 'eq' && def.type === 'number') candidate = value;
-    else if (filter.op === 'is' && def.type === 'date') candidate = { start: value };
-    else if (filter.op === 'contains' && ['multi_select', 'person', 'page'].includes(def.type)) candidate = [value];
+    if (op === 'checked' && def.type === 'checkbox') candidate = true;
+    else if (op === 'is' && def.type === 'select') candidate = value;
+    else if (op === 'is' && def.type === 'text') candidate = typeof value === 'string' ? value.trim() : value;
+    else if (op === 'eq' && def.type === 'number') candidate = value;
+    else if (op === 'lt' && def.type === 'number' && typeof value === 'number') candidate = value - 1;
+    else if (op === 'gt' && def.type === 'number' && typeof value === 'number') candidate = value + 1;
+    else if (op === 'is' && def.type === 'date') candidate = { start: value };
+    else if ((op === 'this_week' || op === 'this_month') && def.type === 'date') candidate = { start: today };
+    else if (op === 'next_month' && def.type === 'date') candidate = { start: monthOf(today, 1)[0] };
+    else if (op === 'before' && def.type === 'date' && typeof value === 'string' && DAY.test(value)) candidate = { start: addDays(value, -1) };
+    else if (op === 'after' && def.type === 'date' && typeof value === 'string' && DAY.test(value)) candidate = { start: addDays(value, 1) };
+    else if (op === 'contains' && ['multi_select', 'person', 'page'].includes(def.type)) candidate = [value];
     if (candidate !== undefined && fieldValueFits(def, candidate)) out[def.id] = candidate;
   }
   return out;
+}
+
+/** A new row's title from a title filter ("contains Acme" makes "Acme"), or null. */
+export function prefillTitle(filters: ViewFilter[]): string | null {
+  const f = filters.find((x) => x.fieldId === TITLE_FIELD && (x.op === 'contains' || x.op === 'is') && typeof x.value === 'string' && x.value.trim() !== '');
+  return f ? (f.value as string).trim() : null;
 }
 
 /** The board columns (or table groups) a row falls in: one per value, `''` for none; a checkbox is `true`/`false`. */

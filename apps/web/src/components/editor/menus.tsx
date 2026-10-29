@@ -99,7 +99,7 @@ export function WikiMenus({ editor, place }: { editor: WikiEditor; place: Editor
           // On a collection page the view shows its own sub-pages; elsewhere the block asks which collection.
           void api
             .getCollection(place.pageId)
-            .then((c) => ({ collectionId: c.id, title: c.title, views: JSON.stringify([defaultView()]) }))
+            .then((c) => ({ collectionId: c.id, title: '', views: JSON.stringify([defaultView()]) }))
             .catch(() => ({ collectionId: '', title: '', views: '' }))
             .then((props) => {
               const block = { type: 'collectionView' as const, props };

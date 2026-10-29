@@ -138,9 +138,10 @@ describe('collection views', () => {
     expect(b).toMatchObject({ type: 'collectionView', props: { collectionId: ID, title: 'Clients', views: '[{"id":"v1","layout":"board"}]' } });
   });
 
-  it('reads as one line naming the collection, in Markdown and as block text', async () => {
+  it('reads as one line linking the collection, never its title (a reader of this page may not be able to read it)', async () => {
     const md = await editor.blocksToMarkdownLossy([view()]);
-    expect(md.trim()).toBe(`Collection view: [Clients](/p/${ID})`);
-    expect(flattenBlocks([view()])[0]!.text).toBe('Collection view: Clients');
+    expect(md.trim()).toBe(`Collection view: [collection](/p/${ID})`);
+    expect(md).not.toContain('Clients');
+    expect(flattenBlocks([view()])[0]!.text).toBe('Collection view');
   });
 });

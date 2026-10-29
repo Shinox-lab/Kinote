@@ -57,14 +57,18 @@ const callout = createBlockSpec(calloutConfig, {
   },
 })();
 
-/** A collection view on the server: one line naming its collection, linked to it (its rows live on their own pages). */
+/**
+ * A collection view on the server: one line linking its collection (its rows
+ * live on their own pages). Never its title: the collection may be in a space
+ * this page's readers can't open.
+ */
 const collectionView = createBlockSpec(collectionViewConfig, {
   render: (block) => {
     const dom = document.createElement('p');
     dom.append('Collection view: ');
     const a = document.createElement('a');
     a.href = pageLinkPath(block.props.collectionId);
-    a.textContent = linkLabel(block.props.title || 'Untitled');
+    a.textContent = 'collection';
     dom.append(a);
     return { dom };
   },

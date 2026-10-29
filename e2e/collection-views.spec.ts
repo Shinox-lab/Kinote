@@ -71,7 +71,7 @@ test('a view on the collection page: table, + New, a cell edit, a filter, a boar
   await expect(tavrosRow.getByRole('group', { name: 'Status' }).getByRole('button', { name: 'Active' })).toHaveAttribute('aria-pressed', 'true');
 
   // A filter: Status is Lead (nothing now), then Active (both).
-  await view(page).getByRole('button', { name: 'Filter' }).click();
+  await view(page).getByRole('button', { name: 'Filter', exact: true }).click();
   await view(page).getByRole('button', { name: '+ Add a filter' }).click();
   await view(page).getByLabel('Filter field').selectOption({ label: 'Status' });
   await view(page).getByLabel('Filter value').selectOption({ label: 'Lead' });
@@ -81,10 +81,24 @@ test('a view on the collection page: table, + New, a cell edit, a filter, a boar
   await expect(table.getByRole('button', { name: 'Tavros' })).toBeVisible();
   await view(page).getByRole('button', { name: 'Remove filter' }).click();
 
+  // Typing in a view's text box stays in the box: Backspace edits the filter, not the page.
+  await view(page).getByRole('button', { name: '+ Add a filter' }).click();
+  const titleFilter = view(page).getByLabel('Filter value');
+  await titleFilter.click();
+  await page.keyboard.type('Geox');
+  await page.keyboard.press('Backspace');
+  await page.keyboard.press('Enter');
+  await expect(titleFilter).toHaveValue('Geo');
+  await expect(table.getByRole('button', { name: 'George' })).toBeVisible();
+  await expect(table.getByRole('button', { name: 'Tavros' })).toHaveCount(0);
+  await view(page).getByRole('button', { name: 'Remove filter' }).click();
+  await view(page).getByRole('button', { name: 'Filter', exact: true }).click();
+
   // + New: a sub-page opens in the side panel.
   await view(page).getByRole('button', { name: '+ New' }).click();
   await expect(table.getByRole('button', { name: 'Untitled' })).toBeVisible();
   await expect(page).toHaveURL(/peek=/);
+  await page.getByRole('complementary', { name: 'Page preview' }).getByRole('button', { name: 'Close' }).click();
 
   // A board grouped by Status: drag George to Lead.
   await view(page).getByLabel('Add a view').selectOption('board');
@@ -93,6 +107,14 @@ test('a view on the collection page: table, + New, a cell edit, a filter, a boar
   await expect(active.getByRole('article', { name: 'George' })).toBeVisible();
   await active.getByRole('article', { name: 'George' }).dragTo(lead);
   await expect(lead.getByRole('article', { name: 'George' })).toBeVisible();
+  // The View panel follows the tab: its name box never carries another view's name over.
+  await view(page).getByRole('button', { name: 'View', exact: true }).click();
+  await expect(view(page).getByLabel('View name')).toHaveValue('Board');
+  await view(page).getByRole('tab', { name: 'Table' }).click();
+  await expect(view(page).getByLabel('View name')).toHaveValue('Table');
+  await view(page).getByRole('tab', { name: 'Board' }).click();
+  await view(page).getByRole('button', { name: 'View', exact: true }).click();
+
   // Moving without dragging works too.
   await lead.getByLabel('Move George to').selectOption({ label: 'Active' });
   await expect(active.getByRole('article', { name: 'George' })).toBeVisible();
@@ -146,8 +168,8 @@ test('calendar and timeline: an item on its day, dragged to another day; a bar o
   const iso = (d: Date) => d.toISOString().slice(0, 10);
   const today = new Date();
   const day = iso(today);
-  // A day in the same month, so it is on the same calendar page.
-  const other = iso(new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate() > 15 ? 3 : 20)));
+  // A neighbouring day in the same month: on the same calendar page and inside the timeline's first window.
+  const other = iso(new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate() + (today.getUTCDate() > 1 ? -1 : 1))));
   await api(request, `/pages/${george.id}/fields`, 'PATCH', { [launch.id]: { start: day } });
 
   const page = await openAs(browser, world, world.owner);
@@ -160,5 +182,19 @@ test('calendar and timeline: an item on its day, dragged to another day; a bar o
   await expect(cell(other).getByRole('button', { name: 'George' })).toBeVisible();
 
   await view(page).getByLabel('Add a view').selectOption('timeline');
-  await expect(view(page).getByRole('button', { name: new RegExp(`^George: ${other}`) })).toBeVisible();
+  const bar = view(page).getByRole('button', { name: new RegExp(`^George: ${other}`) });
+  await expect(bar).toBeVisible();
+
+  // Stretching the bar saves once.
+  let saves = 0;
+  page.on('request', (r) => {
+    if (r.method() === 'PATCH' && r.url().endsWith(`/pages/${george.id}/fields`)) saves += 1;
+  });
+  const box = (await bar.boundingBox())!;
+  await page.mouse.move(box.x + box.width - 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width + 60, box.y + box.height / 2, { steps: 5 });
+  await page.mouse.up();
+  await expect(view(page).getByRole('button', { name: new RegExp(`^George: ${other} to `) })).toBeVisible();
+  expect(saves).toBe(1);
 });
