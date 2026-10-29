@@ -17,6 +17,13 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [react(), tailwindcss()],
+    // The xlsx viewer creates its worker with new Worker(new URL(...), { type: 'module' }).
+    // Vite's default iife worker output cannot code-split the package, and prebundling
+    // rewrites the worker URL to a missing .vite/deps file in dev.
+    worker: { format: 'es' },
+    optimizeDeps: {
+      exclude: ['@extend-ai/react-xlsx', '@dukelib/sheets-wasm'],
+    },
     server: {
       port: 5173,
       // Same origin in dev: the console calls /api/... and /mcp/... on its own origin.
