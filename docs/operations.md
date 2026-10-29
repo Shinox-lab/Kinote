@@ -32,8 +32,9 @@ compares the tenant column with `current_tenant_id()`.
 `docker-compose.yml` (project `living-wiki`) is the whole app: postgres
 (Postgres 17 + pgvector), MinIO, the one-shot `migrate`, the `api`, `collab` and
 `worker` services built from the root `Dockerfile` (each runs its TypeScript
-entry point with tsx), the Docling `extractor`, and the `web` console (the Vite
-build served by nginx, which proxies `/api`, `/mcp` and `/collab`).
+entry point with tsx), the Docling `extractor`, the internal `gridcraft` editor,
+and the `web` console (the Vite build served by nginx, which proxies `/api`,
+`/mcp`, `/collab` and `/gridcraft/`).
 
 ```sh
 cp .env.example .env   # fill in the six secrets
@@ -48,11 +49,13 @@ still serves only the console with Vite, for UI development against the stack;
 `pnpm e2e` uses it as its test harness.
 
 Host ports, all on 127.0.0.1: postgres 55543, MinIO 59000 (S3) and 59001
-(console), api 8787, collab 1234, web 8080. Each can be changed in `.env`
-(`POSTGRES_HOST_PORT`, `MINIO_HOST_PORT`, `MINIO_CONSOLE_HOST_PORT`,
-`API_HOST_PORT`, `COLLAB_HOST_PORT`, `WEB_HOST_PORT`). Coolify does not use
-these host mappings: its proxy routes the domain to the web container's port
-80. API and collab stay published for `pnpm e2e` and UI dev only.
+(console), api 8787, collab 1234, web 8080, GridCraft 8082. Each can be changed
+in `.env` (`POSTGRES_HOST_PORT`, `MINIO_HOST_PORT`,
+`MINIO_CONSOLE_HOST_PORT`, `API_HOST_PORT`, `COLLAB_HOST_PORT`,
+`WEB_HOST_PORT`, `GRIDCRAFT_HOST_PORT`). Coolify does not use these host
+mappings: its proxy routes the domain to the web container's port 80. API and
+collab stay published for `pnpm e2e` and UI dev only; GridCraft's host mapping
+exists only for `vite dev`.
 
 If Docker Desktop shows a port as in use although no container holds it (a
 leftover forward of `com.docker.backend`), restarting Docker Desktop clears it;
@@ -86,6 +89,60 @@ Database and object data live in the named volumes `living-wiki_pgdata` and
 and a plain `docker compose down`; `docker compose down -v` (`pnpm stack:down`)
 deletes them.
 
+## GridCraft (XLSX editing)
+
+The inline spreadsheet editor is the official
+[GridCraft](https://github.com/storytold/gridcraft) web build, pinned at
+**v0.13.0**:
+
+- Release: `https://github.com/storytold/gridcraft/releases/download/v0.13.0/gridcraft-web-0.13.0.zip`
+- SHA-256: `e232edde1898459f13568ca7b1f3feecb4037f0cbb8f6aec86de1a3c096af5dc`
+
+`apps/gridcraft/Dockerfile` downloads and checksum-verifies that release at
+image build time; it is the upgrade point. The `gridcraft` compose service is
+internal at `gridcraft:80`, and the web nginx owns the public `/gridcraft/`
+path. Do not add a Coolify domain or a public port for it. The
+`GRIDCRAFT_HOST_PORT` mapping (default 8082) is local-only, for `vite dev`.
+
+The app still has one origin. The only CORS is on GridCraft's public static
+assets, because the sandboxed iframe has an opaque origin; the API stays
+same-origin and token-authenticated. The iframe uses
+`sandbox="allow-scripts"` deliberately. **Never add `allow-same-origin`**: the
+console's bearer token is in `localStorage`.
+
+Ctrl+S creates a new version through the normal file replacement path, keeps
+the old version, and follows the space's review rules. Only editors viewing the
+latest `.xlsx` see **Edit in GridCraft**; viewers and older versions stay
+read-only. The Extend preview remains the default. `?page=` applies to the
+preview only: GridCraft opens the first sheet, and editor preferences do not
+persist in the sandbox.
+
+GridCraft is alpha software. Test representative real workbooks before relying
+on it; unsupported Excel features may be dropped in a saved copy, so never
+overwrite the only copy.
+
+### Upgrading GridCraft
+
+1. Change `GRIDCRAFT_VERSION` and `GRIDCRAFT_SHA256` together in
+   `apps/gridcraft/Dockerfile`. Never serve a newer build under an old
+   checksum.
+2. Rebuild and start: `docker compose up -d --build --wait`.
+3. Smoke-test a workbook with formulas, fills, number formats, merged cells, a
+   filter and a chart. Confirm the preview and GridCraft both render it, edit a
+   cell, save with Ctrl+S, and confirm version 1 remains.
+4. Check the real build's headers and MIME type:
+
+```sh
+curl -sI https://your-host/gridcraft/<asset>.js | grep -iE 'access-control|cross-origin|content-type'
+curl -sI https://your-host/gridcraft/<asset>_bg.wasm | grep -iE 'access-control|cross-origin|content-type'
+# Access-Control-Allow-Origin: *
+# Cross-Origin-Resource-Policy: cross-origin
+# Content-Type: application/wasm
+```
+
+Also confirm the iframe's `sandbox` is exactly `allow-scripts` and that
+`document.querySelector('iframe').contentWindow.localStorage` throws.
+
 ## Coolify (Docker Compose)
 
 The root `docker-compose.yml` is the deployment; no Coolify-specific compose
@@ -103,7 +160,8 @@ override is needed.
    extractor settings can stay at their defaults.
 3. Add the public domain to the **web** service with internal port **80**
    (Coolify can also generate one from `SERVICE_URL_WEB_80`). Do not add domains
-   for `api`, `collab`, `postgres` or `minio`, and do not publish their ports.
+   for `api`, `collab`, `gridcraft`, `postgres` or `minio`, and do not publish
+   their ports.
 4. Deploy. The first build includes the extractor (several GB; about 2 GB RAM
    while it reads a file). `migrate` runs once; `web` starts after the api and
    collab are healthy. Open the domain.
