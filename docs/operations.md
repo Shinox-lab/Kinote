@@ -314,7 +314,7 @@ gzip `.js`, `.mjs`, `.css` and `.wasm` and serve `.wasm` as `application/wasm`; 
 of 1.66 MB. The preview is capped at the existing 25 MB `PREVIEW_LIMIT_BYTES`; a larger file is a download card and its
 bytes are never fetched. A corrupt or timed-out workbook also falls back to the download card. The DOM renderer is the
 accessibility choice: a 10k × 20 workbook is about 1.6 s and 33 MB JS heap on the benchmark machine, and a 50k × 20
-workbook about 6.5 s and 120 MB. The 25 MB cap is a memory bound as well as a network bound.
+workbook about 6.5 s and 120 MB. The 25 MB cap bounds the input; it is not a hard heap cap.
 
 The extractor shares an internal network with the worker only: no internet, no database, no object storage. The worker
 sends the bytes and gets text back. With the extractor stopped, TXT, MD and CSV still work, audio and video are stored

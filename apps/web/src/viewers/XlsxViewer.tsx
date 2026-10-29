@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { FileVersion } from '@living-wiki/contracts';
 import { XlsxViewer as ExtendXlsxViewer, useXlsxViewerController } from '@extend-ai/react-xlsx';
 import { Loading } from '../components/ui.js';
@@ -8,10 +8,25 @@ import { useResolvedTheme } from '../lib/useResolvedTheme.js';
 import { DownloadCard } from './DownloadCard.js';
 
 export default function XlsxViewer({ bytes, version, page }: { bytes: ArrayBuffer; version: FileVersion; page?: number }) {
-  return <ExtendPreview bytes={bytes} version={version} page={page} />;
+  const [timedOut, setTimedOut] = useState(false);
+  const onTimeout = useCallback(() => setTimedOut(true), []);
+  if (timedOut) {
+    return <DownloadCard version={version} reason="This workbook took too long to preview." />;
+  }
+  return <ExtendPreview bytes={bytes} version={version} page={page} onTimeout={onTimeout} />;
 }
 
-function ExtendPreview({ bytes, version, page }: { bytes: ArrayBuffer; version: FileVersion; page?: number }) {
+function ExtendPreview({
+  bytes,
+  version,
+  page,
+  onTimeout,
+}: {
+  bytes: ArrayBuffer;
+  version: FileVersion;
+  page?: number;
+  onTimeout: () => void;
+}) {
   const theme = useResolvedTheme();
   const controller = useXlsxViewerController({
     file: bytes,
@@ -20,13 +35,14 @@ function ExtendPreview({ bytes, version, page }: { bytes: ArrayBuffer; version: 
     useWorker: true,
     maxFileSizeBytes: PREVIEW_LIMIT_BYTES,
   });
-  const [timedOut, setTimedOut] = useState(false);
 
+  // Unmounting the child on timeout disposes the worker and aborts the parse; only the timer
+  // belongs here.
   useEffect(() => {
     if (!controller.isLoading) return;
-    const timer = window.setTimeout(() => setTimedOut(true), VIEWER_TIMEOUT_MS);
+    const timer = window.setTimeout(onTimeout, VIEWER_TIMEOUT_MS);
     return () => window.clearTimeout(timer);
-  }, [controller.isLoading, version.id]);
+  }, [controller.isLoading, onTimeout, version.id]);
 
   // The controller has no initial-sheet prop. Set it after the workbook's sheets arrive;
   // everything else (default first sheet, clamping) is the existing initialSheet rule.
@@ -34,10 +50,6 @@ function ExtendPreview({ bytes, version, page }: { bytes: ArrayBuffer; version: 
     if (controller.isLoading || controller.sheets.length === 0) return;
     controller.setActiveSheetIndex(initialSheet(controller.sheets.length, page));
   }, [controller.isLoading, controller.sheets.length, controller.setActiveSheetIndex, page, version.id]);
-
-  if (timedOut) {
-    return <DownloadCard version={version} reason="This workbook took too long to preview." />;
-  }
 
   return (
     <ExtendXlsxViewer

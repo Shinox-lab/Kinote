@@ -36,21 +36,24 @@ keyboard selection. It is MIT-licensed and runs as a normal React component, not
 ## Measurements
 
 A throwaway Vite/React/Chromium benchmark used real workbooks, production builds and a local
-preview server. The numbers below are for this Apple-silicon machine; network delay is separate.
+preview server. The viewer-chunk and entry rows below are from the `apps/web` implementation build;
+the other assets match the benchmark within about 1%. The numbers are for this Apple-silicon
+machine; network delay is separate.
 
 ### What the browser downloads on the first XLSX open
 
 | Asset | Raw | Gzip |
 | --- | ---: | ---: |
-| Viewer chunk (`index-*.js`) | 545,226 | 154,600 |
+| Viewer chunk (`XlsxViewer-*.js`) | 519,494 | 148,222 |
 | Carlito font fallback chunk | 621,419 | 466,914 |
 | `duke_sheets_wasm_bg.wasm` | 4,412,299 | 1,663,034 |
 | Worker (`xlsx-worker-*.js`) | 113,734 | 34,597 |
 | WASM-bindgen JS | 29,687 | 6,647 |
-| **Total** | **5,722,365** | **2,325,792** |
+| **Total** | **5,696,633** | **2,319,414** |
 
-The console's existing entry chunk (React and the app shell, about 70 kB gzip) is already loaded.
-On a 10 Mbps link the XLSX-specific 2.33 MB adds roughly 1.9 s before parsing.
+The console's existing entry chunk (React and the app shell) is 595,980 raw / 176,414 gzip in this
+build and is already loaded. On a 10 Mbps link the XLSX-specific 2.32 MB adds roughly 1.9 s before
+parsing.
 
 Optional chart code loads only when the workbook has one:
 
@@ -82,8 +85,9 @@ JS heap after load:
 | 10,000 × 20 | ~25 MB | ~33 MB |
 | 50,000 × 20 | ~86 MB | ~120 MB |
 
-Roughly 20–25× the compressed workbook size. The 25 MB preview cap is therefore also a memory
-bound, not only a network bound.
+Roughly 20–25× the compressed workbook size. The 25 MB preview cap bounds the input, not a hard
+heap: the viewer's preflight allows up to 256 MB of worksheet XML, so a crafted workbook can still
+use more memory.
 
 A 26 MB workbook is rejected by the viewer with
 `File size 26 MB exceeds the configured limit of 25 MB`. In the wiki, `FileViewer` already turns any
@@ -95,7 +99,7 @@ second line of defence.
 - No licence fee (MIT). The package is 20.5 MB unpacked plus 4.5 MB for `@dukelib/sheets-wasm`.
 - First XLSX open is ~2.3 MB gzip / ~5.7 MB raw, then cached.
 - A 200k-cell workbook is ~1.2–1.6 s and ~25–33 MB; a 1M-cell workbook is ~6.1–6.5 s and ~86–120 MB
-  on this machine. The 25 MB cap keeps the worst case bounded.
+  on this machine. The 25 MB cap bounds ordinary files, not the worst-case heap.
 - Charts add ~46 kB gzip; map charts add ~498 kB gzip.
 - The old `read-excel-file` chunk goes away, but it was far smaller; this is a real increase in preview
   cost for a real increase in fidelity.
@@ -141,7 +145,8 @@ second line of defence.
 - **The e2e fixture needs one change.** Extend rejects the hand-built workbook when the extra
   `fake-extract.txt` zip entry is present. The fake extractor only needs the marker to appear in the
   raw bytes, so append the `FAKE-EXTRACT` text after the ZIP end instead of storing it as a member.
-  The ZIP remains valid; Extend opens it; the fake extractor still finds the marker.
+  Extend 0.18.1 opens it and the fake extractor still finds the marker. Strict ZIP readers may reject
+  trailing bytes, so keep this workaround test-only.
 
 ## Architecture
 
