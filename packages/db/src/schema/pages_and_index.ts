@@ -151,6 +151,8 @@ export const versions = pgTable(
     blocks: jsonb('blocks'),
     /** A page version's field values (`{ [fieldId]: value }`, raw), or null when it had none. */
     fields: jsonb('fields'),
+    /** A page version's drawing scenes (`{ [drawingId]: Element[] }`, live elements of drawings its blocks show), or null when it had none. */
+    drawings: jsonb('drawings'),
     ydocSnapshot: bytea('ydoc_snapshot'),
     // File versions only (page versions leave these null).
     objectKey: text('object_key'),

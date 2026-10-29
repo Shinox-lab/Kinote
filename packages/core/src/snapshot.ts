@@ -19,6 +19,7 @@ import {
 } from '@kinote/db';
 import { AppError, FIELDS_MAP, canonicalFieldJson, storableFields, validFields } from '@kinote/contracts';
 import { rowCollectionOf } from './collections/fields.js';
+import { versionDrawings, withDrawingText } from './drawings.js';
 import { notify, recordPageMentions, usersWithSpaceRole } from './talk/notify.js';
 import { flattenBlocks, pageLinksOf, type BlockLike } from '@kinote/shared';
 
@@ -134,8 +135,10 @@ export async function takePageSnapshot(
     const ydoc = new Y.Doc();
     Y.applyUpdate(ydoc, pageRow.ydocState);
 
-    const blocks = editor.yDocToBlocks(ydoc, 'document-store');
-    const markdown = (await editor.blocksToMarkdownLossy(blocks)).trim();
+    // Drawing blocks carry their drawing's words in memory (D7), so Markdown and the index see them.
+    const blocks = withDrawingText(editor.yDocToBlocks(ydoc, 'document-store') as BlockLike[], ydoc);
+    const markdown = (await editor.blocksToMarkdownLossy(blocks as any)).trim();
+    const drawings = versionDrawings(blocks, ydoc);
     // Collection field values (raw: readers check them against the fields).
     // Values Postgres can't store (a NUL) are left out, so they never fail the snapshot.
     const fieldsMap = storableFields(ydoc.getMap(FIELDS_MAP).toJSON() as Record<string, unknown>);
@@ -158,8 +161,9 @@ export async function takePageSnapshot(
     const title = ydoc.getMap('meta').get('title')?.toString() || docRow.title;
     // Rule 11: The title is part of the indexed text, so a rename is a content change
     const indexedPayload = `# ${title}\n\n${markdown}`;
-    // Pages without fields hash exactly as before fields existed (no new versions on upgrade).
-    const hashed = fields ? `${indexedPayload}\n\n${canonicalFieldJson(fields)}` : indexedPayload;
+    // Pages without fields or drawings hash exactly as before they existed (no new versions on upgrade).
+    let hashed = fields ? `${indexedPayload}\n\n${canonicalFieldJson(fields)}` : indexedPayload;
+    if (drawings) hashed = `${hashed}\n\n${canonicalFieldJson(drawings)}`;
     const contentHash = createHash('sha256').update(hashed, 'utf8').digest('hex');
 
     // Same content as the latest version: nothing to snapshot. Except that a
@@ -212,6 +216,7 @@ export async function takePageSnapshot(
         markdown,
         blocks,
         fields,
+        drawings,
         ydocSnapshot: pageRow.ydocState,
       })
       .returning();

@@ -239,6 +239,13 @@
       "when": 1793223556701,
       "tag": "0033_c1a_collections_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1793299429072,
+      "tag": "0034_c2_drawings",
+      "breakpoints": true
     }
   ]
 }

@@ -3,7 +3,10 @@ import { randomUUID } from 'node:crypto';
 import { and, asc, eq } from 'drizzle-orm';
 import { withTenantTx, versions, pages, spaces, documents } from '@kinote/db';
 import { AppError, VersionSummarySchema } from '@kinote/contracts';
-import { signCollabToken, getCollabTokenSecret, documentName } from '@kinote/shared';
+import { signCollabToken, getCollabTokenSecret, documentName, createServerEditor } from '@kinote/shared';
+import * as Y from 'yjs';
+import { DRAWINGS_MAP, type DrawingElement } from '@kinote/contracts';
+import { storedDoc } from '../../collab/test/support/collabWorld.js';
 import { collabSettle, type CollabServer } from '../../collab/src/server.js';
 import { connectClient, startCollabServer, type ConnectedClient } from '../../collab/test/support/wsClient.js';
 import { fragmentText } from '../../collab/test/support/blocks.js';
@@ -203,6 +206,35 @@ describe('restore a version', () => {
         .where(and(eq(documents.tenantId, w.tenant.id), eq(documents.id, w.page.id)))
     );
     expect(doc!.title).toBe('Original');
+  });
+
+  test('restoring a version brings its drawing back', async () => {
+    const w = await setup();
+    const el = (id: string, over: Partial<DrawingElement> = {}): DrawingElement => ({ id, index: `a${id}`, version: 1, versionNonce: 1, type: 'rectangle', x: 0, ...over });
+    const live = async (elements: DrawingElement[]) => {
+      const doc = createServerEditor().blocksToYDoc([{ id: 'd1', type: 'drawing', props: { drawingId: 'g1', title: 'Flow' }, children: [] }] as any, 'document-store');
+      doc.getMap('meta').set('title', 'Original');
+      const scene = new Y.Map<unknown>();
+      doc.getMap<Y.Map<unknown>>(DRAWINGS_MAP).set('g1', scene);
+      for (const e of elements) scene.set(e.id, e);
+      await withTenantTx(w.tenant.id, (tx) =>
+        tx.update(pages).set({ ydocState: Buffer.from(Y.encodeStateAsUpdate(doc)) }).where(and(eq(pages.tenantId, w.tenant.id), eq(pages.documentId, w.page.id)))
+      );
+    };
+    await live([el('A', { x: 10 })]);
+    await snapshot(w);
+    await live([el('A', { x: 99, version: 2 }), el('B')]);
+    await snapshot(w);
+    const res = await restore(w, w.headers, 1);
+    expect(res.statusCode, res.body).toBe(201);
+    const scene = (await storedDoc(w.tenant.id, w.page.id)).getMap<Y.Map<unknown>>(DRAWINGS_MAP).get('g1')!;
+    expect(scene.get('A')).toMatchObject({ x: 10, isDeleted: false });
+    expect(scene.get('B')).toMatchObject({ isDeleted: true });
+    // The live block never keeps the snapshot's in-memory text.
+    const block = createServerEditor().yDocToBlocks(await storedDoc(w.tenant.id, w.page.id), 'document-store')[0] as any;
+    expect(block.props.text).toBe('');
+    const rows = await versionRows(w);
+    expect(rows.at(-1)!.markdown).toContain('Drawing: Flow');
   });
 
   test('in a review space the restored version waits as pending_review', async () => {

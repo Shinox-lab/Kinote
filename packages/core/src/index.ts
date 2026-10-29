@@ -158,6 +158,7 @@ export {
 } from './talk/notify.js';
 export { resolveFieldValue, type ResolvedFieldValue } from './collections/resolve.js';
 export { describeFieldChange, fieldIdOf } from './collections/describe.js';
+export { versionDrawings, withDrawingText, withoutDrawingText } from './drawings.js';
 export { ASK_TABLES, collectionTables, type CollectionTable, type CollectionTableRow } from './search/collectionTable.js';
 export { collectionFieldDefs, fieldDefOf, fieldNames, isCollection, pageFieldEntries, rowCollectionOf } from './collections/fields.js';
 export { relocateFile, returnToReview, type RelocateTarget } from './files/relocate.js';

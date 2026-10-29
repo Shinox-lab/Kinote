@@ -39,6 +39,8 @@ import {
   type VersionListItem,
   type VersionDetail,
   type BlockDiffEntry,
+  isDrawingElement,
+  type DrawingElement,
 } from '@kinote/contracts';
 import {
   requireSpaceRole,
@@ -54,6 +56,7 @@ import {
   isCollection,
   enqueueReindex,
   pageFieldEntries,
+  withoutDrawingText,
 } from '@kinote/core';
 import {
   signCollabToken,
@@ -641,7 +644,7 @@ export async function restorePageVersion(
     }
 
     const [wanted] = await tx
-      .select({ title: versions.title, blocks: versions.blocks, fields: versions.fields })
+      .select({ title: versions.title, blocks: versions.blocks, fields: versions.fields, drawings: versions.drawings })
       .from(versions)
       .where(
         and(
@@ -654,7 +657,7 @@ export async function restorePageVersion(
       throw new AppError('version_not_found');
     }
     const [latest] = await tx
-      .select({ title: versions.title, blocks: versions.blocks, fields: versions.fields, status: versions.status })
+      .select({ title: versions.title, blocks: versions.blocks, fields: versions.fields, drawings: versions.drawings, status: versions.status })
       .from(versions)
       .where(and(eq(versions.tenantId, actor.tenantId), eq(versions.documentId, pageId)))
       .orderBy(desc(versions.number))
@@ -666,7 +669,8 @@ export async function restorePageVersion(
       latest.status !== 'withdrawn' &&
       latest.title === wanted.title &&
       isDeepStrictEqual(storedBlocks(latest.blocks), storedBlocks(wanted.blocks)) &&
-      isDeepStrictEqual(latest.fields ?? null, wanted.fields ?? null)
+      isDeepStrictEqual(latest.fields ?? null, wanted.fields ?? null) &&
+      isDeepStrictEqual(latest.drawings ?? null, wanted.drawings ?? null)
     ) {
       throw new AppError('no_changes', 'The latest version already has this content.');
     }
@@ -676,7 +680,15 @@ export async function restorePageVersion(
         ([key]) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(key)
       )
     );
-    return { title: wanted.title, blocks: storedBlocks(wanted.blocks), fields };
+    // The version's drawing scenes come back too; drawings it didn't have are left alone (their blocks go).
+    const drawings: Record<string, DrawingElement[]> = {};
+    if (wanted.drawings && typeof wanted.drawings === 'object') {
+      for (const [drawingId, list] of Object.entries(wanted.drawings as Record<string, unknown>)) {
+        if (Array.isArray(list)) drawings[drawingId] = list.filter(isDrawingElement);
+      }
+    }
+    // The snapshot's in-memory drawing text never goes into the live document.
+    return { title: wanted.title, blocks: withoutDrawingText(storedBlocks(wanted.blocks)), fields, drawings };
   });
 
   // Restoring needs the live document, which only collab can change.
@@ -690,6 +702,7 @@ export async function restorePageVersion(
     title: target.title,
     // The version's field values come back too (values of removed fields stay ignored).
     fields: target.fields,
+    drawings: target.drawings,
     actor: { type: actor.principalType, id: actor.principalId },
     source: 'restore',
   });
