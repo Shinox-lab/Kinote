@@ -8,11 +8,12 @@ import { Confirm, MoveForm, PANEL } from './lifecycle.js';
 import { TitleInput } from './sidebar/TitleInput.js';
 import { Button, ErrorNote } from './ui.js';
 
-type Action = 'rename' | 'move' | 'withdraw' | 'archive';
+type Action = 'rename' | 'move' | 'collection' | 'uncollection' | 'withdraw' | 'archive';
 
 /**
- * The page's lifecycle actions: move, withdraw, archive (and restoring an archived
- * page), as `controls` allows for the actor's role. `onChanged` runs after each one
+ * The page's lifecycle actions: move, turning it into a collection (or back),
+ * withdraw, archive (and restoring an archived page), as `controls` allows for
+ * the actor's role. `onChanged` runs after each one
  * succeeds, so the page and its badge are fetched again.
  */
 export function LifecycleMenu({
@@ -38,9 +39,20 @@ export function LifecycleMenu({
       onChanged();
     },
   });
+  const collect = useMutation({
+    mutationFn: () => api.createCollection(page.id),
+    onSuccess: () => {
+      setAction(null);
+      onChanged();
+    },
+  });
+  // Pages in the Inbox are one person's: they can't be collections.
+  const inInbox = spaces.find((s) => s.id === page.spaceId)?.kind === 'inbox';
   const items: { key: Action; label: string; show: boolean }[] = [
     { key: 'rename', label: 'Rename…', show: controls.move },
     { key: 'move', label: 'Move…', show: controls.move },
+    { key: 'collection', label: 'Turn into collection', show: controls.move && !page.collection && !inInbox },
+    { key: 'uncollection', label: 'Turn back into a page…', show: controls.move && page.collection !== null },
     { key: 'withdraw', label: 'Withdraw from index…', show: controls.withdraw },
     { key: 'archive', label: 'Archive…', show: controls.archive },
   ];
@@ -94,8 +106,9 @@ export function LifecycleMenu({
                     type="button"
                     className="w-full rounded px-3 py-2 text-left text-sm text-fg hover:bg-hover max-md:min-h-11"
                     onClick={() => {
-                      setAction(item.key);
                       setOpen(false);
+                      if (item.key === 'collection') collect.mutate();
+                      else setAction(item.key);
                     }}
                   >
                     {item.label}
@@ -121,6 +134,21 @@ export function LifecycleMenu({
             noun="page"
             run={(body) => api.movePage(page.id, body)}
             onDone={done}
+            onCancel={() => setAction(null)}
+          />
+        </div>
+      )}
+      {collect.error && (
+        <div className={PANEL}>
+          <ErrorNote error={collect.error} />
+        </div>
+      )}
+      {action === 'uncollection' && (
+        <div className={PANEL}>
+          <Confirm
+            text="Its sub-pages lose these fields. Their values are kept but no longer shown, searched or used."
+            label="Turn back into a page"
+            run={run(() => api.removeCollection(page.id))}
             onCancel={() => setAction(null)}
           />
         </div>

@@ -18,7 +18,7 @@ export function useWorkspace() {
   return useRouteContext({ from: '/w/$tenantSlug' });
 }
 
-function useTenantKey(...parts: unknown[]) {
+export function useTenantKey(...parts: unknown[]) {
   const { tenant } = useWorkspace();
   return ['t', tenant.id, ...parts] as const;
 }

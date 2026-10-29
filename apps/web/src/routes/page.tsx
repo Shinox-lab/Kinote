@@ -26,6 +26,8 @@ import { PageStatus } from '../components/PageStatus.js';
 import { PagePresence } from '../components/PagePresence.js';
 import { PageConnections } from '../components/PageConnections.js';
 import { CommentsPanel } from '../components/CommentsPanel.js';
+import { FieldSetup } from '../components/fields/FieldSetup.js';
+import { FieldsPanel } from '../components/fields/FieldsPanel.js';
 import { usePageThreadStore, useThreads } from '../lib/useThreadStore.js';
 import { blockSourcesOf } from '../lib/links.js';
 import { ErrorNote, Loading } from '../components/ui.js';
@@ -211,6 +213,16 @@ export function PagePage() {
             </div>
           }
         />
+        {page.rowOf && (
+          <FieldsPanel
+            pageId={pageId}
+            ydoc={livePage.live?.ydoc ?? null}
+            collection={page.rowOf}
+            canEdit={livePage.access === 'write' && !archived}
+            canEditFields={controls.move && !archived}
+          />
+        )}
+        {page.collection && <FieldSetup collection={page.collection} canEdit={controls.move && !archived} onChanged={changed} />}
         {captureId && <CaptureBanner pageId={pageId} captureId={captureId} changes={captureChanges ?? []} />}
         {showSuggestions && openSuggestions.length > 0 && <SuggestionsPanel pageId={pageId} suggestions={openSuggestions} />}
         {showComments && (

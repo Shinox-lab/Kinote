@@ -31,6 +31,10 @@ import {
   MemberListSchema,
   MemberSchema,
   PageDetailsSchema,
+  CollectionSchema,
+  FieldDefSchema,
+  FieldUsageSchema,
+  PageFieldsSchema,
   PageSummarySchema,
   RecentResponseSchema,
   LinkTargetListSchema,
@@ -58,6 +62,8 @@ import {
   VersionListSchema,
   VersionSummarySchema,
   type AcceptInvitationRequest,
+  type FieldOptions,
+  type FieldType,
   type AddGroupMemberRequest,
   type ApproveVersionRequest,
   type AskRequest,
@@ -267,6 +273,24 @@ export const api = {
   // Pages
   createPage: (body: CreatePageRequest) => request('/api/v1/pages', PageSummarySchema, send('POST', body)),
   getPage: (id: string) => request(`/api/v1/pages/${e(id)}`, PageDetailsSchema),
+
+  // Collections and their fields
+  createCollection: (pageId: string) => request(`/api/v1/pages/${e(pageId)}/collection`, CollectionSchema, send('POST')),
+  removeCollection: (pageId: string) => request(`/api/v1/pages/${e(pageId)}/collection`, NO_CONTENT, del),
+  getCollection: (id: string) => request(`/api/v1/collections/${e(id)}`, CollectionSchema),
+  addField: (collectionId: string, body: { name: string; type: FieldType; options?: FieldOptions }) =>
+    request(`/api/v1/collections/${e(collectionId)}/fields`, FieldDefSchema, send('POST', body)),
+  updateField: (collectionId: string, fieldId: string, body: { name?: string; options?: FieldOptions; after?: string | null }) =>
+    request(`/api/v1/collections/${e(collectionId)}/fields/${e(fieldId)}`, FieldDefSchema, send('PATCH', body)),
+  removeField: (collectionId: string, fieldId: string) =>
+    request(`/api/v1/collections/${e(collectionId)}/fields/${e(fieldId)}`, NO_CONTENT, del),
+  fieldUsage: (collectionId: string, fieldId: string, choice?: string) =>
+    request(
+      `/api/v1/collections/${e(collectionId)}/fields/${e(fieldId)}/usage${choice ? `?choice=${e(choice)}` : ''}`,
+      FieldUsageSchema
+    ),
+  setPageFields: (pageId: string, values: Record<string, unknown>) =>
+    request(`/api/v1/pages/${e(pageId)}/fields`, PageFieldsSchema, send('PATCH', values)),
   movePage: (id: string, body: MovePageRequest) =>
     request(`/api/v1/pages/${e(id)}/move`, DocumentSummarySchema, send('POST', body)),
   updatePage: (id: string, body: UpdatePageRequest) =>
