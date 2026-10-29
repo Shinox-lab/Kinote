@@ -191,7 +191,7 @@ import { parseReply } from './reply.js';
 
 import { answerPassages } from './search/ask.js';
 import type { CollabClient } from '@kinote/shared';
-import { searchWiki } from '@kinote/core';
+import { collectionTables, searchWiki } from '@kinote/core';
 import { fastifyLogger, type ApiLoggerOptions } from './logger.js';
 
 export interface ApiServerOptions {
@@ -947,12 +947,12 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
       throw new AppError('search_unavailable');
     }
 
-    const passages = await withTenantTx(actor.tenantId, async (tx) => {
+    const { passages, tables } = await withTenantTx(actor.tenantId, async (tx) => {
       const { readableSpaceIds, inboxSpaceId } = await getReadableSpaceIds(tx, actor);
       const effectiveSpaces = parsed.space_ids
         ? readableSpaceIds.filter((id) => parsed.space_ids!.includes(id))
         : readableSpaceIds;
-      return searchWiki(
+      const passages = await searchWiki(
         tx,
         actor,
         effectiveSpaces,
@@ -961,8 +961,10 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
         queryEmbedding,
         5
       );
+      // Questions across a collection ("which clients launch in December?") read its rows as a table.
+      return { passages, tables: passages.length > 0 ? await collectionTables(tx, actor, effectiveSpaces, passages) : [] };
     });
-    const res = await answerPassages(parsed.question, passages, answerProvider);
+    const res = await answerPassages(parsed.question, passages, answerProvider, tables);
     return reply.send(parseReply(AskResponseSchema, res));
   });
 

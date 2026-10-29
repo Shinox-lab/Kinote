@@ -78,6 +78,31 @@ describe('OpenAIAnswerProvider', () => {
     expect(body.messages[1].content).toContain('Handbook (v2, updated 2026-10-25)');
   });
 
+  it('sends collection tables after the passages, one row per line with its own citation', async () => {
+    const fetchImpl = vi.fn(async () => response({ choices: [{ message: { content: 'George [George (v1, updated 2026-10-30)]' } }] }));
+    await provider(fetchImpl).answer({
+      question: 'Which clients launch in December?',
+      passages: [passage()],
+      tables: [
+        {
+          collectionId: 'c1',
+          title: 'Clients',
+          fields: ['Status', 'Launch date'],
+          truncated: true,
+          rows: [
+            {
+              title: 'George', values: { 'Launch date': '2026-12-01 (1 December 2026)' }, citeAs: 'George (v1, updated 2026-10-30)',
+              documentId: 'd', versionId: 'v', versionNumber: 1, chunkId: 'k', spaceId: 's',
+            },
+          ],
+        },
+      ],
+    });
+    const [, init] = vi.mocked(fetchImpl).mock.calls[0]!;
+    const user = JSON.parse(String((init as RequestInit).body)).messages[1].content as string;
+    expect(user).toContain('Tables:\n\nTable: Clients (each row cites itself)\nTitle | Status | Launch date | Cite as\nGeorge |  | 2026-12-01 (1 December 2026) | George (v1, updated 2026-10-30)\n(more rows not shown)');
+  });
+
   it('maps the exact no-answer sentence to foundRelevant false', async () => {
     const fetchImpl = vi.fn(async () =>
       response({ choices: [{ message: { content: NO_RELEVANT_ANSWER } }] })

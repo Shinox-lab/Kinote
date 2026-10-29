@@ -124,6 +124,11 @@ export function searchSql(
   `;
 }
 
+/** How a passage (or a collection row) is cited: `{title} (v{n}, updated {YYYY-MM-DD})`. */
+export function citeAs(title: string, number: number, updatedDate: string): string {
+  return `${title} (v${number}, updated ${updatedDate})`;
+}
+
 export async function searchWiki(
   tx: DbTransaction,
   actor: Actor,
@@ -157,7 +162,7 @@ export async function searchWiki(
     documentKind: r.document_kind,
     pageFrom: r.page_from === null ? null : Number(r.page_from),
     pageTo: r.page_to === null ? null : Number(r.page_to),
-    citeAs: `${r.version_title} (v${r.version_number}, updated ${r.updated_date})`,
+    citeAs: citeAs(r.version_title, r.version_number, r.updated_date),
     rrfScore: Number(r.rrf_score),
   }));
 }
