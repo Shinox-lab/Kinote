@@ -177,7 +177,11 @@ export function FilePage() {
     // A different file starts with its own title, not the one being edited.
   }, [fileId]);
 
-  const { status, proceed, reset } = useBlocker({ shouldBlockFn: () => editorDirty, withResolver: true });
+  const { status, proceed, reset } = useBlocker({
+    shouldBlockFn: () => editorDirty,
+    enableBeforeUnload: () => editorDirty,
+    withResolver: true,
+  });
   useEffect(() => {
     if (status !== 'blocked') {
       leavePrompted.current = false;
