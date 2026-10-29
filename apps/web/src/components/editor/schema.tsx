@@ -86,6 +86,8 @@ const collectionView = createReactBlockSpec(collectionViewConfig, {
 
 /** An Excalidraw drawing (`drawingConfig`): the scene lives beside the blocks in the page document. */
 const drawing = createReactBlockSpec(drawingConfig, {
+  // Not selectable: ProseMirror leaves the canvas's pointer and key events to Excalidraw.
+  meta: { selectable: false },
   render: ({ block, editor }) => (
     <DrawingBlock
       drawingId={block.props.drawingId}
