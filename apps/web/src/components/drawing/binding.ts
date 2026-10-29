@@ -124,6 +124,7 @@ export function bindDrawing(opts: {
     if (!scene) return;
     const changed: DrawingElement[] = [];
     for (const event of events) {
+      if (!(event instanceof Y.YMapEvent)) continue;
       if (event.target === scene) {
         for (const key of event.keysChanged) {
           const value = scene.get(key);
