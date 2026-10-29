@@ -295,6 +295,10 @@ export const MAX_VIEW_ROWS = 1000;
 
 export const CollectionRowsSchema = z.object({
   collection: CollectionSchema,
+  /** The collection's space: "+ New" makes rows there. */
+  spaceId: z.string().uuid(),
+  /** Whether the viewer may change rows (an editor of the collection's live page). */
+  canEdit: z.boolean(),
   rows: z.array(CollectionRowSchema),
   /** More rows than `MAX_VIEW_ROWS` matched; only the first ones are here. */
   truncated: z.boolean(),

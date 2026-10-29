@@ -32,6 +32,8 @@ import {
   MemberSchema,
   PageDetailsSchema,
   CollectionSchema,
+  CollectionRowsSchema,
+  CollectionPickListSchema,
   FieldDefSchema,
   FieldUsageSchema,
   PageFieldsSchema,
@@ -63,6 +65,8 @@ import {
   VersionSummarySchema,
   type AcceptInvitationRequest,
   type Choice,
+  type ViewFilter,
+  type ViewSort,
   type FieldOptions,
   type FieldType,
   type AddGroupMemberRequest,
@@ -300,6 +304,9 @@ export const api = {
       `/api/v1/collections/${e(collectionId)}/fields/${e(fieldId)}/usage${choice ? `?choice=${e(choice)}` : ''}`,
       FieldUsageSchema
     ),
+  collectionRows: (collectionId: string, body: { filters: ViewFilter[]; sorts: ViewSort[] }) =>
+    request(`/api/v1/collections/${e(collectionId)}/rows`, CollectionRowsSchema, send('POST', body)),
+  listCollections: (q: string) => request(`/api/v1/collections?q=${e(q)}`, CollectionPickListSchema),
   setPageFields: (pageId: string, values: Record<string, unknown>) =>
     request(`/api/v1/pages/${e(pageId)}/fields`, PageFieldsSchema, send('PATCH', values)),
   movePage: (id: string, body: MovePageRequest) =>

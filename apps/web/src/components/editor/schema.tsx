@@ -1,8 +1,9 @@
 import { BlockNoteSchema, defaultBlockSpecs, defaultInlineContentSpecs } from '@blocknote/core';
 import { createReactBlockSpec, createReactInlineContentSpec } from '@blocknote/react';
-import { calloutConfig, fileEmbedConfig, mentionConfig, mentionPath, pageLinkConfig, pageLinkPath } from '@living-wiki/contracts';
+import { calloutConfig, collectionViewConfig, fileEmbedConfig, mentionConfig, mentionPath, pageLinkConfig, pageLinkPath } from '@living-wiki/contracts';
 import { FileEmbedView } from './FileEmbedView.js';
 import { PageLinkView } from './PageLinkView.js';
+import { CollectionViewBlock } from '../views/CollectionViewBlock.js';
 
 /** The web side of a page link (`pageLinkConfig`); the server editors share its type and props. */
 const pageLink = createReactInlineContentSpec(pageLinkConfig, {
@@ -60,9 +61,27 @@ const callout = createReactBlockSpec(calloutConfig, {
   },
 })();
 
-/** The wiki's block schema: BlockNote's defaults plus page links, mentions, embedded files and callouts (the same as the server's). */
+/** A collection view: tabs of table, board, calendar and timeline views of a collection (`collectionViewConfig`). */
+const collectionView = createReactBlockSpec(collectionViewConfig, {
+  render: ({ block, editor }) => (
+    <CollectionViewBlock
+      collectionId={block.props.collectionId}
+      title={block.props.title}
+      views={block.props.views}
+      editable={editor.isEditable}
+      update={(props) => editor.updateBlock(block, { props })}
+    />
+  ),
+  toExternalHTML: ({ block }) => (
+    <p>
+      Collection view: <a href={pageLinkPath(block.props.collectionId)}>{block.props.title || 'Untitled'}</a>
+    </p>
+  ),
+})();
+
+/** The wiki's block schema: BlockNote's defaults plus page links, mentions, embedded files, callouts and collection views (the same as the server's). */
 export const wikiSchema = BlockNoteSchema.create({
-  blockSpecs: { ...defaultBlockSpecs, fileEmbed, callout },
+  blockSpecs: { ...defaultBlockSpecs, fileEmbed, callout, collectionView },
   inlineContentSpecs: { ...defaultInlineContentSpecs, pageLink, mention },
 });
 

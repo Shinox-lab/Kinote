@@ -73,7 +73,7 @@ describe('collection rows for views', () => {
     const w = await world();
     const all = await rows(w.headers, w.clients, { sorts: [{ fieldId: 'title', dir: 'asc' }] });
     expect(all.statusCode, all.body).toBe(200);
-    expect(all.json()).toMatchObject({ collection: { id: w.clients, title: 'Clients' }, truncated: false });
+    expect(all.json()).toMatchObject({ collection: { id: w.clients, title: 'Clients' }, spaceId: w.space, canEdit: true, truncated: false });
     expect(all.json().rows.map((r: { title: string }) => r.title)).toEqual(['Acme', 'George', 'Tavros']);
     expect(all.json().rows[1].values).toEqual({ [w.status.id]: 'active', [w.owners.id]: [w.owner.userId], [w.count.id]: 3 });
 
@@ -124,6 +124,15 @@ describe('collection rows for views', () => {
     expect(res.json().error).toBe('collection_not_found');
     expect(res.body).not.toContain('Clients');
     expect((await req('GET', outsider.headers, '/api/v1/collections?q=')).json()).toEqual([]);
+  });
+
+  test('a viewer reads rows but can’t edit them', async () => {
+    const w = await world();
+    const viewer = await signUpMember(app, w.tenant.id, 'member');
+    await req('POST', w.headers, `/api/v1/spaces/${w.space}/grants`, { principal_type: 'user', principal_id: viewer.userId, role: 'viewer' });
+    const res = await rows(viewer.headers, w.clients);
+    expect(res.json()).toMatchObject({ canEdit: false });
+    expect(res.json().rows).toHaveLength(3);
   });
 
   test('a page that is not a collection is collection_not_found', async () => {

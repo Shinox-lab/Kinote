@@ -1,10 +1,11 @@
 import { useCallback, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import type * as Y from 'yjs';
-import { FIELDS_MAP, validFields, type Choice, type Collection, type FieldNames } from '@living-wiki/contracts';
+import { FIELDS_MAP, validFields, type Choice, type Collection } from '@living-wiki/contracts';
 import { api } from '../../lib/api.js';
 import { emptyFieldCount, nextChoiceColor } from '../../lib/fields.js';
 import { useTenantKey } from '../../lib/queries.js';
+import { useFieldNames } from '../../lib/fieldNames.js';
 import { FieldEditor, FieldValue } from './FieldEditor.js';
 
 /** The page document's `fields` map as plain values, re-read whenever anyone changes it. */
@@ -34,32 +35,6 @@ function useFieldsMap(ydoc: Y.Doc | null): Record<string, unknown> {
   return useSyncExternalStore(subscribe, snapshot, snapshot);
 }
 
-/** Names for the person and page values on the page: people from the page's mention list, pages by title. */
-function useFieldNames(pageId: string, collection: Collection, values: Record<string, unknown>): FieldNames {
-  const ids = (type: 'person' | 'page') =>
-    [...new Set(collection.fields.filter((f) => f.type === type).flatMap((f) => (values[f.id] as string[] | undefined) ?? []))].sort();
-  const pageIds = ids('page');
-  const hasPeople = collection.fields.some((f) => f.type === 'person');
-  const { data: people } = useQuery({
-    queryKey: useTenantKey('mentionable', pageId),
-    queryFn: () => api.mentionable(pageId, ''),
-    enabled: hasPeople,
-    staleTime: 60_000,
-  });
-  const { data: titles } = useQuery({
-    queryKey: useTenantKey('titles', pageIds.join(',')),
-    queryFn: () => api.documentTitles(pageIds),
-    enabled: pageIds.length > 0,
-  });
-  return useMemo(
-    () => ({
-      users: new Map((people ?? []).map((p) => [p.userId, p.name])),
-      pages: new Map((titles ?? []).map((t) => [t.id, t.title || 'Untitled'])),
-    }),
-    [people, titles]
-  );
-}
-
 /**
  * A row's fields under its title (spec C5), read from and written to the live
  * page document, so other people see changes as they happen and collab
@@ -82,7 +57,7 @@ export function FieldsPanel({
 }) {
   const raw = useFieldsMap(ydoc);
   const values = useMemo(() => validFields(collection.fields, raw), [collection.fields, raw]);
-  const names = useFieldNames(pageId, collection, values);
+  const names = useFieldNames(pageId, collection.fields, [values]);
   const [showEmpty, setShowEmpty] = useState(false);
   const qc = useQueryClient();
   const pageKey = useTenantKey('page', pageId);

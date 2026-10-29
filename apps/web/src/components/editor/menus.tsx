@@ -4,6 +4,7 @@ import {
   getDefaultReactSlashMenuItems,
   type DefaultReactSuggestionItem,
 } from '@blocknote/react';
+import { defaultView } from '@living-wiki/contracts';
 import { api } from '../../lib/api.js';
 import { linkMenuEntries } from '../../lib/links.js';
 import { createNamedPage } from '../../lib/newPage.js';
@@ -86,6 +87,26 @@ export function WikiMenus({ editor, place }: { editor: WikiEditor; place: Editor
             const [made] = editor.insertBlocks([{ type: 'callout', props: { emoji: '💡' } }], here, 'after');
             if (made) editor.setTextCursorPosition(made, 'end');
           }
+        },
+      },
+      {
+        title: 'Collection view',
+        subtext: 'A table, board, calendar or timeline of a collection',
+        aliases: ['collection', 'database', 'table', 'board', 'calendar', 'timeline', 'view'],
+        group: 'Pages',
+        onItemClick: () => {
+          const here = editor.getTextCursorPosition().block;
+          // On a collection page the view shows its own sub-pages; elsewhere the block asks which collection.
+          void api
+            .getCollection(place.pageId)
+            .then((c) => ({ collectionId: c.id, title: c.title, views: JSON.stringify([defaultView()]) }))
+            .catch(() => ({ collectionId: '', title: '', views: '' }))
+            .then((props) => {
+              const block = { type: 'collectionView' as const, props };
+              const empty = Array.isArray(here.content) && here.content.length === 0;
+              if (empty && editor.getBlock(here.id)) editor.replaceBlocks([here], [block]);
+              else editor.insertBlocks([block], here, 'after');
+            });
         },
       },
       {

@@ -18,6 +18,7 @@ import { blockSourcesExtension, setBlockSources, type BlockSource } from './edit
 import { linkTriggerExtension } from './editor/linkTrigger.js';
 import { dropTarget, filesOf, insertFiles } from './editor/filePaste.js';
 import { WikiMenus, type EditorPlace } from './editor/menus.js';
+import { EditorPlaceContext } from './editor/place.js';
 import { wikiSchema } from './editor/schema.js';
 
 export type { BlockSource, EditorPlace };
@@ -120,9 +121,11 @@ function BoundEditor({
         if (editable && e.dataTransfer.types.includes('Files')) e.preventDefault();
       }}
     >
-      <BlockNoteView editor={editor} editable={editable} theme={theme} slashMenu={false}>
-        {editable && <WikiMenus editor={editor} place={place} />}
-      </BlockNoteView>
+      <EditorPlaceContext.Provider value={place}>
+        <BlockNoteView editor={editor} editable={editable} theme={theme} slashMenu={false}>
+          {editable && <WikiMenus editor={editor} place={place} />}
+        </BlockNoteView>
+      </EditorPlaceContext.Provider>
     </div>
   );
 }

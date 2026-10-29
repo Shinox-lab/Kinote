@@ -19,6 +19,8 @@ const PAGE_ONLY = [
   // Connections and the side panel are about pages only: links in, and the routing engine's pages.
   'components/PageConnections.tsx',
   'components/PagePeek.tsx',
+  // A collection is always a page.
+  'components/views/CollectionViewBlock.tsx',
 ];
 
 function sources(dir: string): string[] {

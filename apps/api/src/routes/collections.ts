@@ -377,6 +377,14 @@ export async function collectionRows(actor: Actor, collectionId: string, input: 
   return withTenantTx(actor.tenantId, async (tx) => {
     const doc = await collectionPage(tx, actor, collectionId, 'viewer');
     const collection = await collectionOf(tx, actor.tenantId, doc);
+    let canEdit = doc.archivedAt === null;
+    if (canEdit) {
+      try {
+        await requireDocumentRole(tx, actor, doc, 'editor', { notFound: 'collection_not_found' });
+      } catch {
+        canEdit = false;
+      }
+    }
     const pageRows = await tx
       .select({ id: documents.id, title: documents.title, icon: documents.icon })
       .from(documents)
@@ -406,7 +414,7 @@ export async function collectionRows(actor: Actor, collectionId: string, input: 
       .map((p) => ({ ...p, values: validFields(collection.fields, raw.get(p.id) ?? {}) }))
       .filter((r) => rowMatches(collection.fields, r, filters, ctx))
       .sort(compareRows(collection.fields, sorts));
-    return { collection, rows: rows.slice(0, MAX_VIEW_ROWS), truncated: rows.length > MAX_VIEW_ROWS };
+    return { collection, spaceId: doc.spaceId, canEdit, rows: rows.slice(0, MAX_VIEW_ROWS), truncated: rows.length > MAX_VIEW_ROWS };
   });
 }
 
