@@ -1,4 +1,4 @@
-import type { ExtractedDocument, ExtractedSection } from '@living-wiki/contracts';
+import type { ExtractedDocument, ExtractedSection } from '@kinote/contracts';
 
 const decode = (bytes: Uint8Array): string =>
   new TextDecoder('utf-8').decode(bytes).replace(/^﻿/, '');

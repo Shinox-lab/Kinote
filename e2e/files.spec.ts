@@ -537,7 +537,7 @@ test('the add menu works from the keyboard: Enter opens it, Escape closes it and
 test('on a phone, where the sidebar is closed, uploads still show their progress and refusals', async ({ browser, request }) => {
   const world = await seedWorld(request, { reviewRequired: false });
   const context = await browser.newContext({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 800 } });
-  await context.addInitScript((s) => localStorage.setItem('living-wiki.session', JSON.stringify(s)), {
+  await context.addInitScript((s) => localStorage.setItem('kinote.session', JSON.stringify(s)), {
     token: world.owner.token,
     user: world.owner.user,
     tenantId: world.tenantId,

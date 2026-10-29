@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import type { Notification } from '@living-wiki/contracts';
+import type { Notification } from '@kinote/contracts';
 import { notificationHeadline, notificationTarget } from '../src/lib/notifications.js';
 
 const ID = '11111111-1111-4111-8111-111111111111';

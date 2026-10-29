@@ -1,5 +1,5 @@
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { createTestDb, type TestDb } from '@living-wiki/db/testing';
+import { createTestDb, type TestDb } from '@kinote/db/testing';
 import {
   planDocument,
   recordRoutingExample,

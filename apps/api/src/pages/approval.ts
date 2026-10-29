@@ -1,5 +1,5 @@
-import type { versions, versionContributors, spaces } from '@living-wiki/db';
-import type { Actor } from '@living-wiki/core';
+import type { versions, versionContributors, spaces } from '@kinote/db';
+import type { Actor } from '@kinote/core';
 
 export type VersionRow = typeof versions.$inferSelect;
 export type ContributorRow = typeof versionContributors.$inferSelect;

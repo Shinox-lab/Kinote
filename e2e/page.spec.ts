@@ -173,6 +173,15 @@ test('the status chip, its actions and the page menu; no On this page panel', as
     page.getByRole('navigation', { name: 'Workspace' }).getByRole('link', { name: /^Renamed notes/ })
   ).toBeVisible();
 
+  // The top title renames in place too, not only the page menu and the sidebar.
+  await page.getByRole('heading', { level: 1, name: 'Renamed notes' }).click();
+  await page.getByLabel('New title').fill('Renamed from the title');
+  await page.getByLabel('New title').press('Enter');
+  await expect(page.getByRole('heading', { level: 1, name: 'Renamed from the title' })).toBeVisible();
+  await expect(
+    page.getByRole('navigation', { name: 'Workspace' }).getByRole('link', { name: /^Renamed from the title/ })
+  ).toBeVisible();
+
   const ownerPage = await openAs(browser, world, world.owner);
   await ownerPage.goto(new URL(page.url()).pathname);
   await ownerPage.getByRole('button', { name: 'Page actions' }).click();

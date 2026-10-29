@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
-import type { MovePageRequest, SpaceResponse } from '@living-wiki/contracts';
+import type { MovePageRequest, SpaceResponse } from '@kinote/contracts';
 import { useSpaceTree } from '../lib/queries.js';
 import { buildTree, descendantIds, type TreeItem } from '../lib/wiki.js';
 import { Button, ErrorNote, SelectField } from './ui.js';

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { documents, lockDocument, sources, spaces, tenants, withTenantTx, type DocumentRow } from '@living-wiki/db';
-import type { ObjectStorage } from '@living-wiki/shared';
+import { documents, lockDocument, sources, spaces, tenants, withTenantTx, type DocumentRow } from '@kinote/db';
+import type { ObjectStorage } from '@kinote/shared';
 import { detectFileType, fileObjectPath, insertFileVersion } from '../../src/index.js';
 
 export interface FileSeed {

@@ -1,8 +1,8 @@
 import type { FastifyRequest } from 'fastify';
 import { and, eq, isNull, lt, or } from 'drizzle-orm';
-import { withTenantTx, memberships, sources, sourceTokens, tenants } from '@living-wiki/db';
-import { AppError } from '@living-wiki/contracts';
-import type { Actor } from '@living-wiki/core';
+import { withTenantTx, memberships, sources, sourceTokens, tenants } from '@kinote/db';
+import { AppError } from '@kinote/contracts';
+import type { Actor } from '@kinote/core';
 import { resolveSession } from './sessions.js';
 import { parseSourceToken } from './sourceTokens.js';
 

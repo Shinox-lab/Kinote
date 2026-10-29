@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from 'vitest';
-import type { CommentThread } from '@living-wiki/contracts';
+import type { CommentThread } from '@kinote/contracts';
 import { ApiThreadStore, WikiThreadAuth, type ThreadApi } from '../src/lib/threadStore.js';
 
 const PAGE = '11111111-1111-4111-8111-111111111111';

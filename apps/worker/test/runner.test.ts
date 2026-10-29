@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { and, eq } from 'drizzle-orm';
-import { AppError } from '@living-wiki/contracts';
+import { AppError } from '@kinote/contracts';
 import {
   NonRetryableError,
   claimJobs,
@@ -10,7 +10,7 @@ import {
   tenants,
   withTenantTx,
   type Job,
-} from '@living-wiki/db';
+} from '@kinote/db';
 import { runPendingJobsForTenant, runWorkerLoop } from '../src/runner.js';
 import type { JobHandler } from '../src/registry.js';
 import { useTestDb } from '../../api/test/support/testkit.js';

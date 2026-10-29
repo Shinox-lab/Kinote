@@ -1,6 +1,6 @@
 import { useEffect, useId, useReducer, useRef, useState } from 'react';
 import { Link } from '@tanstack/react-router';
-import type { PageDetails } from '@living-wiki/contracts';
+import type { PageDetails } from '@kinote/contracts';
 import { pageStatus, relativeTime, type PageStatusTone } from '../lib/pageStatus.js';
 import type { HistoryTab } from '../lib/pageUi.js';
 import type { PageControls } from '../lib/wiki.js';

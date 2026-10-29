@@ -1,4 +1,4 @@
-import type { AskCitation } from '@living-wiki/contracts';
+import type { AskCitation } from '@kinote/contracts';
 
 // Pure helpers behind the search screen: mapping an answer's citation markers to
 // the returned citations. Everything stays plain text; nothing here builds markup.

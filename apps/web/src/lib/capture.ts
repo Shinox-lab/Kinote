@@ -5,7 +5,7 @@ import type {
   ReviewItem,
   SuggestionSummary,
   UndoChangesResponse,
-} from '@living-wiki/contracts';
+} from '@kinote/contracts';
 import { cssString } from './wiki.js';
 
 // Pure helpers behind the Capture page, the capture highlight on a page and review bundles.

@@ -2,8 +2,8 @@ import { test, describe, beforeEach } from 'vitest';
 import assert from 'node:assert/strict';
 import type { FastifyRequest } from 'fastify';
 import { and, eq } from 'drizzle-orm';
-import { getDb, withTenantTx, invitations, auditEvents, users, memberships } from '@living-wiki/db';
-import { sha256Hex } from '@living-wiki/shared';
+import { getDb, withTenantTx, invitations, auditEvents, users, memberships } from '@kinote/db';
+import { sha256Hex } from '@kinote/shared';
 import { resolveActor } from '../src/auth/actor.js';
 import {
   asUser,

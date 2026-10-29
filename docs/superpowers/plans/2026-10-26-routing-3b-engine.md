@@ -79,14 +79,14 @@ console (plan 3c) will use.
 The worker runs the engine and may not import `apps/api` (`packages/core/test/layering.test.ts`).
 
 **Files:**
-- Move: `apps/api/src/search/hybridSearch.ts` → `packages/core/src/search/hybridSearch.ts`. Re-export from `packages/core/src/index.ts`; `apps/api` imports it from `@living-wiki/core`.
-- Move: `apps/api/src/collab/client.ts` → `packages/shared/src/collabClient.ts`. Export `CollabClient`, `HttpCollabClient` and `COLLAB_CALL_TIMEOUT_MS` from `@living-wiki/shared`. Update api imports and `apps/api/test/support/inProcessCollab.ts`.
+- Move: `apps/api/src/search/hybridSearch.ts` → `packages/core/src/search/hybridSearch.ts`. Re-export from `packages/core/src/index.ts`; `apps/api` imports it from `@kinote/core`.
+- Move: `apps/api/src/collab/client.ts` → `packages/shared/src/collabClient.ts`. Export `CollabClient`, `HttpCollabClient` and `COLLAB_CALL_TIMEOUT_MS` from `@kinote/shared`. Update api imports and `apps/api/test/support/inProcessCollab.ts`.
 - Test: the existing suites, unchanged in behaviour.
 
 **Interfaces:**
 - Produces:
-  - `searchWiki`, `chunkFilterFor` and `vectorBranchSql` from `@living-wiki/core`, with the same signatures as today;
-  - `CollabClient` and `HttpCollabClient` from `@living-wiki/shared`.
+  - `searchWiki`, `chunkFilterFor` and `vectorBranchSql` from `@kinote/core`, with the same signatures as today;
+  - `CollabClient` and `HttpCollabClient` from `@kinote/shared`.
 
 - [ ] **Step 1:** Move both files with `git mv`, fix the imports, and keep `apps/api/src/search/ask.ts` where it is (it now imports from core).
 - [ ] **Step 2: Run** `pnpm typecheck && pnpm vitest run`. Expected: the same pass and skip counts as `main` (1226 / 31).

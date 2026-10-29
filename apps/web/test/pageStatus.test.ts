@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import type { PageDetails, VersionSummary } from '@living-wiki/contracts';
+import type { PageDetails, VersionSummary } from '@kinote/contracts';
 import { pageStatus, relativeTime, type PageStatusInput } from '../src/lib/pageStatus.js';
 
 const NOW = Date.parse('2026-10-24T12:00:00.000Z');

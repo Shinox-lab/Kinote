@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import * as Y from 'yjs';
-import { createServerEditor } from '@living-wiki/shared';
+import { createServerEditor } from '@kinote/shared';
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import {
   withTenantTx,
@@ -16,11 +16,11 @@ import {
   lockDocument,
   type DbTransaction,
   type DocumentRow,
-} from '@living-wiki/db';
-import { AppError, FIELDS_MAP, storableFields, validFields } from '@living-wiki/contracts';
+} from '@kinote/db';
+import { AppError, FIELDS_MAP, storableFields, validFields } from '@kinote/contracts';
 import { rowCollectionOf } from './collections/fields.js';
 import { notify, recordPageMentions, usersWithSpaceRole } from './talk/notify.js';
-import { flattenBlocks, pageLinksOf, type BlockLike } from '@living-wiki/shared';
+import { flattenBlocks, pageLinksOf, type BlockLike } from '@kinote/shared';
 
 const editor = createServerEditor();
 

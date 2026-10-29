@@ -8,8 +8,8 @@ import {
   type DbTransaction,
   type DocumentRow,
   type NOTIFICATION_KINDS,
-} from '@living-wiki/db';
-import { flattenBlocks, mentionsOf, type BlockLike } from '@living-wiki/shared';
+} from '@kinote/db';
+import { flattenBlocks, mentionsOf, type BlockLike } from '@kinote/shared';
 import { requireDocumentRole, requireSpaceRole, type Actor, type SpaceRole } from '../permissions.js';
 
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];

@@ -11,7 +11,7 @@ import {
   writeAuditEvent,
   type DbTransaction,
   type DocumentRow,
-} from '@living-wiki/db';
+} from '@kinote/db';
 import {
   AppError,
   CommentRequestSchema,
@@ -19,7 +19,7 @@ import {
   MentionableQuerySchema,
   type CommentThread,
   type Mentionable,
-} from '@living-wiki/contracts';
+} from '@kinote/contracts';
 import {
   assertValidUuid,
   canOpen,
@@ -32,8 +32,8 @@ import {
   textMentions,
   type Actor,
   type NotificationInput,
-} from '@living-wiki/core';
-import { flattenBlocks, type BlockLike } from '@living-wiki/shared';
+} from '@kinote/core';
+import { flattenBlocks, type BlockLike } from '@kinote/shared';
 import { resolveActorNames } from '../people.js';
 
 /** The most text one comment may hold (`comment_too_long`). */

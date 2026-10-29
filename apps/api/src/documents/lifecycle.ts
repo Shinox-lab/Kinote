@@ -6,9 +6,9 @@ import {
   chunks,
   type DbTransaction,
   type DocumentRow,
-} from '@living-wiki/db';
-import { AppError } from '@living-wiki/contracts';
-import { requireDocumentRole, assertValidUuid, deletePlacementIndex, type Actor } from '@living-wiki/core';
+} from '@kinote/db';
+import { AppError } from '@kinote/contracts';
+import { requireDocumentRole, assertValidUuid, deletePlacementIndex, type Actor } from '@kinote/core';
 
 // Lifecycle rules shared by pages and files: the same document lock order, the
 // same review-return table, the same cycle check. Callers hold the document lock.
@@ -95,4 +95,4 @@ export async function wouldCreateCycle(
 }
 
 // The review-return table lives with the file move in core (`returnToReview`).
-export { returnToReview } from '@living-wiki/core';
+export { returnToReview } from '@kinote/core';

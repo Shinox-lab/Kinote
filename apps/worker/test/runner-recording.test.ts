@@ -6,8 +6,8 @@ const hooks = vi.hoisted(() => ({
   completeJob: undefined as undefined | ((jobId: string) => void),
 }));
 
-vi.mock('@living-wiki/db', async (importOriginal) => {
-  const real = await importOriginal<typeof import('@living-wiki/db')>();
+vi.mock('@kinote/db', async (importOriginal) => {
+  const real = await importOriginal<typeof import('@kinote/db')>();
   return {
     ...real,
     completeJob: (...args: Parameters<typeof real.completeJob>) => {
@@ -17,7 +17,7 @@ vi.mock('@living-wiki/db', async (importOriginal) => {
   };
 });
 
-import { enqueueJob, jobs, tenants, withTenantTx } from '@living-wiki/db';
+import { enqueueJob, jobs, tenants, withTenantTx } from '@kinote/db';
 import { runPendingJobsForTenant } from '../src/runner.js';
 import { useTestDb } from '../../api/test/support/testkit.js';
 

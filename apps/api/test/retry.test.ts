@@ -1,17 +1,17 @@
 import { describe, test, beforeEach, afterEach, vi } from 'vitest';
 import assert from 'node:assert/strict';
 import { and, eq } from 'drizzle-orm';
-import { withTenantTx, versions, jobs, auditEvents, type Job } from '@living-wiki/db';
+import { withTenantTx, versions, jobs, auditEvents, type Job } from '@kinote/db';
 import {
   OpenAIEmbeddingProvider,
   UnavailableExtractor,
   defaultPlacementModel,
   type EmbeddingProvider,
-} from '@living-wiki/core';
-import { InMemoryObjectStorage } from '@living-wiki/shared';
+} from '@kinote/core';
+import { InMemoryObjectStorage } from '@kinote/shared';
 import { runPendingJobsForTenant, unavailableCollab } from '../../worker/src/runner.js';
 import { handlers } from '../../worker/src/registry.js';
-import { ERROR_SENTENCES } from '@living-wiki/contracts';
+import { ERROR_SENTENCES } from '@kinote/contracts';
 import {
   buildTestApp,
   bootstrapTenant,
@@ -23,7 +23,7 @@ import {
 /** An embedding provider whose service is always down, failing with `message`. */
 function failingProvider(message: string): EmbeddingProvider {
   return {
-    model: 'living-wiki-deterministic-2560-v1',
+    model: 'kinote-deterministic-2560-v1',
     dimensions: 2560,
     async embed() {
       throw new Error(message);
@@ -303,7 +303,7 @@ describe('failed versions and retry', () => {
     const { tenant, v1 } = ctx;
     // Not an AppError: the provider answers with the wrong number of vectors.
     const wrongCount: EmbeddingProvider = {
-      model: 'living-wiki-deterministic-2560-v1',
+      model: 'kinote-deterministic-2560-v1',
       dimensions: 2560,
       async embed() {
         return [];

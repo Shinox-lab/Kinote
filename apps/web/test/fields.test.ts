@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import type { FieldDef } from '@living-wiki/contracts';
+import type { FieldDef } from '@kinote/contracts';
 import { emptyFieldCount, fieldDisplay, nextChoiceColor, removalWarning } from '../src/lib/fields.js';
 
 const USER = '11111111-1111-4111-8111-111111111111';

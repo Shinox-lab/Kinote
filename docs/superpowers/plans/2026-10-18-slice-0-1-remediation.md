@@ -2,13 +2,13 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Take the Slice 0 (Foundations) and Slice 1 (Live pages) code in this repo from "tests pass on a stubbed, in-memory, unauthenticated build" to the behaviour `docs/2026-10-18-living-wiki-standalone-design.md` specifies, on a real Postgres, with real authentication, a safe indexer and the missing Slice 1 surfaces.
+**Goal:** Take the Slice 0 (Foundations) and Slice 1 (Live pages) code in this repo from "tests pass on a stubbed, in-memory, unauthenticated build" to the behaviour `docs/2026-10-18-kinote-standalone-design.md` specifies, on a real Postgres, with real authentication, a safe indexer and the missing Slice 1 surfaces.
 
 **Architecture:** Five ordered steps. (1) Real identity (sessions, signed collab tokens, invitations) and one error model. (2) Real Postgres with a clean Drizzle migration chain, a leased job queue and S3 storage, in containers. (3) An indexer that cannot publish withdrawn or stale content and chunks real BlockNote blocks. (4) Hocuspocus 4, server-derived authorship, and a single permission gate. (5) The missing API routes and a rebuilt console. Shared domain code moves to `packages/core` first so api, worker and collab stop importing each other's source.
 
 **Tech Stack:** TypeScript pnpm monorepo, Node 22, Fastify 5, Drizzle + `pg` (PGlite in tests), Zod, Hocuspocus 4, Yjs, BlockNote 0.49, pgvector 0.8 on Postgres 17, Vitest, Playwright, React 19, TanStack Router and Query, Tailwind 4, `@node-rs/argon2`, `@aws-sdk/client-s3`.
 
-**Spec:** `docs/2026-10-18-living-wiki-standalone-design.md` (rule numbers below refer to its "Rules the system must keep"). Findings being fixed come from the review of the code as found; each task names what it fixes.
+**Spec:** `docs/2026-10-18-kinote-standalone-design.md` (rule numbers below refer to its "Rules the system must keep"). Findings being fixed come from the review of the code as found; each task names what it fixes.
 
 ## Global Constraints
 
@@ -46,8 +46,8 @@ Failure modes the spec implies that no existing test exercises, most likely firs
 ## File structure
 
 New packages:
-- `packages/shared` (`@living-wiki/shared`): no database dependency. `sha256Hex`, `loadConfig`, `signCollabToken`/`verifyCollabToken`, `ObjectStorage` + in-memory and S3 implementations, `flattenBlocks` and block text helpers, `documentName`.
-- `packages/core` (`@living-wiki/core`): domain code used by more than one app. `permissions.ts`, `snapshot.ts`, `indexing/{chunkPage,indexVersion}.ts`, `embedding.ts`.
+- `packages/shared` (`@kinote/shared`): no database dependency. `sha256Hex`, `loadConfig`, `signCollabToken`/`verifyCollabToken`, `ObjectStorage` + in-memory and S3 implementations, `flattenBlocks` and block text helpers, `documentName`.
+- `packages/core` (`@kinote/core`): domain code used by more than one app. `permissions.ts`, `snapshot.ts`, `indexing/{chunkPage,indexVersion}.ts`, `embedding.ts`.
 
 Changed layout: `apps/api` (routes, search, auth, errors, collab client), `apps/worker` (`runner.ts`, `registry.ts`, `main.ts`), `apps/collab` (`server.ts`, `attribution.ts`, `internal.ts`, `auth.ts`, `main.ts`), `apps/web` (rebuilt), `packages/db` (schema, migrations, client, queue, locks, errors, testing), `packages/contracts` (errors, request and reply schemas).
 
@@ -64,7 +64,7 @@ Deleted: `scripts/build.mjs`, `scripts/run-tests.mjs`, `scripts/dev.mjs`, `scrip
 - Delete: `scripts/build.mjs`, `scripts/run-tests.mjs`, `dist/`
 
 - [ ] **Step 1:** `git init`, write `.gitignore` (`node_modules`, `dist`, `.env`, `playwright-report`), `git add -A`, commit `chore: baseline of Slice 0/1 as found`.
-- [ ] **Step 2:** `vitest.config.ts`: `test.include ['**/*.test.ts']`, `exclude ['**/*.pg.test.ts','**/node_modules/**','e2e/**']`, `testTimeout 30000`, `resolve.alias` mapping each `@living-wiki/<pkg>` to `packages/<pkg>/src/index.ts` (apps map to their `src/server.ts`/`runner.ts` as in `tsconfig.json`).
+- [ ] **Step 2:** `vitest.config.ts`: `test.include ['**/*.test.ts']`, `exclude ['**/*.pg.test.ts','**/node_modules/**','e2e/**']`, `testTimeout 30000`, `resolve.alias` mapping each `@kinote/<pkg>` to `packages/<pkg>/src/index.ts` (apps map to their `src/server.ts`/`runner.ts` as in `tsconfig.json`).
 - [ ] **Step 3:** In `slice-0-1.test.ts` replace `node:test` imports with `describe, test, beforeEach, afterAll` from `vitest` (`after` becomes `afterAll`); keep `node:assert/strict`. Delete the build scripts and `dist/`.
 - [ ] **Step 4:** Run `pnpm vitest run` — Expected: 4 passed. Run `pnpm typecheck` — Expected: no errors.
 - [ ] **Step 5:** Commit `chore: vitest, node 22, remove babel dist build`.
@@ -74,16 +74,16 @@ Deleted: `scripts/build.mjs`, `scripts/run-tests.mjs`, `scripts/dev.mjs`, `scrip
 Fixes: `api/server.ts` importing worker source, `collab/auth.ts` importing api source.
 
 **Files:**
-- Create: `packages/core/package.json` (`name @living-wiki/core`, `main ./src/index.ts`), `packages/core/src/index.ts`
+- Create: `packages/core/package.json` (`name @kinote/core`, `main ./src/index.ts`), `packages/core/src/index.ts`
 - Move (git mv): `apps/api/src/permissions.ts` → `packages/core/src/permissions.ts`; `apps/worker/src/handlers/snapshot.ts` → `packages/core/src/snapshot.ts`; `apps/worker/src/handlers/indexVersion.ts` → `packages/core/src/indexing/indexVersion.ts`; `apps/worker/src/embedding.ts` → `packages/core/src/embedding.ts`
 - Modify: every importer; add the alias to `vitest.config.ts` and `tsconfig.json`
 - Create: `packages/core/test/layering.test.ts`
 
-**Interfaces:** Produces `@living-wiki/core` exporting `Actor`, `SpaceRole`, `requireSpaceRole`, `getReadableSpaceIds`, `assertValidUuid`, `takePageSnapshot`, `indexVersion`, `chunkPageBlocks`, `EmbeddingProvider`, `DeterministicEmbeddingProvider`, `defaultEmbeddingProvider` with unchanged signatures.
+**Interfaces:** Produces `@kinote/core` exporting `Actor`, `SpaceRole`, `requireSpaceRole`, `getReadableSpaceIds`, `assertValidUuid`, `takePageSnapshot`, `indexVersion`, `chunkPageBlocks`, `EmbeddingProvider`, `DeterministicEmbeddingProvider`, `defaultEmbeddingProvider` with unchanged signatures.
 
 - [ ] **Step 1: Failing test** `layering.test.ts`: reads every `.ts` file under `apps/*/src` and asserts none contains an import specifier matching `/\.\.\/\.\.\/(api|worker|collab|web)\//`.
 - [ ] **Step 2:** Run `pnpm vitest run packages/core/test/layering.test.ts` — Expected: FAIL listing `apps/api/src/server.ts` and `apps/collab/src/auth.ts`.
-- [ ] **Step 3:** Do the moves and rewrite imports to `@living-wiki/core`.
+- [ ] **Step 3:** Do the moves and rewrite imports to `@kinote/core`.
 - [ ] **Step 4:** Run `pnpm vitest run` — Expected: all pass.
 - [ ] **Step 5:** Commit `refactor: extract packages/core`.
 
@@ -135,8 +135,8 @@ Fixes: duplicate tenant slug, space rename, invite twice returned 500; O(n) exis
 Fixes: identity taken from request headers (critical finding 1).
 
 **Files:**
-- Create: `packages/shared/package.json` (`@living-wiki/shared`), `packages/shared/src/index.ts`, `packages/shared/src/hash.ts`, `apps/api/src/auth/{password,sessions,actor}.ts`, `apps/api/src/routes/auth.ts`, `apps/api/test/support/testkit.ts`, `apps/api/test/auth.test.ts`
-- Modify: `packages/db/src/schema/foundations.ts` (`users.passwordHash text not null`; new global table `sessions`: `id`, `userId`, `tokenHash` unique, `createdAt`, `expiresAt`, `revokedAt`), generated migration plus one custom migration creating SQL function `my_tenants(p_user uuid)` (`SECURITY DEFINER`, `SET search_path = public`, returns `tenant_id, name, slug, role`, execute granted to `living_wiki_app` only), `packages/contracts/src/index.ts` (auth schemas), `apps/api/src/server.ts` (replace `extractActor` with a `preHandler`), all existing tests (use testkit instead of header literals)
+- Create: `packages/shared/package.json` (`@kinote/shared`), `packages/shared/src/index.ts`, `packages/shared/src/hash.ts`, `apps/api/src/auth/{password,sessions,actor}.ts`, `apps/api/src/routes/auth.ts`, `apps/api/test/support/testkit.ts`, `apps/api/test/auth.test.ts`
+- Modify: `packages/db/src/schema/foundations.ts` (`users.passwordHash text not null`; new global table `sessions`: `id`, `userId`, `tokenHash` unique, `createdAt`, `expiresAt`, `revokedAt`), generated migration plus one custom migration creating SQL function `my_tenants(p_user uuid)` (`SECURITY DEFINER`, `SET search_path = public`, returns `tenant_id, name, slug, role`, execute granted to `kinote_app` only), `packages/contracts/src/index.ts` (auth schemas), `apps/api/src/server.ts` (replace `extractActor` with a `preHandler`), all existing tests (use testkit instead of header literals)
 - Dependencies: `@node-rs/argon2`, `@fastify/rate-limit`
 
 **Interfaces:**
@@ -219,11 +219,11 @@ Fixes: process-wide in-memory PGlite singleton (critical finding 2).
 **Interfaces:**
 - `type Db = PgDatabase<PgQueryResultHKT, typeof schema>`; `type DbTransaction = Parameters<Parameters<Db['transaction']>[0]>[0]`.
 - `initDb(source: { url: string; max?: number } | { pglite: PGlite }): Db` sets the module instance (the `pglite` branch imports `drizzle-orm/pglite` lazily); `getDb(): Db` throws `Error('db not initialised')` before `initDb`; `closeDb(): Promise<void>`. `withTenantTx`/`withUntenantedTx` use `getDb()`.
-- `createTestDb(): Promise<{ db: Db; pglite: PGlite; reset(): Promise<void> }>` creates a PGlite with pgvector, creates role `living_wiki_app` (LOGIN, no superuser), applies the migration chain with Drizzle's PGlite migrator, calls `initDb`, then `SET ROLE living_wiki_app`; `reset()` runs `RESET ROLE`, truncates every public table `CASCADE`, restores the role.
+- `createTestDb(): Promise<{ db: Db; pglite: PGlite; reset(): Promise<void> }>` creates a PGlite with pgvector, creates role `kinote_app` (LOGIN, no superuser), applies the migration chain with Drizzle's PGlite migrator, calls `initDb`, then `SET ROLE kinote_app`; `reset()` runs `RESET ROLE`, truncates every public table `CASCADE`, restores the role.
 - `ConfigSchema`/`loadConfig(env = process.env): Config` with `DATABASE_URL`, `DATABASE_MIGRATE_URL?`, `COLLAB_TOKEN_SECRET` and `INTERNAL_SECRET` (min 32 chars), `COLLAB_INTERNAL_URL` (default `http://127.0.0.1:1234`), `API_PORT` (8787), `COLLAB_PORT` (1234), `EMBEDDING_DIMENSIONS` (int, max 4000, default 1536), `S3_ENDPOINT?`, `S3_BUCKET?`, `S3_ACCESS_KEY?`, `S3_SECRET_KEY?`, `S3_REGION` (default `us-east-1`). Missing required values throw with the variable names.
 - `main.ts` of api, collab, worker: `loadConfig`, `initDb({ url: DATABASE_URL })`, start the service, close on SIGTERM.
 
-- [ ] **Step 1: Failing tests** in `client.test.ts`: `getDb()` before init throws; after `createTestDb()` `select current_user` returns `living_wiki_app`; inside `withTenantTx(id, …)` `current_setting('app.tenant_id')` equals `id` and after it ends the setting is empty; `loadConfig({})` throws naming `DATABASE_URL` and `COLLAB_TOKEN_SECRET`.
+- [ ] **Step 1: Failing tests** in `client.test.ts`: `getDb()` before init throws; after `createTestDb()` `select current_user` returns `kinote_app`; inside `withTenantTx(id, …)` `current_setting('app.tenant_id')` equals `id` and after it ends the setting is empty; `loadConfig({})` throws naming `DATABASE_URL` and `COLLAB_TOKEN_SECRET`.
 - [ ] **Step 2:** Run `pnpm vitest run packages/db/test/client.test.ts` — Expected: FAIL.
 - [ ] **Step 3:** Implement. Convert test files from `db.__resetForTests()` to a shared `beforeAll(createTestDb)` / `beforeEach(reset)` helper in `apps/api/test/support/testkit.ts`.
 - [ ] **Step 4:** Run `pnpm vitest run` and `pnpm typecheck` — Expected: pass.
@@ -238,7 +238,7 @@ Fixes: journal timestamps that would skip RLS on a real database, `halfvec` used
 - Create: new chain via `drizzle-kit`, `packages/db/scripts/gen-rls.mjs`, `packages/db/src/migrate.ts` (CLI: runs migrations with `DATABASE_MIGRATE_URL`), `infra/postgres/01-roles.sh`, `packages/db/test/migrations.test.ts`
 - Modify: `packages/db/src/schema/pages_and_index.ts` (add `tsv` generated column using a `tsvector` custom type and `generatedAlwaysAs(sql\`to_tsvector('simple', text)\`)`; add GIN index on `tsv` and HNSW index `chunks_embedding_hnsw_idx` using `halfvec_cosine_ops`), `package.json` (`db:migrate`)
 
-**Interfaces:** Chain order: `0000_extensions` (custom: `CREATE EXTENSION IF NOT EXISTS vector`), `0001_schema` (generated), `0002_rls` (custom, emitted by `gen-rls.mjs` for every table with a `tenant_id` column plus `tenants` by `id`, `ENABLE` and `FORCE` row level security, policy `tenant_id = current_tenant_id()`, plus `current_tenant_id()`), `0003_functions` (custom: `my_tenants` carried from Task 1.3), `0004_grants` (custom: `DO` block creating role `living_wiki_app` `NOLOGIN` only if absent, then `GRANT` and `ALTER DEFAULT PRIVILEGES`). `01-roles.sh` creates the login role with `$APP_DB_PASSWORD`.
+**Interfaces:** Chain order: `0000_extensions` (custom: `CREATE EXTENSION IF NOT EXISTS vector`), `0001_schema` (generated), `0002_rls` (custom, emitted by `gen-rls.mjs` for every table with a `tenant_id` column plus `tenants` by `id`, `ENABLE` and `FORCE` row level security, policy `tenant_id = current_tenant_id()`, plus `current_tenant_id()`), `0003_functions` (custom: `my_tenants` carried from Task 1.3), `0004_grants` (custom: `DO` block creating role `kinote_app` `NOLOGIN` only if absent, then `GRANT` and `ALTER DEFAULT PRIVILEGES`). `01-roles.sh` creates the login role with `$APP_DB_PASSWORD`.
 
 - [ ] **Step 1: Failing tests** in `migrations.test.ts` (PGlite, Drizzle migrator, fresh database with only the `vector` extension available):
   - `meta/_journal.json` `when` values are strictly increasing.
@@ -258,7 +258,7 @@ Fixes: `dev.mjs` switching the shared session to superuser to find work.
 - Modify: `packages/db/src/schema/foundations.ts` (jobs: `lockedAt timestamptz`, `rerunRequested boolean default false`), generated migration; append `tenants_with_due_jobs` to the custom functions migration
 - Test: `packages/db/test/dueJobs.test.ts`
 
-**Interfaces:** SQL `tenants_with_due_jobs(p_now timestamptz, p_lease_seconds int) returns setof uuid`, `SECURITY DEFINER`, `search_path = public`, `REVOKE ALL FROM PUBLIC`, `GRANT EXECUTE` to `living_wiki_app`: tenants with a job `status = 'queued' and run_at <= p_now`, or `status = 'running' and locked_at < p_now - p_lease_seconds`. TS wrapper `tenantsWithDueJobs(now: Date, leaseSeconds: number): Promise<string[]>` in `packages/db/src/queue.ts`.
+**Interfaces:** SQL `tenants_with_due_jobs(p_now timestamptz, p_lease_seconds int) returns setof uuid`, `SECURITY DEFINER`, `search_path = public`, `REVOKE ALL FROM PUBLIC`, `GRANT EXECUTE` to `kinote_app`: tenants with a job `status = 'queued' and run_at <= p_now`, or `status = 'running' and locked_at < p_now - p_lease_seconds`. TS wrapper `tenantsWithDueJobs(now: Date, leaseSeconds: number): Promise<string[]>` in `packages/db/src/queue.ts`.
 
 - [ ] **Step 1: Failing tests:** as the app role with no tenant context, `select count(*) from jobs` is 0 while `tenantsWithDueJobs` returns the tenant with a due job; a tenant whose only job has `run_at` in the future is not returned; a tenant with a `running` job locked 10 minutes ago is returned for a 300 s lease and not for a 3600 s lease.
 - [ ] **Step 2:** Run the file — Expected: FAIL.
@@ -652,8 +652,8 @@ Fixes: replies not parsed by contract schemas; the console and API sharing no ch
 
 - [ ] **Step 1: Failing test** `session.test.ts`: load/save/clear round trip; `loadSession` returns null when storage throws or the stored JSON is malformed.
 - [ ] **Step 2:** Run — Expected: FAIL.
-- [ ] **Step 3:** Build the shell and screens. Verify manually with `pnpm stack:up` and `pnpm --filter @living-wiki/web dev`: sign up, create a workspace, invite (copy the accept link), accept in a private window.
-- [ ] **Step 4:** Run `pnpm vitest run` and `pnpm --filter @living-wiki/web build` — Expected: pass.
+- [ ] **Step 3:** Build the shell and screens. Verify manually with `pnpm stack:up` and `pnpm --filter @kinote/web dev`: sign up, create a workspace, invite (copy the accept link), accept in a private window.
+- [ ] **Step 4:** Run `pnpm vitest run` and `pnpm --filter @kinote/web build` — Expected: pass.
 - [ ] **Step 5:** Commit `feat(web): console shell, auth and admin screens`.
 
 ## Task 5.8: Console wiki screens
@@ -662,7 +662,7 @@ Fixes: replies not parsed by contract schemas; the console and API sharing no ch
 
 **Interfaces:** `/w/$tenantSlug/s/$spaceSlug` shows the tree from `GET /spaces/:id/tree` with create page; `/w/$tenantSlug/p/$pageId` fetches `POST …/collab-token`, connects `HocuspocusProvider` (read-only editor when `access` is `read`), shows the server-computed `badge` (refetched on every `synced` and after each action), a single button labelled **Index now** when the space has `review_required` false and **Submit for review** otherwise (calls `POST /pages/:id/snapshot`), a lifecycle menu (move, withdraw, archive; items shown by `my_role`), the **Changes** panel from `GET /pages/:id/changes` coloured by author, **Retry** when the badge is `Index failed`, and **Restore indexed version** when the badge starts `Not indexed ·`. The browser computes no status.
 
-- [ ] **Step 1:** Write Playwright assertions for this screen in Task 5.10 first; for now add a component-free check: `pnpm --filter @living-wiki/web typecheck` fails until the routes exist.
+- [ ] **Step 1:** Write Playwright assertions for this screen in Task 5.10 first; for now add a component-free check: `pnpm --filter @kinote/web typecheck` fails until the routes exist.
 - [ ] **Step 2:** Run it — Expected: FAIL.
 - [ ] **Step 3:** Build the screens.
 - [ ] **Step 4:** Run typecheck and build — Expected: pass; open a page in two browser windows and confirm text converges.
@@ -674,7 +674,7 @@ Fixes: replies not parsed by contract schemas; the console and API sharing no ch
 
 **Interfaces:** `/w/$tenantSlug/reviews` lists `GET /reviews` items with the block diff from `GET /versions/:id/diff`, contributors (agents marked), approve and reject (reject requires a note of 1–300 characters; approve disabled and explained when `canApprove` is false); the page's **History** drawer lists versions, compares any two (`/compare`), and restores one (`POST …/restore`); `/w/$tenantSlug/search` runs `POST /search` and `POST /ask` and shows each citation as `citeAs` linking to the page.
 
-- [ ] **Step 1:** Add the Playwright assertions for these screens to Task 5.10's spec list; until then `pnpm --filter @living-wiki/web typecheck` fails on the missing routes.
+- [ ] **Step 1:** Add the Playwright assertions for these screens to Task 5.10's spec list; until then `pnpm --filter @kinote/web typecheck` fails on the missing routes.
 - [ ] **Step 2:** Run it — Expected: FAIL.
 - [ ] **Step 3:** Build the screens.
 - [ ] **Step 4:** Run typecheck and build — Expected: pass.

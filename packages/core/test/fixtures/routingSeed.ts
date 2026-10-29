@@ -1,9 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import * as Y from 'yjs';
-import { createServerEditor } from '@living-wiki/shared';
+import { createServerEditor } from '@kinote/shared';
 import { and, eq } from 'drizzle-orm';
-import { captures, documents, memberships, pages, spaceGrants, spaces, users, withTenantTx } from '@living-wiki/db';
-import { flattenBlocks, type BlockLike } from '@living-wiki/shared';
+import { captures, documents, memberships, pages, spaceGrants, spaces, users, withTenantTx } from '@kinote/db';
+import { flattenBlocks, type BlockLike } from '@kinote/shared';
 import {
   DeterministicEmbeddingProvider,
   DeterministicPlacementModel,

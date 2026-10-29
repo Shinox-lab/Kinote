@@ -5,7 +5,7 @@ export const DEFAULT_AUTH_RATE_LIMIT_MAX = 10;
 
 /**
  * Environment contract shared by the api, collab and worker services.
- * `DATABASE_URL` is the `living_wiki_app` role (no superuser, no BYPASSRLS);
+ * `DATABASE_URL` is the `kinote_app` role (no superuser, no BYPASSRLS);
  * `DATABASE_MIGRATE_URL` is the schema owner, used only by `pnpm db:migrate`.
  */
 export const ConfigSchema = z.object({

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
-import type { PageDetails, SpaceResponse } from '@living-wiki/contracts';
+import type { PageDetails, SpaceResponse } from '@kinote/contracts';
 import { api } from '../lib/api.js';
 import type { PageControls } from '../lib/wiki.js';
 import { MoreIcon } from './icons.js';

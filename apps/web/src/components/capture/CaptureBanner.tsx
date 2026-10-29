@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { Link } from '@tanstack/react-router';
-import type { CaptureChange } from '@living-wiki/contracts';
+import type { CaptureChange } from '@kinote/contracts';
 import { cssString } from '../../lib/wiki.js';
 import { useCapture, useWorkspace } from '../../lib/queries.js';
 

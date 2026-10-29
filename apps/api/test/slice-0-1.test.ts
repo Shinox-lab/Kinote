@@ -10,7 +10,7 @@ import {
   jobs,
   enqueueJob,
   markJobOutcome,
-} from '@living-wiki/db';
+} from '@kinote/db';
 import { submitPageSnapshot } from '../src/routes/pages.js';
 import {
   collabSettle,
@@ -25,12 +25,12 @@ import {
 import { readBlocks, writeBlocks, fragmentText } from '../../collab/test/support/blocks.js';
 import { storedDoc, waitFor } from '../../collab/test/support/collabWorld.js';
 import { runPendingJobsForTenant } from '../../worker/src/runner.js';
-import { defaultEmbeddingProvider } from '@living-wiki/core';
+import { defaultEmbeddingProvider } from '@kinote/core';
 import {
   signCollabToken,
   getCollabTokenSecret,
   InMemoryObjectStorage,
-} from '@living-wiki/shared';
+} from '@kinote/shared';
 import { errorSentence } from '../../web/src/lib/api.js';
 import {
   buildTestApp,
@@ -56,7 +56,7 @@ function collabToken(
   );
 }
 
-describe('Living Wiki — Slice 0 (Foundations) & Slice 1 (Live Pages)', () => {
+describe('Kinote — Slice 0 (Foundations) & Slice 1 (Live Pages)', () => {
   const app = buildTestApp();
   let collab: CollabServer;
   let collabPort: number;
@@ -122,7 +122,7 @@ describe('Living Wiki — Slice 0 (Foundations) & Slice 1 (Live Pages)', () => {
     assert.equal(spaceBRes.statusCode, 201);
     const spaceB = spaceBRes.json();
 
-    // 2. Connect as living_wiki_app without app.tenant_id -> SELECT count(*) FROM spaces returns 0
+    // 2. Connect as kinote_app without app.tenant_id -> SELECT count(*) FROM spaces returns 0
     const untenantedCount = await withUntenantedTx(async (tx) => {
       const r = await tx.execute(sql`SELECT count(*) FROM spaces`);
       return Number(rowsOf<{ count: string }>(r)[0].count);

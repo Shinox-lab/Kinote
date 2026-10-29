@@ -1,7 +1,7 @@
 import { and, desc, eq, inArray, isNull, or, sql, type SQL } from 'drizzle-orm';
-import { documents, notifications, spaces, withTenantTx, type DbTransaction } from '@living-wiki/db';
-import { MarkNotificationsReadRequestSchema, type NotificationList } from '@living-wiki/contracts';
-import type { Actor } from '@living-wiki/core';
+import { documents, notifications, spaces, withTenantTx, type DbTransaction } from '@kinote/db';
+import { MarkNotificationsReadRequestSchema, type NotificationList } from '@kinote/contracts';
+import type { Actor } from '@kinote/core';
 import { resolveActorNames } from '../people.js';
 import { spaceOfDocument, visibleDocuments } from './connections.js';
 

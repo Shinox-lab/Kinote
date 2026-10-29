@@ -1,6 +1,6 @@
 import { isDeepStrictEqual } from 'node:util';
 import * as Y from 'yjs';
-import { createServerEditor, restorePageLinks } from '@living-wiki/shared';
+import { createServerEditor, restorePageLinks } from '@kinote/shared';
 import { and, desc, eq, inArray, isNull } from 'drizzle-orm';
 import {
   withTenantTx,
@@ -19,7 +19,7 @@ import {
   lockDocument,
   type DbTransaction,
   type DocumentRow,
-} from '@living-wiki/db';
+} from '@kinote/db';
 import {
   CreatePageRequestSchema,
   MovePageRequestSchema,
@@ -39,7 +39,7 @@ import {
   type VersionListItem,
   type VersionDetail,
   type BlockDiffEntry,
-} from '@living-wiki/contracts';
+} from '@kinote/contracts';
 import {
   requireSpaceRole,
   requireDocumentRole,
@@ -54,14 +54,14 @@ import {
   isCollection,
   enqueueReindex,
   pageFieldEntries,
-} from '@living-wiki/core';
+} from '@kinote/core';
 import {
   signCollabToken,
   getCollabTokenSecret,
   documentName,
   COLLAB_TOKEN_TTL_SECONDS,
-} from '@living-wiki/shared';
-import type { BlockLike } from '@living-wiki/shared';
+} from '@kinote/shared';
+import type { BlockLike } from '@kinote/shared';
 import {
   requireVisibleParent,
   withdrawLiveVersions,
@@ -73,7 +73,7 @@ import { pageCollectionInfo } from './collections.js';
 import { diffBlocks, withFieldLines } from '../pages/diff.js';
 import { resolveActorNames } from '../people.js';
 import { canApprove } from '../pages/approval.js';
-import type { CollabClient } from '@living-wiki/shared';
+import type { CollabClient } from '@kinote/shared';
 
 const blockNote = createServerEditor();
 

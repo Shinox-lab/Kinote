@@ -10,15 +10,15 @@ import {
   spaceGrants,
   spaces,
   withTenantTx,
-} from '@living-wiki/db';
-import { createTestDb, type TestDb } from '@living-wiki/db/testing';
+} from '@kinote/db';
+import { createTestDb, type TestDb } from '@kinote/db/testing';
 import {
   DeterministicEmbeddingProvider,
   DeterministicPlacementModel,
   buildPageCard,
   extractVersionEntities,
   type Actor,
-} from '@living-wiki/core';
+} from '@kinote/core';
 import { movePage, withdrawPage } from '../src/routes/pages.js';
 import { moveFile } from '../src/routes/files.js';
 import {

@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type * as Y from 'yjs';
-import { FIELDS_MAP, validFields, type Choice, type Collection } from '@living-wiki/contracts';
+import { FIELDS_MAP, validFields, type Choice, type Collection } from '@kinote/contracts';
 import { api } from '../../lib/api.js';
 import { emptyFieldCount, nextChoiceColor } from '../../lib/fields.js';
 import { useTenantKey } from '../../lib/queries.js';

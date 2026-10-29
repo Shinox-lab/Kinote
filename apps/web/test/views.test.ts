@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { defaultView, parseViews, type FieldDef } from '@living-wiki/contracts';
+import { defaultView, parseViews, type FieldDef } from '@kinote/contracts';
 import { boardMove, calendarWeeks, editViews, groupRows, localDay, moveDate, replaceView, resizeEnd, tableGroupField, timelineBar, timelineDays, visibleFields } from '../src/lib/views.js';
 
 const U1 = '11111111-1111-4111-8111-111111111111';

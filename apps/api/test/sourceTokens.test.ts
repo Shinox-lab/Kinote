@@ -1,6 +1,6 @@
 import { describe, test } from 'vitest';
 import assert from 'node:assert/strict';
-import { sha256Hex } from '@living-wiki/shared';
+import { sha256Hex } from '@kinote/shared';
 import { SESSION_TOKEN_PREFIX } from '../src/auth/sessions.js';
 import { mintSourceToken, parseSourceToken, SOURCE_TOKEN_PREFIX } from '../src/auth/sourceTokens.js';
 

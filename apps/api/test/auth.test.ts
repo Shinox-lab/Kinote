@@ -1,13 +1,13 @@
 import { test, describe, beforeEach } from 'vitest';
 import assert from 'node:assert/strict';
 import { eq, sql } from 'drizzle-orm';
-import { getDb, rowsOf, sessions, users } from '@living-wiki/db';
-import { sha256Hex } from '@living-wiki/shared';
+import { getDb, rowsOf, sessions, users } from '@kinote/db';
+import { sha256Hex } from '@kinote/shared';
 import {
   AuthResponseSchema,
   MeResponseSchema,
   ERROR_SENTENCES,
-} from '@living-wiki/contracts';
+} from '@kinote/contracts';
 import { buildApiServer } from '../src/server.js';
 import { resolveSession } from '../src/auth/sessions.js';
 import {
@@ -368,7 +368,7 @@ describe('sessions and the database-derived actor', () => {
     await addMember(b.tenant.id, a.owner.userId, 'admin');
 
     const role = await getDb().execute(sql`SELECT current_user AS u`);
-    assert.equal(rowsOf<{ u: string }>(role)[0].u, 'living_wiki_app');
+    assert.equal(rowsOf<{ u: string }>(role)[0].u, 'kinote_app');
 
     // Without the function, RLS hides both tenants from the app role.
     const direct = await getDb().execute(sql`SELECT count(*)::int AS n FROM memberships`);
@@ -383,9 +383,9 @@ describe('sessions and the database-derived actor', () => {
     ]);
 
     const priv = await getDb().execute(sql`
-      SELECT has_function_privilege('living_wiki_app', 'my_tenants(uuid)', 'EXECUTE') AS app_exec,
+      SELECT has_function_privilege('kinote_app', 'my_tenants(uuid)', 'EXECUTE') AS app_exec,
              has_function_privilege('public', 'my_tenants(uuid)', 'EXECUTE') AS public_exec,
-             has_table_privilege('living_wiki_app', 'sessions', 'SELECT,INSERT,UPDATE') AS sessions_rw`);
+             has_table_privilege('kinote_app', 'sessions', 'SELECT,INSERT,UPDATE') AS sessions_rw`);
     assert.deepEqual(rowsOf(priv)[0], { app_exec: true, public_exec: false, sessions_rw: true });
   });
 

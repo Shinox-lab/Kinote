@@ -1,4 +1,4 @@
-import type { SpaceRole } from '@living-wiki/contracts';
+import type { SpaceRole } from '@kinote/contracts';
 import { useFileVersions, useWorkspace } from '../lib/queries.js';
 import { formatBytes } from '../lib/fileUi.js';
 import { versionReasonLabel, versionStatusLabel, versionWho, whenLabel } from '../lib/history.js';

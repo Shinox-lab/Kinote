@@ -11,7 +11,7 @@ import {
   lockDocument,
   type DbTransaction,
   type DocumentRow,
-} from '@living-wiki/db';
+} from '@kinote/db';
 import {
   AppError,
   MoveFileRequestSchema,
@@ -24,7 +24,7 @@ import {
   type FileVersionList,
   type UploadFileResponse,
   type VersionText,
-} from '@living-wiki/contracts';
+} from '@kinote/contracts';
 import {
   requireSpaceRole,
   requireDocumentRole,
@@ -39,8 +39,8 @@ import {
   type DetectedFile,
   type VersionRow,
   relocateFile,
-} from '@living-wiki/core';
-import type { ObjectStorage } from '@living-wiki/shared';
+} from '@kinote/core';
+import type { ObjectStorage } from '@kinote/shared';
 import {
   requireVisibleParent,
   withdrawLiveVersions,

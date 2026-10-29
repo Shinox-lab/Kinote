@@ -1,14 +1,14 @@
 # Routing engine and Capture page — design
 
 Date: 2026-10-26. Status: draft for the owner's review.
-Builds on: `2026-10-18-living-wiki-standalone-design.md` (the main design). Where this spec and the main design differ,
+Builds on: `2026-10-18-kinote-standalone-design.md` (the main design). Where this spec and the main design differ,
 this spec wins; the main design's "Revisions" section lists what changed. The agent sections of the main design (MCP
 tiers, Curator) are being reworked separately for external agents. Capture over MCP belongs to that rework (owner's
 call); this spec keeps the data model ready for agent senders but builds no MCP endpoint.
 
 ## Intent
 
-The selling point of living-wiki is that information finds its own place. A person (or an external agent) drops in
+The selling point of kinote is that information finds its own place. A person (or an external agent) drops in
 anything — a sentence, a pasted email, meeting notes — and the wiki adds, updates or removes the right sections on the
 right pages, across spaces, with every change cited, visible and undoable. People stay at the centre: they see every
 change, keep the final say on anything destructive, and correct the engine when it is wrong, which teaches it.

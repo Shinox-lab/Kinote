@@ -1,7 +1,7 @@
 import { and, desc, eq, inArray, isNull, or, type SQL } from 'drizzle-orm';
-import { withTenantTx, documents, spaces, versions, type DbTransaction } from '@living-wiki/db';
-import { UpdatesQuerySchema, AppError, type UpdateItem } from '@living-wiki/contracts';
-import { requireSpaceRole, isTenantAdmin, type Actor } from '@living-wiki/core';
+import { withTenantTx, documents, spaces, versions, type DbTransaction } from '@kinote/db';
+import { UpdatesQuerySchema, AppError, type UpdateItem } from '@kinote/contracts';
+import { requireSpaceRole, isTenantAdmin, type Actor } from '@kinote/core';
 import { resolveActorNames } from '../people.js';
 
 /** The statuses worth announcing; superseded, extracting, indexing and stored rows are plumbing. */

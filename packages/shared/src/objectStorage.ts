@@ -6,7 +6,7 @@ import {
   PutObjectCommand,
   S3Client,
 } from '@aws-sdk/client-s3';
-import { AppError } from '@living-wiki/contracts';
+import { AppError } from '@kinote/contracts';
 
 export interface ObjectStorage {
   put(

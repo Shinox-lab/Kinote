@@ -1,8 +1,8 @@
 import Fastify, { type FastifyRequest } from 'fastify';
 import rateLimit from '@fastify/rate-limit';
 import multipart from '@fastify/multipart';
-import { withTenantTx } from '@living-wiki/db';
-import { DEFAULT_AUTH_RATE_LIMIT_MAX, type ObjectStorage } from '@living-wiki/shared';
+import { withTenantTx } from '@kinote/db';
+import { DEFAULT_AUTH_RATE_LIMIT_MAX, type ObjectStorage } from '@kinote/shared';
 import {
   SearchRequestSchema,
   AskRequestSchema,
@@ -71,7 +71,7 @@ import {
   ChunkInspectorSchema,
   SearchResponseSchema,
   AskResponseSchema,
-} from '@living-wiki/contracts';
+} from '@kinote/contracts';
 import {
   getReadableSpaceIds,
   defaultAnswerProvider,
@@ -79,7 +79,7 @@ import {
   type Actor,
   type AnswerProvider,
   type EmbeddingProvider,
-} from '@living-wiki/core';
+} from '@kinote/core';
 import {
   createTenantWithInbox,
   createSpace,
@@ -190,8 +190,8 @@ import { registerErrorHandler } from './errors.js';
 import { parseReply } from './reply.js';
 
 import { answerPassages } from './search/ask.js';
-import type { CollabClient } from '@living-wiki/shared';
-import { searchWiki } from '@living-wiki/core';
+import type { CollabClient } from '@kinote/shared';
+import { searchWiki } from '@kinote/core';
 import { fastifyLogger, type ApiLoggerOptions } from './logger.js';
 
 export interface ApiServerOptions {

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import type { FileDetails, FileVersion } from '@living-wiki/contracts';
+import type { FileDetails, FileVersion } from '@kinote/contracts';
 import { downloadFileName, formatBytes, fileBanner, fileControls, publishedVersionId, type FileControlsInput } from '../src/lib/fileUi.js';
 
 const base: FileControlsInput = {

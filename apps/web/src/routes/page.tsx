@@ -180,6 +180,7 @@ export function PagePage() {
         <PageHeader
           page={page}
           canEdit={controls.move}
+          onRenamed={changed}
           meta={
             <div className="flex flex-wrap items-center gap-2">
               <PageStatus

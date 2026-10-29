@@ -1,4 +1,4 @@
-# Living Wiki console — premium redesign
+# Kinote console — premium redesign
 
 Date: 2026-10-24. Status: **proposed — awaiting approval. Nothing here is built.**
 Builds on: `2026-10-20-slice-2b-sources-and-console-design.md` (the console as it exists),

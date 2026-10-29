@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import { AppError } from '@living-wiki/contracts';
-import { loadConfig } from '@living-wiki/shared';
+import { AppError } from '@kinote/contracts';
+import { loadConfig } from '@kinote/shared';
 import { DeterministicPlacementModel, OpenAIPlacementModel, chatJson, createPlacementModel } from '../src/index.js';
 
 const opts = { baseUrl: 'https://router.example/v1/', model: 'Qwen/Qwen3-8B', timeoutMs: 1000, maxTokens: 500 };

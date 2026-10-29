@@ -3,7 +3,7 @@ import { api, errorMessage } from '../../lib/api.js';
 import type { EditorPlace } from './menus.js';
 import type { WikiEditor } from './schema.js';
 
-// Pasting a file into a page makes a real Living Wiki file under that page,
+// Pasting a file into a page makes a real Kinote file under that page,
 // then leaves a fileEmbed block pointing at it. The bytes never go in the
 // page's Yjs document: the block holds a document id.
 

@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { createServer, type IncomingMessage, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
-import { AppError, ExtractedDocumentSchema } from '@living-wiki/contracts';
+import { AppError, ExtractedDocumentSchema } from '@kinote/contracts';
 import { FakeExtractor, HttpExtractor, UnavailableExtractor, createExtractor } from '../src/files/extractor.js';
 import type { DetectedFile } from '../src/files/detect.js';
 

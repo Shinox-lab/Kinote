@@ -12,7 +12,7 @@ import {
   type View,
   type ViewFilter,
   type ViewLayout,
-} from '@living-wiki/contracts';
+} from '@kinote/contracts';
 import { dateFields, groupableFields, replaceView, viewDateField, viewGroupField, type ViewsEdit } from '../../lib/views.js';
 
 const CHIP = 'rounded-md px-2 py-1 text-xs text-muted hover:bg-hover hover:text-fg max-md:min-h-11';

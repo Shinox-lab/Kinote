@@ -95,7 +95,7 @@ describe('tenants_with_due_jobs', () => {
     const res = await getDb().execute(sql`
       select
         has_function_privilege('public', 'tenants_with_due_jobs(timestamptz,int)', 'EXECUTE') as pub,
-        has_function_privilege('living_wiki_app', 'tenants_with_due_jobs(timestamptz,int)', 'EXECUTE') as app
+        has_function_privilege('kinote_app', 'tenants_with_due_jobs(timestamptz,int)', 'EXECUTE') as app
     `);
     const row = rowsOf<{ pub: boolean; app: boolean }>(res)[0]!;
     expect(row.pub).toBe(false);

@@ -1,4 +1,4 @@
-import type { PageSummary } from '@living-wiki/contracts';
+import type { PageSummary } from '@kinote/contracts';
 import { ApiError, api } from './api.js';
 import { slugify } from './console.js';
 

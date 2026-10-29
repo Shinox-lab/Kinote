@@ -1,4 +1,4 @@
-import { fieldValueFits, groupKeysOf, parseViews, type CollectionRow, type FieldDef, type FieldNames, type View } from '@living-wiki/contracts';
+import { fieldValueFits, groupKeysOf, parseViews, type CollectionRow, type FieldDef, type FieldNames, type View } from '@kinote/contracts';
 
 /** A date field's value. */
 export interface DateValue {

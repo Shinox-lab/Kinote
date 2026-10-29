@@ -1,6 +1,6 @@
 import { describe, test, beforeAll, afterEach, afterAll, expect } from 'vitest';
 import { and, eq } from 'drizzle-orm';
-import { withTenantTx, pages } from '@living-wiki/db';
+import { withTenantTx, pages } from '@kinote/db';
 import { collabSettle, openDirectSession, trackCollabWork, type CollabServer } from '../src/server.js';
 import { startCollabServer } from './support/wsClient.js';
 import { buildCollabWorld, storedDoc } from './support/collabWorld.js';

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { defaultView, parseViews, prefill, prefillTitle, type Choice, type CollectionPick, type CollectionRows, type View } from '@living-wiki/contracts';
+import { defaultView, parseViews, prefill, prefillTitle, type Choice, type CollectionPick, type CollectionRows, type View } from '@kinote/contracts';
 import { api, ApiError } from '../../lib/api.js';
 import { useFieldNames } from '../../lib/fieldNames.js';
 import { nextChoiceColor } from '../../lib/fields.js';

@@ -1,8 +1,8 @@
 import { describe, test } from 'vitest';
 import assert from 'node:assert/strict';
 import { and, eq } from 'drizzle-orm';
-import { withTenantTx, pages } from '@living-wiki/db';
-import { VersionSummarySchema } from '@living-wiki/contracts';
+import { withTenantTx, pages } from '@kinote/db';
+import { VersionSummarySchema } from '@kinote/contracts';
 import { runPendingJobsForTenant } from '../../worker/src/runner.js';
 import { encodePageYDoc } from '../src/routes/pages.js';
 import { buildTestApp, bootstrapTenant, useTestDb } from './support/testkit.js';

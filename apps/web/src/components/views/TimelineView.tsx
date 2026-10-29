@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { fieldValueFits, type CollectionRow } from '@living-wiki/contracts';
+import { fieldValueFits, type CollectionRow } from '@kinote/contracts';
 import {
   TIMELINE_ZOOM,
   addDays,

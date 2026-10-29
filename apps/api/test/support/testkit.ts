@@ -3,13 +3,13 @@ import { beforeAll, beforeEach } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { and, eq } from 'drizzle-orm';
-import { withTenantTx, memberships, agents } from '@living-wiki/db';
-import { createTestDb, type TestDb } from '@living-wiki/db/testing';
+import { withTenantTx, memberships, agents } from '@kinote/db';
+import { createTestDb, type TestDb } from '@kinote/db/testing';
 import { buildApiServer, type ApiServerOptions } from '../../src/server.js';
 
 /**
  * Gives the enclosing describe (or file) its own in-memory database: created
- * once in beforeAll (migration chain applied, running as living_wiki_app) and
+ * once in beforeAll (migration chain applied, running as kinote_app) and
  * emptied before every test. Call it before any other beforeEach hook so the
  * reset runs first.
  */

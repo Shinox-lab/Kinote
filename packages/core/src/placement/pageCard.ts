@@ -7,9 +7,9 @@ import {
   pageCards,
   lockDocument,
   NonRetryableError,
-} from '@living-wiki/db';
-import { AppError } from '@living-wiki/contracts';
-import { flattenBlocks, type BlockLike } from '@living-wiki/shared';
+} from '@kinote/db';
+import { AppError } from '@kinote/contracts';
+import { flattenBlocks, type BlockLike } from '@kinote/shared';
 import type { EmbeddingProvider } from '../embedding.js';
 import type { PlacementModel } from './model.js';
 import { pageFieldEntries } from '../collections/fields.js';

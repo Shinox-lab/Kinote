@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { Choice, FieldDef, FieldNames, LinkTarget, Mentionable } from '@living-wiki/contracts';
+import type { Choice, FieldDef, FieldNames, LinkTarget, Mentionable } from '@kinote/contracts';
 import { api } from '../../lib/api.js';
 import { CHOICE_CLASSES, fieldDisplay } from '../../lib/fields.js';
 

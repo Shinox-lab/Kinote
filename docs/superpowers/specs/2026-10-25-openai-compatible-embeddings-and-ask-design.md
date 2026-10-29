@@ -1,7 +1,7 @@
 # OpenAI-compatible embeddings and generated Ask — design
 
 Date: 2026-10-25. Status: proposed, awaiting owner approval.
-Builds on: `2026-10-18-living-wiki-standalone-design.md` (S7 and the Ask section).
+Builds on: `2026-10-18-kinote-standalone-design.md` (S7 and the Ask section).
 
 ## Intent
 

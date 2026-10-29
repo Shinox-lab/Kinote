@@ -1,6 +1,6 @@
 import { describe, test, beforeAll, beforeEach, afterEach, afterAll, expect } from 'vitest';
 import { isTransactionOrigin } from '@hocuspocus/server';
-import { getCollabTokenSecret } from '@living-wiki/shared';
+import { getCollabTokenSecret } from '@kinote/shared';
 import { createCollabServer, resolveOriginActor, type CollabServer } from '../src/server.js';
 import { openDirectSession } from '../src/directSession.js';
 import { connectClient, type ConnectedClient } from './support/wsClient.js';

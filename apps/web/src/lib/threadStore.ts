@@ -1,5 +1,5 @@
 import { ThreadStore, ThreadStoreAuth, type CommentBody, type CommentData, type ThreadData } from '@blocknote/core/comments';
-import type { CommentThread } from '@living-wiki/contracts';
+import type { CommentThread } from '@kinote/contracts';
 
 /** The API calls the store makes (`api` in the console; a fake in tests). */
 export interface ThreadApi {

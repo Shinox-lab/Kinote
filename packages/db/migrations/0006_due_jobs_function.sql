@@ -8,7 +8,7 @@
 -- than p_lease_seconds, i.e. a crashed worker). The worker then processes each
 -- tenant inside withTenantTx. search_path is pinned and tables are
 -- schema-qualified so a caller cannot shadow them. This migration runs after
--- 0004_grants, so living_wiki_app already exists and the grant is safe here.
+-- 0004_grants, so kinote_app already exists and the grant is safe here.
 CREATE OR REPLACE FUNCTION public.tenants_with_due_jobs(p_now timestamptz, p_lease_seconds int)
 RETURNS SETOF uuid
 LANGUAGE sql
@@ -25,4 +25,4 @@ $$;
 --> statement-breakpoint
 REVOKE ALL ON FUNCTION public.tenants_with_due_jobs(timestamptz, int) FROM PUBLIC;
 --> statement-breakpoint
-GRANT EXECUTE ON FUNCTION public.tenants_with_due_jobs(timestamptz, int) TO living_wiki_app;
+GRANT EXECUTE ON FUNCTION public.tenants_with_due_jobs(timestamptz, int) TO kinote_app;

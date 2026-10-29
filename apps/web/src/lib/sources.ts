@@ -1,4 +1,4 @@
-import type { Source, SourceToken } from '@living-wiki/contracts';
+import type { Source, SourceToken } from '@kinote/contracts';
 import { relativeTime } from './updates.js';
 
 // Words and commands of the Sources screen.

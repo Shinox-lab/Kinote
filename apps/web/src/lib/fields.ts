@@ -5,7 +5,7 @@ import {
   type Choice,
   type FieldDef,
   type FieldNames,
-} from '@living-wiki/contracts';
+} from '@kinote/contracts';
 
 /**
  * A field value as a person reads it on the page: dates in words only (the

@@ -1,7 +1,7 @@
 # Slice 2: Files — design
 
 Date: 2026-10-20. Builds on Slice 0/1 (merged on `main`, commit `250c072`). Parent spec:
-`docs/2026-10-18-living-wiki-standalone-design.md` (the "Files", "Connectors → Upload API", "Index and retrieval" and
+`docs/2026-10-18-kinote-standalone-design.md` (the "Files", "Connectors → Upload API", "Index and retrieval" and
 "Change and delete handling" sections, and the Slice 2 row of "Delivery slices"). Where this document and the parent differ,
 this one wins for Slice 2 and the difference is listed under "Calls made by the author".
 

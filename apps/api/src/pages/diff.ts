@@ -1,5 +1,5 @@
-import { flattenBlocks, type BlockLike, type FlatBlock } from '@living-wiki/shared';
-import { FIELD_BLOCK_PREFIX, type BlockDiffEntry } from '@living-wiki/contracts';
+import { flattenBlocks, type BlockLike, type FlatBlock } from '@kinote/shared';
+import { FIELD_BLOCK_PREFIX, type BlockDiffEntry } from '@kinote/contracts';
 
 export type { BlockDiffEntry };
 

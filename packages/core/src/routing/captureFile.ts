@@ -1,7 +1,7 @@
 import { and, eq } from 'drizzle-orm';
-import { captures, documents, spaces, versions, withTenantTx, type DbTransaction } from '@living-wiki/db';
-import { ExtractedDocumentSchema } from '@living-wiki/contracts';
-import type { ObjectStorage } from '@living-wiki/shared';
+import { captures, documents, spaces, versions, withTenantTx, type DbTransaction } from '@kinote/db';
+import { ExtractedDocumentSchema } from '@kinote/contracts';
+import type { ObjectStorage } from '@kinote/shared';
 import { requireSpaceRole } from '../permissions.js';
 import { senderActor } from './access.js';
 import { relocateFile } from '../files/relocate.js';

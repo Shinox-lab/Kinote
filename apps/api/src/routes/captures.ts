@@ -13,7 +13,7 @@ import {
   enqueueJob,
   writeAuditEvent,
   type DbTransaction,
-} from '@living-wiki/db';
+} from '@kinote/db';
 import {
   AppError,
   AnswerCaptureRequestSchema,
@@ -24,8 +24,8 @@ import {
   type CaptureReceipt,
   type CaptureSummary,
   type SuggestionSummary,
-} from '@living-wiki/contracts';
-import { assertValidUuid, isTenantAdmin, senderAccess, type Actor } from '@living-wiki/core';
+} from '@kinote/contracts';
+import { assertValidUuid, isTenantAdmin, senderAccess, type Actor } from '@kinote/core';
 import { resolveActorNames } from '../people.js';
 
 type CaptureRow = typeof captures.$inferSelect;

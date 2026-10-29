@@ -1,5 +1,5 @@
 import { Suspense, lazy, type ComponentType } from 'react';
-import type { FileVersion, UploadFileResponse } from '@living-wiki/contracts';
+import type { FileVersion, UploadFileResponse } from '@kinote/contracts';
 import { Loading } from '../components/ui.js';
 import { tooBigToPreview, viewerFor, type ViewerKind } from '../lib/viewers.js';
 import { DownloadCard } from './DownloadCard.js';

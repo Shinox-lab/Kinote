@@ -1,13 +1,13 @@
 {
-  "name": "living-wiki",
+  "name": "kinote",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@9.12.0",
   "scripts": {
     "dev": "bash infra/dev.sh",
-    "web": "pnpm --filter @living-wiki/web run dev",
-    "web:build": "pnpm --filter @living-wiki/web run build",
+    "web": "pnpm --filter @kinote/web run dev",
+    "web:build": "pnpm --filter @kinote/web run build",
     "bundle:report": "node scripts/bundle-report.mjs",
     "test": "vitest run",
     "typecheck": "tsc --noEmit -p tsconfig.json",

@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { useMutation } from '@tanstack/react-query';
-import type { VersionListItem } from '@living-wiki/contracts';
+import type { VersionListItem } from '@kinote/contracts';
 import { api } from '../lib/api.js';
 import { defaultComparison, versionReasonLabel, versionStatusLabel, versionWho, whenLabel } from '../lib/history.js';
 import type { HistoryTab } from '../lib/pageUi.js';

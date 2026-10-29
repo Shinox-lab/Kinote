@@ -42,7 +42,7 @@
 Add the exact dependency:
 
 ```bash
-pnpm --filter @living-wiki/web add @extend-ai/react-xlsx@0.18.1
+pnpm --filter @kinote/web add @extend-ai/react-xlsx@0.18.1
 ```
 
 In `apps/web/vite.config.ts`, add both settings at the top level of the returned config:
@@ -129,7 +129,7 @@ releases the workbook) when GridCraft replaces it later:
 
 ```tsx
 import { useEffect, useState } from 'react';
-import type { FileVersion } from '@living-wiki/contracts';
+import type { FileVersion } from '@kinote/contracts';
 import { XlsxViewer as ExtendXlsxViewer, useXlsxViewerController } from '@extend-ai/react-xlsx';
 import { Loading } from '../components/ui.js';
 import { initialSheet } from '../lib/tablePreview.js';
@@ -259,7 +259,7 @@ scrolling and download button. The first open is expected to take longer than th
 Remove the dependency:
 
 ```bash
-pnpm --filter @living-wiki/web remove read-excel-file
+pnpm --filter @kinote/web remove read-excel-file
 ```
 
 In `apps/web/src/lib/tablePreview.ts`:

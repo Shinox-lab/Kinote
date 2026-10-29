@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
-import { FIELD_TYPES, type Choice, type Collection, type FieldDef, type FieldType } from '@living-wiki/contracts';
+import { FIELD_TYPES, type Choice, type Collection, type FieldDef, type FieldType } from '@kinote/contracts';
 import { api } from '../../lib/api.js';
 import { FIELD_TYPE_LABELS, nextChoiceColor, removalWarning } from '../../lib/fields.js';
 import { Confirm } from '../lifecycle.js';

@@ -75,7 +75,7 @@ describe('console session', () => {
   });
 
   test('malformed JSON gives null', () => {
-    storage.setItem('living-wiki.session', '{not json');
+    storage.setItem('kinote.session', '{not json');
     expect(loadSession()).toBeNull();
   });
 
@@ -91,7 +91,7 @@ describe('console session', () => {
     ['a numeric tenant id', { ...SESSION, tenantId: 7 }],
     ['a tenant slug of the wrong type', { ...SESSION, tenantSlug: {} }],
   ])('a wrongly shaped value (%s) gives null', (_label, value) => {
-    storage.setItem('living-wiki.session', JSON.stringify(value));
+    storage.setItem('kinote.session', JSON.stringify(value));
     expect(loadSession()).toBeNull();
   });
 });

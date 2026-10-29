@@ -1,7 +1,7 @@
 import { describe, test, beforeEach } from 'vitest';
 import assert from 'node:assert/strict';
 import { and, eq } from 'drizzle-orm';
-import { withTenantTx, chunks, rowsOf } from '@living-wiki/db';
+import { withTenantTx, chunks, rowsOf } from '@kinote/db';
 import { sql } from 'drizzle-orm';
 import { runPendingJobsForTenant } from '../../worker/src/runner.js';
 import { buildTestApp, bootstrapTenant, signUpMember, useTestDb } from './support/testkit.js';

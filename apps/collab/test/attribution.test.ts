@@ -1,6 +1,6 @@
 import { describe, test, beforeAll, afterEach, afterAll, expect } from 'vitest';
 import * as Y from 'yjs';
-import { createServerEditor } from '@living-wiki/shared';
+import { createServerEditor } from '@kinote/shared';
 import { and, eq, sql } from 'drizzle-orm';
 import {
   withTenantTx,
@@ -10,8 +10,8 @@ import {
   jobs,
   claimJobs,
   lockDocument,
-} from '@living-wiki/db';
-import { takePageSnapshot } from '@living-wiki/core';
+} from '@kinote/db';
+import { takePageSnapshot } from '@kinote/core';
 import { changedBlockIds } from '../src/attribution.js';
 import {
   collabSettle,

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import type { TreeNode } from '@living-wiki/contracts';
+import type { TreeNode } from '@kinote/contracts';
 import {
   authorColor,
   authorLabel,

@@ -1,4 +1,4 @@
-import type { BlockDiffEntry } from '@living-wiki/contracts';
+import type { BlockDiffEntry } from '@kinote/contracts';
 import { changeLabel, changedEntries, diffSummary, type Change } from '../lib/diff.js';
 import { useAuthorNames } from '../lib/queries.js';
 import { authorLabel } from '../lib/wiki.js';

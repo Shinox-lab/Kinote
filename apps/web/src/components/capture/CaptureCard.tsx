@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
-import type { CaptureDetail, CaptureSummary } from '@living-wiki/contracts';
+import type { CaptureDetail, CaptureSummary } from '@kinote/contracts';
 import { api } from '../../lib/api.js';
 import { captureStatusLabel, captureWaitingOnFile } from '../../lib/capture.js';
 import { useCapture, useRefresh } from '../../lib/queries.js';

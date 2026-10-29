@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { sha256Hex } from '@living-wiki/shared';
+import { sha256Hex } from '@kinote/shared';
 
 /** Not `lws_`: that is a session token, and the two kinds must never be mistaken for each other. */
 export const SOURCE_TOKEN_PREFIX = 'lwsrc_';

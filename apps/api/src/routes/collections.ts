@@ -12,7 +12,7 @@ import {
   writeAuditEvent,
   type DbTransaction,
   type DocumentRow,
-} from '@living-wiki/db';
+} from '@kinote/db';
 import {
   AppError,
   CollectionRowsRequestSchema,
@@ -32,7 +32,7 @@ import {
   type FieldDef,
   type FieldOptions,
   type FieldType,
-} from '@living-wiki/contracts';
+} from '@kinote/contracts';
 import {
   assertValidUuid,
   collectionFieldDefs,
@@ -43,8 +43,8 @@ import {
   requireDocumentRole,
   rowCollectionOf,
   type Actor,
-} from '@living-wiki/core';
-import type { CollabClient } from '@living-wiki/shared';
+} from '@kinote/core';
+import type { CollabClient } from '@kinote/shared';
 import { spaceOfDocument, visibleDocuments } from './connections.js';
 
 /**

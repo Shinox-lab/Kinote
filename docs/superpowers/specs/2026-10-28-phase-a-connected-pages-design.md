@@ -1,7 +1,7 @@
 # Phase A: connected pages — design
 
 Status: draft, 2026-10-28. Follows the routing engine (3a–3d, merged). Builds on
-`docs/2026-10-18-living-wiki-standalone-design.md` ("Collaboration features", `links`) and the routing specs
+`docs/2026-10-18-kinote-standalone-design.md` ("Collaboration features", `links`) and the routing specs
 (`2026-10-26-routing-engine-design.md`, `2026-10-27-routing-documents-design.md`). Where they differ, this wins for
 Phase A.
 

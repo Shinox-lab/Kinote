@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict';
 import * as Y from 'yjs';
 import { and, eq } from 'drizzle-orm';
-import { withTenantTx, pages } from '@living-wiki/db';
+import { withTenantTx, pages } from '@kinote/db';
 import {
   signCollabToken,
   getCollabTokenSecret,
   documentName,
   type CollabClaims,
-} from '@living-wiki/shared';
+} from '@kinote/shared';
 import {
   bootstrapTenant,
   createAgent,

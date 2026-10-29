@@ -1,11 +1,11 @@
 import { useState } from 'react';
-import type { CollectionRow, FieldDef } from '@living-wiki/contracts';
+import type { CollectionRow, FieldDef } from '@kinote/contracts';
 import { boardMove, groupRows, viewGroupField, visibleFields, type RowGroup } from '../../lib/views.js';
 import { FieldValue } from '../fields/FieldEditor.js';
 import { RowTitle } from './TableView.js';
 import type { LayoutProps } from './types.js';
 
-const DRAG_TYPE = 'application/x-living-wiki-row';
+const DRAG_TYPE = 'application/x-kinote-row';
 
 /** The board layout (spec C7): a column per value of the grouping field; dragging a card changes it. */
 export function BoardView(p: LayoutProps) {

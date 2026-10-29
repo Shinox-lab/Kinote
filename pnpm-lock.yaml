@@ -41,16 +41,16 @@ importers:
       '@fastify/rate-limit':
         specifier: ^11.2.1
         version: 11.2.1
-      '@living-wiki/contracts':
+      '@kinote/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
-      '@living-wiki/core':
+      '@kinote/core':
         specifier: workspace:*
         version: link:../../packages/core
-      '@living-wiki/db':
+      '@kinote/db':
         specifier: workspace:*
         version: link:../../packages/db
-      '@living-wiki/shared':
+      '@kinote/shared':
         specifier: workspace:*
         version: link:../../packages/shared
       '@node-rs/argon2':
@@ -80,16 +80,16 @@ importers:
       '@hocuspocus/server':
         specifier: ^4.7.1
         version: 4.7.1(y-protocols@1.0.7(yjs@13.6.33))(yjs@13.6.33)
-      '@living-wiki/contracts':
+      '@kinote/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
-      '@living-wiki/core':
+      '@kinote/core':
         specifier: workspace:*
         version: link:../../packages/core
-      '@living-wiki/db':
+      '@kinote/db':
         specifier: workspace:*
         version: link:../../packages/db
-      '@living-wiki/shared':
+      '@kinote/shared':
         specifier: workspace:*
         version: link:../../packages/shared
       drizzle-orm:
@@ -126,7 +126,7 @@ importers:
       '@hocuspocus/provider':
         specifier: ^4.7.1
         version: 4.7.1(y-protocols@1.0.7(yjs@13.6.33))(yjs@13.6.33)
-      '@living-wiki/contracts':
+      '@kinote/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
       '@tanstack/react-query':
@@ -193,16 +193,16 @@ importers:
       '@blocknote/server-util':
         specifier: ^0.49.0
         version: 0.49.0(@types/hast@3.0.5)(prosemirror-model@1.25.12)(prosemirror-state@1.4.4)(prosemirror-view@1.42.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
-      '@living-wiki/contracts':
+      '@kinote/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
-      '@living-wiki/core':
+      '@kinote/core':
         specifier: workspace:*
         version: link:../../packages/core
-      '@living-wiki/db':
+      '@kinote/db':
         specifier: workspace:*
         version: link:../../packages/db
-      '@living-wiki/shared':
+      '@kinote/shared':
         specifier: workspace:*
         version: link:../../packages/shared
       drizzle-orm:
@@ -223,13 +223,13 @@ importers:
       '@blocknote/server-util':
         specifier: ^0.49.0
         version: 0.49.0(@types/hast@3.0.5)(prosemirror-model@1.25.12)(prosemirror-state@1.4.4)(prosemirror-view@1.42.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
-      '@living-wiki/contracts':
+      '@kinote/contracts':
         specifier: workspace:*
         version: link:../contracts
-      '@living-wiki/db':
+      '@kinote/db':
         specifier: workspace:*
         version: link:../db
-      '@living-wiki/shared':
+      '@kinote/shared':
         specifier: workspace:*
         version: link:../shared
       drizzle-orm:
@@ -247,7 +247,7 @@ importers:
       '@electric-sql/pglite':
         specifier: ^0.2.17
         version: 0.2.17
-      '@living-wiki/contracts':
+      '@kinote/contracts':
         specifier: workspace:*
         version: link:../contracts
       drizzle-orm:
@@ -260,7 +260,7 @@ importers:
         specifier: ^3.25.76
         version: 3.25.76
     devDependencies:
-      '@living-wiki/shared':
+      '@kinote/shared':
         specifier: workspace:*
         version: link:../shared
       '@types/pg':
@@ -278,7 +278,7 @@ importers:
       '@blocknote/server-util':
         specifier: ^0.49.0
         version: 0.49.0(@types/hast@3.0.5)(prosemirror-model@1.25.12)(prosemirror-state@1.4.4)(prosemirror-view@1.42.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
-      '@living-wiki/contracts':
+      '@kinote/contracts':
         specifier: workspace:*
         version: link:../contracts
       zod:

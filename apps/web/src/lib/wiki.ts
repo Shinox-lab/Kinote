@@ -1,4 +1,4 @@
-import type { SpaceRole, TreeNode } from '@living-wiki/contracts';
+import type { SpaceRole, TreeNode } from '@kinote/contracts';
 
 // Pure helpers behind the wiki screens: the page tree, author colours and names,
 // and which controls a page shows. The badge text always comes from the server;

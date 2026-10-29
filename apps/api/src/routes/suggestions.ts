@@ -9,8 +9,8 @@ import {
   versions,
   writeAuditEvent,
   type DbTransaction,
-} from '@living-wiki/db';
-import { AppError, type SuggestionSummary } from '@living-wiki/contracts';
+} from '@kinote/db';
+import { AppError, type SuggestionSummary } from '@kinote/contracts';
 import {
   assertValidUuid,
   ensureRouterAgent,
@@ -18,8 +18,8 @@ import {
   requireDocumentRole,
   takePageSnapshot,
   type Actor,
-} from '@living-wiki/core';
-import { documentName, type BlockLike, type CollabClient } from '@living-wiki/shared';
+} from '@kinote/core';
+import { documentName, type BlockLike, type CollabClient } from '@kinote/shared';
 import { conflictNames, toSuggestionSummary } from './captures.js';
 import { approveVersion } from './pages.js';
 

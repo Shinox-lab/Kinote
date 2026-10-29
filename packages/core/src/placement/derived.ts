@@ -7,7 +7,7 @@ import {
   spaces,
   type DbTransaction,
   type DocumentRow,
-} from '@living-wiki/db';
+} from '@kinote/db';
 import { deleteOrphanEntities, previousEntityIds } from './entities.js';
 
 /** The placement jobs of an indexed version: a card for a page, entities for any document. */

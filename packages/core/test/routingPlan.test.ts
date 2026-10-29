@@ -1,6 +1,6 @@
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { blockActivity, captureFacts, captureMessages, citations, suggestions, withTenantTx } from '@living-wiki/db';
-import { createTestDb, type TestDb } from '@living-wiki/db/testing';
+import { blockActivity, captureFacts, captureMessages, citations, suggestions, withTenantTx } from '@kinote/db';
+import { createTestDb, type TestDb } from '@kinote/db/testing';
 import { planCapture, type FactPlan, type PlanEditsInput, type RoutingModel } from '../src/index.js';
 import {
   addCapture,

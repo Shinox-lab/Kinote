@@ -1,9 +1,9 @@
 import { describe, test, beforeEach } from 'vitest';
 import assert from 'node:assert/strict';
 import { and, eq } from 'drizzle-orm';
-import { auditEvents, documents, jobs, versions, withTenantTx } from '@living-wiki/db';
-import { InMemoryObjectStorage } from '@living-wiki/shared';
-import { ERROR_SENTENCES } from '@living-wiki/contracts';
+import { auditEvents, documents, jobs, versions, withTenantTx } from '@kinote/db';
+import { InMemoryObjectStorage } from '@kinote/shared';
+import { ERROR_SENTENCES } from '@kinote/contracts';
 import { buildTestApp, bootstrapTenant, signUpMember, signUp, asUser, useTestDb } from './support/testkit.js';
 import { uploadRequest } from './support/multipart.js';
 import { replaceFile, uploadFile } from '../src/routes/files.js';

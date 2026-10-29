@@ -126,7 +126,7 @@ Contracts:
 - [ ] **Step 4: Check.**
   1. Run the Step 2 command. Expected: PASS.
   2. Run `pnpm typecheck`. Expected: 0 errors.
-  3. Run `bash /private/tmp/claude-501/-Users-desmondfoo-Downloads-living-wiki/9fb567f7-0b77-4fba-99d7-69dc2e0e0d40/scratchpad/pgtest.sh`. Expected: all pass. The migration must apply on real Postgres.
+  3. Run `bash /private/tmp/claude-501/-Users-desmondfoo-Downloads-kinote/9fb567f7-0b77-4fba-99d7-69dc2e0e0d40/scratchpad/pgtest.sh`. Expected: all pass. The migration must apply on real Postgres.
 - [ ] **Step 5: Commit.** `feat(db): capture shape and document fields`
 
 ### Task 3: Model — shape in the split, the subject in every fact, page tree, document placement

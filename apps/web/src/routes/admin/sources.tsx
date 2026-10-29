@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useMutation } from '@tanstack/react-query';
-import type { Source, SourceToken, SpaceResponse } from '@living-wiki/contracts';
+import type { Source, SourceToken, SpaceResponse } from '@kinote/contracts';
 import { api, errorMessage } from '../../lib/api.js';
 import { useRefresh, useSources, useSpaces } from '../../lib/queries.js';
 import { useFocusTrap } from '../../lib/useFocusTrap.js';

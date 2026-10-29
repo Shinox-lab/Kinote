@@ -1,6 +1,6 @@
 import { BlockNoteSchema, defaultBlockSpecs, defaultInlineContentSpecs } from '@blocknote/core';
 import { createReactBlockSpec, createReactInlineContentSpec } from '@blocknote/react';
-import { calloutConfig, collectionViewConfig, fileEmbedConfig, mentionConfig, mentionPath, pageLinkConfig, pageLinkPath } from '@living-wiki/contracts';
+import { calloutConfig, collectionViewConfig, fileEmbedConfig, mentionConfig, mentionPath, pageLinkConfig, pageLinkPath } from '@kinote/contracts';
 import { FileEmbedView } from './FileEmbedView.js';
 import { PageLinkView } from './PageLinkView.js';
 import { CollectionViewBlock } from '../views/CollectionViewBlock.js';

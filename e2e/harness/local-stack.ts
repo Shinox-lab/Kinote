@@ -19,12 +19,12 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build, createLogger, preview, type PreviewServer } from 'vite';
-import { assertEmbeddingDimensions, closeDb } from '@living-wiki/db';
-import { createTestDb } from '@living-wiki/db/testing';
-import { EMBEDDING_DIMENSIONS, FakeExtractor, defaultEmbeddingProvider } from '@living-wiki/core';
-import { InMemoryObjectStorage, loadConfig } from '@living-wiki/shared';
+import { assertEmbeddingDimensions, closeDb } from '@kinote/db';
+import { createTestDb } from '@kinote/db/testing';
+import { EMBEDDING_DIMENSIONS, FakeExtractor, defaultEmbeddingProvider } from '@kinote/core';
+import { InMemoryObjectStorage, loadConfig } from '@kinote/shared';
 import { buildApiServer } from '../../apps/api/src/server.js';
-import { HttpCollabClient } from '@living-wiki/shared';
+import { HttpCollabClient } from '@kinote/shared';
 import { collabSettle, createCollabServer } from '../../apps/collab/src/server.js';
 import { runWorkerLoop } from '../../apps/worker/src/runner.js';
 
@@ -106,7 +106,7 @@ const worker = runWorkerLoop({
 process.env.API_URL = `http://${HOST}:${apiPort}`;
 process.env.COLLAB_URL = `http://${HOST}:${collabPort}`;
 const webRoot = path.join(root, 'apps', 'web');
-const webDist = fs.mkdtempSync(path.join(os.tmpdir(), 'living-wiki-e2e-web-'));
+const webDist = fs.mkdtempSync(path.join(os.tmpdir(), 'kinote-e2e-web-'));
 await build({
   root: webRoot,
   logLevel: 'error',

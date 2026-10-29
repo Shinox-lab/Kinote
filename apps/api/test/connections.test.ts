@@ -1,5 +1,5 @@
 import { describe, test, beforeAll, afterEach, afterAll, expect } from 'vitest';
-import { DeterministicEmbeddingProvider, DeterministicPlacementModel } from '@living-wiki/core';
+import { DeterministicEmbeddingProvider, DeterministicPlacementModel } from '@kinote/core';
 import { collabSettle, type CollabServer } from '../../collab/src/server.js';
 import { startCollabServer } from '../../collab/test/support/wsClient.js';
 import { runPendingJobsForTenant } from '../../worker/src/runner.js';

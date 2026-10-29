@@ -1,5 +1,5 @@
 import { useId, useState } from 'react';
-import type { FileVersion } from '@living-wiki/contracts';
+import type { FileVersion } from '@kinote/contracts';
 import { previewLines } from '../lib/chunks.js';
 import { useVersionChunks } from '../lib/queries.js';
 import { FileViewer } from '../viewers/FileViewer.js';

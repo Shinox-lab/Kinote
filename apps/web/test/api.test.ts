@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { z } from 'zod';
-import { ERROR_SENTENCES, VersionSummarySchema } from '@living-wiki/contracts';
+import { ERROR_SENTENCES, VersionSummarySchema } from '@kinote/contracts';
 import {
   ApiError,
   api,

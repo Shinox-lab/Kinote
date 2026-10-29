@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import type { Source, SourceToken } from '@living-wiki/contracts';
+import type { Source, SourceToken } from '@kinote/contracts';
 import { curlExamples, lastUsedLabel, sourceStatusLabel, tokenState } from '../src/lib/sources.js';
 
 const NOW = new Date('2026-10-20T12:00:00.000Z');

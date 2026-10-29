@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { useMutation } from '@tanstack/react-query';
-import type { Group } from '@living-wiki/contracts';
+import type { Group } from '@kinote/contracts';
 import { api } from '../../lib/api.js';
 import { useGroups, useRefresh } from '../../lib/queries.js';
 import { GroupMembers } from '../../components/GroupMembers.js';

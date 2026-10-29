@@ -7,7 +7,7 @@
 -- returns only that user's rows; callers must pass the id of the authenticated
 -- session user, never a client-supplied id. search_path is pinned and every
 -- table is schema-qualified so a caller cannot shadow them.
--- EXECUTE is granted to living_wiki_app in 0004_grants, after the role exists.
+-- EXECUTE is granted to kinote_app in 0004_grants, after the role exists.
 CREATE OR REPLACE FUNCTION public.my_tenants(p_user uuid)
 RETURNS TABLE (tenant_id uuid, name text, slug text, role text)
 LANGUAGE sql

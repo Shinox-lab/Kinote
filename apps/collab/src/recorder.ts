@@ -8,8 +8,8 @@ import {
   blockActivity,
   pagePendingContributors,
   enqueueJob,
-} from '@living-wiki/db';
-import { parseDocumentName } from '@living-wiki/shared';
+} from '@kinote/db';
+import { parseDocumentName } from '@kinote/shared';
 import type { CollabContext } from './auth.js';
 import { changedBlockIds, changesPage } from './attribution.js';
 import { resolveOriginActor, type OriginActor } from './origin.js';

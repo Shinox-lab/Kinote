@@ -1,5 +1,5 @@
 import type { z } from 'zod';
-import { AppError } from '@living-wiki/contracts';
+import { AppError } from '@kinote/contracts';
 
 export interface ChatJsonOptions {
   baseUrl: string;

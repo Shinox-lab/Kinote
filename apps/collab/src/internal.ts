@@ -1,10 +1,10 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import * as Y from 'yjs';
-import { createServerEditor } from '@living-wiki/shared';
+import { createServerEditor } from '@kinote/shared';
 import type { Hocuspocus } from '@hocuspocus/server';
 import { and, eq } from 'drizzle-orm';
-import { withTenantTx, documents, pages, spaces } from '@living-wiki/db';
+import { withTenantTx, documents, pages, spaces } from '@kinote/db';
 import {
   AppError,
   CollabApplyBlockOpsRequestSchema,
@@ -16,8 +16,8 @@ import {
   FIELDS_MAP,
   ERROR_SENTENCES,
   type ErrorCode,
-} from '@living-wiki/contracts';
-import { parseDocumentName } from '@living-wiki/shared';
+} from '@kinote/contracts';
+import { parseDocumentName } from '@kinote/shared';
 import type { CollabContext } from './auth.js';
 import { openTrustedDirectSession } from './directSession.js';
 import { applyBlockOps } from './blockOps.js';

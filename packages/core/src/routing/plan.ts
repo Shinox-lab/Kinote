@@ -13,9 +13,9 @@ import {
   versions,
   rowsOf,
   type DbTransaction,
-} from '@living-wiki/db';
-import { AppError } from '@living-wiki/contracts';
-import { blockFullText, type BlockLike } from '@living-wiki/shared';
+} from '@kinote/db';
+import { AppError } from '@kinote/contracts';
+import { blockFullText, type BlockLike } from '@kinote/shared';
 import type { EmbeddingProvider } from '../embedding.js';
 import type { Actor } from '../permissions.js';
 import type { CaptureFact, CaptureShape, PlanCandidate, PlannedEdit, RoutingModel } from '../placement/model.js';

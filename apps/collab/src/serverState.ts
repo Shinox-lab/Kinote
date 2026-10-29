@@ -1,5 +1,5 @@
 import type { Document, Hocuspocus, onStoreDocumentPayload } from '@hocuspocus/server';
-import { AppError } from '@living-wiki/contracts';
+import { AppError } from '@kinote/contracts';
 
 export interface CollabServerDeps {
   /** Verifies the signed collab tokens clients and direct sessions present. */

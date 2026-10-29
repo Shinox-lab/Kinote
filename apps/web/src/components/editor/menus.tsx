@@ -4,7 +4,7 @@ import {
   getDefaultReactSlashMenuItems,
   type DefaultReactSuggestionItem,
 } from '@blocknote/react';
-import { defaultView } from '@living-wiki/contracts';
+import { defaultView } from '@kinote/contracts';
 import { api } from '../../lib/api.js';
 import { linkMenuEntries } from '../../lib/links.js';
 import { createNamedPage } from '../../lib/newPage.js';

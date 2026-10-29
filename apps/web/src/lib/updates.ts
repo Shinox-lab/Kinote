@@ -1,4 +1,4 @@
-import type { UpdateItem } from '@living-wiki/contracts';
+import type { UpdateItem } from '@kinote/contracts';
 
 // Wording for the sidebar's Updates feed. The server decides what happened
 // (the status); this only turns it into a short sentence.

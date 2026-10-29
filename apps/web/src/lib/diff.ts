@@ -1,4 +1,4 @@
-import type { BlockDiffEntry } from '@living-wiki/contracts';
+import type { BlockDiffEntry } from '@kinote/contracts';
 
 // Pure helpers behind DiffView: which blocks to show, their labels and the one-line
 // summary. The diff itself (what changed) is always the server's.

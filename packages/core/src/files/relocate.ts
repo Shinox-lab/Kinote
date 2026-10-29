@@ -1,5 +1,5 @@
 import { and, desc, eq, inArray } from 'drizzle-orm';
-import { chunks, documents, versions, type DbTransaction, type DocumentRow } from '@living-wiki/db';
+import { chunks, documents, versions, type DbTransaction, type DocumentRow } from '@kinote/db';
 import { chunkInboxOwner } from '../indexing/inboxOwner.js';
 import { deletePlacementIndex, movePlacementIndex } from '../placement/derived.js';
 

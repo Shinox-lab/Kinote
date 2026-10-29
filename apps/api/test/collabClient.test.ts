@@ -1,7 +1,7 @@
 import { describe, test, beforeAll, afterAll, expect } from 'vitest';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { HttpCollabClient } from '@living-wiki/shared';
+import { HttpCollabClient } from '@kinote/shared';
 
 /**
  * R23: the collab internal endpoints answer 204 on success and nothing else.

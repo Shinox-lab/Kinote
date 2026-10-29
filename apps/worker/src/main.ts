@@ -1,11 +1,11 @@
-import { assertEmbeddingDimensions, closeDb, initDb } from '@living-wiki/db';
+import { assertEmbeddingDimensions, closeDb, initDb } from '@kinote/db';
 import {
   createEmbeddingProvider,
   createExtractor,
   createPlacementModel,
   EMBEDDING_DIMENSIONS,
-} from '@living-wiki/core';
-import { HttpCollabClient, createObjectStorage, loadConfig, routerProviderProblem } from '@living-wiki/shared';
+} from '@kinote/core';
+import { HttpCollabClient, createObjectStorage, loadConfig, routerProviderProblem } from '@kinote/shared';
 import { runWorkerLoop } from './runner.js';
 
 const POLL_INTERVAL_MS = 1000;

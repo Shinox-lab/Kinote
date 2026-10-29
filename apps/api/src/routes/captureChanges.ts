@@ -9,7 +9,7 @@ import {
   enqueueJob,
   writeAuditEvent,
   type DbTransaction,
-} from '@living-wiki/db';
+} from '@kinote/db';
 import {
   AppError,
   MoveChangeRequestSchema,
@@ -19,7 +19,7 @@ import {
   type CaptureSummary,
   type NeedsHomeDocument,
   type UndoChangesResponse,
-} from '@living-wiki/contracts';
+} from '@kinote/contracts';
 import {
   assertValidUuid,
   blockMarkdown,
@@ -33,8 +33,8 @@ import {
   takePageSnapshot,
   type Actor,
   type EmbeddingProvider,
-} from '@living-wiki/core';
-import { blockFullText, documentName, type BlockLike, type CollabClient } from '@living-wiki/shared';
+} from '@kinote/core';
+import { blockFullText, documentName, type BlockLike, type CollabClient } from '@kinote/shared';
 import { enqueueCaptureRoute, summaries, visibleCapture } from './captures.js';
 import { archivePageTx, lockPage, movePage } from './pages.js';
 

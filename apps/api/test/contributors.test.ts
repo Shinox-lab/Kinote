@@ -1,6 +1,6 @@
 import { describe, test, beforeAll, afterEach, afterAll, expect } from 'vitest';
 import { and, eq } from 'drizzle-orm';
-import { withTenantTx, versionContributors, pagePendingContributors } from '@living-wiki/db';
+import { withTenantTx, versionContributors, pagePendingContributors } from '@kinote/db';
 import { collabSettle, openDirectSession, type CollabServer } from '../../collab/src/server.js';
 import { connectClient, startCollabServer, type ConnectedClient } from '../../collab/test/support/wsClient.js';
 import { readBlocks, fragmentText } from '../../collab/test/support/blocks.js';

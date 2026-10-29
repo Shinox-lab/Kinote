@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type DragEvent, type MouseEvent } from 'react';
 import { useParams } from '@tanstack/react-router';
 import { useMutation } from '@tanstack/react-query';
-import type { SpaceResponse } from '@living-wiki/contracts';
+import type { SpaceResponse } from '@kinote/contracts';
 import { isKnownIcon } from '../../lib/emoji.js';
 import { FileTypeTile } from '../FileTypeTile.js';
 import { useUploads } from '../../lib/useUploads.js';
@@ -54,7 +54,7 @@ interface Dragged {
 }
 
 /** The mime type the drag carries; the browser only lets the console read its own. */
-const DRAG_TYPE = 'application/x-living-wiki-node';
+const DRAG_TYPE = 'application/x-kinote-node';
 
 const INDENT_PX = 12;
 const ICON_BUTTON =

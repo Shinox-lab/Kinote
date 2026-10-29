@@ -1,4 +1,4 @@
-import { AppError, type SearchPassage } from '@living-wiki/contracts';
+import { AppError, type SearchPassage } from '@kinote/contracts';
 
 export const NO_RELEVANT_ANSWER =
   'No relevant indexed information was found in your accessible spaces.';

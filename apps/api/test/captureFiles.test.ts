@@ -1,8 +1,8 @@
 import { describe, test, beforeAll, afterEach, afterAll, expect } from 'vitest';
 import { and, eq } from 'drizzle-orm';
-import { documents, spaces, withTenantTx } from '@living-wiki/db';
-import { DeterministicEmbeddingProvider, DeterministicPlacementModel, FakeExtractor, blockText } from '@living-wiki/core';
-import { InMemoryObjectStorage, type BlockLike } from '@living-wiki/shared';
+import { documents, spaces, withTenantTx } from '@kinote/db';
+import { DeterministicEmbeddingProvider, DeterministicPlacementModel, FakeExtractor, blockText } from '@kinote/core';
+import { InMemoryObjectStorage, type BlockLike } from '@kinote/shared';
 import { collabSettle, type CollabServer } from '../../collab/src/server.js';
 import { startCollabServer } from '../../collab/test/support/wsClient.js';
 import { readBlocks } from '../../collab/test/support/blocks.js';

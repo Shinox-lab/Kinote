@@ -1,4 +1,4 @@
-import { AppError, type CollabApplyBlockOpsRequest } from '@living-wiki/contracts';
+import { AppError, type CollabApplyBlockOpsRequest } from '@kinote/contracts';
 import { documentName } from './collabToken.js';
 
 /**

@@ -11,9 +11,9 @@ import {
   writeAuditEvent,
   type DbTransaction,
   type DocumentRow,
-} from '@living-wiki/db';
-import { AppError, ExternalIdSchema, type SourceDeleteResponse, type SourcePutResponse } from '@living-wiki/contracts';
-import { cleanFileName, insertFileVersion, type VersionRow } from '@living-wiki/core';
+} from '@kinote/db';
+import { AppError, ExternalIdSchema, type SourceDeleteResponse, type SourcePutResponse } from '@kinote/contracts';
+import { cleanFileName, insertFileVersion, type VersionRow } from '@kinote/core';
 import { withdrawLiveVersions } from '../documents/lifecycle.js';
 import type { SourceActor } from '../auth/actor.js';
 import { detect, fileArchived, sha256, toFileVersion, withStoredBytes, type FileDeps, type UploadedFile } from './files.js';

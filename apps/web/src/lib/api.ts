@@ -90,10 +90,10 @@ import {
   type UpdatePageRequest,
   type UpdateSpaceSettings,
   type UpsertSpaceGrant,
-} from '@living-wiki/contracts';
+} from '@kinote/contracts';
 import { loadSession } from './session.js';
 
-// Typed client for the Living Wiki API: every reply is checked against its
+// Typed client for the Kinote API: every reply is checked against its
 // contract schema. Request bodies are snake_case, replies camelCase. Framework
 // free, so the console (or a test) can use it as is.
 

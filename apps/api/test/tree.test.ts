@@ -2,8 +2,8 @@ import { describe, test, beforeEach } from 'vitest';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { and, eq, sql } from 'drizzle-orm';
-import { withTenantTx, rowsOf, versions, documents, pages, auditEvents } from '@living-wiki/db';
-import { requireSpaceRole, type Actor } from '@living-wiki/core';
+import { withTenantTx, rowsOf, versions, documents, pages, auditEvents } from '@kinote/db';
+import { requireSpaceRole, type Actor } from '@kinote/core';
 import { createPage as createPageAs } from '../src/routes/pages.js';
 import { getSpaceTree, getSpaceArchived } from '../src/routes/foundations.js';
 import {

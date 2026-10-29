@@ -1,9 +1,9 @@
 import { describe, test, beforeEach } from 'vitest';
 import assert from 'node:assert/strict';
 import { and, eq } from 'drizzle-orm';
-import { auditEvents, chunks, documents, sourceItems, versions, withTenantTx } from '@living-wiki/db';
-import { InMemoryObjectStorage } from '@living-wiki/shared';
-import { FakeExtractor } from '@living-wiki/core';
+import { auditEvents, chunks, documents, sourceItems, versions, withTenantTx } from '@kinote/db';
+import { InMemoryObjectStorage } from '@kinote/shared';
+import { FakeExtractor } from '@kinote/core';
 import { runPendingJobsForTenant } from '../../worker/src/runner.js';
 import { buildTestApp, signUpMember, useTestDb } from './support/testkit.js';
 import { deleteFile, makeSource, pdf, putFile, sourceWorld, type SourceWorld } from './support/sourcekit.js';

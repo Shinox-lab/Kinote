@@ -1,4 +1,4 @@
-import type { AuthResponse } from '@living-wiki/contracts';
+import type { AuthResponse } from '@kinote/contracts';
 import { MutationCache, QueryCache, QueryClient } from '@tanstack/react-query';
 import { isUnauthenticated } from './api.js';
 import { clearSession, saveSession } from './session.js';

@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { eq, sql } from 'drizzle-orm';
-import { getDb, rowsOf, users } from '@living-wiki/db';
+import { getDb, rowsOf, users } from '@kinote/db';
 import {
   AppError,
   SignInRequestSchema,
@@ -11,7 +11,7 @@ import {
   type AuthResponse,
   type AuthUser,
   type MeResponse,
-} from '@living-wiki/contracts';
+} from '@kinote/contracts';
 import { getDummyHash, hashPassword, isUsableHash, verifyPassword } from '../auth/password.js';
 import { createSession, revokeSession } from '../auth/sessions.js';
 import type { AuthSession } from '../auth/actor.js';

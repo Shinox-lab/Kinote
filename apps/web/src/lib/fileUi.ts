@@ -1,4 +1,4 @@
-import type { FileDetails, SpaceRole } from '@living-wiki/contracts';
+import type { FileDetails, SpaceRole } from '@kinote/contracts';
 import type { BadgeTone } from './wiki.js';
 
 // What the file screen offers each role, and what it says about a file's state.

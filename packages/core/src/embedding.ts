@@ -1,7 +1,7 @@
 /** The one index width this release supports. The database columns are halfvec(2560). */
 export const EMBEDDING_DIMENSIONS = 2560;
 
-import { AppError } from '@living-wiki/contracts';
+import { AppError } from '@kinote/contracts';
 
 export type EmbeddingKind = 'document' | 'query';
 
@@ -17,7 +17,7 @@ export interface EmbeddingProvider {
  * and chunks rank naturally via cosine distance (<=>).
  */
 export class DeterministicEmbeddingProvider implements EmbeddingProvider {
-  readonly model = 'living-wiki-deterministic-2560-v1';
+  readonly model = 'kinote-deterministic-2560-v1';
   readonly dimensions = EMBEDDING_DIMENSIONS;
   public callCount = 0;
 

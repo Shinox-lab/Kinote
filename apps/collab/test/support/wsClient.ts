@@ -1,7 +1,7 @@
 import * as Y from 'yjs';
 import { HocuspocusProvider, HocuspocusProviderWebsocket } from '@hocuspocus/provider';
 import WebSocket from 'ws';
-import { getCollabTokenSecret } from '@living-wiki/shared';
+import { getCollabTokenSecret } from '@kinote/shared';
 import { createCollabServer, type CollabServer, type CollabServerDeps } from '../../src/server.js';
 
 /** Internal secret the test servers are built with (Task 4.2 endpoints). */

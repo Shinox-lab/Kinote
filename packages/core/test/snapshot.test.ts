@@ -2,10 +2,10 @@ import { describe, test, beforeEach } from 'vitest';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import * as Y from 'yjs';
-import { createServerEditor } from '@living-wiki/shared';
+import { createServerEditor } from '@kinote/shared';
 import { and, eq } from 'drizzle-orm';
-import { withTenantTx, pages, links, versions } from '@living-wiki/db';
-import { flattenBlocks, type BlockLike } from '@living-wiki/shared';
+import { withTenantTx, pages, links, versions } from '@kinote/db';
+import { flattenBlocks, type BlockLike } from '@kinote/shared';
 import { takePageSnapshot } from '../src/index.js';
 import { encodePageYDoc } from '../../../apps/api/src/routes/pages.js';
 import {

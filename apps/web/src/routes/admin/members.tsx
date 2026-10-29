@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
-import type { Member, TenantRole } from '@living-wiki/contracts';
+import type { Member, TenantRole } from '@kinote/contracts';
 import { api } from '../../lib/api.js';
 import { TENANT_ROLES, canChangeRole } from '../../lib/console.js';
 import { useMembers, useRefresh, useWorkspace } from '../../lib/queries.js';

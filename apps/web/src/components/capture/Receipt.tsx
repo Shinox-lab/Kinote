@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import { useMutation } from '@tanstack/react-query';
-import type { CaptureReceipt, UndoChangesResponse } from '@living-wiki/contracts';
+import type { CaptureReceipt, UndoChangesResponse } from '@kinote/contracts';
 import { ApiError, api } from '../../lib/api.js';
 import { documentHeadline, hiddenChangesText, keptText, outcomeLabel, undoNotice, type CaptureChange } from '../../lib/capture.js';
 import { useRefresh, useWorkspace } from '../../lib/queries.js';

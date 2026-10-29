@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
-import type { AskCitation, AskResponse, SearchPassage } from '@living-wiki/contracts';
+import type { AskCitation, AskResponse, SearchPassage } from '@kinote/contracts';
 import { api } from '../lib/api.js';
 import { useSpaces, useWorkspace } from '../lib/queries.js';
 import { answerSegments, headingLine, queryAllows } from '../lib/search.js';

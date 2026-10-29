@@ -2,7 +2,7 @@
 import { act, createElement } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, describe, expect, test, vi } from 'vitest';
-import type { FileVersion } from '@living-wiki/contracts';
+import type { FileVersion } from '@kinote/contracts';
 
 const state = vi.hoisted(() => ({ unmounted: false }));
 

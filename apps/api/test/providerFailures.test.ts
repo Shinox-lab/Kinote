@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, test } from 'vitest';
-import { ERROR_SENTENCES } from '@living-wiki/contracts';
-import { EMBEDDING_DIMENSIONS, type EmbeddingProvider } from '@living-wiki/core';
+import { ERROR_SENTENCES } from '@kinote/contracts';
+import { EMBEDDING_DIMENSIONS, type EmbeddingProvider } from '@kinote/core';
 import { buildTestApp, bootstrapTenant, useTestDb } from './support/testkit.js';
 
 const down: EmbeddingProvider = {

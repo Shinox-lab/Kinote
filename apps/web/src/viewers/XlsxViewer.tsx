@@ -1,5 +1,5 @@
 import { Suspense, lazy, useCallback, useEffect, useState } from 'react';
-import type { FileVersion, UploadFileResponse } from '@living-wiki/contracts';
+import type { FileVersion, UploadFileResponse } from '@kinote/contracts';
 import { XlsxViewer as ExtendXlsxViewer, useXlsxViewerController } from '@extend-ai/react-xlsx';
 import { Button, Loading } from '../components/ui.js';
 import { initialSheet } from '../lib/tablePreview.js';

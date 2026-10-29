@@ -1,4 +1,4 @@
-import { ERROR_SENTENCES } from '@living-wiki/contracts';
+import { ERROR_SENTENCES } from '@kinote/contracts';
 import { badgeSettles } from './wiki.js';
 
 // The console's upload queue as plain data: files go up one at a time, a file

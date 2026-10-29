@@ -1,9 +1,9 @@
 import { useState } from 'react';
-import { fieldValueFits, type CollectionRow } from '@living-wiki/contracts';
+import { fieldValueFits, type CollectionRow } from '@kinote/contracts';
 import { calendarWeeks, daysBetween, moveDate, todayIso, viewDateField, type DateValue } from '../../lib/views.js';
 import type { LayoutProps } from './types.js';
 
-const DRAG_TYPE = 'application/x-living-wiki-day';
+const DRAG_TYPE = 'application/x-kinote-day';
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const MONTH = new Intl.DateTimeFormat('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' });
 

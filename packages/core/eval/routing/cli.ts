@@ -1,8 +1,8 @@
 // Scores the configured routing model on the labelled set, in a throwaway
 // in-process database: `pnpm routing:eval`. Uses ROUTER_* and EMBEDDING_*
 // from the environment (deterministic by default). Exits 1 below the bar.
-import { createTestDb } from '@living-wiki/db/testing';
-import { loadConfig } from '@living-wiki/shared';
+import { createTestDb } from '@kinote/db/testing';
+import { loadConfig } from '@kinote/shared';
 import { createEmbeddingProvider, createPlacementModel } from '../../src/index.js';
 import { runRoutingEval } from './runEval.js';
 

@@ -1,10 +1,10 @@
 import { describe, test, beforeAll, afterEach, afterAll, expect } from 'vitest';
-import { AppError } from '@living-wiki/contracts';
-import { signCollabToken, getCollabTokenSecret, documentName } from '@living-wiki/shared';
+import { AppError } from '@kinote/contracts';
+import { signCollabToken, getCollabTokenSecret, documentName } from '@kinote/shared';
 import { collabSettle, type CollabServer } from '../../collab/src/server.js';
 import { connectClient, startCollabServer, type ConnectedClient } from '../../collab/test/support/wsClient.js';
 import { waitFor } from '../../collab/test/support/collabWorld.js';
-import type { CollabClient } from '@living-wiki/shared';
+import type { CollabClient } from '@kinote/shared';
 import { InProcessCollabClient } from './support/inProcessCollab.js';
 import { bootstrapTenant, signUpMember, buildTestApp, useTestDb } from './support/testkit.js';
 

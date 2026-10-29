@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
 import { useMutation } from '@tanstack/react-query';
-import type { SpaceResponse } from '@living-wiki/contracts';
+import type { SpaceResponse } from '@kinote/contracts';
 import { api } from '../lib/api.js';
 import { slugify } from '../lib/console.js';
 import { useArchivedTree, useRefresh, useSpaceTree, useSpaces, useWorkspace } from '../lib/queries.js';

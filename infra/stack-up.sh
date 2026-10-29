@@ -18,5 +18,5 @@ fi
 POSTGRES_HOST_PORT="${POSTGRES_HOST_PORT:-55543}"
 
 docker compose up -d --wait --wait-timeout 180 postgres minio
-DATABASE_MIGRATE_URL="postgres://postgres:${POSTGRES_PASSWORD}@127.0.0.1:${POSTGRES_HOST_PORT}/living_wiki" \
+DATABASE_MIGRATE_URL="postgres://postgres:${POSTGRES_PASSWORD}@127.0.0.1:${POSTGRES_HOST_PORT}/kinote" \
   pnpm db:migrate

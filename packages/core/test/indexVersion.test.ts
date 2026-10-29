@@ -10,9 +10,9 @@ import {
   tenants,
   versions,
   withTenantTx,
-} from '@living-wiki/db';
-import { createTestDb, type TestDb } from '@living-wiki/db/testing';
-import { AppError } from '@living-wiki/contracts';
+} from '@kinote/db';
+import { createTestDb, type TestDb } from '@kinote/db/testing';
+import { AppError } from '@kinote/contracts';
 import {
   chunkPageBlocks,
   DeterministicEmbeddingProvider,

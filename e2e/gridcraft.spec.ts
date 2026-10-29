@@ -263,3 +263,33 @@ test('a rejected save keeps the edits, offers a copy and blocks navigation', asy
   expect(await dialogMessage).toBe('Discard unsaved spreadsheet changes?');
   await expect(page).toHaveURL(new RegExp(`/f/${id}$`));
 });
+
+test('full screen covers the page without reloading the editor', async ({ browser, request }) => {
+  const world = await seedWorld(request, { reviewRequired: false });
+  const file = BOOK(world.suffix);
+  const id = await uploadViaApi(request, world, world.owner, file);
+  await waitForFileBadge(request, world, world.owner, id, /^Indexed/);
+
+  const page = await openAs(browser, world, world.owner);
+  const frame = await openFakeEditor(page, world, id, file);
+  await frame.locator('#dirty').click();
+  const editor = page.frame({ url: /\/gridcraft\// })!;
+  await editor.evaluate(() => ((window as unknown as { marker: number }).marker = 1));
+
+  await page.getByRole('button', { name: 'Full screen' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Budget.xlsx spreadsheet editor' });
+  await expect(dialog).toBeVisible();
+  const viewport = page.viewportSize()!;
+  const box = (await dialog.boundingBox())!;
+  expect(box).toMatchObject({ x: 0, y: 0, width: viewport.width, height: viewport.height });
+  const iframeBox = (await page.locator('iframe[title="Budget.xlsx spreadsheet editor"]').boundingBox())!;
+  expect(iframeBox.y + iframeBox.height).toBeCloseTo(viewport.height, 0);
+  await expect(page.getByRole('status').filter({ hasText: 'Unsaved changes' })).toBeVisible();
+  expect(await editor.evaluate(() => (window as unknown as { marker?: number }).marker)).toBe(1);
+
+  await page.getByRole('button', { name: 'Exit full screen' }).focus();
+  await page.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Full screen' })).toBeVisible();
+  expect(await editor.evaluate(() => (window as unknown as { marker?: number }).marker)).toBe(1);
+});

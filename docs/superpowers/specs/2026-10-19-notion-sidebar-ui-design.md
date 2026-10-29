@@ -1,6 +1,6 @@
 # Notion-style console with one integrated sidebar — design
 
-Date: 2026-10-19. Builds on the Slice 0/1 console in `apps/web` (branch `remediation/slice-0-1`). Spec context: `docs/2026-10-18-living-wiki-standalone-design.md`.
+Date: 2026-10-19. Builds on the Slice 0/1 console in `apps/web` (branch `remediation/slice-0-1`). Spec context: `docs/2026-10-18-kinote-standalone-design.md`.
 
 ## Intent
 

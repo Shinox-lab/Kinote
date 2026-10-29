@@ -6,7 +6,7 @@
 # this script only gives it LOGIN, its password and CONNECT on the database.
 # The password is read from $APP_DB_PASSWORD and never stored in the repo.
 #
-# Idempotent: when living_wiki_app already exists (re-run by hand, or created
+# Idempotent: when kinote_app already exists (re-run by hand, or created
 # NOLOGIN by 0004_grants before this script ran) it is reset to LOGIN,
 # NOSUPERUSER, NOBYPASSRLS with the current password, so it can never keep a
 # privilege that would bypass row-level security.
@@ -25,9 +25,9 @@ psql -v ON_ERROR_STOP=1 \
   --dbname "${POSTGRES_DB:-$POSTGRES_USER}" \
   -v db_name="${POSTGRES_DB:-$POSTGRES_USER}" <<'SQL'
 \getenv app_password APP_DB_PASSWORD
-SELECT 'CREATE ROLE living_wiki_app LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE'
-WHERE NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'living_wiki_app')
+SELECT 'CREATE ROLE kinote_app LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE'
+WHERE NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'kinote_app')
 \gexec
-ALTER ROLE living_wiki_app WITH LOGIN NOSUPERUSER NOBYPASSRLS PASSWORD :'app_password';
-GRANT CONNECT ON DATABASE :"db_name" TO living_wiki_app;
+ALTER ROLE kinote_app WITH LOGIN NOSUPERUSER NOBYPASSRLS PASSWORD :'app_password';
+GRANT CONNECT ON DATABASE :"db_name" TO kinote_app;
 SQL

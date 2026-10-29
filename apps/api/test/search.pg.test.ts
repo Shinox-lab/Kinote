@@ -2,22 +2,22 @@
 // be answered from the HNSW index, which pgvector can only use when the
 // ORDER BY ranks `chunks` directly (no join, no CTE beneath it).
 //
-// TEST_DATABASE_URL is the living_wiki_app role (every search goes through
+// TEST_DATABASE_URL is the kinote_app role (every search goes through
 // withTenantTx, so RLS applies); TEST_DATABASE_MIGRATE_URL is the postgres
 // superuser, used only to bulk-seed ~2,000 chunks, ANALYZE and clean up.
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import pg from 'pg';
 import { sql } from 'drizzle-orm';
-import { closeDb, initDb, rowsOf, withTenantTx } from '@living-wiki/db';
-import type { Actor } from '@living-wiki/core';
+import { closeDb, initDb, rowsOf, withTenantTx } from '@kinote/db';
+import type { Actor } from '@kinote/core';
 import {
   BRANCH_LIMIT,
   chunkFilterFor,
   searchSql,
   searchWiki,
   vectorBranchSql,
-} from '@living-wiki/core';
+} from '@kinote/core';
 
 const APP_URL = process.env.TEST_DATABASE_URL;
 const OWNER_URL = process.env.TEST_DATABASE_MIGRATE_URL;

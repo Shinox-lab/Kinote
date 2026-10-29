@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import type { CaptureSummary, ReviewItem, SuggestionSummary } from '@living-wiki/contracts';
+import type { CaptureSummary, ReviewItem, SuggestionSummary } from '@kinote/contracts';
 import {
   CAPTURE_MAX,
   SHAPE_OPTIONS,

@@ -1,7 +1,7 @@
 # Slice 2b: Upload API, Files console and live check — design
 
 Date: 2026-10-20. Builds on Plan 2a (the files ingest backend, branch `slice-2-files`, head `1321d8a`, not yet merged).
-Parent specs: `docs/2026-10-18-living-wiki-standalone-design.md` and `docs/superpowers/specs/2026-10-20-slice-2-files-design.md`
+Parent specs: `docs/2026-10-18-kinote-standalone-design.md` and `docs/superpowers/specs/2026-10-20-slice-2-files-design.md`
 (the "Slice 2 spec"). Where this document and the Slice 2 spec differ, this one wins for 2b and the difference is listed
 under "Calls made by the author".
 

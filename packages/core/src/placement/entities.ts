@@ -14,8 +14,8 @@ import {
   rowsOf,
   NonRetryableError,
   type DbTransaction,
-} from '@living-wiki/db';
-import { AppError } from '@living-wiki/contracts';
+} from '@kinote/db';
+import { AppError } from '@kinote/contracts';
 import type { EmbeddingProvider } from '../embedding.js';
 import type { EntityKind, ExtractedEdge, ExtractedEntity, PlacementModel } from './model.js';
 

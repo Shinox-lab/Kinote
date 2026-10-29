@@ -1,7 +1,7 @@
 import { test, describe, beforeEach } from 'vitest';
 import assert from 'node:assert/strict';
-import { mapDbError } from '@living-wiki/db';
-import { AppError } from '@living-wiki/contracts';
+import { mapDbError } from '@kinote/db';
+import { AppError } from '@kinote/contracts';
 import { buildTestApp, bootstrapTenant, asUser, signUp, useTestDb } from './support/testkit.js';
 
 describe('unique violations map to contract codes', () => {

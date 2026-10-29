@@ -8,9 +8,9 @@ import {
   versions,
   withTenantTx,
   writeAuditEvent,
-} from '@living-wiki/db';
-import { AppError, ExtractedDocumentSchema, type ExtractedDocument } from '@living-wiki/contracts';
-import type { ObjectStorage } from '@living-wiki/shared';
+} from '@kinote/db';
+import { AppError, ExtractedDocumentSchema, type ExtractedDocument } from '@kinote/contracts';
+import type { ObjectStorage } from '@kinote/shared';
 import { detectFileType } from './detect.js';
 import type { Extractor } from './extractor.js';
 import { readTextNative } from './textNative.js';

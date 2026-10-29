@@ -7,7 +7,7 @@ import {
   withTenantTx,
   writeAuditEvent,
   type DbTransaction,
-} from '@living-wiki/db';
+} from '@kinote/db';
 import {
   AppError,
   CreateSourceRequestSchema,
@@ -16,8 +16,8 @@ import {
   type CreateSourceTokenResponse,
   type Source,
   type SourceToken,
-} from '@living-wiki/contracts';
-import { assertValidUuid, type Actor } from '@living-wiki/core';
+} from '@kinote/contracts';
+import { assertValidUuid, type Actor } from '@kinote/core';
 import { mintSourceToken } from '../auth/sourceTokens.js';
 import { requireTenantAdmin } from './admin.js';
 

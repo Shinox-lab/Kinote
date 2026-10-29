@@ -25,4 +25,4 @@ CREATE POLICY tenant_isolation_policy ON public.source_tokens
 --> statement-breakpoint
 -- A source is paused, never removed: audit rows and documents keep pointing at it.
 -- 0004 grants DELETE on every new table by default, so take it back for this one.
-REVOKE DELETE ON public.sources FROM living_wiki_app;
+REVOKE DELETE ON public.sources FROM kinote_app;

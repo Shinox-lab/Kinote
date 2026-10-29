@@ -2,8 +2,8 @@ import {
   defaultAnswerProvider,
   NO_RELEVANT_ANSWER,
   type AnswerProvider,
-} from '@living-wiki/core';
-import { AppError, type AskResponse, type SearchPassage } from '@living-wiki/contracts';
+} from '@kinote/core';
+import { AppError, type AskResponse, type SearchPassage } from '@kinote/contracts';
 
 /**
  * Turns already-retrieved passages into an answer. It deliberately takes no

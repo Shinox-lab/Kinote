@@ -1,4 +1,4 @@
-import type { Notification } from '@living-wiki/contracts';
+import type { Notification } from '@kinote/contracts';
 import { documentHref } from './documentLink.js';
 
 /** One line saying who did what, where. */

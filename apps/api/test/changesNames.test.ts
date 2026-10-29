@@ -1,7 +1,7 @@
 import { describe, test, expect } from 'vitest';
 import { and, eq } from 'drizzle-orm';
-import { withTenantTx, blockActivity, memberships } from '@living-wiki/db';
-import type { BlockDiffEntry } from '@living-wiki/contracts';
+import { withTenantTx, blockActivity, memberships } from '@kinote/db';
+import type { BlockDiffEntry } from '@kinote/contracts';
 import { resolveActorNames } from '../src/people.js';
 import {
   bootstrapTenant,

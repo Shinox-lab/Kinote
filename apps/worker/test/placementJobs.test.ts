@@ -1,6 +1,6 @@
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { entityMentions, pageCards, withTenantTx } from '@living-wiki/db';
-import { createTestDb, type TestDb } from '@living-wiki/db/testing';
+import { entityMentions, pageCards, withTenantTx } from '@kinote/db';
+import { createTestDb, type TestDb } from '@kinote/db/testing';
 import { runPendingJobsForTenant } from '../src/runner.js';
 import { addSpace, indexPageVersion, seedTenant } from '../../../packages/core/test/fixtures/placementSeed.js';
 

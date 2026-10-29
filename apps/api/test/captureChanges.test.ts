@@ -1,8 +1,8 @@
 import { describe, test, beforeAll, afterEach, afterAll, expect } from 'vitest';
 import { eq } from 'drizzle-orm';
-import { withTenantTx, captureChanges, captureFacts, routingExamples, versions } from '@living-wiki/db';
-import { DeterministicEmbeddingProvider, DeterministicPlacementModel, blockText } from '@living-wiki/core';
-import type { BlockLike, CollabClient } from '@living-wiki/shared';
+import { withTenantTx, captureChanges, captureFacts, routingExamples, versions } from '@kinote/db';
+import { DeterministicEmbeddingProvider, DeterministicPlacementModel, blockText } from '@kinote/core';
+import type { BlockLike, CollabClient } from '@kinote/shared';
 import { collabSettle, type CollabServer } from '../../collab/src/server.js';
 import { startCollabServer } from '../../collab/test/support/wsClient.js';
 import { readBlocks } from '../../collab/test/support/blocks.js';

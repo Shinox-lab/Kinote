@@ -4,9 +4,9 @@ import {
   documents,
   spaces,
   withTenantTx,
-} from '@living-wiki/db';
-import { getReadableSpaceIds, isTenantAdmin, type Actor } from '@living-wiki/core';
-import { RecentQuerySchema, type RecentItem } from '@living-wiki/contracts';
+} from '@kinote/db';
+import { getReadableSpaceIds, isTenantAdmin, type Actor } from '@kinote/core';
+import { RecentQuerySchema, type RecentItem } from '@kinote/contracts';
 
 /**
  * The caller's Continue cards: pages they last changed (the newest block

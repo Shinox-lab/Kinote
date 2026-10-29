@@ -1,4 +1,4 @@
-import { AppError, ExtractedDocumentSchema, type ExtractedDocument } from '@living-wiki/contracts';
+import { AppError, ExtractedDocumentSchema, type ExtractedDocument } from '@kinote/contracts';
 import type { DetectedFile } from './detect.js';
 
 export interface ExtractInput {

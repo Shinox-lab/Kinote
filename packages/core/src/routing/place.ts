@@ -6,8 +6,8 @@ import {
   captureFacts,
   documents,
   routingExamples,
-} from '@living-wiki/db';
-import { AppError } from '@living-wiki/contracts';
+} from '@kinote/db';
+import { AppError } from '@kinote/contracts';
 import type { EmbeddingProvider } from '../embedding.js';
 import { applyPlannedFacts, finishCapture, leaseGuard, ROUTING_LEASE_SECONDS, type RouteDeps } from './apply.js';
 import { planCapture } from './plan.js';

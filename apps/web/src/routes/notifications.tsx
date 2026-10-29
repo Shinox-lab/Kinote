@@ -1,6 +1,6 @@
 import { useMutation } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
-import type { Notification } from '@living-wiki/contracts';
+import type { Notification } from '@kinote/contracts';
 import { api } from '../lib/api.js';
 import { notificationHeadline, notificationTarget } from '../lib/notifications.js';
 import { useNotifications, useRefresh, useWorkspace } from '../lib/queries.js';

@@ -1,4 +1,4 @@
-import type { FileType } from '@living-wiki/contracts';
+import type { FileType } from '@kinote/contracts';
 
 /** How a file's text is read: by the worker itself, by the extractor service, or not at all. */
 export type FileHandling = 'text' | 'extractor' | 'stored';

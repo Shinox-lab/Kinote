@@ -1,6 +1,6 @@
 import { and, eq } from 'drizzle-orm';
-import { memberships, spaces, type DbTransaction } from '@living-wiki/db';
-import { AppError } from '@living-wiki/contracts';
+import { memberships, spaces, type DbTransaction } from '@kinote/db';
+import { AppError } from '@kinote/contracts';
 import { requireSpaceRole, type Actor } from '../permissions.js';
 
 /** What a capture's sender may see and change, Inbox left out of both (R17). */

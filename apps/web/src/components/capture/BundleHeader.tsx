@@ -1,5 +1,5 @@
 import { useMutation } from '@tanstack/react-query';
-import type { ReviewItem } from '@living-wiki/contracts';
+import type { ReviewItem } from '@kinote/contracts';
 import { api, errorMessage } from '../../lib/api.js';
 import { approvableInBundle } from '../../lib/capture.js';
 import { relativeTime } from '../../lib/pageStatus.js';

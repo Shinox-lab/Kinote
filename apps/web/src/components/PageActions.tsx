@@ -1,5 +1,5 @@
 import { useMutation } from '@tanstack/react-query';
-import type { PageDetails } from '@living-wiki/contracts';
+import type { PageDetails } from '@kinote/contracts';
 import { api } from '../lib/api.js';
 import type { PageControls } from '../lib/wiki.js';
 import { Button, ErrorNote } from './ui.js';

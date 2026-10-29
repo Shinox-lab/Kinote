@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { AppError } from '@living-wiki/contracts';
+import { AppError } from '@kinote/contracts';
 import {
   EMBEDDING_DIMENSIONS,
   OpenAIEmbeddingProvider,

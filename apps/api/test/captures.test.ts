@@ -8,7 +8,7 @@ import {
   captureChanges,
   captureMessages,
   captures,
-} from '@living-wiki/db';
+} from '@kinote/db';
 import { bootstrapTenant, buildTestApp, signUpMember, useTestDb } from './support/testkit.js';
 
 type Headers = Record<string, string>;

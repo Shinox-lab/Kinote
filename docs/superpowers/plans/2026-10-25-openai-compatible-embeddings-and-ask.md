@@ -60,7 +60,7 @@
 
 **Interfaces:**
 - Consumes: existing `AppError`, `ErrorCodeSchema`, `ERROR_SENTENCES`, `ERROR_STATUS`, `assertEmbeddingDimensions`.
-- Produces: `EMBEDDING_DIMENSIONS = 2560` from `@living-wiki/core`; `search_unavailable` and `llm_unavailable` error codes at 503.
+- Produces: `EMBEDDING_DIMENSIONS = 2560` from `@kinote/core`; `search_unavailable` and `llm_unavailable` error codes at 503.
 
 - [x] **Step 1: Write the failing error and dimension tests**
 
@@ -79,12 +79,12 @@ with `The answer service is temporarily unavailable. Please try again.`; both
 status 503. In `packages/core/src/embedding.ts` export
 `export const EMBEDDING_DIMENSIONS = 2560;`, make
 `DeterministicEmbeddingProvider` use it and name its model
-`living-wiki-deterministic-2560-v1`. Export the constant from
+`kinote-deterministic-2560-v1`. Export the constant from
 `packages/core/src/index.ts`.
 
 - [x] **Step 4: Remove the dimension setting and update callers**
 
-Remove `EMBEDDING_DIMENSIONS` from `ConfigSchema`, `packages/shared/test/config.test.ts`, `.env.example` and `docker-compose.yml`. Change `apps/api/src/main.ts`, `apps/worker/src/main.ts` and `e2e/harness/local-stack.ts` to import and use `EMBEDDING_DIMENSIONS` from `@living-wiki/core`. Update `packages/db/test/client.test.ts` to stop asserting the removed config key.
+Remove `EMBEDDING_DIMENSIONS` from `ConfigSchema`, `packages/shared/test/config.test.ts`, `.env.example` and `docker-compose.yml`. Change `apps/api/src/main.ts`, `apps/worker/src/main.ts` and `e2e/harness/local-stack.ts` to import and use `EMBEDDING_DIMENSIONS` from `@kinote/core`. Update `packages/db/test/client.test.ts` to stop asserting the removed config key.
 
 - [x] **Step 5: Create the three-step migration**
 

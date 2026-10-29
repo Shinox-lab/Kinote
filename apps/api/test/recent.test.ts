@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'vitest';
-import { blockActivity, withTenantTx } from '@living-wiki/db';
-import { InMemoryObjectStorage } from '@living-wiki/shared';
+import { blockActivity, withTenantTx } from '@kinote/db';
+import { InMemoryObjectStorage } from '@kinote/shared';
 import { bootstrapTenant, signUpMember, buildTestApp, useTestDb } from './support/testkit.js';
 import { uploadRequest } from './support/multipart.js';
 

@@ -50,7 +50,7 @@ test('a pasted text file becomes a file under the page, previewed in place and k
   const fileId = page.url().split('/f/')[1]!;
   await expect(page.getByRole('heading', { name: 'Pasted notes.txt', level: 1 })).toBeVisible();
 
-  // A proper Living Wiki file: it is filed under the page that pasted it.
+  // A proper Kinote file: it is filed under the page that pasted it.
   const file = await call<{ parentId: string | null }>(request, `/files/${fileId}`, {
     account: world.owner,
     tenantId: world.tenantId,

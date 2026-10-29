@@ -1,7 +1,7 @@
 import * as Y from 'yjs';
-import { createServerEditor } from '@living-wiki/shared';
-import { AppError } from '@living-wiki/contracts';
-import { blockFullText, type BlockLike } from '@living-wiki/shared';
+import { createServerEditor } from '@kinote/shared';
+import { AppError } from '@kinote/contracts';
+import { blockFullText, type BlockLike } from '@kinote/shared';
 import { BLOCK_FRAGMENT } from './fragment.js';
 
 /**

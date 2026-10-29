@@ -2,8 +2,8 @@ import { describe, test, beforeEach } from 'vitest';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { and, asc, eq } from 'drizzle-orm';
-import { withTenantTx, versions, documents, pages, chunks, auditEvents } from '@living-wiki/db';
-import { takePageSnapshot } from '@living-wiki/core';
+import { withTenantTx, versions, documents, pages, chunks, auditEvents } from '@kinote/db';
+import { takePageSnapshot } from '@kinote/core';
 import { runPendingJobsForTenant } from '../../worker/src/runner.js';
 import { encodePageYDoc } from '../src/routes/pages.js';
 import {

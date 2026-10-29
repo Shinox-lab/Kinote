@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { AppError, type SearchPassage } from '@living-wiki/contracts';
+import { AppError, type SearchPassage } from '@kinote/contracts';
 import {
   DeterministicAnswerProvider,
   NO_RELEVANT_ANSWER,

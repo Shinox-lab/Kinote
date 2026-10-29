@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { and, eq } from 'drizzle-orm';
-import { chunks, documents, embeddingCache, spaces, tenants, versions, withTenantTx } from '@living-wiki/db';
-import { createTestDb, type TestDb } from '@living-wiki/db/testing';
+import { chunks, documents, embeddingCache, spaces, tenants, versions, withTenantTx } from '@kinote/db';
+import { createTestDb, type TestDb } from '@kinote/db/testing';
 import { DeterministicEmbeddingProvider, indexVersion } from '../src/index.js';
 import { blocksFromMarkdown } from './fixtures/realBlocks.js';
 

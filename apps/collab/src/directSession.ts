@@ -1,6 +1,6 @@
 import type * as Y from 'yjs';
 import type { Hocuspocus } from '@hocuspocus/server';
-import { AppError } from '@living-wiki/contracts';
+import { AppError } from '@kinote/contracts';
 import { authenticateCollabConnection, type CollabContext } from './auth.js';
 import type { DirectOrigin, DirectSessionContext } from './origin.js';
 import { collabServerDeps, collabSettle, storeDocumentNow } from './serverState.js';

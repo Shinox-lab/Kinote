@@ -12,13 +12,13 @@ import {
   users,
   agents,
   type DbTransaction,
-} from '@living-wiki/db';
+} from '@kinote/db';
 import {
   ReviewQuerySchema,
   AppError,
   type ReviewItem,
-} from '@living-wiki/contracts';
-import { requireSpaceRole, assertValidUuid, isTenantAdmin, senderAccess, type Actor } from '@living-wiki/core';
+} from '@kinote/contracts';
+import { requireSpaceRole, assertValidUuid, isTenantAdmin, senderAccess, type Actor } from '@kinote/core';
 import { canApprove, type SpaceRow } from '../pages/approval.js';
 import { resolveActorNames } from '../people.js';
 import { versionSummaryColumns, toVersionSummary } from './pages.js';

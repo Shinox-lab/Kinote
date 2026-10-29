@@ -2,9 +2,9 @@ import { describe, test, expect } from 'vitest';
 import { createHash } from 'node:crypto';
 import * as Y from 'yjs';
 import { and, eq } from 'drizzle-orm';
-import { collectionFields, collections, pages, versions, withTenantTx } from '@living-wiki/db';
-import { FIELDS_MAP, fieldLines } from '@living-wiki/contracts';
-import { BLOCK_FRAGMENT } from '@living-wiki/collab';
+import { collectionFields, collections, pages, versions, withTenantTx } from '@kinote/db';
+import { FIELDS_MAP, fieldLines } from '@kinote/contracts';
+import { BLOCK_FRAGMENT } from '@kinote/collab';
 import { collectionFieldDefs, fieldNames, rowCollectionOf, takePageSnapshot } from '../src/index.js';
 import { buildTestApp, bootstrapTenant, useTestDb } from '../../../apps/api/test/support/testkit.js';
 

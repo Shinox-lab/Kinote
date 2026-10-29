@@ -1,4 +1,4 @@
-import type { BlockDiffEntry } from '@living-wiki/contracts';
+import type { BlockDiffEntry } from '@kinote/contracts';
 import { changeLabel, changedEntries, type ChangeKind } from '../lib/diff.js';
 
 const TONE: Record<ChangeKind, string> = {

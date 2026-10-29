@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import type { AskCitation } from '@living-wiki/contracts';
+import type { AskCitation } from '@kinote/contracts';
 import { answerSegments, headingLine, queryAllows } from '../src/lib/search.js';
 
 const uuid = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;

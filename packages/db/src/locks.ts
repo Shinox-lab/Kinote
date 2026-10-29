@@ -1,5 +1,5 @@
 import { and, eq } from 'drizzle-orm';
-import { AppError } from '@living-wiki/contracts';
+import { AppError } from '@kinote/contracts';
 import { documents } from './schema/pages_and_index.js';
 import type { DbTransaction } from './client.js';
 

@@ -2,9 +2,9 @@ import { Server, type Extension, type Hocuspocus } from '@hocuspocus/server';
 import { Database } from '@hocuspocus/extension-database';
 import { and, eq, sql } from 'drizzle-orm';
 import * as Y from 'yjs';
-import { withTenantTx, pages, pageFieldValues } from '@living-wiki/db';
-import { FIELDS_MAP, storableFields } from '@living-wiki/contracts';
-import { parseDocumentName } from '@living-wiki/shared';
+import { withTenantTx, pages, pageFieldValues } from '@kinote/db';
+import { FIELDS_MAP, storableFields } from '@kinote/contracts';
+import { parseDocumentName } from '@kinote/shared';
 import { authenticateCollabConnection, type CollabContext } from './auth.js';
 import { handleInternalRequest } from './internal.js';
 import { recordPageTransactions } from './recorder.js';
@@ -121,7 +121,7 @@ export function createCollabServer(
   const state = newServerState(deps);
 
   const core: Extension<CollabContext> = {
-    extensionName: 'LivingWikiCollab',
+    extensionName: 'KinoteCollab',
     // First among the extensions: its afterLoadDocument attaches the
     // transaction recorder before anything else can touch the loaded document.
     priority: 1000,

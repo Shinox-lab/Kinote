@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router';
-import type { PageConnections as Connections } from '@living-wiki/contracts';
+import type { PageConnections as Connections } from '@kinote/contracts';
 import { documentHref } from '../lib/documentLink.js';
 import { connectionCount } from '../lib/links.js';
 import { usePageConnections, useWorkspace } from '../lib/queries.js';

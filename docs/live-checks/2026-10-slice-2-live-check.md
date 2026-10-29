@@ -110,7 +110,7 @@ INFO {"tenantA":"5a2bf4e4-144b-4c62-94d6-a05ae2cdc38b","tenantB":"328ec16f-556b-
 ALL CHECKS PASSED
 ```
 
-## SQL check as the app role (`living_wiki_app`: not superuser, not BYPASSRLS)
+## SQL check as the app role (`kinote_app`: not superuser, not BYPASSRLS)
 
 `set_config('app.tenant_id', …, true)` then `SELECT count(*)`:
 

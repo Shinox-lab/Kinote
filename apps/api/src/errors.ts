@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { ZodError } from 'zod';
-import { AppError, ERROR_SENTENCES } from '@living-wiki/contracts';
-import { mapDbError } from '@living-wiki/db';
+import { AppError, ERROR_SENTENCES } from '@kinote/contracts';
+import { mapDbError } from '@kinote/db';
 
 export function registerErrorHandler(app: FastifyInstance): void {
   app.setErrorHandler((err, req, reply) => {

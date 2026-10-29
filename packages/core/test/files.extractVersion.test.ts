@@ -1,10 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { and, eq } from 'drizzle-orm';
-import { auditEvents, documents, jobs, sources, versions, withTenantTx } from '@living-wiki/db';
-import { createTestDb, type TestDb } from '@living-wiki/db/testing';
-import { AppError } from '@living-wiki/contracts';
-import { InMemoryObjectStorage } from '@living-wiki/shared';
+import { auditEvents, documents, jobs, sources, versions, withTenantTx } from '@kinote/db';
+import { createTestDb, type TestDb } from '@kinote/db/testing';
+import { AppError } from '@kinote/contracts';
+import { InMemoryObjectStorage } from '@kinote/shared';
 import { FakeExtractor, extractVersion, fileObjectPath, type Extractor } from '../src/index.js';
 import { seedFileDocument, seedSource, uploadFixtureFile, type FileSeed } from './fixtures/fileSeed.js';
 

@@ -1,7 +1,7 @@
 import { describe, test, beforeAll, afterEach, afterAll, expect } from 'vitest';
 import { and, eq } from 'drizzle-orm';
-import { withTenantTx, versions } from '@living-wiki/db';
-import { VersionSummarySchema } from '@living-wiki/contracts';
+import { withTenantTx, versions } from '@kinote/db';
+import { VersionSummarySchema } from '@kinote/contracts';
 import { blocksFromMarkdown, type RealBlock } from '../../../packages/core/test/fixtures/realBlocks.js';
 import { collabSettle, type CollabServer } from '../../collab/src/server.js';
 import { connectClient, startCollabServer, type ConnectedClient } from '../../collab/test/support/wsClient.js';
@@ -385,7 +385,7 @@ describe('version history, changes and compare routes', () => {
 
   test('version detail names an agent contributor and flags isAgent', async () => {
     const w = await buildReviewWorld(h.app);
-    const { withTenantTx: tx, versionContributors } = await import('@living-wiki/db');
+    const { withTenantTx: tx, versionContributors } = await import('@kinote/db');
     const v1 = await snapshot(w, w.headers);
     await tx(w.tenant.id, (t) =>
       t.insert(versionContributors).values({

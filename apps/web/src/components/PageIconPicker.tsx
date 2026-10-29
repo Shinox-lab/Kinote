@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import type { PageDetails, TreeResponse } from '@living-wiki/contracts';
+import type { PageDetails, TreeResponse } from '@kinote/contracts';
 import { api } from '../lib/api.js';
 import { isKnownIcon, PAGE_ICONS } from '../lib/emoji.js';
 import { useWorkspace } from '../lib/queries.js';

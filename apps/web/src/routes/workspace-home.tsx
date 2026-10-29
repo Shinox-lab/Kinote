@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
-import type { RecentItem, UpdateItem } from '@living-wiki/contracts';
+import type { RecentItem, UpdateItem } from '@kinote/contracts';
 import { useRecent, useSpaces, useUpdates, useWorkspace } from '../lib/queries.js';
 import { loadSession } from '../lib/session.js';
 import { relativeTime, updateSentence } from '../lib/updates.js';

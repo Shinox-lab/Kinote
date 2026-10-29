@@ -1,4 +1,4 @@
-import { createServerEditor } from '@living-wiki/shared';
+import { createServerEditor } from '@kinote/shared';
 
 const editor = createServerEditor();
 

@@ -1,6 +1,6 @@
-import { ExtractedDocumentSchema, type ExtractedDocument } from '@living-wiki/contracts';
-import { NonRetryableError } from '@living-wiki/db';
-import type { ObjectStorage } from '@living-wiki/shared';
+import { ExtractedDocumentSchema, type ExtractedDocument } from '@kinote/contracts';
+import { NonRetryableError } from '@kinote/db';
+import type { ObjectStorage } from '@kinote/shared';
 import { chunkExtracted } from './chunkExtracted.js';
 import type { RawChunk } from '../indexing/chunkPage.js';
 

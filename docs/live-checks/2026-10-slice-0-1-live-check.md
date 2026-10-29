@@ -13,7 +13,7 @@ on real Postgres (2026-10-19, second session; the section for each says what ran
 | Code | branch `remediation/slice-0-1`. PGlite runs (items 1, 3, 4, 5): commit `bf20a90` (the fix-round code commit, clean tree). The first-session run of the earlier spec: `0d8f2e4`. Docker runs: see the sections below. |
 | Host | macOS (Darwin 25.6.0), node v22.23.2, pnpm 9.12.0 |
 | Browser | Playwright 1.64.1, Chromium headless shell 156.0.8078.4 |
-| Stack | **PGlite harness, not Docker**: `e2e/harness/local-stack.ts` runs the api, collab and worker in one Node process on an in-memory PGlite database (real migration chain, role `living_wiki_app`, RLS forced), deterministic embeddings (1536 dimensions), the console as a production build behind `vite preview`. api 18787, collab 11234, console 15173, worker poll 250 ms, collab store debounce 300 ms. |
+| Stack | **PGlite harness, not Docker**: `e2e/harness/local-stack.ts` runs the api, collab and worker in one Node process on an in-memory PGlite database (real migration chain, role `kinote_app`, RLS forced), deterministic embeddings (1536 dimensions), the console as a production build behind `vite preview`. api 18787, collab 11234, console 15173, worker poll 250 ms, collab store debounce 300 ms. |
 | Not the environment (first session) | real Postgres 17 + pgvector, MinIO, the container images, the compose network. Docker could not start containers then. |
 | Docker session (items 2, 6 to 10) | Docker Desktop 29.5.2, Compose v5.1.3, `pgvector/pgvector:pg17`, `pgsty/minio`, the repo's images. Host ports 55543, 59000, 59001, 8787 and 1234 were held by stale listeners of `com.docker.backend` with no container behind them, so the stack ran with local, untracked host-port overrides: postgres 55643, MinIO 59100/59101, api 58787, collab 51234. Details: `.superpowers/sdd/2026-10-18-slice-0-1-remediation/docker-verify-report.md`. |
 
@@ -107,18 +107,18 @@ that matches nothing still returns the nearest own passage). Pages, versions, co
 tokens and trees of the other tenant answer 404, and naming a tenant the user does
 not belong to answers 404 `tenant_not_found`.
 What this does not show: the database policies themselves. The harness runs as the
-non-superuser `living_wiki_app` with RLS forced, but PGlite is not Postgres 17; item 2
+non-superuser `kinote_app` with RLS forced, but PGlite is not Postgres 17; item 2
 is the check on real Postgres.
 
 ## 2. Two tenants, SQL check (`rls.pg.test.ts`) — PASSED on real Postgres 17
 
 Stack: `postgres` (pgvector/pgvector:pg17 plus `01-roles.sh`) and `minio` from
 docker-compose.yml, migrations applied (11 rows in `drizzle.__drizzle_migrations`; role
-`living_wiki_app|t|f|f` = LOGIN, not superuser, not BYPASSRLS; extension `vector`).
+`kinote_app|t|f|f` = LOGIN, not superuser, not BYPASSRLS; extension `vector`).
 Host port 55643 instead of 55543 (see Environment).
 
 ```
-$ pnpm test:pg      (TEST_DATABASE_URL = living_wiki_app, TEST_DATABASE_MIGRATE_URL = postgres superuser)
+$ pnpm test:pg      (TEST_DATABASE_URL = kinote_app, TEST_DATABASE_MIGRATE_URL = postgres superuser)
  ✓ apps/api/test/search.pg.test.ts (6 tests) 7337ms
  ✓ apps/worker/test/claim.pg.test.ts (2 tests) 76ms
  ✓ packages/db/test/rls.pg.test.ts (11 tests) 62ms
@@ -256,8 +256,8 @@ disk unreferenced, `down -v` deletes them.
    (the compose postgres shows `5432/tcp` published to nothing):
 
    ```
-    Container living-wiki-postgres-1 Healthy
-    Container living-wiki-minio-1 Healthy
+    Container kinote-postgres-1 Healthy
+    Container kinote-minio-1 Healthy
    > tsx packages/db/src/migrate.ts
    migration failed: DrizzleQueryError: Failed query: CREATE SCHEMA IF NOT EXISTS "drizzle"
      cause: Error: Connection terminated unexpectedly
@@ -310,7 +310,7 @@ disk unreferenced, `down -v` deletes them.
 | --- | --- |
 | `pnpm vitest run` | 53 files passed; 572 tests passed, 30 skipped (the env-gated `*.pg.test.ts` and the S3 case) |
 | `pnpm typecheck` | exit 0 (includes `e2e/**` and `playwright.config.ts`) |
-| `pnpm --filter @living-wiki/web build` | exit 0 |
+| `pnpm --filter @kinote/web build` | exit 0 |
 | `pnpm install --frozen-lockfile` | up to date |
 
 ---
@@ -328,7 +328,7 @@ $ pnpm vitest run     → exit 0
  Test Files  65 passed (65)
       Tests  711 passed | 30 skipped (741)
 $ pnpm typecheck      → exit 0
-$ pnpm --filter @living-wiki/web build → exit 0
+$ pnpm --filter @kinote/web build → exit 0
 ```
 
 ### `pnpm e2e:local`, three runs in a row (all 17 specs, after the final-review fixes)

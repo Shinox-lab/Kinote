@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'vitest';
 import { eq } from 'drizzle-orm';
-import { auditEvents, withTenantTx } from '@living-wiki/db';
+import { auditEvents, withTenantTx } from '@kinote/db';
 import { bootstrapTenant, signUpMember, buildTestApp, useTestDb } from './support/testkit.js';
 
 /**

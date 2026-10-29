@@ -1,7 +1,7 @@
 import { describe, test, beforeAll, afterAll, expect } from 'vitest';
 import { and, eq } from 'drizzle-orm';
 import type { ZodType } from 'zod';
-import { withTenantTx, pages, versions } from '@living-wiki/db';
+import { withTenantTx, pages, versions } from '@kinote/db';
 import {
   AuthResponseSchema,
   SessionResponseSchema,
@@ -32,7 +32,7 @@ import {
   RetryVersionResponseSchema,
   SearchResponseSchema,
   AskResponseSchema,
-} from '@living-wiki/contracts';
+} from '@kinote/contracts';
 import { collabSettle, type CollabServer } from '../../collab/src/server.js';
 import { startCollabServer } from '../../collab/test/support/wsClient.js';
 import { runPendingJobsForTenant } from '../../worker/src/runner.js';

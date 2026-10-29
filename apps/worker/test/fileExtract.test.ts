@@ -1,10 +1,10 @@
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { and, eq } from 'drizzle-orm';
-import { jobs, versions, withTenantTx } from '@living-wiki/db';
-import { createTestDb, type TestDb } from '@living-wiki/db/testing';
-import { ERROR_SENTENCES } from '@living-wiki/contracts';
-import { InMemoryObjectStorage } from '@living-wiki/shared';
-import { FakeExtractor } from '@living-wiki/core';
+import { jobs, versions, withTenantTx } from '@kinote/db';
+import { createTestDb, type TestDb } from '@kinote/db/testing';
+import { ERROR_SENTENCES } from '@kinote/contracts';
+import { InMemoryObjectStorage } from '@kinote/shared';
+import { FakeExtractor } from '@kinote/core';
 import { seedFileDocument, uploadFixtureFile } from '../../../packages/core/test/fixtures/fileSeed.js';
 import { runPendingJobsForTenant } from '../src/runner.js';
 import { handlers } from '../src/registry.js';

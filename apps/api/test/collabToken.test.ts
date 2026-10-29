@@ -1,7 +1,7 @@
 import { test, describe, beforeEach, expect } from 'vitest';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { getCollabTokenSecret, verifyCollabToken } from '@living-wiki/shared';
+import { getCollabTokenSecret, verifyCollabToken } from '@kinote/shared';
 import { asUser, bootstrapTenant, buildTestApp, signUp, signUpMember, useTestDb } from './support/testkit.js';
 
 describe('POST /api/v1/pages/:id/collab-token', () => {

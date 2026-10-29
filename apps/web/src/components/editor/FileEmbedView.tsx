@@ -1,5 +1,5 @@
 import { useNavigate } from '@tanstack/react-router';
-import type { FileDetails, FileVersion } from '@living-wiki/contracts';
+import type { FileDetails, FileVersion } from '@kinote/contracts';
 import { documentHref } from '../../lib/documentLink.js';
 import { formatBytes, publishedVersionId } from '../../lib/fileUi.js';
 import { useFile, useSpaces, useWorkspace } from '../../lib/queries.js';

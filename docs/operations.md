@@ -6,7 +6,7 @@ Two roles, two connection strings:
 
 | Variable | Role | Used by |
 | --- | --- | --- |
-| `DATABASE_URL` | `living_wiki_app`: LOGIN, NOSUPERUSER, NOBYPASSRLS | api, collab, worker at runtime |
+| `DATABASE_URL` | `kinote_app`: LOGIN, NOSUPERUSER, NOBYPASSRLS | api, collab, worker at runtime |
 | `DATABASE_MIGRATE_URL` | the schema owner: a superuser, or a role with BYPASSRLS | `pnpm db:migrate` only |
 
 `DATABASE_MIGRATE_URL` must be a superuser or a BYPASSRLS role. Row-level
@@ -17,7 +17,7 @@ policies, and the SECURITY DEFINER functions `my_tenants` and
 tenants. A migration owner without BYPASSRLS would make those functions return
 nothing. Never run a service with this URL.
 
-`DATABASE_URL` is always `living_wiki_app`. It is created by
+`DATABASE_URL` is always `kinote_app`. It is created by
 `infra/postgres/01-roles.sh` (baked into the postgres image by
 `infra/postgres/Dockerfile`) on first initialisation of the data directory,
 with the password from `APP_DB_PASSWORD`. The script is idempotent: re-running
@@ -29,7 +29,7 @@ compares the tenant column with `current_tenant_id()`.
 
 ## The app
 
-`docker-compose.yml` (project `living-wiki`) is the whole app: postgres
+`docker-compose.yml` (project `kinote`) is the whole app: postgres
 (Postgres 17 + pgvector), MinIO, the one-shot `migrate`, the `api`, `collab` and
 `worker` services built from the root `Dockerfile` (each runs its TypeScript
 entry point with tsx), the Docling `extractor`, the internal `gridcraft` editor,
@@ -72,8 +72,8 @@ in `POSTGRES_PASSWORD`, `APP_DB_PASSWORD`, `COLLAB_TOKEN_SECRET`,
 
 ```sh
 pnpm stack:up                  # postgres + minio, then pnpm db:migrate from the host
-TEST_DATABASE_URL=postgres://living_wiki_app:$APP_DB_PASSWORD@127.0.0.1:55543/living_wiki \
-TEST_DATABASE_MIGRATE_URL=postgres://postgres:$POSTGRES_PASSWORD@127.0.0.1:55543/living_wiki \
+TEST_DATABASE_URL=postgres://kinote_app:$APP_DB_PASSWORD@127.0.0.1:55543/kinote \
+TEST_DATABASE_MIGRATE_URL=postgres://postgres:$POSTGRES_PASSWORD@127.0.0.1:55543/kinote \
   pnpm test:pg                 # real-Postgres RLS and job-claim tests
 S3_ENDPOINT=http://127.0.0.1:59000 pnpm vitest run packages/shared/test/objectStorage.test.ts
 docker compose up -d            # the whole app; migrate runs before the services
@@ -84,8 +84,8 @@ pnpm stack:down                # docker compose down -v: containers and data vol
 `TEST_DATABASE_MIGRATE_URL` when either is unset, so a run that would have
 skipped every real-Postgres test never reports success.
 
-Database and object data live in the named volumes `living-wiki_pgdata` and
-`living-wiki_miniodata`: they survive `docker compose restart`, `stop`/`start`
+Database and object data live in the named volumes `kinote_pgdata` and
+`kinote_miniodata`: they survive `docker compose restart`, `stop`/`start`
 and a plain `docker compose down`; `docker compose down -v` (`pnpm stack:down`)
 deletes them.
 
@@ -170,8 +170,8 @@ The browser reaches the api, MCP and the editing WebSocket through the web
 nginx on one origin, so there is no CORS or second domain. The web blocks
 `/collab/internal/*`; never publish `INTERNAL_SECRET`.
 
-Data lives in the named volumes `living-wiki_pgdata` and
-`living-wiki_miniodata` (or your external S3). A deploy keeps them; `docker
+Data lives in the named volumes `kinote_pgdata` and
+`kinote_miniodata` (or your external S3). A deploy keeps them; `docker
 compose down -v` deletes them. Back them up like any database. Upgrade with
 `docker compose up -d --build`; the migration is idempotent.
 
@@ -227,7 +227,7 @@ this release before or together with the api. Whenever the router model is set
 or changed later, rebuild with the schema owner's connection:
 
 ```sh
-DATABASE_MIGRATE_URL=postgres://postgres:...@host/living_wiki pnpm placement:rebuild
+DATABASE_MIGRATE_URL=postgres://postgres:...@host/kinote pnpm placement:rebuild
 ```
 
 It only queues `version.card` and `version.entities` jobs (the same keys

@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { flattenBlocks, type BlockLike } from '@living-wiki/shared';
+import { flattenBlocks, type BlockLike } from '@kinote/shared';
 
 export interface ChunkOptions {
   /** A section keeps growing between blocks while it stays within this many words. */

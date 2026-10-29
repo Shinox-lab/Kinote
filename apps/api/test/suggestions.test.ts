@@ -1,8 +1,8 @@
 import { describe, test, beforeAll, afterEach, afterAll, expect } from 'vitest';
 import { and, eq } from 'drizzle-orm';
-import { withTenantTx, captures, suggestions, versions, spaces } from '@living-wiki/db';
-import { blockText } from '@living-wiki/core';
-import { blockFullText, type BlockLike } from '@living-wiki/shared';
+import { withTenantTx, captures, suggestions, versions, spaces } from '@kinote/db';
+import { blockText } from '@kinote/core';
+import { blockFullText, type BlockLike } from '@kinote/shared';
 import { collabSettle, type CollabServer } from '../../collab/src/server.js';
 import { startCollabServer } from '../../collab/test/support/wsClient.js';
 import { readBlocks } from '../../collab/test/support/blocks.js';

@@ -1,8 +1,8 @@
 import { sql, type SQL } from 'drizzle-orm';
-import { rowsOf, type DbTransaction } from '@living-wiki/db';
+import { rowsOf, type DbTransaction } from '@kinote/db';
 import { principalKey } from '../indexing/inboxOwner.js';
 import type { Actor } from '../permissions.js';
-import type { SearchPassage } from '@living-wiki/contracts';
+import type { SearchPassage } from '@kinote/contracts';
 
 /** Candidates each branch contributes to reciprocal rank fusion. */
 export const BRANCH_LIMIT = 40;

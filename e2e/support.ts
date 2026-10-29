@@ -1,7 +1,7 @@
 // Shared helpers of the console specs. Accounts and workspaces that a spec is not
 // testing are made through the api (fast); everything a spec asserts goes through the UI.
 import { expect, type APIRequestContext, type Browser, type Locator, type Page } from '@playwright/test';
-import type { UploadFileResponse } from '@living-wiki/contracts';
+import type { UploadFileResponse } from '@kinote/contracts';
 
 export const PASSWORD = 'correct-horse-battery';
 
@@ -110,7 +110,7 @@ export async function openAs(browser: Browser, world: World, account: Account): 
     tenantId: world.tenantId,
     tenantSlug: world.slug,
   };
-  await context.addInitScript((s) => localStorage.setItem('living-wiki.session', JSON.stringify(s)), session);
+  await context.addInitScript((s) => localStorage.setItem('kinote.session', JSON.stringify(s)), session);
   return context.newPage();
 }
 

@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import type { ExtractedSection } from '@living-wiki/contracts';
+import type { ExtractedSection } from '@kinote/contracts';
 import { DEFAULT_CHUNK_OPTIONS, type ChunkOptions, type RawChunk } from '../indexing/chunkPage.js';
 
 const countWords = (s: string) => s.split(/\s+/).filter(Boolean).length;

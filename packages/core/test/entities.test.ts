@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
-import { AppError } from '@living-wiki/contracts';
+import { AppError } from '@kinote/contracts';
 import {
   chunks,
   entities,
@@ -11,8 +11,8 @@ import {
   memberships,
   users,
   withTenantTx,
-} from '@living-wiki/db';
-import { createTestDb, type TestDb } from '@living-wiki/db/testing';
+} from '@kinote/db';
+import { createTestDb, type TestDb } from '@kinote/db/testing';
 import {
   DeterministicEmbeddingProvider,
   DeterministicPlacementModel,

@@ -2,9 +2,9 @@ import { describe, test, expect } from 'vitest';
 import assert from 'node:assert/strict';
 import { and, eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
-import { withTenantTx, spaces, pages, documents, groups, groupMembers } from '@living-wiki/db';
-import { ERROR_SENTENCES } from '@living-wiki/contracts';
-import type { Actor } from '@living-wiki/core';
+import { withTenantTx, spaces, pages, documents, groups, groupMembers } from '@kinote/db';
+import { ERROR_SENTENCES } from '@kinote/contracts';
+import type { Actor } from '@kinote/core';
 import { approveVersion, rejectVersion } from '../src/routes/pages.js';
 import {
   buildTestApp,

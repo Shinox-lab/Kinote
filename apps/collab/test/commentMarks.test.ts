@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import * as Y from 'yjs';
-import { createServerEditor } from '@living-wiki/shared';
+import { createServerEditor } from '@kinote/shared';
 import { changesPage } from '../src/attribution.js';
 import { BLOCK_FRAGMENT } from './support/blocks.js';
 

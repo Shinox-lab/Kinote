@@ -3,15 +3,15 @@
 // file out of the index in the same transaction as the removal mark, and a PUT racing a
 // DELETE always ends in one of the two consistent states.
 //
-// TEST_DATABASE_URL is the living_wiki_app role; TEST_DATABASE_MIGRATE_URL is the postgres
+// TEST_DATABASE_URL is the kinote_app role; TEST_DATABASE_MIGRATE_URL is the postgres
 // superuser, used only to look at rows (one statement, one snapshot) and to clean up.
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import pg from 'pg';
-import { closeDb, getDb, initDb, sources } from '@living-wiki/db';
+import { closeDb, getDb, initDb, sources } from '@kinote/db';
 import { eq } from 'drizzle-orm';
-import { InMemoryObjectStorage } from '@living-wiki/shared';
-import { FakeExtractor } from '@living-wiki/core';
+import { InMemoryObjectStorage } from '@kinote/shared';
+import { FakeExtractor } from '@kinote/core';
 import { runPendingJobsForTenant } from '../../worker/src/runner.js';
 import { buildApiServer } from '../src/server.js';
 import { uploadRequest } from './support/multipart.js';

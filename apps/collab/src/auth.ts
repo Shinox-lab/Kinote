@@ -1,8 +1,8 @@
 import { and, eq, isNull } from 'drizzle-orm';
-import { withTenantTx, documents, pages, memberships, tenants } from '@living-wiki/db';
-import { requireDocumentRole, type Actor } from '@living-wiki/core';
-import { AppError } from '@living-wiki/contracts';
-import { getCollabTokenSecret, parseDocumentName, verifyCollabToken } from '@living-wiki/shared';
+import { withTenantTx, documents, pages, memberships, tenants } from '@kinote/db';
+import { requireDocumentRole, type Actor } from '@kinote/core';
+import { AppError } from '@kinote/contracts';
+import { getCollabTokenSecret, parseDocumentName, verifyCollabToken } from '@kinote/shared';
 
 export interface CollabContext {
   tenantId: string;

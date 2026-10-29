@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
-import type { FileDetails, SpaceResponse } from '@living-wiki/contracts';
+import type { FileDetails, SpaceResponse } from '@kinote/contracts';
 import { api } from '../lib/api.js';
 import { useMediaQuery } from '../lib/useMediaQuery.js';
 import type { FileControls } from '../lib/fileUi.js';

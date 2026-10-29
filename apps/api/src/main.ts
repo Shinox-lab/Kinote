@@ -1,8 +1,8 @@
-import { assertEmbeddingDimensions, closeDb, initDb } from '@living-wiki/db';
-import { createAnswerProvider, createEmbeddingProvider, EMBEDDING_DIMENSIONS } from '@living-wiki/core';
-import { createObjectStorage, loadConfig } from '@living-wiki/shared';
+import { assertEmbeddingDimensions, closeDb, initDb } from '@kinote/db';
+import { createAnswerProvider, createEmbeddingProvider, EMBEDDING_DIMENSIONS } from '@kinote/core';
+import { createObjectStorage, loadConfig } from '@kinote/shared';
 import { buildApiServer } from './server.js';
-import { HttpCollabClient } from '@living-wiki/shared';
+import { HttpCollabClient } from '@kinote/shared';
 
 async function main(): Promise<void> {
   const config = loadConfig();

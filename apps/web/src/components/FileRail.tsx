@@ -1,5 +1,5 @@
 import { useRef, useState, type KeyboardEvent } from 'react';
-import type { ChunkInspector, FileDetails, SpaceResponse, SpaceRole } from '@living-wiki/contracts';
+import type { ChunkInspector, FileDetails, SpaceResponse, SpaceRole } from '@kinote/contracts';
 import { chunkSummary } from '../lib/chunks.js';
 import { fileType } from '../lib/fileType.js';
 import { formatBytes } from '../lib/fileUi.js';

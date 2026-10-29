@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import type { VersionListItem, VersionSummary } from '@living-wiki/contracts';
+import type { VersionListItem, VersionSummary } from '@kinote/contracts';
 import {
   defaultComparison,
   versionReasonLabel,

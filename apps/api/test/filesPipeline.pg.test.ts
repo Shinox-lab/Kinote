@@ -2,14 +2,14 @@
 // its chunks in one transaction, so a search that runs while the new version is being
 // indexed always finds the document: the old text until the swap, the new text after it.
 //
-// TEST_DATABASE_URL is the living_wiki_app role (RLS applies to everything the api and
+// TEST_DATABASE_URL is the kinote_app role (RLS applies to everything the api and
 // worker do); TEST_DATABASE_MIGRATE_URL is the postgres superuser, used only to clean up.
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import pg from 'pg';
-import { closeDb, initDb } from '@living-wiki/db';
-import { InMemoryObjectStorage } from '@living-wiki/shared';
-import { FakeExtractor } from '@living-wiki/core';
+import { closeDb, initDb } from '@kinote/db';
+import { InMemoryObjectStorage } from '@kinote/shared';
+import { FakeExtractor } from '@kinote/core';
 import { runPendingJobsForTenant } from '../../worker/src/runner.js';
 import { buildApiServer } from '../src/server.js';
 import { uploadRequest } from './support/multipart.js';

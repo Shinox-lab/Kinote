@@ -1,12 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { sql } from 'drizzle-orm';
-import { loadConfig } from '@living-wiki/shared';
+import { loadConfig } from '@kinote/shared';
 import { createTestDb } from '../src/testing.js';
 import { closeDb, getDb, initDb, rowsOf, withTenantTx, type Db } from '../src/index.js';
 
 const VALID_ENV = {
-  DATABASE_URL: 'postgres://living_wiki_app:pw@localhost:5432/living_wiki',
+  DATABASE_URL: 'postgres://kinote_app:pw@localhost:5432/kinote',
   COLLAB_TOKEN_SECRET: 'a'.repeat(32),
   INTERNAL_SECRET: 'b'.repeat(32),
 };
@@ -19,7 +19,7 @@ describe('db client factory', () => {
   it('createTestDb() runs as the non-superuser app role', async () => {
     const { db } = await createTestDb();
     const res = await db.execute(sql`select current_user as u`);
-    expect(rowsOf<{ u: string }>(res)[0].u).toBe('living_wiki_app');
+    expect(rowsOf<{ u: string }>(res)[0].u).toBe('kinote_app');
     expect(getDb()).toBe(db);
   });
 
@@ -40,7 +40,7 @@ describe('db client factory', () => {
     const { db, reset } = await createTestDb();
     await reset();
     const res = await db.execute(sql`select current_user as u`);
-    expect(rowsOf<{ u: string }>(res)[0].u).toBe('living_wiki_app');
+    expect(rowsOf<{ u: string }>(res)[0].u).toBe('kinote_app');
   });
 });
 
@@ -61,7 +61,7 @@ describe('initDb', () => {
 
   it('logs an idle-client pool error instead of crashing the process', async () => {
     const log = vi.spyOn(console, 'error').mockImplementation(() => {});
-    const db = initDb({ url: 'postgres://living_wiki_app:not-a-real-pw@127.0.0.1:1/none' });
+    const db = initDb({ url: 'postgres://kinote_app:not-a-real-pw@127.0.0.1:1/none' });
     const pool = (db as unknown as { $client: import('node:events').EventEmitter }).$client;
     expect(() => pool.emit('error', new Error('Connection terminated unexpectedly'))).not.toThrow();
     expect(log).toHaveBeenCalledTimes(1);

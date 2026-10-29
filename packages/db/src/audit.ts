@@ -1,6 +1,6 @@
 import { auditEvents } from './schema/foundations.js';
 import type { DbTransaction } from './client.js';
-import type { AuditEventType } from '@living-wiki/contracts';
+import type { AuditEventType } from '@kinote/contracts';
 
 export async function writeAuditEvent(
   tx: DbTransaction,

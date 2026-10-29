@@ -1,5 +1,5 @@
 # The extractor: Docling behind POST /extract. Build from the repository root:
-#   docker build -f apps/extractor/Dockerfile -t living-wiki-extractor .
+#   docker build -f apps/extractor/Dockerfile -t kinote-extractor .
 # Models are downloaded at build time and the service runs offline (HF_HUB_OFFLINE), as
 # a user without privileges. It has no storage access: the worker sends bytes and gets JSON.
 FROM python:3.12-slim AS runtime

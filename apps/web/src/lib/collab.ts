@@ -16,7 +16,7 @@ export function collabUrl(location: { protocol: string; host: string }, override
 
 /**
  * Hocuspocus document name of a page: `{tenantId}:{pageId}`, lower-case. The same
- * form as `documentName` in @living-wiki/shared (not imported: it pulls in node:crypto).
+ * form as `documentName` in @kinote/shared (not imported: it pulls in node:crypto).
  */
 export function collabDocumentName(tenantId: string, pageId: string): string {
   return `${tenantId}:${pageId}`.toLowerCase();

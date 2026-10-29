@@ -4,7 +4,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DrizzleQueryError } from 'drizzle-orm';
-import { AppError, ErrorCodeSchema, ERROR_SENTENCES, ERROR_STATUS } from '@living-wiki/contracts';
+import { AppError, ErrorCodeSchema, ERROR_SENTENCES, ERROR_STATUS } from '@kinote/contracts';
 import { buildTestApp, bootstrapTenant, asUser, signUp, useTestDb } from './support/testkit.js';
 
 const repoRoot = fileURLToPath(new URL('../../../', import.meta.url));

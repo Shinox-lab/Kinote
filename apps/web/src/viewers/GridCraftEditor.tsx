@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { FileVersion, UploadFileResponse } from '@living-wiki/contracts';
+import type { FileVersion, UploadFileResponse } from '@kinote/contracts';
 import { errorMessage } from '../lib/api.js';
 import { loadSession } from '../lib/session.js';
 import { Button } from '../components/ui.js';
@@ -58,6 +58,7 @@ export default function GridCraftEditor({ bytes, version, onSave, onDirtyChange,
   const [downloadedName, setDownloadedName] = useState<string | null>(null);
   const [startError, setStartError] = useState<string | null>(null);
   const [failedCopy, setFailedCopy] = useState<FailedCopy | null>(null);
+  const [fullScreen, setFullScreen] = useState(false);
 
   bytesRef.current = bytes;
   versionRef.current = version;
@@ -189,14 +190,39 @@ export default function GridCraftEditor({ bytes, version, onSave, onDirtyChange,
                 ? `Editing ${version.fileName}. Press Ctrl+S to save a new version.`
                 : 'Loading editor…';
 
+  useEffect(() => {
+    if (!fullScreen) return;
+    // Only the editor scrolls while it covers the page; Escape works while focus is outside the iframe.
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setFullScreen(false);
+    };
+    window.addEventListener('keydown', escape);
+    return () => {
+      document.body.style.overflow = previous;
+      window.removeEventListener('keydown', escape);
+    };
+  }, [fullScreen]);
+
   const back = () => {
     if (parentDirty && !window.confirm('Discard unsaved spreadsheet changes?')) return;
     onClose();
   };
 
   return (
-    <div className="overflow-hidden rounded-lg border border-line bg-surface">
-      <div className="flex flex-wrap items-center gap-2 border-b border-line px-3 py-2">
+    // The same element changes shape, so the iframe (and its unsaved workbook) is never remounted.
+    <div
+      role={fullScreen ? 'dialog' : undefined}
+      aria-modal={fullScreen ? true : undefined}
+      aria-label={fullScreen ? `${version.fileName} spreadsheet editor` : undefined}
+      className={
+        fullScreen
+          ? 'fixed inset-0 z-40 flex flex-col bg-surface'
+          : 'overflow-hidden rounded-lg border border-line bg-surface'
+      }
+    >
+      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-line px-3 py-2">
         <p role="status" aria-live="polite" className="min-w-0 flex-1 text-sm text-muted">
           {status}
         </p>
@@ -205,6 +231,13 @@ export default function GridCraftEditor({ bytes, version, onSave, onDirtyChange,
             Download a copy
           </Button>
         )}
+        <Button
+          variant="secondary"
+          className="h-8 px-2.5 py-1 text-xs"
+          onClick={() => setFullScreen((value) => !value)}
+        >
+          {fullScreen ? 'Exit full screen' : 'Full screen'}
+        </Button>
         <Button variant="secondary" className="h-8 px-2.5 py-1 text-xs" onClick={back}>
           Back to preview
         </Button>
@@ -215,7 +248,7 @@ export default function GridCraftEditor({ bytes, version, onSave, onDirtyChange,
         src={gridcraftUrl(loadSession()?.user.name)}
         sandbox="allow-scripts"
         allow="clipboard-read; clipboard-write"
-        className="h-[70vh] min-h-[520px] w-full"
+        className={fullScreen ? 'min-h-0 w-full flex-1' : 'h-[70vh] min-h-[520px] w-full'}
       />
     </div>
   );

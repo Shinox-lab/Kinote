@@ -1,8 +1,8 @@
 import { describe, test, beforeEach } from 'vitest';
 import assert from 'node:assert/strict';
 import { and, eq } from 'drizzle-orm';
-import { auditEvents, sourceItems, sources, documents, withTenantTx } from '@living-wiki/db';
-import { ERROR_SENTENCES } from '@living-wiki/contracts';
+import { auditEvents, sourceItems, sources, documents, withTenantTx } from '@kinote/db';
+import { ERROR_SENTENCES } from '@kinote/contracts';
 import { buildTestApp, bootstrapTenant, signUpMember, useTestDb } from './support/testkit.js';
 
 describe('sources admin routes', () => {

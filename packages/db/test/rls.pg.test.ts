@@ -1,6 +1,6 @@
 // Row-level security against a real Postgres 17 + pgvector (pnpm test:pg).
 //
-// TEST_DATABASE_URL is the living_wiki_app role; TEST_DATABASE_MIGRATE_URL is
+// TEST_DATABASE_URL is the kinote_app role; TEST_DATABASE_MIGRATE_URL is
 // the postgres superuser, used here only to check that seeded rows exist and
 // to clean them up. Every seed goes through withTenantTx as the app role, so
 // the policies' WITH CHECK is exercised on the way in.
@@ -100,12 +100,12 @@ describe.skipIf(!APP_URL)('row-level security on real Postgres (app role)', () =
     await closeDb();
   });
 
-  it('runs as living_wiki_app without superuser or BYPASSRLS', async () => {
+  it('runs as kinote_app without superuser or BYPASSRLS', async () => {
     const res = await getDb().execute(
       sql`SELECT current_user AS name, rolsuper, rolbypassrls
             FROM pg_roles WHERE rolname = current_user`
     );
-    expect(rowsOf(res)).toEqual([{ name: 'living_wiki_app', rolsuper: false, rolbypassrls: false }]);
+    expect(rowsOf(res)).toEqual([{ name: 'kinote_app', rolsuper: false, rolbypassrls: false }]);
   });
 
   it('has RLS enabled and forced on every tenant table', async () => {

@@ -1,9 +1,9 @@
 import { describe, test, beforeAll, afterEach, afterAll, expect } from 'vitest';
 import { and, asc, eq } from 'drizzle-orm';
 import * as Y from 'yjs';
-import { chunks, jobs, pages, withTenantTx } from '@living-wiki/db';
-import { FIELDS_MAP } from '@living-wiki/contracts';
-import { DeterministicEmbeddingProvider, takePageSnapshot } from '@living-wiki/core';
+import { chunks, jobs, pages, withTenantTx } from '@kinote/db';
+import { FIELDS_MAP } from '@kinote/contracts';
+import { DeterministicEmbeddingProvider, takePageSnapshot } from '@kinote/core';
 import { collabSettle, type CollabServer } from '../../collab/src/server.js';
 import { startCollabServer } from '../../collab/test/support/wsClient.js';
 import { storedDoc } from '../../collab/test/support/collabWorld.js';

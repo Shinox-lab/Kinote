@@ -1,6 +1,6 @@
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { enqueuePlacementRebuild, jobs, withTenantTx } from '@living-wiki/db';
-import { createTestDb, type TestDb } from '@living-wiki/db/testing';
+import { enqueuePlacementRebuild, jobs, withTenantTx } from '@kinote/db';
+import { createTestDb, type TestDb } from '@kinote/db/testing';
 import { addSpace, indexPageVersion, indexedFile, seedTenant } from './fixtures/placementSeed.js';
 
 let testDb: TestDb;
@@ -26,7 +26,7 @@ describe('enqueuePlacementRebuild', () => {
     try {
       queued = await enqueuePlacementRebuild(testDb.db);
     } finally {
-      await testDb.pglite.exec('SET ROLE living_wiki_app;');
+      await testDb.pglite.exec('SET ROLE kinote_app;');
     }
 
     expect(queued).toBe(3);

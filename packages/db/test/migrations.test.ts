@@ -133,9 +133,9 @@ describe('migration chain', () => {
 
   test('the app role exists and cannot bypass RLS', async () => {
     const role = await rows<{ rolsuper: boolean; rolbypassrls: boolean }>(
-      `SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname = 'living_wiki_app'`
+      `SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname = 'kinote_app'`
     );
-    assert.equal(role.length, 1, 'living_wiki_app role missing');
+    assert.equal(role.length, 1, 'kinote_app role missing');
     assert.equal(role[0]!.rolsuper, false);
     assert.equal(role[0]!.rolbypassrls, false);
   });

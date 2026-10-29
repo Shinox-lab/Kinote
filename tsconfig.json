@@ -6,14 +6,14 @@
     "noEmit": true,
     "types": ["node"],
     "paths": {
-      "@living-wiki/contracts": ["packages/contracts/src/index.ts"],
-      "@living-wiki/core": ["packages/core/src/index.ts"],
-      "@living-wiki/db/testing": ["packages/db/src/testing.ts"],
-      "@living-wiki/db": ["packages/db/src/index.ts"],
-      "@living-wiki/shared": ["packages/shared/src/index.ts"],
-      "@living-wiki/api": ["apps/api/src/server.ts"],
-      "@living-wiki/collab": ["apps/collab/src/server.ts"],
-      "@living-wiki/worker": ["apps/worker/src/runner.ts"]
+      "@kinote/contracts": ["packages/contracts/src/index.ts"],
+      "@kinote/core": ["packages/core/src/index.ts"],
+      "@kinote/db/testing": ["packages/db/src/testing.ts"],
+      "@kinote/db": ["packages/db/src/index.ts"],
+      "@kinote/shared": ["packages/shared/src/index.ts"],
+      "@kinote/api": ["apps/api/src/server.ts"],
+      "@kinote/collab": ["apps/collab/src/server.ts"],
+      "@kinote/worker": ["apps/worker/src/runner.ts"]
     }
   },
   "include": [

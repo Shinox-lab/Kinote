@@ -1,5 +1,5 @@
-import { closeDb, initDb } from '@living-wiki/db';
-import { loadConfig } from '@living-wiki/shared';
+import { closeDb, initDb } from '@kinote/db';
+import { loadConfig } from '@kinote/shared';
 import { collabSettle, createCollabServer } from './server.js';
 
 /** Longest shutdown waits for in-flight change bookkeeping before the pool closes. */

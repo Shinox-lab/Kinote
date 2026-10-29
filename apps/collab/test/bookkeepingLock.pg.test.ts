@@ -27,7 +27,7 @@ import {
   tenants,
   users,
   withTenantTx,
-} from '@living-wiki/db';
+} from '@kinote/db';
 import { writeAttribution } from '../src/recorder.js';
 
 const APP_URL = process.env.TEST_DATABASE_URL;

@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from 'vitest';
-import type { DocumentTitle, LinkTarget } from '@living-wiki/contracts';
+import type { DocumentTitle, LinkTarget } from '@kinote/contracts';
 import { blockSourcesOf, connectionCount, createTitleBatcher, linkMenuEntries, parsePeekSearch } from '../src/lib/links.js';
 
 const ID = '11111111-1111-4111-8111-111111111111';

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
-import type { SpaceResponse } from '@living-wiki/contracts';
+import type { SpaceResponse } from '@kinote/contracts';
 import { api } from '../lib/api.js';
 import { useRefresh } from '../lib/queries.js';
 import { Button, Checkbox, ErrorNote, TextField } from './ui.js';

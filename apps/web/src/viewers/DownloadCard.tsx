@@ -1,5 +1,5 @@
 import { useMutation } from '@tanstack/react-query';
-import type { FileVersion } from '@living-wiki/contracts';
+import type { FileVersion } from '@kinote/contracts';
 import { saveVersion } from '../lib/download.js';
 import { Button, ErrorNote } from '../components/ui.js';
 

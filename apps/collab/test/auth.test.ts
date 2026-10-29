@@ -2,13 +2,13 @@ import { describe, test, beforeAll, afterEach, afterAll, expect } from 'vitest';
 import assert from 'node:assert/strict';
 import type * as Y from 'yjs';
 import { and, eq } from 'drizzle-orm';
-import { withTenantTx, memberships, spaces } from '@living-wiki/db';
+import { withTenantTx, memberships, spaces } from '@kinote/db';
 import {
   signCollabToken,
   getCollabTokenSecret,
   documentName,
   type CollabClaims,
-} from '@living-wiki/shared';
+} from '@kinote/shared';
 import { openDirectSession, type CollabServer } from '../src/server.js';
 import { authenticateCollabConnection } from '../src/auth.js';
 import { connectClient, startCollabServer } from './support/wsClient.js';

@@ -69,7 +69,7 @@ delete these rows in the same transaction as the chunks.
 - Test: `packages/db/test/placementSchema.test.ts`
 
 **Interfaces:**
-- Produces Drizzle tables, exported from `@living-wiki/db`:
+- Produces Drizzle tables, exported from `@kinote/db`:
   - `pageCards` (`page_cards`): `documentId` uuid primary key, references `documents.id` with cascade on delete; `tenantId`; `spaceId`; `versionId` (references versions, cascade); `summary` text; `outline` text[]; `embedding` `halfvec(2560)`; `updatedAt` timestamptz. Indexes: HNSW `halfvec_cosine_ops` on `embedding`; btree `(tenant_id, space_id)`.
   - `entities`: `id`; `tenantId`; `kind` (enum above); `name`; `normalizedName` (lower-cased, whitespace collapsed); `aliases` text[] (normalised); `nameEmbedding` `halfvec(2560)`; `userId` uuid nullable, referencing users; `createdAt`. Unique `(tenant_id, kind, normalized_name)`. GIN trigram index `gin_trgm_ops` on `normalized_name`.
   - `entityMentions`: `tenantId`; `entityId` (cascade); `documentId` (cascade); `versionId`; `chunkId` (references chunks, cascade); `spaceId`; `blockIds` text[]. Btree `(tenant_id, entity_id)` and `(tenant_id, document_id)`.

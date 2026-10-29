@@ -9,10 +9,10 @@ import {
   writeAuditEvent,
   lockDocument,
   NonRetryableError,
-} from '@living-wiki/db';
+} from '@kinote/db';
 import { defaultEmbeddingProvider, type EmbeddingProvider } from '../embedding.js';
-import { AppError } from '@living-wiki/contracts';
-import type { BlockLike, ObjectStorage } from '@living-wiki/shared';
+import { AppError } from '@kinote/contracts';
+import type { BlockLike, ObjectStorage } from '@kinote/shared';
 import { chunkPageBlocks } from './chunkPage.js';
 import { chunkInboxOwner } from './inboxOwner.js';
 import { loadFileChunks } from '../files/loadChunks.js';

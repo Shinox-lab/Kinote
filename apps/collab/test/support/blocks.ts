@@ -1,5 +1,5 @@
 import type * as Y from 'yjs';
-import { createServerEditor } from '@living-wiki/shared';
+import { createServerEditor } from '@kinote/shared';
 import { BLOCK_FRAGMENT } from '../../src/server.js';
 
 export { BLOCK_FRAGMENT };

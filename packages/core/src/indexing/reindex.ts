@@ -1,5 +1,5 @@
 import { and, eq, inArray, isNotNull, isNull } from 'drizzle-orm';
-import { documents, enqueueJob, withTenantTx, type DbTransaction } from '@living-wiki/db';
+import { documents, enqueueJob, withTenantTx, type DbTransaction } from '@kinote/db';
 import { defaultEmbeddingProvider, type EmbeddingProvider } from '../embedding.js';
 import { indexVersion, type IndexDeps, type IndexVersionResult } from './indexVersion.js';
 

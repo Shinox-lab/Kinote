@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { ERROR_SENTENCES } from '@living-wiki/contracts';
+import { ERROR_SENTENCES } from '@kinote/contracts';
 import {
   READING_GIVE_UP_MS,
   localRefusal,

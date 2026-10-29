@@ -47,7 +47,7 @@ CMD ["node_modules/.bin/tsx", "apps/worker/src/main.ts"]
 # origin. nginx proxies /api and /mcp to the api and /collab (WebSocket) to collab.
 FROM build AS web
 USER root
-RUN pnpm --filter @living-wiki/web build
+RUN pnpm --filter @kinote/web build
 
 FROM nginx:1.27-alpine AS web-runtime
 COPY apps/web/nginx.conf /etc/nginx/conf.d/default.conf

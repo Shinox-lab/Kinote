@@ -254,6 +254,6 @@ test('fieldLines prints in field order, in words', () => {
   removed from 1 page."` (plural "pages" from 2).
 - [ ] **Step 2: Run** `pnpm vitest run apps/web/test/fields.test.ts` and `pnpm e2e:local collections` — Expected: FAIL
 - [ ] **Step 3: Implement.**
-- [ ] **Step 4: Run** them, then `pnpm typecheck`, `pnpm --filter @living-wiki/web build`, `pnpm vitest run`, full
+- [ ] **Step 4: Run** them, then `pnpm typecheck`, `pnpm --filter @kinote/web build`, `pnpm vitest run`, full
   `pnpm e2e:local` — Expected: all pass
 - [ ] **Step 5: Commit** `feat(web): collection fields on pages`

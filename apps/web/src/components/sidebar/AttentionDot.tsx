@@ -1,4 +1,4 @@
-import type { TreeNode } from '@living-wiki/contracts';
+import type { TreeNode } from '@kinote/contracts';
 import { attentionLabel } from '../../lib/wiki.js';
 
 const COLOR = {

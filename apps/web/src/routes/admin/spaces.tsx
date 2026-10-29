@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useMutation } from '@tanstack/react-query';
-import type { SpaceResponse } from '@living-wiki/contracts';
+import type { SpaceResponse } from '@kinote/contracts';
 import { api } from '../../lib/api.js';
 import { slugify } from '../../lib/console.js';
 import { useRefresh, useSpaces } from '../../lib/queries.js';

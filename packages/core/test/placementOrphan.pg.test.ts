@@ -16,7 +16,7 @@ import {
   versions,
   withTenantTx,
   type DbTransaction,
-} from '@living-wiki/db';
+} from '@kinote/db';
 import { deleteOrphanEntities } from '../src/index.js';
 
 const APP_URL = process.env.TEST_DATABASE_URL;

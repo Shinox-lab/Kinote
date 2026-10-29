@@ -1,5 +1,5 @@
 import { beforeAll, expect, it } from 'vitest';
-import { createTestDb } from '@living-wiki/db/testing';
+import { createTestDb } from '@kinote/db/testing';
 import { DeterministicEmbeddingProvider, DeterministicPlacementModel } from '../src/index.js';
 import { runRoutingEval } from '../eval/routing/runEval.js';
 

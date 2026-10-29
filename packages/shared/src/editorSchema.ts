@@ -1,7 +1,7 @@
 import { BlockNoteSchema, createBlockSpec, createExtension, createInlineContentSpec, defaultBlockSpecs, defaultInlineContentSpecs } from '@blocknote/core';
 import { CommentMark } from '@blocknote/core/comments';
 import { ServerBlockNoteEditor } from '@blocknote/server-util';
-import { MENTION_PATH, PAGE_LINK_PATH, calloutConfig, collectionViewConfig, fileEmbedConfig, mentionConfig, mentionPath, pageLinkConfig, pageLinkPath } from '@living-wiki/contracts';
+import { MENTION_PATH, PAGE_LINK_PATH, calloutConfig, collectionViewConfig, fileEmbedConfig, mentionConfig, mentionPath, pageLinkConfig, pageLinkPath } from '@kinote/contracts';
 import type { BlockLike } from './blocks.js';
 
 /**

@@ -17,9 +17,9 @@ import {
   suggestions,
   writeAuditEvent,
   type DbTransaction,
-} from '@living-wiki/db';
-import { AppError } from '@living-wiki/contracts';
-import { documentName, type BlockLike, type CollabClient } from '@living-wiki/shared';
+} from '@kinote/db';
+import { AppError } from '@kinote/contracts';
+import { documentName, type BlockLike, type CollabClient } from '@kinote/shared';
 import type { EmbeddingProvider } from '../embedding.js';
 import type { RoutingModel } from '../placement/model.js';
 import { takePageSnapshot } from '../snapshot.js';

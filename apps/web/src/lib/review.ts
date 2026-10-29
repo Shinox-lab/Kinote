@@ -1,4 +1,4 @@
-import type { ReviewItem } from '@living-wiki/contracts';
+import type { ReviewItem } from '@kinote/contracts';
 import { formatBytes } from './fileUi.js';
 import { mimeLabel } from './mime.js';
 

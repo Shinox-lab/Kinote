@@ -99,7 +99,7 @@ export const pages = pgTable(
      * Who the slug is unique for inside the space: '' in a normal space (one
      * slug per space), the creator key "{createdByType}:{createdBy}" in the
      * Inbox, so members' private items never collide (a collision would
-     * reveal another member's item). See `pageSlugScope` in @living-wiki/core.
+     * reveal another member's item). See `pageSlugScope` in @kinote/core.
      */
     slugScope: text('slug_scope').notNull().default(''),
     ydocState: bytea('ydoc_state').notNull(),

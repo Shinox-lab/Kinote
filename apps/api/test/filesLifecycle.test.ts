@@ -1,10 +1,10 @@
 import { describe, test, beforeEach } from 'vitest';
 import assert from 'node:assert/strict';
 import { and, eq } from 'drizzle-orm';
-import { chunks, documents, jobs, versions, withTenantTx } from '@living-wiki/db';
-import { InMemoryObjectStorage } from '@living-wiki/shared';
-import { FakeExtractor, type Extractor } from '@living-wiki/core';
-import { AppError } from '@living-wiki/contracts';
+import { chunks, documents, jobs, versions, withTenantTx } from '@kinote/db';
+import { InMemoryObjectStorage } from '@kinote/shared';
+import { FakeExtractor, type Extractor } from '@kinote/core';
+import { AppError } from '@kinote/contracts';
 import { runPendingJobsForTenant } from '../../worker/src/runner.js';
 import { buildTestApp, bootstrapTenant, signUpMember, useTestDb } from './support/testkit.js';
 import { uploadRequest } from './support/multipart.js';

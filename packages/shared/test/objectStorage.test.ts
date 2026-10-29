@@ -52,7 +52,7 @@ const implementations: Array<{
     name: 'S3ObjectStorage',
     skip: !s3Configured,
     make: async () => {
-      const bucket = process.env.S3_BUCKET ?? 'living-wiki';
+      const bucket = process.env.S3_BUCKET ?? 'kinote';
       await ensureBucket(bucket);
       return new S3ObjectStorage(s3Options(bucket));
     },

@@ -1,6 +1,6 @@
 # Phase C1: page collections — design
 
-Status: draft, 2026-10-29. Follows Phase A (merged). Builds on `docs/2026-10-18-living-wiki-standalone-design.md`, the
+Status: draft, 2026-10-29. Follows Phase A (merged). Builds on `docs/2026-10-18-kinote-standalone-design.md`, the
 routing specs (`2026-10-26-routing-engine-design.md`, `2026-10-27-routing-documents-design.md`) and Phase A
 (`2026-10-28-phase-a-connected-pages-design.md`). Where they differ, this wins for collections. Excalidraw drawings
 (the other half of Phase C) get their own spec after this one.

@@ -1,6 +1,6 @@
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { withTenantTx, type DbTransaction } from '@living-wiki/db';
-import { createTestDb, type TestDb } from '@living-wiki/db/testing';
+import { withTenantTx, type DbTransaction } from '@kinote/db';
+import { createTestDb, type TestDb } from '@kinote/db/testing';
 import {
   DeterministicEmbeddingProvider,
   DeterministicPlacementModel,

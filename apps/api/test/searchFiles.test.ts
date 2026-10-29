@@ -1,8 +1,8 @@
 import { describe, test, beforeEach } from 'vitest';
 import assert from 'node:assert/strict';
-import { InMemoryObjectStorage } from '@living-wiki/shared';
-import { FakeExtractor } from '@living-wiki/core';
-import { AskResponseSchema, SearchResponseSchema } from '@living-wiki/contracts';
+import { InMemoryObjectStorage } from '@kinote/shared';
+import { FakeExtractor } from '@kinote/core';
+import { AskResponseSchema, SearchResponseSchema } from '@kinote/contracts';
 import { runPendingJobsForTenant } from '../../worker/src/runner.js';
 import { buildTestApp, bootstrapTenant, signUpMember, useTestDb } from './support/testkit.js';
 import { uploadRequest } from './support/multipart.js';

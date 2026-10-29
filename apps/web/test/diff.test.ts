@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import type { BlockDiffEntry } from '@living-wiki/contracts';
+import type { BlockDiffEntry } from '@kinote/contracts';
 import { changeLabel, changedEntries, diffCounts, diffSummary } from '../src/lib/diff.js';
 
 const entry = (blockId: string, change: BlockDiffEntry['change']): BlockDiffEntry => ({ blockId, change, type: 'paragraph' });

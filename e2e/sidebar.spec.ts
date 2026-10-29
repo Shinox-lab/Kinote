@@ -390,7 +390,7 @@ test('on a touch screen the add-page button is visible without hovering', async 
   const world = await seedWorld(request, { reviewRequired: false });
   const context = await browser.newContext({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 800 } });
   await context.addInitScript(
-    (s) => localStorage.setItem('living-wiki.session', JSON.stringify(s)),
+    (s) => localStorage.setItem('kinote.session', JSON.stringify(s)),
     { token: world.owner.token, user: world.owner.user, tenantId: world.tenantId, tenantSlug: world.slug }
   );
   const page = await context.newPage();

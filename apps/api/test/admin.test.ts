@@ -7,7 +7,7 @@ import {
   groupMembers,
   memberships,
   spaceGrants,
-} from '@living-wiki/db';
+} from '@kinote/db';
 import {
   asUser,
   bootstrapTenant,

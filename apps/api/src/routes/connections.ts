@@ -1,6 +1,6 @@
 import { alias } from 'drizzle-orm/pg-core';
 import { and, asc, desc, eq, ilike, inArray, isNotNull, isNull, ne, or, sql, type SQL } from 'drizzle-orm';
-import { captureChanges, captures, documents, links, spaces, versions, withTenantTx, type DbTransaction } from '@living-wiki/db';
+import { captureChanges, captures, documents, links, spaces, versions, withTenantTx, type DbTransaction } from '@kinote/db';
 import {
   AppError,
   DocumentTitlesQuerySchema,
@@ -8,9 +8,9 @@ import {
   type DocumentTitle,
   type LinkTarget,
   type PageConnections,
-} from '@living-wiki/contracts';
-import { assertValidUuid, getReadableSpaceIds, isTenantAdmin, requireDocumentRole, type Actor } from '@living-wiki/core';
-import { flattenBlocks, type BlockLike } from '@living-wiki/shared';
+} from '@kinote/contracts';
+import { assertValidUuid, getReadableSpaceIds, isTenantAdmin, requireDocumentRole, type Actor } from '@kinote/core';
+import { flattenBlocks, type BlockLike } from '@kinote/shared';
 
 const EXCERPT_CHARS = 160;
 

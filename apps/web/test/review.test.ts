@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import type { ReviewItem } from '@living-wiki/contracts';
+import type { ReviewItem } from '@kinote/contracts';
 import { REJECT_NOTE_MAX, approveBlockedReason, fileMeta, rejectNoteState } from '../src/lib/review.js';
 
 describe('rejectNoteState', () => {

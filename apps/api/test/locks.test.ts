@@ -1,9 +1,9 @@
 import { describe, test, beforeEach } from 'vitest';
 import assert from 'node:assert/strict';
 import { and, eq } from 'drizzle-orm';
-import { withTenantTx, versions, pages, chunks } from '@living-wiki/db';
-import { AppError } from '@living-wiki/contracts';
-import { takePageSnapshot, type Actor } from '@living-wiki/core';
+import { withTenantTx, versions, pages, chunks } from '@kinote/db';
+import { AppError } from '@kinote/contracts';
+import { takePageSnapshot, type Actor } from '@kinote/core';
 import { runPendingJobsForTenant } from '../../worker/src/runner.js';
 import {
   approveVersion,

@@ -10,7 +10,7 @@ import {
   tenants,
   withTenantTx,
   type Job,
-} from '@living-wiki/db';
+} from '@kinote/db';
 import { useTestDb } from '../../api/test/support/testkit.js';
 
 const NOW = new Date('2026-10-19T12:00:00.000Z');

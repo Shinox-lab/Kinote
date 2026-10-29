@@ -1,4 +1,4 @@
-import type { VersionListItem, VersionReason, VersionStatus, VersionSummary } from '@living-wiki/contracts';
+import type { VersionListItem, VersionReason, VersionStatus, VersionSummary } from '@kinote/contracts';
 import { authorLabel, type AuthorLabel } from './wiki.js';
 
 // Pure helpers behind the history drawer: labels for the contract's version

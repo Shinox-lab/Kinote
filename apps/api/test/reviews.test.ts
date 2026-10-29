@@ -8,9 +8,9 @@ import {
   documents,
   pages,
   spaces,
-} from '@living-wiki/db';
-import { ReviewListSchema, AppError } from '@living-wiki/contracts';
-import type { Actor } from '@living-wiki/core';
+} from '@kinote/db';
+import { ReviewListSchema, AppError } from '@kinote/contracts';
+import type { Actor } from '@kinote/core';
 import { approveVersion } from '../src/routes/pages.js';
 import { listReviewQueue } from '../src/routes/reviews.js';
 import { canApprove } from '../src/pages/approval.js';

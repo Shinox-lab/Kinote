@@ -3,7 +3,7 @@ import { assertPgTestEnv } from '../../../vitest.pg.config';
 
 describe('pnpm test:pg refuses to run without a real database', () => {
   it('throws, naming the variables, when either is unset or empty', () => {
-    const url = 'postgres://living_wiki_app:x@127.0.0.1:55543/living_wiki';
+    const url = 'postgres://kinote_app:x@127.0.0.1:55543/kinote';
     for (const env of [
       {},
       { TEST_DATABASE_URL: url },

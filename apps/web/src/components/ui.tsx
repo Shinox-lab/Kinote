@@ -152,7 +152,7 @@ export function Card({ title, children }: { title?: string; children: ReactNode 
 export function AuthShell({ title, children }: { title: string; children: ReactNode }) {
   return (
     <main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center gap-4 px-4 py-10">
-      <h1 className="text-2xl font-semibold">Living Wiki</h1>
+      <h1 className="text-2xl font-semibold">Kinote</h1>
       <Card title={title}>{children}</Card>
     </main>
   );

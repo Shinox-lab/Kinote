@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ENTITY_KINDS, EDGE_TYPES, normalizeEntityName } from '@living-wiki/db';
+import { ENTITY_KINDS, EDGE_TYPES, normalizeEntityName } from '@kinote/db';
 import { chatJson, type ChatJsonOptions } from '../llm/chatJson.js';
 
 export type EntityKind = (typeof ENTITY_KINDS)[number];

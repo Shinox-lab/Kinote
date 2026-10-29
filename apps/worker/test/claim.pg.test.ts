@@ -1,6 +1,6 @@
 // Concurrent job claims against a real Postgres (pnpm test:pg): two pool
 // connections run claimJobs at the same time and must get disjoint jobs, which
-// only holds with a real `FOR UPDATE SKIP LOCKED`. Runs as the living_wiki_app
+// only holds with a real `FOR UPDATE SKIP LOCKED`. Runs as the kinote_app
 // role (TEST_DATABASE_URL); jobs are seeded through withTenantTx so RLS
 // applies. TEST_DATABASE_MIGRATE_URL (superuser) is used only for cleanup.
 import { randomUUID } from 'node:crypto';
@@ -15,7 +15,7 @@ import {
   tenants,
   withTenantTx,
   type Job,
-} from '@living-wiki/db';
+} from '@kinote/db';
 
 const APP_URL = process.env.TEST_DATABASE_URL;
 const OWNER_URL = process.env.TEST_DATABASE_MIGRATE_URL;

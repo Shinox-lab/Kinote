@@ -1,4 +1,4 @@
-import { AppError, type ErrorCode } from '@living-wiki/contracts';
+import { AppError, type ErrorCode } from '@kinote/contracts';
 
 const UNIQUE_VIOLATION = '23505';
 

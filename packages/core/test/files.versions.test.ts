@@ -9,8 +9,8 @@ import {
   versionContributors,
   versions,
   withTenantTx,
-} from '@living-wiki/db';
-import { createTestDb, type TestDb } from '@living-wiki/db/testing';
+} from '@kinote/db';
+import { createTestDb, type TestDb } from '@kinote/db/testing';
 import { fileObjectPath, insertFileVersion, type InsertFileVersionParams } from '../src/files/versions.js';
 import { seedFileDocument, type FileSeed } from './fixtures/fileSeed.js';
 

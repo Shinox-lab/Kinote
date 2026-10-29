@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
-import type { NeedsHomeDocument, NeedsHomeItem } from '@living-wiki/contracts';
+import type { NeedsHomeDocument, NeedsHomeItem } from '@kinote/contracts';
 import { api } from '../../lib/api.js';
 import { useNeedsHome, useNeedsHomeDocuments, useRefresh } from '../../lib/queries.js';
 import { Button, ErrorNote } from '../ui.js';

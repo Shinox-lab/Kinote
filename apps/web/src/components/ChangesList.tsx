@@ -1,4 +1,4 @@
-import type { BlockDiffEntry } from '@living-wiki/contracts';
+import type { BlockDiffEntry } from '@kinote/contracts';
 import { usePageChanges } from '../lib/queries.js';
 import { loadSession } from '../lib/session.js';
 import { authorColor, authorLabel, visibleChanges } from '../lib/wiki.js';

@@ -1,8 +1,8 @@
-# Living Wiki (standalone product) — design
+# Kinote (standalone product) — design
 
 Date: 2026-10-18. Status: draft for the owner's review.
-Builds on: `2026-10-15-living-wiki-core-design.md` (W1–W8), `2026-10-15-wiki-console-mvp-design.md` (M1–M5), the
-extraction doc "Living Wiki: extracted requirements, architecture and standalone scope", and the owner's answers to its
+Builds on: `2026-10-15-kinote-core-design.md` (W1–W8), `2026-10-15-wiki-console-mvp-design.md` (M1–M5), the
+extraction doc "Kinote: extracted requirements, architecture and standalone scope", and the owner's answers to its
 seven open decisions (2026-10-18).
 
 This is a new product built from zero. Nothing is imported from the Shinox codebase; its rules and tested patterns are
@@ -22,6 +22,34 @@ differ:
 - **New order after slice 2:** routing engine, then Phase A (links and backlinks, comments, mentions, notifications,
   side-peek), then Phase C (page collections and Excalidraw drawings), then WhatsApp and Google Drive. The "Delivery
   slices" table below is kept for history.
+
+## Progress
+
+The one place for where the build stands. Update it whenever a part is merged or the next step changes. "Merged" means
+merged into local `main`; nothing has been pushed. Since 2026-10-30, work goes straight onto `main`, not onto phase branches.
+
+| Part | State | Spec · plan |
+|---|---|---|
+| Slices 0–1: foundations, live pages | Merged | this spec · `plans/2026-10-18-slice-0-1-remediation.md` |
+| Slice 2: files, sources, console | Merged | `specs/2026-10-20-slice-2-*`, `specs/2026-10-20-slice-2b-*` · `plans/2026-10-20-slice-2*` |
+| Console redesign; embeddings and Ask | Merged | `specs/2026-10-24-console-redesign-design.md`, `specs/2026-10-25-openai-compatible-embeddings-and-ask-design.md` |
+| Routing engine 3a–3c: placement, engine, console | Merged | `specs/2026-10-26-routing-engine-design.md` · `plans/2026-10-26-routing-3*` |
+| Routing 3d: documents get their own page | Merged | `specs/2026-10-27-routing-documents-design.md` · `plans/2026-10-27-routing-3d-documents.md` |
+| Phase A: links, talk, file captures (A1–A3) | Merged 2026-10-28 | `specs/2026-10-28-phase-a-connected-pages-design.md` |
+| XLSX preview and GridCraft spreadsheet editor | Merged 2026-10-29/30 | `specs/2026-10-29-extend-xlsx-preview-design.md`, `specs/2026-10-29-gridcraft-xlsx-editor-design.md` |
+| Phase C1a: collection fields | Merged 2026-10-29 | `specs/2026-10-29-phase-c-collections-design.md` · `plans/2026-10-29-phase-c1a-fields.md` |
+| Phase C1b: collection views (table, board, calendar, timeline) | Merged 2026-10-30, with polish fixes (`4da272a`) | same spec · `plans/2026-10-29-phase-c1b-views.md` |
+| **Phase C1c: the engine writes fields; Search and Ask understand them** | **Next** | same spec |
+| Phase C: Excalidraw drawings | Not started; needs its own spec | — |
+| Agents and MCP rework for external agents | Not started; needs its own spec | — |
+| WhatsApp, then Google Drive | Not started | slices 4–5 below |
+
+Spec and plan paths are under `docs/superpowers/`.
+
+Known gaps:
+- The small issues deferred from the C1a review are still open.
+- The Postgres test suite (`pgtest.sh`) has not been run for Phase C, because Docker was down. The PGlite unit and
+  end-to-end suites pass.
 
 ## Intent
 

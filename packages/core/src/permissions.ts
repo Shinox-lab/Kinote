@@ -1,7 +1,7 @@
 import { and, eq } from 'drizzle-orm';
-import { spaces, spaceGrants, groupMembers } from '@living-wiki/db';
-import type { DbTransaction, DocumentRow } from '@living-wiki/db';
-import { AppError, type ErrorCode } from '@living-wiki/contracts';
+import { spaces, spaceGrants, groupMembers } from '@kinote/db';
+import type { DbTransaction, DocumentRow } from '@kinote/db';
+import { AppError, type ErrorCode } from '@kinote/contracts';
 
 const ROLE_RANK = { viewer: 1, editor: 2, reviewer: 3, admin: 4 } as const;
 export type SpaceRole = keyof typeof ROLE_RANK;

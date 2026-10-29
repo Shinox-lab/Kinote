@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest';
-import { withTenantTx, captureChanges, captureFacts, captures, suggestions } from '@living-wiki/db';
+import { withTenantTx, captureChanges, captureFacts, captures, suggestions } from '@kinote/db';
 import { bootstrapTenant, buildTestApp, signUpMember, useTestDb } from './support/testkit.js';
 
 type Headers = Record<string, string>;

@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { normalizeEntityName, rowsOf, type DbTransaction } from '@living-wiki/db';
+import { normalizeEntityName, rowsOf, type DbTransaction } from '@kinote/db';
 import { ENTITY_MATCH } from './entities.js';
 import type { EntityKind } from './model.js';
 

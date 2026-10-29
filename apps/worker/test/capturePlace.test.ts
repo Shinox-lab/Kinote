@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { captureFacts, withTenantTx } from '@living-wiki/db';
-import { planCapture, recordRoutingExample, type PlanEditsInput, type RoutingModel } from '@living-wiki/core';
+import { captureFacts, withTenantTx } from '@kinote/db';
+import { planCapture, recordRoutingExample, type PlanEditsInput, type RoutingModel } from '@kinote/core';
 import { useTestDb } from '../../api/test/support/testkit.js';
 import {
   addCapture,

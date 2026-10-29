@@ -1,5 +1,5 @@
 // Real-Postgres suite: `pnpm test:pg`. Runs only `*.pg.test.ts`, which need
-// TEST_DATABASE_URL (the living_wiki_app role) and TEST_DATABASE_MIGRATE_URL
+// TEST_DATABASE_URL (the kinote_app role) and TEST_DATABASE_MIGRATE_URL
 // (the postgres superuser) pointing at a migrated database (`pnpm stack:up`).
 // Without both the run fails at once: a suite that skipped every test must
 // never pass as "green". (Each file also skips itself when TEST_DATABASE_URL is

@@ -1,11 +1,11 @@
 import { beforeEach, describe, expect, test } from 'vitest';
-import { ERROR_SENTENCES } from '@living-wiki/contracts';
+import { ERROR_SENTENCES } from '@kinote/contracts';
 import {
   EMBEDDING_DIMENSIONS,
   defaultEmbeddingProvider,
   type AnswerProvider,
   type EmbeddingProvider,
-} from '@living-wiki/core';
+} from '@kinote/core';
 import { runPendingJobsForTenant } from '../../worker/src/runner.js';
 import { buildTestApp, bootstrapTenant, useTestDb } from './support/testkit.js';
 

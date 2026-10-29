@@ -9,7 +9,7 @@ import {
   spaceGrants,
   writeAuditEvent,
   type DbTransaction,
-} from '@living-wiki/db';
+} from '@kinote/db';
 import {
   UpdateMemberRoleRequestSchema,
   CreateGroupRequestSchema,
@@ -19,8 +19,8 @@ import {
   type Group,
   type Grant,
   type TenantRole,
-} from '@living-wiki/contracts';
-import { requireSpaceRole, type Actor } from '@living-wiki/core';
+} from '@kinote/contracts';
+import { requireSpaceRole, type Actor } from '@kinote/core';
 import { principalExists } from './foundations.js';
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

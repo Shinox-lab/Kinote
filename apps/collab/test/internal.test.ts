@@ -2,7 +2,7 @@ import { describe, test, beforeAll, afterEach, afterAll, expect } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import net from 'node:net';
 import { and, eq } from 'drizzle-orm';
-import { withTenantTx, pages } from '@living-wiki/db';
+import { withTenantTx, pages } from '@kinote/db';
 import type { CollabServer } from '../src/server.js';
 import { connectClient, startCollabServer, type ConnectedClient } from './support/wsClient.js';
 import { readBlocks, writeBlocks, fragmentText } from './support/blocks.js';
@@ -12,7 +12,7 @@ import {
   TEST_INTERNAL_SECRET,
   waitFor,
 } from './support/collabWorld.js';
-import { documentName, getCollabTokenSecret, signCollabToken } from '@living-wiki/shared';
+import { documentName, getCollabTokenSecret, signCollabToken } from '@kinote/shared';
 import { bootstrapTenant, buildTestApp, useTestDb } from '../../api/test/support/testkit.js';
 
 /**

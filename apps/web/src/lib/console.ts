@@ -1,4 +1,4 @@
-import type { SpaceRole, TenantRole } from '@living-wiki/contracts';
+import type { SpaceRole, TenantRole } from '@kinote/contracts';
 
 // Pure helpers behind the console's screens: what a role may see, how links
 // and slugs are built. Kept free of React so they are unit tested.

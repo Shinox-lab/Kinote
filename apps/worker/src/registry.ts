@@ -1,6 +1,6 @@
 import { and, eq } from 'drizzle-orm';
-import { withTenantTx, versions, storableMessage, NonRetryableError, type Job } from '@living-wiki/db';
-import { AppError, ERROR_SENTENCES } from '@living-wiki/contracts';
+import { withTenantTx, versions, storableMessage, NonRetryableError, type Job } from '@kinote/db';
+import { AppError, ERROR_SENTENCES } from '@kinote/contracts';
 import {
   takePageSnapshot,
   indexVersion,
@@ -15,9 +15,9 @@ import {
   type EmbeddingProvider,
   type Extractor,
   type RoutingModel,
-} from '@living-wiki/core';
-import { enqueueJob } from '@living-wiki/db';
-import type { CollabClient, ObjectStorage } from '@living-wiki/shared';
+} from '@kinote/core';
+import { enqueueJob } from '@kinote/db';
+import type { CollabClient, ObjectStorage } from '@kinote/shared';
 
 /** Longest `versions.error` stored for a failed version. */
 const MAX_VERSION_ERROR_LENGTH = 500;

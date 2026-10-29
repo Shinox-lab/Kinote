@@ -1,8 +1,8 @@
 import { describe, test, expect, beforeEach } from 'vitest';
 import { and, eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
-import { withTenantTx, versions, memberships } from '@living-wiki/db';
-import { VersionListSchema } from '@living-wiki/contracts';
+import { withTenantTx, versions, memberships } from '@kinote/db';
+import { VersionListSchema } from '@kinote/contracts';
 import { bootstrapTenant, buildTestApp, createAgent, signUpMember, useTestDb } from './support/testkit.js';
 
 type Headers = Record<string, string>;

@@ -1,4 +1,4 @@
-import type { CollectionRow, FieldDef } from '@living-wiki/contracts';
+import type { CollectionRow, FieldDef } from '@kinote/contracts';
 import { groupRows, tableGroupField, visibleFields } from '../../lib/views.js';
 import { FieldEditor, FieldValue } from '../fields/FieldEditor.js';
 import type { LayoutProps } from './types.js';

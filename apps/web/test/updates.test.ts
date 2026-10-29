@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import type { UpdateItem } from '@living-wiki/contracts';
+import type { UpdateItem } from '@kinote/contracts';
 import { relativeTime, updateSentence } from '../src/lib/updates.js';
 
 const ME = '8d1c2b0e-6d2c-4a52-9c83-8f1f7c2b1a77';

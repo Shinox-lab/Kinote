@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import type { TreeNode } from '@living-wiki/contracts';
+import type { TreeNode } from '@kinote/contracts';
 import { ancestorIds, attentionLabel, buildTree, canCreatePages, expandedFor } from '../src/lib/wiki.js';
 
 function node(id: string, parentId: string | null, attention: TreeNode['attention'] = null): TreeNode {

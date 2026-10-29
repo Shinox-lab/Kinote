@@ -1,7 +1,7 @@
 // CLI: applies packages/db/migrations to the database at DATABASE_MIGRATE_URL.
 // Usage: DATABASE_MIGRATE_URL=postgres://owner:...@host/db pnpm db:migrate
 //
-// DATABASE_MIGRATE_URL must be the schema owner (not living_wiki_app): the chain
+// DATABASE_MIGRATE_URL must be the schema owner (not kinote_app): the chain
 // creates the extension, tables, RLS policies, SECURITY DEFINER functions and
 // grants. Exits non-zero on any failure.
 import path from 'node:path';

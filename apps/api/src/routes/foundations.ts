@@ -17,7 +17,7 @@ import {
   versions,
   writeAuditEvent,
   type DbTransaction,
-} from '@living-wiki/db';
+} from '@kinote/db';
 import {
   CreateTenantRequestSchema,
   CreateSpaceRequestSchema,
@@ -34,15 +34,15 @@ import {
   type UpsertGrantResponse,
   type InviteMemberResponse,
   type AcceptInvitationResponse,
-} from '@living-wiki/contracts';
-import { sha256Hex } from '@living-wiki/shared';
+} from '@kinote/contracts';
+import { sha256Hex } from '@kinote/shared';
 import { fileAttention, pageAttention } from '../pages/badge.js';
 import {
   requireSpaceRole,
   getReadableSpaceIds,
   isTenantAdmin,
   type Actor,
-} from '@living-wiki/core';
+} from '@kinote/core';
 
 /** A space row as the published Space (timestamps as ISO strings). */
 export function toSpace(row: typeof spaces.$inferSelect): Space {

@@ -1,8 +1,8 @@
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { and, asc, eq } from 'drizzle-orm';
-import { chunks, documents, jobs, NonRetryableError, versions, withTenantTx } from '@living-wiki/db';
-import { createTestDb, type TestDb } from '@living-wiki/db/testing';
-import { InMemoryObjectStorage } from '@living-wiki/shared';
+import { chunks, documents, jobs, NonRetryableError, versions, withTenantTx } from '@kinote/db';
+import { createTestDb, type TestDb } from '@kinote/db/testing';
+import { InMemoryObjectStorage } from '@kinote/shared';
 import {
   DeterministicEmbeddingProvider,
   FakeExtractor,
@@ -128,7 +128,7 @@ describe('indexVersion for file versions', () => {
     await indexVersion({ tenantId: seed.tenantId, versionId: v1.id }, new DeterministicEmbeddingProvider(), { storage });
     const v2 = await ready(seed, 'handbook.pdf', pdf(section([], 1, 'A completely different sentence.')));
     const down: EmbeddingProvider = {
-      model: 'living-wiki-deterministic-2560-v1',
+      model: 'kinote-deterministic-2560-v1',
       dimensions: 2560,
       embed: async () => {
         throw new Error('down');

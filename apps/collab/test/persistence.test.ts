@@ -1,5 +1,5 @@
 import { describe, test, afterEach, expect } from 'vitest';
-import { getCollabTokenSecret } from '@living-wiki/shared';
+import { getCollabTokenSecret } from '@kinote/shared';
 import { createCollabServer, type CollabServer } from '../src/server.js';
 import { connectClient, type ConnectedClient } from './support/wsClient.js';
 import { readBlocks, writeBlocks, fragmentText } from './support/blocks.js';

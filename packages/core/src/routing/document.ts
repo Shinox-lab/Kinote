@@ -1,6 +1,6 @@
 import { and, eq, isNull, sql } from 'drizzle-orm';
-import { withTenantTx, captures, documents, rowsOf, spaces, type DbTransaction } from '@living-wiki/db';
-import { AppError } from '@living-wiki/contracts';
+import { withTenantTx, captures, documents, rowsOf, spaces, type DbTransaction } from '@kinote/db';
+import { AppError } from '@kinote/contracts';
 import type { EmbeddingProvider } from '../embedding.js';
 import type { DocumentPlacement, RoutingModel } from '../placement/model.js';
 import { captureContext, captureParts, gatherCandidates, resolveNames, ROUTING, type Candidate, type Context } from './plan.js';

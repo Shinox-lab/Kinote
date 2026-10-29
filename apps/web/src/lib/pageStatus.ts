@@ -1,4 +1,4 @@
-import type { PageDetails } from '@living-wiki/contracts';
+import type { PageDetails } from '@kinote/contracts';
 import { badgeTone } from './wiki.js';
 
 export type PageStatusState = 'clean' | 'changed' | 'review' | 'failed' | 'muted' | 'pending';

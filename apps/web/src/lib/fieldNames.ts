@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import type { FieldDef, FieldNames } from '@living-wiki/contracts';
+import type { FieldDef, FieldNames } from '@kinote/contracts';
 import { api } from './api.js';
 import { useTenantKey } from './queries.js';
 

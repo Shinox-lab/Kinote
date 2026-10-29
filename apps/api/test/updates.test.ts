@@ -1,8 +1,8 @@
 import { describe, test, expect, beforeEach } from 'vitest';
 import { and, eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
-import { withTenantTx, versions, documents, spaces, memberships } from '@living-wiki/db';
-import { UpdatesResponseSchema, type UpdateItem } from '@living-wiki/contracts';
+import { withTenantTx, versions, documents, spaces, memberships } from '@kinote/db';
+import { UpdatesResponseSchema, type UpdateItem } from '@kinote/contracts';
 import {
   bootstrapTenant,
   buildTestApp,

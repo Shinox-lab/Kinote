@@ -1,8 +1,8 @@
 import { describe, test, beforeAll, afterAll, expect } from 'vitest';
 import * as Y from 'yjs';
 import { and, eq } from 'drizzle-orm';
-import { withTenantTx, blockActivity } from '@living-wiki/db';
-import { AppError } from '@living-wiki/contracts';
+import { withTenantTx, blockActivity } from '@kinote/db';
+import { AppError } from '@kinote/contracts';
 import { applyBlockOps } from '../src/blockOps.js';
 import type { CollabServer } from '../src/server.js';
 import { startCollabServer } from './support/wsClient.js';

@@ -7,7 +7,7 @@ import {
   writeAuditEvent,
   type DbTransaction,
   type DocumentRow,
-} from '@living-wiki/db';
+} from '@kinote/db';
 import type { FileHandling } from './detect.js';
 
 export type VersionRow = typeof versions.$inferSelect;

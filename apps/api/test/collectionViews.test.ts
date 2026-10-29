@@ -1,7 +1,7 @@
 import { describe, test, beforeAll, afterEach, afterAll, expect } from 'vitest';
 import { and, eq } from 'drizzle-orm';
-import { documents, pageFieldValues, withTenantTx } from '@living-wiki/db';
-import { DeterministicEmbeddingProvider } from '@living-wiki/core';
+import { documents, pageFieldValues, withTenantTx } from '@kinote/db';
+import { DeterministicEmbeddingProvider } from '@kinote/core';
 import { collabSettle, type CollabServer } from '../../collab/src/server.js';
 import { startCollabServer } from '../../collab/test/support/wsClient.js';
 import { InProcessCollabClient } from './support/inProcessCollab.js';

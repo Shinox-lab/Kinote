@@ -38,7 +38,7 @@ export default defineConfig({
         stderr: 'pipe',
       }
     : {
-        command: `pnpm --filter @living-wiki/web exec vite --host 127.0.0.1 --port ${webPort} --strictPort`,
+        command: `pnpm --filter @kinote/web exec vite --host 127.0.0.1 --port ${webPort} --strictPort`,
         url: baseURL,
         timeout: 120_000,
         // Never adopt a console some other session left on the port: it may proxy to another stack.

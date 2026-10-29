@@ -1,6 +1,6 @@
 import { and, asc, eq, inArray, isNull } from 'drizzle-orm';
-import { collectionFields, collections, documents, memberships, users, type DbTransaction } from '@living-wiki/db';
-import { FieldOptionsSchema, fieldEntries, type FieldDef, type FieldNames } from '@living-wiki/contracts';
+import { collectionFields, collections, documents, memberships, users, type DbTransaction } from '@kinote/db';
+import { FieldOptionsSchema, fieldEntries, type FieldDef, type FieldNames } from '@kinote/contracts';
 
 type FieldRow = typeof collectionFields.$inferSelect;
 

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
-import { chunks, documents, spaces, tenants, versions, withTenantTx } from '@living-wiki/db';
+import { chunks, documents, spaces, tenants, versions, withTenantTx } from '@kinote/db';
 import { DeterministicEmbeddingProvider, indexVersion, type Actor } from '../../src/index.js';
 import { blocksFromMarkdown } from './realBlocks.js';
 

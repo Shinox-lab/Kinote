@@ -39,7 +39,7 @@ export default defineConfig(({ mode }) => {
     resolve: {
       // Workspace packages publish bare TS sources; alias them so dev and build both resolve.
       alias: {
-        '@living-wiki/contracts': path.resolve(here, '..', '..', 'packages', 'contracts', 'src', 'index.ts'),
+        '@kinote/contracts': path.resolve(here, '..', '..', 'packages', 'contracts', 'src', 'index.ts'),
       },
       dedupe: ['react', 'react-dom', 'yjs', 'lib0', 'y-protocols', '@blocknote/core', '@hocuspocus/provider'],
     },

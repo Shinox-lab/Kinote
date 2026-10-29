@@ -14,10 +14,10 @@ import {
   suggestions,
   versions,
   withTenantTx,
-} from '@living-wiki/db';
-import { routeCapture } from '@living-wiki/core';
-import { AppError } from '@living-wiki/contracts';
-import type { CollabClient } from '@living-wiki/shared';
+} from '@kinote/db';
+import { routeCapture } from '@kinote/core';
+import { AppError } from '@kinote/contracts';
+import type { CollabClient } from '@kinote/shared';
 import { collabSettle, type CollabServer } from '../../collab/src/server.js';
 import { startCollabServer } from '../../collab/test/support/wsClient.js';
 import { InProcessCollabClient } from '../../api/test/support/inProcessCollab.js';
@@ -33,7 +33,7 @@ import {
   routingWorld,
 } from '../../../packages/core/test/fixtures/routingSeed.js';
 import { blockText } from '../../../packages/core/src/index.js';
-import type { BlockLike } from '@living-wiki/shared';
+import type { BlockLike } from '@kinote/shared';
 import { runPendingJobsForTenant } from '../src/runner.js';
 
 describe('routeCapture', () => {

@@ -7,8 +7,8 @@ import {
   tenantsWithDueJobs,
   NonRetryableError,
   type Job,
-} from '@living-wiki/db';
-import { AppError } from '@living-wiki/contracts';
+} from '@kinote/db';
+import { AppError } from '@kinote/contracts';
 import {
   defaultEmbeddingProvider,
   defaultPlacementModel,
@@ -16,8 +16,8 @@ import {
   type EmbeddingProvider,
   type Extractor,
   type RoutingModel,
-} from '@living-wiki/core';
-import { InMemoryObjectStorage, type CollabClient, type ObjectStorage } from '@living-wiki/shared';
+} from '@kinote/core';
+import { InMemoryObjectStorage, type CollabClient, type ObjectStorage } from '@kinote/shared';
 import { handlers as defaultHandlers, type JobContext, type JobHandler } from './registry.js';
 
 /** The collab client when none is configured: every call fails, so a routing job retries. */

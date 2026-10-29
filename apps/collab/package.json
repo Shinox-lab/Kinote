@@ -1,5 +1,5 @@
 {
-  "name": "@living-wiki/collab",
+  "name": "@kinote/collab",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -9,10 +9,10 @@
     "@blocknote/server-util": "^0.49.0",
     "@hocuspocus/extension-database": "^4.7.1",
     "@hocuspocus/server": "^4.7.1",
-    "@living-wiki/contracts": "workspace:*",
-    "@living-wiki/core": "workspace:*",
-    "@living-wiki/db": "workspace:*",
-    "@living-wiki/shared": "workspace:*",
+    "@kinote/contracts": "workspace:*",
+    "@kinote/core": "workspace:*",
+    "@kinote/db": "workspace:*",
+    "@kinote/shared": "workspace:*",
     "drizzle-orm": "^0.44.5",
     "yjs": "^13.6.33"
   },

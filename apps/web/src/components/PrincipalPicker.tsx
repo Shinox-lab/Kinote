@@ -1,4 +1,4 @@
-import type { Group, Member } from '@living-wiki/contracts';
+import type { Group, Member } from '@kinote/contracts';
 import { SelectField, TextField } from './ui.js';
 
 export type PrincipalType = 'user' | 'group' | 'agent';

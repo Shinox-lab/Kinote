@@ -1,4 +1,4 @@
-import type { Choice, Collection, CollectionRow, FieldNames, View } from '@living-wiki/contracts';
+import type { Choice, Collection, CollectionRow, FieldNames, View } from '@kinote/contracts';
 
 /** What every layout gets from the view block. */
 export interface LayoutProps {

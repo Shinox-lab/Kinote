@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
-import type { Grant, SpaceRole } from '@living-wiki/contracts';
+import type { Grant, SpaceRole } from '@kinote/contracts';
 import { api } from '../lib/api.js';
 import { grantRoleChoices, isUuid } from '../lib/console.js';
 import { useGrants, useGroups, useMembers, useRefresh } from '../lib/queries.js';

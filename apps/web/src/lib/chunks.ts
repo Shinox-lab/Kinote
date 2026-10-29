@@ -1,4 +1,4 @@
-import type { ExtractedSection } from '@living-wiki/contracts';
+import type { ExtractedSection } from '@kinote/contracts';
 
 // Words for the chunk inspector and the review queue's text preview. Text only: nothing here is markup.
 

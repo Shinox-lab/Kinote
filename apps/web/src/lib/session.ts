@@ -12,7 +12,7 @@ export interface Session {
   tenantSlug: string | null;
 }
 
-const SESSION_KEY = 'living-wiki.session';
+const SESSION_KEY = 'kinote.session';
 
 const isString = (v: unknown): v is string => typeof v === 'string';
 const isStringOrNull = (v: unknown): v is string | null => v === null || typeof v === 'string';

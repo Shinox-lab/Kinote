@@ -1,8 +1,8 @@
 import * as Y from 'yjs';
-import { createServerEditor } from '@living-wiki/shared';
+import { createServerEditor } from '@kinote/shared';
 import { and, eq } from 'drizzle-orm';
-import { pages, type DbTransaction } from '@living-wiki/db';
-import { flattenBlocks, restorePageLinks, type BlockLike } from '@living-wiki/shared';
+import { pages, type DbTransaction } from '@kinote/db';
+import { flattenBlocks, restorePageLinks, type BlockLike } from '@kinote/shared';
 
 const editor = createServerEditor();
 

@@ -1,7 +1,7 @@
 import { useEffect, useId, useState } from 'react';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { useMutation } from '@tanstack/react-query';
-import type { FileVersion, ReviewItem } from '@living-wiki/contracts';
+import type { FileVersion, ReviewItem } from '@kinote/contracts';
 import { api, errorMessage } from '../lib/api.js';
 import { diffSummary } from '../lib/diff.js';
 import { relativeTime } from '../lib/updates.js';

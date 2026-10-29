@@ -1,8 +1,8 @@
 import { describe, test, beforeAll, afterEach, afterAll, expect } from 'vitest';
 import * as Y from 'yjs';
 import { and, eq } from 'drizzle-orm';
-import { withTenantTx, auditEvents, documents, pages, versions } from '@living-wiki/db';
-import { InMemoryObjectStorage } from '@living-wiki/shared';
+import { withTenantTx, auditEvents, documents, pages, versions } from '@kinote/db';
+import { InMemoryObjectStorage } from '@kinote/shared';
 import { collabSettle, type CollabServer } from '../../collab/src/server.js';
 import { startCollabServer } from '../../collab/test/support/wsClient.js';
 import { InProcessCollabClient } from './support/inProcessCollab.js';

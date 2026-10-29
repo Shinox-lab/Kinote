@@ -16,7 +16,7 @@ export default defineConfig({
   use: { baseURL: `http://127.0.0.1:${port}`, viewport: { width: 1300, height: 900 }, screenshot: 'only-on-failure' },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'], viewport: { width: 1300, height: 900 } } }],
   webServer: {
-    command: `pnpm --filter @living-wiki/web exec vite --host 127.0.0.1 --port ${port} --strictPort`,
+    command: `pnpm --filter @kinote/web exec vite --host 127.0.0.1 --port ${port} --strictPort`,
     url: `http://127.0.0.1:${port}`,
     timeout: 120_000,
     reuseExistingServer: false,

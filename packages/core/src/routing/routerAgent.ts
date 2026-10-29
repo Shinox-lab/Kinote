@@ -1,5 +1,5 @@
 import { and, asc, eq } from 'drizzle-orm';
-import { agents, type DbTransaction } from '@living-wiki/db';
+import { agents, type DbTransaction } from '@kinote/db';
 
 /** Who created the built-in Routing engine: nobody, the system. */
 const SYSTEM_ID = '00000000-0000-0000-0000-000000000000';

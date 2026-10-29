@@ -4,7 +4,7 @@ import { S3ObjectStorage, createObjectStorage } from '../src/index.js';
 
 const complete = {
   S3_ENDPOINT: 'http://127.0.0.1:9',
-  S3_BUCKET: 'living-wiki',
+  S3_BUCKET: 'kinote',
   S3_ACCESS_KEY: 'key',
   S3_SECRET_KEY: 'secret',
   S3_REGION: 'us-east-1',

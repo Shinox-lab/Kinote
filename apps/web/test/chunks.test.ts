@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import type { ExtractedSection } from '@living-wiki/contracts';
+import type { ExtractedSection } from '@kinote/contracts';
 import { chunkSummary, previewLines } from '../src/lib/chunks.js';
 
 const section = (text: string, over: Partial<ExtractedSection> = {}): ExtractedSection => ({

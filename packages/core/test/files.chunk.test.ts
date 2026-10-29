@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import type { ExtractedSection } from '@living-wiki/contracts';
+import type { ExtractedSection } from '@kinote/contracts';
 import { chunkExtracted } from '../src/files/chunkExtracted.js';
 import { parseCsv, readTextNative } from '../src/files/textNative.js';
 import { DEFAULT_CHUNK_OPTIONS } from '../src/indexing/chunkPage.js';

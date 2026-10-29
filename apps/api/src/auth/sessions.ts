@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { and, eq, gt, isNull } from 'drizzle-orm';
-import { getDb, sessions } from '@living-wiki/db';
-import { sha256Hex } from '@living-wiki/shared';
+import { getDb, sessions } from '@kinote/db';
+import { sha256Hex } from '@kinote/shared';
 
 export const SESSION_TOKEN_PREFIX = 'lws_';
 export const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;

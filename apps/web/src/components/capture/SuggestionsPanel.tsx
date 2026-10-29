@@ -1,5 +1,5 @@
 import { useMutation } from '@tanstack/react-query';
-import type { SuggestionSummary } from '@living-wiki/contracts';
+import type { SuggestionSummary } from '@kinote/contracts';
 import { api } from '../../lib/api.js';
 import { suggestionAction } from '../../lib/capture.js';
 import { useRefresh } from '../../lib/queries.js';

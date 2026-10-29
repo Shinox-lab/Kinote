@@ -11,7 +11,7 @@ import {
   tenants,
   users,
   versions,
-} from '@living-wiki/db';
+} from '@kinote/db';
 import {
   blockText,
   buildPageCard,

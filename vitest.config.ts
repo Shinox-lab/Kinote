@@ -14,14 +14,14 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      '@living-wiki/contracts': r('./packages/contracts/src/index.ts'),
-      '@living-wiki/core': r('./packages/core/src/index.ts'),
-      '@living-wiki/db/testing': r('./packages/db/src/testing.ts'),
-      '@living-wiki/db': r('./packages/db/src/index.ts'),
-      '@living-wiki/shared': r('./packages/shared/src/index.ts'),
-      '@living-wiki/api': r('./apps/api/src/server.ts'),
-      '@living-wiki/collab': r('./apps/collab/src/server.ts'),
-      '@living-wiki/worker': r('./apps/worker/src/runner.ts'),
+      '@kinote/contracts': r('./packages/contracts/src/index.ts'),
+      '@kinote/core': r('./packages/core/src/index.ts'),
+      '@kinote/db/testing': r('./packages/db/src/testing.ts'),
+      '@kinote/db': r('./packages/db/src/index.ts'),
+      '@kinote/shared': r('./packages/shared/src/index.ts'),
+      '@kinote/api': r('./apps/api/src/server.ts'),
+      '@kinote/collab': r('./apps/collab/src/server.ts'),
+      '@kinote/worker': r('./apps/worker/src/runner.ts'),
     },
   },
 });

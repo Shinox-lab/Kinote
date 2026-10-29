@@ -1,5 +1,5 @@
 import { and, eq, inArray } from 'drizzle-orm';
-import { users, memberships, agents, sources, type DbTransaction } from '@living-wiki/db';
+import { users, memberships, agents, sources, type DbTransaction } from '@kinote/db';
 
 /** An actor as recorded on content: a user, an agent or a connector (a source), by id. */
 export interface ActorRef {

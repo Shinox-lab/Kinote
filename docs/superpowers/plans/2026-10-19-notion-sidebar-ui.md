@@ -8,7 +8,7 @@
 
 **Tech Stack:** Fastify 5 + Drizzle + Zod (api), React 19, TanStack Router/Query, Tailwind 4, BlockNote 0.49, Vitest, Playwright (`pnpm e2e:local`).
 
-**Spec:** `docs/2026-10-18-living-wiki-standalone-design.md` (product) and `docs/superpowers/specs/2026-10-19-notion-sidebar-ui-design.md` (this work — read it first; it holds every decision, call and non-goal).
+**Spec:** `docs/2026-10-18-kinote-standalone-design.md` (product) and `docs/superpowers/specs/2026-10-19-notion-sidebar-ui-design.md` (this work — read it first; it holds every decision, call and non-goal).
 
 ## Global Constraints
 
@@ -19,7 +19,7 @@
 - Both themes meet WCAG AA contrast for text, and for dots/borders that carry meaning; colour is never the only signal (dots have an accessible name, changes show the author's name).
 - Fonts: system stack (no network fonts). Icons: inline SVG (no emoji). No UI component library added.
 - Keep accessibility already built (focus ring, labelled controls, history-drawer focus handling and Escape behaviour).
-- All existing tests stay green (`pnpm vitest run`, `pnpm typecheck`, `pnpm --filter @living-wiki/web build`, `pnpm e2e:local`); update an e2e selector only where markup changed and keep each assertion's meaning.
+- All existing tests stay green (`pnpm vitest run`, `pnpm typecheck`, `pnpm --filter @kinote/web build`, `pnpm e2e:local`); update an e2e selector only where markup changed and keep each assertion's meaning.
 - Dot rule: red = latest version failed; amber = badge says awaiting approval; purple = `liveChangedSinceSnapshot` and `liveUpdatedAt` within 60 s; priority red > amber > purple. Live window constant `LIVE_EDIT_WINDOW_SECONDS = 60`.
 - Theme: `light | dark | system`, default `system`, remembered per browser in a try/catch-wrapped `localStorage` key; no flash of the wrong theme.
 - Sidebar: desktop collapse via button and `Ctrl/⌘+\` (remembered); below 768px a slide-over (focus trap, Escape, closes on navigation); page column ≈ 720 px.
@@ -97,7 +97,7 @@
 - [ ] **Step 1: Failing tests** (`theme.test.ts`): `loadTheme` returns each stored value, `'system'` for missing/garbage and when storage throws; `saveTheme` swallows a throwing storage; `resolveTheme('system', true)` is `'dark'`, `('light', true)` is `'light'`; a contrast helper `contrastRatio(hexA, hexB)` exported from `theme.ts` is used to assert, for both palettes, text/page, muted/page, text/sidebar, muted/sidebar ≥ 4.5 and each dot colour vs page and vs sidebar ≥ 3.
 - [ ] **Step 2:** Run it — Expected: FAIL.
 - [ ] **Step 3:** Write `theme.ts`, the token CSS, an inline script in `index.html` `<head>` that sets `data-theme` from storage before first paint (same try/catch rules, no framework), re-skin `ui.tsx` primitives (Button, fields, Card, Loading, ErrorNote, AuthShell) onto tokens, and call `applyTheme` at startup plus react to the OS setting when the choice is `system`.
-- [ ] **Step 4:** Run `pnpm vitest run`, `pnpm --filter @living-wiki/web build` — Expected: pass.
+- [ ] **Step 4:** Run `pnpm vitest run`, `pnpm --filter @kinote/web build` — Expected: pass.
 - [ ] **Step 5:** Commit `feat(web): design tokens, light and dark theme`.
 
 ### Task 5: Sidebar shell
@@ -113,7 +113,7 @@
 - [ ] **Step 1: Failing tests:** the four storage helpers round-trip, survive throwing/malformed storage and are per tenant; `isCollapseShortcut` true for ctrl+`\` and meta+`\`, false for plain `\` and other keys.
 - [ ] **Step 2:** Run it — Expected: FAIL.
 - [ ] **Step 3:** Build the shell: remove the top bar; left sidebar (≈ 260 px) with workspace header + menu (switch workspace, sign out), Search and Reviews rows (count badge from the same `useReviews` query), Settings & members (shown by `adminScreens(role)`), placeholders for the Spaces/Updates/On-this-page regions (filled by Tasks 6–8), account row (name, theme toggle with light/dark/system, sign out). Desktop collapse button + shortcut; below 768 px a slide-over with focus trap, Escape and close-on-navigation; a menu button in the main area when collapsed. Main area is the page `Outlet`. Icons in `icons.tsx` as small inline SVG components.
-- [ ] **Step 4:** Run `pnpm vitest run`, `pnpm typecheck`, `pnpm --filter @living-wiki/web build` — Expected: pass; open the app on the e2e harness and check both themes at 1280 px and 390 px (report what you saw).
+- [ ] **Step 4:** Run `pnpm vitest run`, `pnpm typecheck`, `pnpm --filter @kinote/web build` — Expected: pass; open the app on the e2e harness and check both themes at 1280 px and 390 px (report what you saw).
 - [ ] **Step 5:** Commit `feat(web): sidebar shell`.
 
 ### Task 6: Spaces tree with status dots
@@ -186,4 +186,4 @@
 - [ ] **Step 2:** `sidebar.spec.ts`: expand a space and open a page from the tree; a page awaiting review shows an amber dot named "Waiting for review" and the Reviews count matches; an edit by another context shows in Updates and an own edit reads "You"; the purple dot appears after typing and the section header is keyboard operable; the theme toggle persists across reload and `system` follows the emulated colour scheme (Playwright `colorScheme`); the 390 px viewport shows the slide-over, which closes on navigation and Escape; a viewer does not see another member's Inbox page in the tree or Updates.
 - [ ] **Step 3:** Run `pnpm e2e:local` three times — Expected: all green each time, no fixed sleeps.
 - [ ] **Step 4:** Append real outputs and screenshots-by-description of both themes to the live-check doc; anything not run is marked so.
-- [ ] **Step 5:** Run `pnpm vitest run`, `pnpm typecheck`, `pnpm --filter @living-wiki/web build`; commit `test: sidebar console e2e and live check`.
+- [ ] **Step 5:** Run `pnpm vitest run`, `pnpm typecheck`, `pnpm --filter @kinote/web build`; commit `test: sidebar console e2e and live check`.

@@ -1,8 +1,8 @@
 import { describe, test, beforeEach } from 'vitest';
 import assert from 'node:assert/strict';
 import { eq } from 'drizzle-orm';
-import { sourceTokens, sources, withTenantTx } from '@living-wiki/db';
-import { InMemoryObjectStorage } from '@living-wiki/shared';
+import { sourceTokens, sources, withTenantTx } from '@kinote/db';
+import { InMemoryObjectStorage } from '@kinote/shared';
 import { buildTestApp, useTestDb } from './support/testkit.js';
 import { bearer, makeSource, putFile, sourceWorld } from './support/sourcekit.js';
 import { uploadRequest } from './support/multipart.js';

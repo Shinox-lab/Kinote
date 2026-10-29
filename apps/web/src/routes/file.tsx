@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useBlocker, useParams, useSearch } from '@tanstack/react-router';
 import { useMutation } from '@tanstack/react-query';
-import type { FileDetails, FileVersion } from '@living-wiki/contracts';
+import type { FileDetails, FileVersion } from '@kinote/contracts';
 import { ApiError, api } from '../lib/api.js';
 import { saveVersion } from '../lib/download.js';
 import { fileBanner, fileControls, formatBytes, publishedVersionId } from '../lib/fileUi.js';

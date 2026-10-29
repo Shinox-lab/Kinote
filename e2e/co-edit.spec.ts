@@ -11,7 +11,7 @@ interface Stored {
 
 /** The api state of a page as the signed-in page's own session sees it. */
 async function pageState(page: Page, pageId: string) {
-  const { token, tenantId } = await page.evaluate<Stored>(() => JSON.parse(localStorage.getItem('living-wiki.session')!));
+  const { token, tenantId } = await page.evaluate<Stored>(() => JSON.parse(localStorage.getItem('kinote.session')!));
   const headers = { authorization: `Bearer ${token}`, 'x-tenant-id': tenantId };
   const details = await (await page.request.get(`/api/v1/pages/${pageId}`, { headers })).json();
   const versions: { number: number; status: string }[] = await (await page.request.get(`/api/v1/pages/${pageId}/versions`, { headers })).json();
