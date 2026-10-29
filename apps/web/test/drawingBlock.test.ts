@@ -5,6 +5,8 @@ import * as Y from 'yjs';
 import { DRAWINGS_MAP, UNTITLED_DRAWING, type DrawingElement } from '@kinote/contracts';
 import {
   IMAGE_REFUSED,
+  SHAPES_ELSEWHERE,
+  sceneMissing,
   clampHeight,
   drawingMenuItem,
   duplicateDrawingIds,
@@ -58,6 +60,19 @@ describe('the drawing block', () => {
     expect(elements.find((e) => e.id === 'img')).toMatchObject({ isDeleted: true, version: 2 });
   });
 
+  test('a drawing pasted from another page says its shapes stayed there', () => {
+    const doc = new Y.Doc();
+    expect(sceneMissing(doc, 'from-elsewhere')).toBe(true);
+    const made = drawingMenuItem(
+      { getTextCursorPosition: () => ({ block: { id: 'h', content: [] } }), insertBlocks: () => [], replaceBlocks: (_: unknown, b: any[]) => ({ insertedBlocks: b }) } as any,
+      doc
+    );
+    made.onItemClick();
+    const id = [...doc.getMap<Y.Map<unknown>>(DRAWINGS_MAP).keys()][0]!;
+    expect(sceneMissing(doc, id)).toBe(false);
+    expect(SHAPES_ELSEWHERE).toBe("This drawing was copied from another page; its shapes stay there.");
+  });
+
   test('the title placeholder is Untitled drawing', () => {
     expect(UNTITLED_DRAWING).toBe('Untitled drawing');
   });
@@ -67,6 +82,17 @@ describe('the drawing block', () => {
     expect(clampHeight(5000)).toBe(1200);
     expect(clampHeight(Number.NaN)).toBe(480);
     expect(clampHeight(600.4)).toBe(600);
+  });
+
+  test('every module that loads Excalidraw points its fonts at Kinote first', () => {
+    const SRC = new URL('../src/components/drawing/', import.meta.url).pathname;
+    for (const file of ['DrawingCanvas.tsx', 'DrawingPreview.tsx']) {
+      const text = readFileSync(join(SRC, file), 'utf8');
+      const env = text.indexOf("import './excalidrawEnv.js';");
+      expect(env, file).toBeGreaterThanOrEqual(0);
+      expect(env, file).toBeLessThan(text.indexOf("from '@excalidraw/excalidraw'"));
+    }
+    expect(readFileSync(join(SRC, 'excalidrawEnv.ts'), 'utf8')).toContain("EXCALIDRAW_ASSET_PATH = '/excalidraw-assets/'");
   });
 
   test('Excalidraw is imported only by the lazy drawing modules', () => {

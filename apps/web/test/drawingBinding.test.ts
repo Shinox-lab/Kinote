@@ -160,6 +160,43 @@ describe('bindDrawing', () => {
     expect(stored(b).A).toMatchObject({ version: 5, x: 50 });
   });
 
+  test('after a stroke, a canvas copy that lost to the stored one is replaced by it', () => {
+    const { a, b } = pair();
+    const [sa, sb] = [fakeScene(), fakeScene()];
+    // Like Excalidraw while an element is being edited: the local copy is always kept.
+    const keepLocal = (local: readonly DrawingElement[], remote: DrawingElement[]) => {
+      const ids = new Set(local.map((e) => e.id));
+      return [...local, ...remote.filter((e) => !ids.has(e.id))];
+    };
+    const ba = bindDrawing({ doc: a, drawingId: 'g1', api: sa, origin: {}, reconcile: keepLocal, throttleMs: 1000 });
+    bound.push(ba);
+    const bb = bind(b, sb);
+    bb.onChange([el('A')]);
+    bb.flush();
+    // a edits A to version 2 while b has already written version 5.
+    sa.elements = [el('A', { version: 2, x: 2 })];
+    bb.onChange([el('A', { version: 5, x: 5 })]);
+    bb.flush();
+    expect(sa.elements[0]).toMatchObject({ version: 2 }); // kept while editing
+    ba.onChange(sa.elements);
+    ba.flush(); // the stroke ends
+    expect(sa.elements.find((e) => e.id === 'A')).toMatchObject({ version: 5, x: 5 });
+    expect(stored(a).A).toMatchObject({ version: 5 });
+  });
+
+  test('a viewer never writes, even when its canvas holds a winning copy', () => {
+    const { a, b } = pair();
+    const [sa, sb] = [fakeScene(), fakeScene()];
+    const viewer = bindDrawing({ doc: a, drawingId: 'g1', api: sa, origin: {}, reconcile: reconcileByVersion, throttleMs: 0, editable: false });
+    bound.push(viewer);
+    const bb = bind(b, sb);
+    sa.elements = [el('A', { version: 9 })];
+    bb.onChange([el('A', { version: 2 })]);
+    bb.flush();
+    viewer.flush();
+    expect(stored(b).A).toMatchObject({ version: 2 });
+  });
+
   test('writes are throttled and flush writes at once', () => {
     vi.useFakeTimers();
     const doc = new Y.Doc();

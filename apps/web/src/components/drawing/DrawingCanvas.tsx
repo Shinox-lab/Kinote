@@ -1,8 +1,7 @@
 // The Excalidraw canvas of one drawing block: loaded lazily (only pages with a
 // drawing download Excalidraw), bound live to the page document, with other
-// people's pointers. Fonts come from Kinote itself (/excalidraw-assets/).
-(window as unknown as { EXCALIDRAW_ASSET_PATH: string }).EXCALIDRAW_ASSET_PATH = '/excalidraw-assets/';
-
+// people's pointers. Fonts come from Kinote itself (excalidrawEnv).
+import './excalidrawEnv.js';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Excalidraw, reconcileElements } from '@excalidraw/excalidraw';
 import '@excalidraw/excalidraw/index.css';
@@ -59,13 +58,14 @@ export default function DrawingCanvas({
         updateScene: ({ elements }) => api.updateScene({ elements: elements as any }),
       },
       reconcile: (local, remote) => reconcileElements(local as any, remote as any, api.getAppState()) as unknown as DrawingElement[],
+      editable,
     });
     binding.current = b;
     return () => {
       b.destroy();
       binding.current = null;
     };
-  }, [api, live.ydoc, drawingId, origin]);
+  }, [api, live.ydoc, drawingId, origin, editable]);
 
   // Other people's pointers on this drawing, from the page's awareness.
   useEffect(() => {

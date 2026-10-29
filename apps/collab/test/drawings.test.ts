@@ -4,6 +4,7 @@ import { DRAWINGS_MAP, newerElement, type DrawingElement } from '@kinote/contrac
 import { HttpCollabClient, createServerEditor } from '@kinote/shared';
 import { changedBlockIds, changesPage, collabSettle, type CollabServer } from '../src/server.js';
 import { MAX_INTERNAL_BODY_BYTES } from '../src/internal.js';
+import { guardDrawings } from '../src/drawingGuard.js';
 import { buildCollabWorld, storedDoc, TEST_INTERNAL_SECRET } from './support/collabWorld.js';
 import { startCollabServer } from './support/wsClient.js';
 import { buildTestApp, useTestDb } from '../../api/test/support/testkit.js';
@@ -47,6 +48,42 @@ describe('drawing changes are page changes', () => {
   test('a change to a drawing no block references still marks the page changed', () => {
     const doc = editor.blocksToYDoc([paragraph('p1', 'Intro')] as any, 'document-store');
     expect(seen(doc, () => doc.transact(() => scene(doc, 'orphan').set('a', el('a'))))).toEqual([{ changes: true, ids: [] }]);
+  });
+});
+
+describe('the server keeps the newer element', () => {
+  for (const order of ['server first', 'client first'] as const) {
+    test(`a stale client edit can't bring back a restored-away shape (${order} clientID)`, () => {
+      const server = new Y.Doc();
+      const client = new Y.Doc();
+      // Yjs settles concurrent writes to one key by clientID: try both orders.
+      server.clientID = order === 'server first' ? 2 : 1;
+      client.clientID = order === 'server first' ? 1 : 2;
+      guardDrawings(server);
+      scene(server, 'g1').set('B', el('B', { version: 3 }));
+      Y.applyUpdate(client, Y.encodeStateAsUpdate(server));
+      // Offline: the server restores (B tombstoned at 6), the client edits B to 4.
+      server.transact(() => scene(server, 'g1').set('B', el('B', { version: 6, isDeleted: true })));
+      client.transact(() => scene(client, 'g1').set('B', el('B', { version: 4, x: 9 })));
+      // Back online, updates both ways (the server's repair travels too).
+      server.on('update', (u: Uint8Array, origin: unknown) => origin !== 'remote' && Y.applyUpdate(client, u, 'remote'));
+      Y.applyUpdate(server, Y.encodeStateAsUpdate(client), 'remote');
+      Y.applyUpdate(client, Y.encodeStateAsUpdate(server), 'remote');
+      for (const doc of [server, client]) {
+        expect(scene(doc, 'g1').get('B')).toMatchObject({ version: 6, isDeleted: true });
+      }
+    });
+  }
+
+  test('a newer remote edit is kept', () => {
+    const server = new Y.Doc();
+    guardDrawings(server);
+    scene(server, 'g1').set('A', el('A', { version: 2 }));
+    const client = new Y.Doc();
+    Y.applyUpdate(client, Y.encodeStateAsUpdate(server));
+    client.transact(() => scene(client, 'g1').set('A', el('A', { version: 5, x: 3 })));
+    Y.applyUpdate(server, Y.encodeStateAsUpdate(client), 'remote');
+    expect(scene(server, 'g1').get('A')).toMatchObject({ version: 5, x: 3 });
   });
 });
 

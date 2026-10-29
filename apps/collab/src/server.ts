@@ -1,4 +1,5 @@
 import { Server, type Extension, type Hocuspocus } from '@hocuspocus/server';
+import { guardDrawings } from './drawingGuard.js';
 import { Database } from '@hocuspocus/extension-database';
 import { and, eq, sql } from 'drizzle-orm';
 import * as Y from 'yjs';
@@ -147,6 +148,8 @@ export function createCollabServer(
       // Attached after the stored state was applied: the initial load is
       // never attributed. Every later transaction with an actor is recorded.
       recordPageTransactions(state, document, documentName);
+      // Drawing elements keep Excalidraw's merge rule whatever order Yjs settled them in.
+      guardDrawings(document);
     },
     async afterStoreDocument(payload) {
       // Runs only when every onStoreDocument hook succeeded: the evidence

@@ -2,7 +2,7 @@ import { createContext, useContext } from 'react';
 import type * as Y from 'yjs';
 import type { HocuspocusProvider } from '@hocuspocus/provider';
 import type { DefaultReactSuggestionItem } from '@blocknote/react';
-import { DRAWING_HEIGHT, drawingConfig, type DrawingElement } from '@kinote/contracts';
+import { DRAWINGS_MAP, DRAWING_HEIGHT, drawingConfig, type DrawingElement } from '@kinote/contracts';
 import { createDrawing } from './binding.js';
 
 // What the drawing block needs that isn't Excalidraw: its copy, its slash
@@ -14,6 +14,8 @@ export const IMAGE_REFUSED = "Images in drawings aren't supported yet. Add the i
 export const DRAWING_FULL = 'This drawing is full';
 export const DRAWING_FAILED = "This drawing couldn't load";
 export const DRAWING_REMOVED = 'This drawing was removed';
+/** A drawing block pasted from another page: its scene lives in that page's document, not this one (D12, not built yet). */
+export const SHAPES_ELSEWHERE = "This drawing was copied from another page; its shapes stay there.";
 
 /** The page's live document and awareness, for drawing blocks (absent outside the live editor). */
 export interface LiveDoc {
@@ -22,6 +24,15 @@ export interface LiveDoc {
 }
 export const LiveDocContext = createContext<LiveDoc | null>(null);
 export const useLiveDoc = () => useContext(LiveDocContext);
+
+/**
+ * Whether this page has no scene for the drawing: every drawing made here
+ * gets its scene when inserted (createDrawing), so a missing one is a block
+ * pasted from another page.
+ */
+export function sceneMissing(ydoc: Y.Doc, drawingId: string): boolean {
+  return !ydoc.getMap<unknown>(DRAWINGS_MAP).has(drawingId);
+}
 
 /** A drawing's height in whole pixels, within DRAWING_HEIGHT (the default for anything unreadable). */
 export function clampHeight(px: number): number {

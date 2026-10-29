@@ -2,7 +2,7 @@ import { Component, Suspense, lazy, useEffect, useRef, useState, type ReactNode 
 import { DRAWINGS_MAP, UNTITLED_DRAWING, drawingText, liveElementsOf } from '@kinote/contracts';
 import { useResolvedTheme } from '../../lib/useResolvedTheme.js';
 import { Button } from '../ui.js';
-import { DRAWING_FAILED, DRAWING_FULL, clampHeight, useLiveDoc, type LiveDoc } from './drawingRules.js';
+import { DRAWING_FAILED, DRAWING_FULL, SHAPES_ELSEWHERE, clampHeight, sceneMissing, useLiveDoc, type LiveDoc } from './drawingRules.js';
 
 const DrawingCanvas = lazy(() => import('./DrawingCanvas.js'));
 
@@ -58,6 +58,16 @@ export function DrawingBlock({
     const t = setTimeout(() => setNotice(null), 6000);
     return () => clearTimeout(t);
   }, [notice]);
+  // A block pasted from another page has no scene here: say so instead of looking silently empty.
+  const [missing, setMissing] = useState(() => (live ? sceneMissing(live.ydoc, drawingId) : false));
+  useEffect(() => {
+    if (!live) return;
+    const root = live.ydoc.getMap<unknown>(DRAWINGS_MAP);
+    const update = () => setMissing(sceneMissing(live.ydoc, drawingId));
+    update();
+    root.observe(update);
+    return () => root.unobserve(update);
+  }, [live, drawingId]);
   const drag = useRef<{ startY: number; startHeight: number } | null>(null);
   const shown = draftHeight ?? clampHeight(height);
 
@@ -116,6 +126,7 @@ export function DrawingBlock({
           Full screen
         </button>
       </div>
+      {missing && <p className="text-xs text-muted">{SHAPES_ELSEWHERE}</p>}
       {notice && (
         <p role="status" className="text-xs text-warn-text">
           {notice}

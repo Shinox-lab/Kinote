@@ -45,7 +45,10 @@ const same = (a: DrawingElement, b: DrawingElement) => a.version === b.version &
  * edit in progress, or a tie the other side lost), it is written back so
  * every side ends up with the same element. Past MAX_DRAWING_ELEMENTS live
  * elements or MAX_DRAWING_BYTES, new elements are not written (`full`).
- * Nothing is written until something is drawn.
+ * Nothing is written until something is drawn, and never when not
+ * `editable` (a viewer). After a stroke (`flush`), canvas copies that lost
+ * to the stored ones (Excalidraw keeps an element it is editing whatever
+ * arrives) are replaced by the stored winners.
  */
 export function bindDrawing(opts: {
   doc: Y.Doc;
@@ -54,17 +57,30 @@ export function bindDrawing(opts: {
   origin: object;
   reconcile: (local: readonly DrawingElement[], remote: DrawingElement[]) => DrawingElement[];
   throttleMs?: number;
+  editable?: boolean;
 }): { onChange(elements: readonly DrawingElement[]): void; flush(): void; destroy(): void; full: () => boolean } {
   const { doc, drawingId, api, origin, reconcile } = opts;
   const throttleMs = opts.throttleMs ?? 50;
+  const editable = opts.editable ?? true;
   const pending = new Map<string, DrawingElement>();
+  /** Canvas elements that lost to the stored copy: the stored winners, put on the canvas after the stroke. */
+  const losers = new Map<string, DrawingElement>();
   let timer: ReturnType<typeof setTimeout> | null = null;
   let isFull = false;
 
   /** Queues `e` when it differs from the stored copy and wins over it. */
   const queue = (e: DrawingElement) => {
+    if (!editable) return;
     const stored = sceneOf(doc, drawingId)?.get(e.id);
-    if (isDrawingElement(stored) && (same(stored, e) || newerElement(stored, e) === stored)) return;
+    if (isDrawingElement(stored) && same(stored, e)) {
+      losers.delete(e.id);
+      return;
+    }
+    if (isDrawingElement(stored) && newerElement(stored, e) === stored) {
+      losers.set(e.id, stored);
+      return;
+    }
+    losers.delete(e.id);
     const waiting = pending.get(e.id);
     pending.set(e.id, waiting ? newerElement(waiting, e) : e);
   };
@@ -72,7 +88,7 @@ export function bindDrawing(opts: {
     if (pending.size === 0 || timer) return;
     timer = setTimeout(() => {
       timer = null;
-      flush();
+      write();
     }, throttleMs);
   };
 
@@ -88,7 +104,8 @@ export function bindDrawing(opts: {
     return { live, bytes };
   };
 
-  function flush() {
+  /** Writes the queued elements now; the canvas is left as it is (mid-stroke). */
+  function write() {
     if (timer) {
       clearTimeout(timer);
       timer = null;
@@ -116,6 +133,15 @@ export function bindDrawing(opts: {
       }
       isFull = live >= MAX_DRAWING_ELEMENTS || bytes >= MAX_DRAWING_BYTES;
     }, origin);
+  }
+
+  /** Writes now and, the stroke being over, puts the stored winners on the canvas where its copy lost. */
+  function flush() {
+    write();
+    if (losers.size === 0) return;
+    const winners = new Map(losers);
+    losers.clear();
+    api.updateScene({ elements: api.getSceneElementsIncludingDeleted().map((e) => winners.get(e.id) ?? e) });
   }
 
   const onRemote = (events: Array<Y.YEvent<any>>, tx: Y.Transaction) => {
