@@ -13,6 +13,7 @@ import {
 import {
   AppError,
   canonicalFieldJson,
+  fieldValueFits,
   MoveChangeRequestSchema,
   MoveDocumentRequestSchema,
   PlaceDocumentRequestSchema,
@@ -85,7 +86,7 @@ async function mayUndo(tx: DbTransaction, actor: Actor, _capture: CaptureRow, ch
  * longer equals the engine's result was changed by someone since: it is left
  * alone and reported. Inserted blocks are removed. A field goes back to its
  * value before (cleared when it was empty) only while it still holds the
- * engine's value and the page still has the field.
+ * engine's value and the page still has the field and both values' choices.
  */
 async function undoChanges(
   actor: Actor,
@@ -120,11 +121,14 @@ async function undoChanges(
       const fieldId = change.op === 'set_field' ? fieldIdOf(change.blockId) : null;
       if (fieldId !== null) {
         const current = canonicalFieldJson(live?.fields[fieldId] ?? null);
-        if (!defs.some((d) => d.id === fieldId) || current !== change.afterMarkdown) {
+        const def = defs.find((d) => d.id === fieldId);
+        const value = change.beforeMarkdown === null ? null : JSON.parse(change.beforeMarkdown);
+        // A removed field or choice (on either side) is left as it is and reported: never written back unfit.
+        const fits = (json: string | null) => json === null || (def !== undefined && fieldValueFits(def, JSON.parse(json)));
+        if (!def || current !== change.afterMarkdown || !fits(change.beforeMarkdown) || !fits(change.afterMarkdown)) {
           result.changedSince.push(change.id);
           continue;
         }
-        const value = change.beforeMarkdown === null ? null : JSON.parse(change.beforeMarkdown);
         planned.push({ change, op: { op: 'set_field', fieldId, value, expected: change.afterMarkdown } });
         continue;
       }

@@ -4,7 +4,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import { documents, versions, withTenantTx } from '@kinote/db';
 import { createTestDb, type TestDb } from '@kinote/db/testing';
 import type { SearchPassage } from '@kinote/contracts';
-import { collectionTables } from '../src/index.js';
+import { ASK_TABLES, collectionTables } from '../src/index.js';
 import { addCollection, addRoutingSpace, livePage, routingWorld } from './fixtures/routingSeed.js';
 import type { World } from './fixtures/placementSeed.js';
 
@@ -131,6 +131,40 @@ describe('collectionTables', () => {
     });
     const [table] = await withTenantTx(c.w.tenantId, (tx) => collectionTables(tx, actorOf(c.w), [c.space], [passage(c.george.documentId, c.space)]));
     expect(table!.rows).toHaveLength(200);
+    expect(table!.truncated).toBe(true);
+  });
+
+  it('long values are cut and a table stays within its text budget', async () => {
+    const w = await routingWorld();
+    const space = await addRoutingSpace(w, { name: 'Notes' });
+    const list = await livePage(w, space, 'Accounts', 'Accounts.');
+    const [notes] = await addCollection(w, list.documentId, [{ name: 'Notes', type: 'text' }]);
+    const first = await livePage(w, space, 'Alpha', 'Alpha.', { parentId: list.documentId });
+    await indexedFields(w, first.versionId, { [notes!.id]: 'x'.repeat(10_000) });
+    const source = await withTenantTx(w.tenantId, async (tx) => (await tx.select().from(versions).where(eq(versions.id, first.versionId)))[0]!);
+    await withTenantTx(w.tenantId, async (tx) => {
+      for (let i = 0; i < 150; i++) {
+        const id = randomUUID();
+        const versionId = randomUUID();
+        await tx.insert(documents).values({ id, tenantId: w.tenantId, spaceId: space, parentId: list.documentId, kind: 'page', title: `Row ${String(i).padStart(3, '0')}`, createdByType: 'user', createdBy: w.userId });
+        await tx.insert(versions).values({
+          id: versionId, tenantId: w.tenantId, documentId: id, number: 1, title: `Row ${String(i).padStart(3, '0')}`, status: 'indexed', contentHash: `h-${versionId}`,
+          reason: 'quiet', createdByType: 'user', createdBy: w.userId, markdown: 'r', blocks: source.blocks, fields: { [notes!.id]: 'y'.repeat(1000) },
+        });
+        await tx.update(documents).set({ latestVersionId: versionId, indexedVersionId: versionId }).where(eq(documents.id, id));
+        await tx.execute(sql`
+          INSERT INTO chunks (tenant_id, space_id, document_id, version_id, ordinal, heading_path, block_ids, page_from, page_to, text, token_count, content_hash, embedding, embedding_model, inbox_owner)
+          SELECT tenant_id, space_id, ${id}::uuid, ${versionId}::uuid, ordinal, heading_path, block_ids, page_from, page_to, text, token_count, content_hash, embedding, embedding_model, inbox_owner
+            FROM chunks WHERE version_id = ${first.versionId}::uuid AND ordinal = 0`);
+      }
+    });
+    const [table] = await withTenantTx(w.tenantId, (tx) => collectionTables(tx, w.actor, [space], [passage(first.documentId, space)]));
+    const alpha = table!.rows.find((r) => r.title === 'Alpha')!;
+    expect(alpha.values.Notes!.length).toBeLessThanOrEqual(ASK_TABLES.cellChars);
+    expect(alpha.values.Notes!.endsWith('…')).toBe(true);
+    const size = table!.rows.reduce((n, r) => n + r.title.length + Object.values(r.values).join('').length, 0);
+    expect(size).toBeLessThanOrEqual(ASK_TABLES.tableChars);
+    expect(table!.rows.length).toBeLessThan(151);
     expect(table!.truncated).toBe(true);
   });
 

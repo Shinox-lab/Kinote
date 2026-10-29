@@ -105,6 +105,15 @@ describe('OpenAIAnswerProvider', () => {
     expect(user).toContain('Tables:\n\nTable: Clients (each row cites itself)\nTitle | Status | Launch date | Cite as\nGeorge |  | 2026-12-01 (1 December 2026) | George (v1, updated 2026-10-30)\n(more rows not shown)');
   });
 
+  it('a | inside a table cell cannot split the row', async () => {
+    const { tableBlock } = await import('../src/index.js');
+    const text = tableBlock({
+      collectionId: 'c', title: 'T', fields: ['Notes'], truncated: false,
+      rows: [{ title: 'A | B', values: { Notes: 'x | y' }, citeAs: 'A (v1, updated 2026-10-30)', documentId: 'd', versionId: 'v', versionNumber: 1, chunkId: 'k', spaceId: 's' }],
+    });
+    expect(text.split('\n')[2]).toBe('A / B | x / y | A (v1, updated 2026-10-30)');
+  });
+
   it('maps the exact no-answer sentence to foundRelevant false', async () => {
     const fetchImpl = vi.fn(async () =>
       response({ choices: [{ message: { content: NO_RELEVANT_ANSWER } }] })

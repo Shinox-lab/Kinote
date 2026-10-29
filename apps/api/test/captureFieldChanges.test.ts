@@ -139,6 +139,24 @@ describe('routed field changes: undo, accept, receipts', () => {
     expect((await req('POST', w.headers, `/api/v1/capture-changes/${change.id}/undo`)).json()).toEqual({ undone: [], changedSince: [change.id] });
   });
 
+  test('undo reports a change whose before choice was removed, and leaves the field', async () => {
+    const w = await world();
+    const id = await capture(w, 'George status is now Active.');
+    expect((await fieldsOf(w, w.george))[w.status.id]).toBe('active');
+    expect((await req('PATCH', w.headers, `/api/v1/collections/${w.clients}/fields/${w.status.id}`, { remove_choice: 'lead' })).statusCode).toBe(200);
+    const change = await fieldChange(w, id);
+    expect((await req('POST', w.headers, `/api/v1/capture-changes/${change.id}/undo`)).json()).toEqual({ undone: [], changedSince: [change.id] });
+    expect((await fieldsOf(w, w.george))[w.status.id]).toBe('active');
+  });
+
+  test('undo reports a change whose after choice was removed', async () => {
+    const w = await world();
+    const id = await capture(w, 'George status is now Active.');
+    expect((await req('PATCH', w.headers, `/api/v1/collections/${w.clients}/fields/${w.status.id}`, { remove_choice: 'active' })).statusCode).toBe(200);
+    const change = await fieldChange(w, id);
+    expect((await req('POST', w.headers, `/api/v1/capture-changes/${change.id}/undo`)).json()).toEqual({ undone: [], changedSince: [change.id] });
+  });
+
   test('accepting a set_field suggestion applies it and snapshots', async () => {
     const w = await world();
     const id = await capture(w, 'George no longer has a launch date.');

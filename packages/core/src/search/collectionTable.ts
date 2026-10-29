@@ -5,8 +5,14 @@ import type { Actor } from '../permissions.js';
 import { collectionFieldDefs, fieldNames } from '../collections/fields.js';
 import { citeAs } from './hybridSearch.js';
 
-/** Most collections one question gets a table of, and most rows per table. */
-export const ASK_TABLES = { collections: 2, rows: 200 } as const;
+/**
+ * Most collections one question gets a table of, most rows per table, most
+ * characters per cell, and most characters of row text per table (so one
+ * collection with long text fields can't overflow the model's context).
+ */
+export const ASK_TABLES = { collections: 2, rows: 200, cellChars: 200, tableChars: 20_000 } as const;
+
+const cut = (text: string) => (text.length <= ASK_TABLES.cellChars ? text : `${text.slice(0, ASK_TABLES.cellChars - 1)}…`);
 
 export interface CollectionTableRow {
   title: string;
@@ -27,7 +33,7 @@ export interface CollectionTable {
   /** Field names in field order. */
   fields: string[];
   rows: CollectionTableRow[];
-  /** More rows than ASK_TABLES.rows. */
+  /** More rows than were kept (ASK_TABLES.rows, or the text budget). */
   truncated: boolean;
 }
 
@@ -114,14 +120,23 @@ export async function collectionTables(
     for (const def of defs) merged[def.id] = raws.flatMap((raw) => (Array.isArray(raw[def.id]) ? (raw[def.id] as unknown[]) : []));
     const names = await fieldNames(tx, tenantId, defs, merged, collection.spaceId);
     const tableRows: CollectionTableRow[] = [];
+    let size = 0;
+    let overBudget = false;
     kept.forEach((r, i) => {
+      if (overBudget) return;
       const chunk = firstChunks.find((c) => c.versionId === r.versionId);
       if (!chunk) return;
       const values: Record<string, string> = {};
       for (const def of defs) {
         const text = def.id in raws[i]! ? formatFieldValue(def, raws[i]![def.id], names) : null;
-        if (text !== null) values[def.name] = text;
+        if (text !== null) values[def.name] = cut(text);
       }
+      const rowSize = r.title.length + Object.values(values).join('').length;
+      if (size + rowSize > ASK_TABLES.tableChars) {
+        overBudget = true;
+        return;
+      }
+      size += rowSize;
       tableRows.push({
         title: r.title,
         values,
@@ -138,7 +153,7 @@ export async function collectionTables(
       title: collection.title,
       fields: defs.map((d) => d.name),
       rows: tableRows,
-      truncated: rows.length > ASK_TABLES.rows,
+      truncated: rows.length > ASK_TABLES.rows || overBudget,
     });
   }
   return tables;

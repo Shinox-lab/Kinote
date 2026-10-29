@@ -37,6 +37,7 @@ export {
   createAnswerProvider,
   defaultAnswerProvider,
   type AnswerProvider,
+  tableBlock,
 } from './answer.js';
 export {
   detectFileType,
