@@ -1,5 +1,5 @@
 import { flattenBlocks, type BlockLike, type FlatBlock } from '@living-wiki/shared';
-import type { BlockDiffEntry } from '@living-wiki/contracts';
+import { FIELD_BLOCK_PREFIX, type BlockDiffEntry } from '@living-wiki/contracts';
 
 export type { BlockDiffEntry };
 
@@ -96,4 +96,26 @@ export function diffBlocks(
     out.push(entry, ...removedEntries(b.id));
   }
   return out;
+}
+
+/**
+ * `blocks` followed by one paragraph per field line, with the block id
+ * `field:<fieldId>`, so `diffBlocks` shows a field change as a changed line
+ * ("Status: Lead" → "Status: Active") and `block_activity` names its author.
+ */
+export function withFieldLines(blocks: BlockLike[], lines: Array<{ fieldId: string; text: string }>): BlockLike[] {
+  if (lines.length === 0) return blocks;
+  return [
+    ...blocks,
+    ...lines.map(
+      (l) =>
+        ({
+          id: `${FIELD_BLOCK_PREFIX}${l.fieldId}`,
+          type: 'paragraph',
+          props: {},
+          content: [{ type: 'text', text: l.text, styles: {} }],
+          children: [],
+        }) as BlockLike
+    ),
+  ];
 }

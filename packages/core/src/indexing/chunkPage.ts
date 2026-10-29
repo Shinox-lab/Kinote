@@ -41,12 +41,15 @@ const countWords = (s: string) => s.split(/\s+/).filter(Boolean).length;
  * Splits a page's real BlockNote blocks into chunks. Headings start a section
  * and set the heading path; a long section continues in a new chunk between
  * blocks, never inside one. Every chunk's text starts with the document title
- * and heading path.
+ * and heading path. A collection row's field lines (`Status: Active`) go
+ * under the title of its first chunk; a row with no text gets one chunk of
+ * them alone.
  */
 export function chunkPageBlocks(
   title: string,
   blocks: BlockLike[],
-  opts: ChunkOptions = DEFAULT_CHUNK_OPTIONS
+  opts: ChunkOptions = DEFAULT_CHUNK_OPTIONS,
+  fieldLines: string[] = []
 ): RawChunk[] {
   const drafts: Draft[] = [];
   // Ancestor stack: each entry is a heading still "open" at the current position.
@@ -107,11 +110,18 @@ export function chunkPageBlocks(
     if (oversized) current.oversized = true;
   }
 
-  return drafts
-    .filter((d) => d.blockIds.length > 0)
+  const kept = drafts.filter((d) => d.blockIds.length > 0);
+  if (kept.length === 0 && fieldLines.length > 0) {
+    kept.push({ headingPath: [], blockIds: [], texts: [], words: 0, hasBody: false, lastLevel: 0, oversized: false });
+  }
+  const fieldsPart = fieldLines.length > 0 ? fieldLines.join('\n') : null;
+  return kept
     .map((d, ordinal) => {
       const header = d.headingPath.length > 0 ? `${title} > ${d.headingPath.join(' > ')}` : title;
-      const text = `# ${header}\n\n${d.texts.join('\n\n')}`;
+      const parts = [ordinal === 0 ? fieldsPart : null, d.texts.length > 0 ? d.texts.join('\n\n') : null].filter(
+        (p): p is string => p !== null
+      );
+      const text = `# ${header}\n\n${parts.join('\n\n')}`;
       return {
         ordinal,
         headingPath: d.headingPath,

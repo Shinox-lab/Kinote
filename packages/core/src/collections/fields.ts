@@ -1,6 +1,6 @@
 import { and, asc, eq, inArray, isNull } from 'drizzle-orm';
 import { collectionFields, collections, documents, memberships, users, type DbTransaction } from '@living-wiki/db';
-import { FieldOptionsSchema, type FieldDef, type FieldNames } from '@living-wiki/contracts';
+import { FieldOptionsSchema, fieldEntries, type FieldDef, type FieldNames } from '@living-wiki/contracts';
 
 type FieldRow = typeof collectionFields.$inferSelect;
 
@@ -90,4 +90,23 @@ export async function fieldNames(
     users: new Map(people.map((p) => [p.id, p.name])),
     pages: new Map(titles.map((p) => [p.id, p.title])),
   };
+}
+
+/**
+ * The `Field: value` lines of a page's field values (a version's `fields`, or
+ * the live map), with the field each is for: nothing when the page isn't a
+ * row now. Read against the collection's current fields, so a removed field
+ * or choice is left out.
+ */
+export async function pageFieldEntries(
+  tx: DbTransaction,
+  tenantId: string,
+  documentId: string,
+  fields: unknown
+): Promise<Array<{ fieldId: string; text: string }>> {
+  if (!fields || typeof fields !== 'object' || Array.isArray(fields) || Object.keys(fields).length === 0) return [];
+  const row = await rowCollectionOf(tx, tenantId, documentId);
+  if (!row) return [];
+  const raw = fields as Record<string, unknown>;
+  return fieldEntries(row.fields, raw, await fieldNames(tx, tenantId, row.fields, raw));
 }

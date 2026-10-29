@@ -17,6 +17,7 @@ import { chunkPageBlocks } from './chunkPage.js';
 import { chunkInboxOwner } from './inboxOwner.js';
 import { loadFileChunks } from '../files/loadChunks.js';
 import { enqueuePlacementJobs } from '../placement/derived.js';
+import { pageFieldEntries } from '../collections/fields.js';
 
 /** What indexing needs beyond the database: file versions read their extracted text from storage. */
 export interface IndexDeps {
@@ -80,7 +81,8 @@ export async function indexVersion(
     if (!row) {
       throw new AppError('version_not_found');
     }
-    return row;
+    const fieldLines = (await pageFieldEntries(tx, tenantId, row.documentId, row.fields)).map((e) => e.text);
+    return { ...row, fieldLines };
   });
   if (deps.reindex) {
     if (ver.status !== 'indexed') return { outcome: 'skipped', reason: 'not_indexed' };
@@ -94,7 +96,7 @@ export async function indexVersion(
     if (!Array.isArray(ver.blocks)) {
       throw new NonRetryableError('version has no blocks');
     }
-    rawChunks = chunkPageBlocks(ver.title, ver.blocks as BlockLike[]);
+    rawChunks = chunkPageBlocks(ver.title, ver.blocks as BlockLike[], undefined, ver.fieldLines);
   }
   if (rawChunks.length === 0) {
     throw new NonRetryableError('version has no indexable content');

@@ -12,6 +12,7 @@ import { AppError } from '@living-wiki/contracts';
 import { flattenBlocks, type BlockLike } from '@living-wiki/shared';
 import type { EmbeddingProvider } from '../embedding.js';
 import type { PlacementModel } from './model.js';
+import { pageFieldEntries } from '../collections/fields.js';
 
 export type BuildPageCardResult =
   | { outcome: 'built' }
@@ -46,9 +47,10 @@ export async function buildPageCard(
       .innerJoin(spaces, and(eq(spaces.tenantId, documents.tenantId), eq(spaces.id, documents.spaceId)))
       .where(and(eq(versions.tenantId, tenantId), eq(versions.id, versionId)));
     if (!row) throw new AppError('version_not_found');
-    return row;
+    const fieldLines = (await pageFieldEntries(tx, tenantId, row.document.id, row.version.fields)).map((e) => e.text);
+    return { ...row, fieldLines };
   });
-  const { version, document } = loaded;
+  const { version, document, fieldLines } = loaded;
   if (document.kind !== 'page') return { outcome: 'skipped', reason: 'not_a_page' };
   if (document.indexedVersionId !== versionId) return { outcome: 'skipped', reason: 'not_indexed' };
   if (document.archivedAt) return { outcome: 'skipped', reason: 'archived' };
@@ -59,9 +61,10 @@ export async function buildPageCard(
   const { summary } = await model.summarizePage({
     title: version.title,
     outline,
-    markdown: version.markdown ?? '',
+    markdown: [fieldLines.join('\n'), version.markdown ?? ''].filter(Boolean).join('\n\n'),
   });
-  const [embedding] = await embedder.embed([`${version.title}\n${summary}\n${outline.join('\n')}`], 'document');
+  const embedded = [version.title, ...fieldLines, summary, ...outline].join('\n');
+  const [embedding] = await embedder.embed([embedded], 'document');
   if (!Array.isArray(embedding) || embedding.length !== embedder.dimensions) {
     throw new NonRetryableError(`embedding provider returned a malformed vector for a page card`);
   }

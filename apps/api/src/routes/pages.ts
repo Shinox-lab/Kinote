@@ -29,6 +29,7 @@ import {
   RestoreVersionParamsSchema,
   UpdatePageRequestSchema,
   AppError,
+  FIELDS_MAP,
   type CollabTokenResponse,
   type DocumentSummary,
   type PageDetails,
@@ -52,6 +53,7 @@ import {
   notify,
   isCollection,
   enqueueReindex,
+  pageFieldEntries,
 } from '@living-wiki/core';
 import {
   signCollabToken,
@@ -68,7 +70,7 @@ import {
 } from '../documents/lifecycle.js';
 import { computePageBadge } from '../pages/badge.js';
 import { pageCollectionInfo } from './collections.js';
-import { diffBlocks } from '../pages/diff.js';
+import { diffBlocks, withFieldLines } from '../pages/diff.js';
 import { resolveActorNames } from '../people.js';
 import { canApprove } from '../pages/approval.js';
 import type { CollabClient } from '@living-wiki/shared';
@@ -329,13 +331,19 @@ async function pageActivity(tx: DbTransaction, tenantId: string, pageId: string)
 }
 
 /** The blocks of the document's currently indexed version, or null when none is indexed. */
+/** The indexed version's blocks, its field lines after them (see `withFieldLines`). */
 async function indexedBlocks(tx: DbTransaction, tenantId: string, doc: DocumentRow) {
   if (!doc.indexedVersionId) return null;
   const [row] = await tx
-    .select({ blocks: versions.blocks })
+    .select({ blocks: versions.blocks, fields: versions.fields })
     .from(versions)
     .where(and(eq(versions.tenantId, tenantId), eq(versions.id, doc.indexedVersionId)));
-  return row ? storedBlocks(row.blocks) : null;
+  return row ? withFields(tx, tenantId, doc.id, storedBlocks(row.blocks), row.fields) : null;
+}
+
+/** `blocks` with the page's field lines for `fields` after them, so diffs show field changes. */
+async function withFields(tx: DbTransaction, tenantId: string, pageId: string, blocks: BlockLike[], fields: unknown) {
+  return withFieldLines(blocks, await pageFieldEntries(tx, tenantId, pageId, fields));
 }
 
 /** GET /api/v1/pages/:id/versions: the page's versions as summaries, newest first. */
@@ -458,7 +466,13 @@ export async function getPageChanges(actor: Actor, pageId: string): Promise<Bloc
     }
     const ydoc = new Y.Doc();
     Y.applyUpdate(ydoc, page.ydocState);
-    const live = blockNote.yDocToBlocks(ydoc, 'document-store') as BlockLike[];
+    const live = await withFields(
+      tx,
+      actor.tenantId,
+      pageId,
+      blockNote.yDocToBlocks(ydoc, 'document-store') as BlockLike[],
+      ydoc.getMap(FIELDS_MAP).toJSON()
+    );
 
     const activity = await pageActivity(tx, actor.tenantId, pageId);
     const diff = diffBlocks(before, live, activity);
@@ -496,7 +510,7 @@ export async function comparePageVersions(
   return withTenantTx(actor.tenantId, async (tx) => {
     await readablePage(tx, actor, pageId);
     const rows = await tx
-      .select({ number: versions.number, blocks: versions.blocks })
+      .select({ number: versions.number, blocks: versions.blocks, fields: versions.fields })
       .from(versions)
       .where(
         and(
@@ -510,7 +524,11 @@ export async function comparePageVersions(
     if (!fromRow || !toRow) {
       throw new AppError('version_not_found');
     }
-    return diffBlocks(storedBlocks(fromRow.blocks), storedBlocks(toRow.blocks), []);
+    return diffBlocks(
+      await withFields(tx, actor.tenantId, pageId, storedBlocks(fromRow.blocks), fromRow.fields),
+      await withFields(tx, actor.tenantId, pageId, storedBlocks(toRow.blocks), toRow.fields),
+      []
+    );
   });
 }
 
@@ -524,7 +542,11 @@ export async function getVersionDiff(actor: Actor, versionId: string): Promise<B
   assertValidUuid(versionId, 'version_not_found');
   return withTenantTx(actor.tenantId, async (tx) => {
     const { ver, doc } = await readableVersion(tx, actor, versionId);
-    const after = storedBlocks(ver.blocks);
+    const [stored] = await tx
+      .select({ fields: versions.fields })
+      .from(versions)
+      .where(and(eq(versions.tenantId, actor.tenantId), eq(versions.id, versionId)));
+    const after = await withFields(tx, actor.tenantId, doc.id, storedBlocks(ver.blocks), stored?.fields);
     // The indexed version itself: nothing to differ from (all `unchanged`).
     // Nothing indexed: against an empty base, so a new page's first version
     // shows all its content as `added`.
@@ -619,7 +641,7 @@ export async function restorePageVersion(
     }
 
     const [wanted] = await tx
-      .select({ title: versions.title, blocks: versions.blocks })
+      .select({ title: versions.title, blocks: versions.blocks, fields: versions.fields })
       .from(versions)
       .where(
         and(
@@ -632,7 +654,7 @@ export async function restorePageVersion(
       throw new AppError('version_not_found');
     }
     const [latest] = await tx
-      .select({ title: versions.title, blocks: versions.blocks, status: versions.status })
+      .select({ title: versions.title, blocks: versions.blocks, fields: versions.fields, status: versions.status })
       .from(versions)
       .where(and(eq(versions.tenantId, actor.tenantId), eq(versions.documentId, pageId)))
       .orderBy(desc(versions.number))
@@ -643,11 +665,13 @@ export async function restorePageVersion(
       latest &&
       latest.status !== 'withdrawn' &&
       latest.title === wanted.title &&
-      isDeepStrictEqual(storedBlocks(latest.blocks), storedBlocks(wanted.blocks))
+      isDeepStrictEqual(storedBlocks(latest.blocks), storedBlocks(wanted.blocks)) &&
+      isDeepStrictEqual(latest.fields ?? null, wanted.fields ?? null)
     ) {
       throw new AppError('no_changes', 'The latest version already has this content.');
     }
-    return { title: wanted.title, blocks: storedBlocks(wanted.blocks) };
+    const fields = wanted.fields && typeof wanted.fields === 'object' ? (wanted.fields as Record<string, unknown>) : {};
+    return { title: wanted.title, blocks: storedBlocks(wanted.blocks), fields };
   });
 
   // Restoring needs the live document, which only collab can change.
@@ -659,6 +683,8 @@ export async function restorePageVersion(
     pageId,
     blocks: target.blocks,
     title: target.title,
+    // The version's field values come back too (values of removed fields stay ignored).
+    fields: target.fields,
     actor: { type: actor.principalType, id: actor.principalId },
     source: 'restore',
   });
