@@ -36,6 +36,7 @@ const change = (blockId: string, status: CaptureChange['status']): CaptureChange
   afterMarkdown: 'after',
   status,
   reason: null,
+  field: null,
 });
 
 const suggestion = (over: Partial<SuggestionSummary>): SuggestionSummary => ({
@@ -45,6 +46,7 @@ const suggestion = (over: Partial<SuggestionSummary>): SuggestionSummary => ({
   blockId: 'b1',
   afterBlockId: null,
   proposedMarkdown: null,
+  field: null,
   reason: 'r',
   blockedBy: 'removal',
   conflictWith: null,

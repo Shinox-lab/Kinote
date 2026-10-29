@@ -24,6 +24,7 @@ import {
   type CaptureReceipt,
   type CaptureSummary,
   type SuggestionSummary,
+  type FieldChange,
 } from '@kinote/contracts';
 import { assertValidUuid, isTenantAdmin, senderAccess, type Actor } from '@kinote/core';
 import { resolveActorNames } from '../people.js';
@@ -235,7 +236,7 @@ export async function visibleCapture(
   return row;
 }
 
-export function toSuggestionSummary(row: SuggestionRow, conflictWith: string | null): SuggestionSummary {
+export function toSuggestionSummary(row: SuggestionRow, conflictWith: string | null, field: FieldChange | null = null): SuggestionSummary {
   return {
     id: row.id,
     documentId: row.documentId,
@@ -243,6 +244,7 @@ export function toSuggestionSummary(row: SuggestionRow, conflictWith: string | n
     blockId: row.blockId,
     afterBlockId: row.afterBlockId,
     proposedMarkdown: row.proposedMarkdown,
+    field,
     reason: row.reason,
     blockedBy: row.blockedBy,
     conflictWith,
@@ -387,6 +389,7 @@ export async function captureReceipt(tx: DbTransaction, viewer: Actor, captureId
       afterMarkdown: c.change.afterMarkdown,
       status: c.change.status,
       reason: c.reason,
+      field: null,
     });
     if (c.versionStatus === 'pending_review') page.waiting = true;
   }

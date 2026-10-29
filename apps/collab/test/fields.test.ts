@@ -3,9 +3,10 @@ import { randomUUID } from 'node:crypto';
 import * as Y from 'yjs';
 import { and, eq } from 'drizzle-orm';
 import { blockActivity, pageFieldValues, pagePendingContributors, withTenantTx } from '@kinote/db';
-import { FIELDS_MAP } from '@kinote/contracts';
+import { AppError, FIELDS_MAP, canonicalFieldJson } from '@kinote/contracts';
 import { HttpCollabClient } from '@kinote/shared';
 import { changedBlockIds, changesPage, collabSettle, type CollabServer } from '../src/server.js';
+import { readBlocks } from './support/blocks.js';
 import { buildCollabWorld, storedDoc, TEST_INTERNAL_SECRET, waitFor } from './support/collabWorld.js';
 import { connectClient, startCollabServer, type ConnectedClient } from './support/wsClient.js';
 import { buildTestApp, useTestDb } from '../../api/test/support/testkit.js';
@@ -126,5 +127,65 @@ describe('collab carries field values', () => {
       source: 'restore',
     });
     expect((await storedDoc(w.tenant.id, w.pageA.id)).getMap(FIELDS_MAP).toJSON()).toEqual({ [f2]: 'restored' });
+  });
+  const para = (id: string, text: string) => ({ id, type: 'paragraph', props: {}, content: [{ type: 'text', text, styles: {} }], children: [] });
+
+  test('set_field sets and clears a value in the same change as block ops', async () => {
+    const w = await buildCollabWorld(app);
+    const f1 = randomUUID();
+    const actor = { type: 'agent' as const, id: w.agentId };
+    await collab.applyBlockOps({
+      tenantId: w.tenant.id,
+      pageId: w.pageA.id,
+      actor,
+      source: 'agent',
+      ops: [
+        { op: 'insert_after', after: null, blocks: [para('n1', 'Launch moved.')] },
+        { op: 'set_field', fieldId: f1, value: { start: '2026-12-01' } },
+      ],
+    });
+    let doc = await storedDoc(w.tenant.id, w.pageA.id);
+    expect(doc.getMap(FIELDS_MAP).get(f1)).toEqual({ start: '2026-12-01' });
+    expect(readBlocks(doc)[0].id).toBe('n1');
+    await collab.applyBlockOps({ tenantId: w.tenant.id, pageId: w.pageA.id, actor, source: 'agent', ops: [{ op: 'set_field', fieldId: f1, value: null }] });
+    doc = await storedDoc(w.tenant.id, w.pageA.id);
+    expect(doc.getMap(FIELDS_MAP).has(f1)).toBe(false);
+  });
+
+  test('set_field with a stale expected value changes nothing', async () => {
+    const w = await buildCollabWorld(app);
+    const f1 = randomUUID();
+    await collab.setFields({ tenantId: w.tenant.id, pageId: w.pageA.id, values: { [f1]: 'opt-lead' }, actor: { type: 'user', id: w.editor.userId }, source: 'human' });
+    const before = readBlocks(await storedDoc(w.tenant.id, w.pageA.id)).map((b) => b.id);
+    const err = await collab
+      .applyBlockOps({
+        tenantId: w.tenant.id,
+        pageId: w.pageA.id,
+        actor: { type: 'agent', id: w.agentId },
+        source: 'agent',
+        ops: [
+          { op: 'insert_after', after: null, blocks: [para('n1', 'Should not land.')] },
+          { op: 'set_field', fieldId: f1, value: 'opt-active', expected: canonicalFieldJson('other') },
+        ],
+      })
+      .catch((e) => e);
+    expect(err).toBeInstanceOf(AppError);
+    expect((err as AppError).code).toBe('block_changed');
+    const doc = await storedDoc(w.tenant.id, w.pageA.id);
+    expect(doc.getMap(FIELDS_MAP).get(f1)).toBe('opt-lead');
+    expect(readBlocks(doc).map((b) => b.id)).toEqual(before);
+  });
+
+  test('set_field expected "null" matches an absent field', async () => {
+    const w = await buildCollabWorld(app);
+    const f1 = randomUUID();
+    await collab.applyBlockOps({
+      tenantId: w.tenant.id,
+      pageId: w.pageA.id,
+      actor: { type: 'agent', id: w.agentId },
+      source: 'agent',
+      ops: [{ op: 'set_field', fieldId: f1, value: 'opt-active', expected: 'null' }],
+    });
+    expect((await storedDoc(w.tenant.id, w.pageA.id)).getMap(FIELDS_MAP).get(f1)).toBe('opt-active');
   });
 });

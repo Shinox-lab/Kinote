@@ -14,6 +14,7 @@ import {
   CollabSetTitleRequestSchema,
   CollabSetFieldsRequestSchema,
   FIELDS_MAP,
+  canonicalFieldJson,
   ERROR_SENTENCES,
   type ErrorCode,
 } from '@kinote/contracts';
@@ -178,8 +179,8 @@ export async function setDocumentFields(server: Hocuspocus, input: unknown): Pro
 
 /**
  * POST /internal/apply-block-ops: inserts, replaces or removes single
- * top-level blocks of the live page, all in one transaction attributed to
- * `actor` with `source`. Every new block is converted off-document first and
+ * top-level blocks of the live page, and sets field values, all in one
+ * transaction attributed to `actor` with `source`. Every new block is converted off-document first and
  * every addressed block checked before the live fragment is touched: one
  * missing block is 404 `block_not_found` and nothing changes.
  */
@@ -189,7 +190,9 @@ export async function applyDocumentBlockOps(server: Hocuspocus, input: unknown):
   const { documentName, actor, source, ops } = parsed.data;
   const { tenantId, pageId } = requireDocument(documentName);
 
-  for (const op of ops) {
+  const blockOps = ops.filter((op) => op.op !== 'set_field');
+  const fieldOps = ops.filter((op) => op.op === 'set_field');
+  for (const op of blockOps) {
     if (op.op === 'remove') continue;
     try {
       blockNote.blocksToYXmlFragment(op.blocks as any, new Y.Doc().getXmlFragment(BLOCK_FRAGMENT));
@@ -202,7 +205,19 @@ export async function applyDocumentBlockOps(server: Hocuspocus, input: unknown):
   const session = await openTrustedDirectSession(server, documentName, context);
   try {
     await session.transact({ source, actorId: actor.id }, (doc) => {
-      applyBlockOps(doc.getXmlFragment(BLOCK_FRAGMENT), ops);
+      // Every check comes before any change: the field expectations here,
+      // then applyBlockOps checks its blocks before it mutates.
+      const fields = doc.getMap(FIELDS_MAP);
+      for (const op of fieldOps) {
+        if (op.expected !== undefined && canonicalFieldJson(fields.get(op.fieldId)) !== op.expected) {
+          throw new AppError('block_changed');
+        }
+      }
+      if (blockOps.length > 0) applyBlockOps(doc.getXmlFragment(BLOCK_FRAGMENT), blockOps);
+      for (const op of fieldOps) {
+        if (op.value === null || op.value === undefined) fields.delete(op.fieldId);
+        else fields.set(op.fieldId, op.value);
+      }
     });
   } finally {
     await session.close();

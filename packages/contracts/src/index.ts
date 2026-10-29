@@ -4,7 +4,7 @@ export * from './errors.js';
 export * from './editor.js';
 export * from './collections.js';
 export * from './views.js';
-import { CollectionSchema } from './collections.js';
+import { CollectionSchema, FieldChangeSchema } from './collections.js';
 
 export const TenantRoleSchema = z.enum(['owner', 'admin', 'member', 'viewer']);
 export type TenantRole = z.infer<typeof TenantRoleSchema>;
@@ -488,10 +488,12 @@ export const ReviewQuerySchema = z.object({
 export const SuggestionSummarySchema = z.object({
   id: z.string().uuid(),
   documentId: z.string().uuid(),
-  kind: z.enum(['remove', 'replace', 'insert']),
+  kind: z.enum(['remove', 'replace', 'insert', 'set_field']),
   blockId: z.string().nullable(),
   afterBlockId: z.string().nullable(),
   proposedMarkdown: z.string().nullable(),
+  /** The field change a `set_field` suggestion proposes; null for block suggestions. */
+  field: FieldChangeSchema.nullable(),
   reason: z.string(),
   blockedBy: z.enum(['removal', 'protection', 'conflict', 'no_edit_access']),
   /** What a conflicting citation's source is called, when `blockedBy` is `conflict`. */
@@ -913,6 +915,13 @@ export const CollabApplyBlockOpsRequestSchema = z
             blockId: z.string().min(1).max(100),
             expectedText: z.string().max(100_000).optional(),
           }),
+          /** Sets a field value (null clears it); `expected` is `canonicalFieldJson` of the value the caller saw. */
+          z.object({
+            op: z.literal('set_field'),
+            fieldId: z.string().uuid(),
+            value: z.unknown(),
+            expected: z.string().max(100_000).optional(),
+          }),
         ])
       )
       .min(1)
@@ -1194,12 +1203,14 @@ export const CaptureChangeSchema = z.object({
   /** Null for the blocks of a document capture's own page. */
   factId: z.string().uuid().nullable(),
   documentId: z.string().uuid(),
-  op: z.enum(['insert', 'replace', 'create_page']),
+  op: z.enum(['insert', 'replace', 'create_page', 'set_field']),
   blockId: z.string(),
   beforeMarkdown: z.string().nullable(),
   afterMarkdown: z.string(),
   status: z.enum(['applied', 'undone', 'moved']),
   reason: z.string().nullable(),
+  /** The field change of a `set_field` row; null for block changes. */
+  field: FieldChangeSchema.nullable(),
 });
 export type CaptureChange = z.infer<typeof CaptureChangeSchema>;
 export const CaptureChangeListSchema = z.array(CaptureChangeSchema);

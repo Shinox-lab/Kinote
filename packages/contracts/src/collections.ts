@@ -252,3 +252,26 @@ export function fieldEntries(
       return shown === null ? [] : [{ fieldId: def.id, text: `${def.name}: ${shown}` }];
     });
 }
+
+/**
+ * JSON with object keys sorted at every level, so equal values print the same.
+ * `undefined` prints as `null`. A version's content hash and the values kept
+ * in receipts and suggestions both use it.
+ */
+export function canonicalFieldJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalFieldJson).join(',')}]`;
+  if (value && typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+    return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${canonicalFieldJson(v)}`).join(',')}}`;
+  }
+  return JSON.stringify(value) ?? 'null';
+}
+
+/** A routed field change as the console shows it: display text, null for empty; `name` null when the field is gone. */
+export const FieldChangeSchema = z.object({
+  fieldId: z.string(),
+  name: z.string().nullable(),
+  before: z.string().nullable(),
+  after: z.string().nullable(),
+});
+export type FieldChange = z.infer<typeof FieldChangeSchema>;

@@ -12,7 +12,7 @@ const BLOCKED_BY: Record<SuggestionSummary['blockedBy'], string> = {
   no_edit_access: "The sender can't edit this space",
 };
 
-const KIND = { remove: 'Remove a block', replace: 'Replace a block', insert: 'Add a block' } as const;
+const KIND = { remove: 'Remove a block', replace: 'Replace a block', insert: 'Add a block', set_field: 'Change a field' } as const;
 
 /** One proposed change the routing engine was not allowed to make, with the person's choice. */
 export function SuggestionEntry({ suggestion, onDone }: { suggestion: SuggestionSummary; onDone: () => void }) {

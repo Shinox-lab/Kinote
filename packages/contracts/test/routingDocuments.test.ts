@@ -29,7 +29,7 @@ describe('routing documents contracts', () => {
   });
 
   it('a change of the document page has no fact; a fact may be kept on the new page', () => {
-    const change = { id, factId: null, documentId: id, op: 'create_page', blockId: 'b', beforeMarkdown: null, afterMarkdown: 'x', status: 'applied', reason: null };
+    const change = { id, factId: null, documentId: id, op: 'create_page', blockId: 'b', beforeMarkdown: null, afterMarkdown: 'x', status: 'applied', reason: null, field: null };
     expect(CaptureChangeSchema.parse(change).factId).toBeNull();
     expect(FactStatusSchema.parse({ factId: id, outcome: 'filed_in_document' }).outcome).toBe('filed_in_document');
   });

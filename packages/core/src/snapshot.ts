@@ -17,7 +17,7 @@ import {
   type DbTransaction,
   type DocumentRow,
 } from '@kinote/db';
-import { AppError, FIELDS_MAP, storableFields, validFields } from '@kinote/contracts';
+import { AppError, FIELDS_MAP, canonicalFieldJson, storableFields, validFields } from '@kinote/contracts';
 import { rowCollectionOf } from './collections/fields.js';
 import { notify, recordPageMentions, usersWithSpaceRole } from './talk/notify.js';
 import { flattenBlocks, pageLinksOf, type BlockLike } from '@kinote/shared';
@@ -50,16 +50,6 @@ export function extractWikiLinks(
     }
   }
   return out;
-}
-
-/** JSON with object keys sorted at every level, so equal values hash the same. */
-function canonicalJson(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
-  if (value && typeof value === 'object') {
-    const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
-    return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${canonicalJson(v)}`).join(',')}}`;
-  }
-  return JSON.stringify(value) ?? 'null';
 }
 
 export interface TakePageSnapshotHooks {
@@ -169,7 +159,7 @@ export async function takePageSnapshot(
     // Rule 11: The title is part of the indexed text, so a rename is a content change
     const indexedPayload = `# ${title}\n\n${markdown}`;
     // Pages without fields hash exactly as before fields existed (no new versions on upgrade).
-    const hashed = fields ? `${indexedPayload}\n\n${canonicalJson(fields)}` : indexedPayload;
+    const hashed = fields ? `${indexedPayload}\n\n${canonicalFieldJson(fields)}` : indexedPayload;
     const contentHash = createHash('sha256').update(hashed, 'utf8').digest('hex');
 
     // Same content as the latest version: nothing to snapshot. Except that a

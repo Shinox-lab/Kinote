@@ -136,8 +136,8 @@ export const captureChanges = pgTable(
       .notNull()
       .references(() => spaces.id),
     blockId: text('block_id').notNull(),
-    op: text('op', { enum: ['insert', 'replace', 'create_page'] }).notNull(),
-    /** Null for an insert: there was nothing before. */
+    op: text('op', { enum: ['insert', 'replace', 'create_page', 'set_field'] }).notNull(),
+    /** Null for an insert, or a set_field on an empty field: there was nothing before. */
     beforeMarkdown: text('before_markdown'),
     afterMarkdown: text('after_markdown').notNull(),
     /** The snapshot the change landed in. */
@@ -169,7 +169,7 @@ export const suggestions = pgTable(
     blockId: text('block_id'),
     /** Where an insert goes; null inserts at the start. */
     afterBlockId: text('after_block_id'),
-    kind: text('kind', { enum: ['remove', 'replace', 'insert'] }).notNull(),
+    kind: text('kind', { enum: ['remove', 'replace', 'insert', 'set_field'] }).notNull(),
     proposedMarkdown: text('proposed_markdown'),
     proposedBlocks: jsonb('proposed_blocks'),
     /** The addressed block's text with its children when proposed; accepting a changed block makes it stale. */

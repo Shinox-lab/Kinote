@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { fieldLines, fieldValueFits, formatFieldValue, validFields, type FieldDef } from '../src/index.js';
+import { canonicalFieldJson, fieldLines, fieldValueFits, formatFieldValue, validFields, type FieldDef } from '../src/index.js';
 
 const USER_ID = '11111111-1111-4111-8111-111111111111';
 const GONE_USER = '22222222-2222-4222-8222-222222222222';
@@ -101,5 +101,13 @@ describe('fieldLines', () => {
     expect(formatFieldValue(related, [PAGE_ID], names)).toBe('Client - George');
     expect(formatFieldValue(done, true, names)).toBe('Yes');
     expect(formatFieldValue(num, 'x', names)).toBeNull();
+  });
+});
+
+describe('canonicalFieldJson', () => {
+  test('sorts keys and treats undefined as null', () => {
+    expect(canonicalFieldJson({ start: '2026-12-01', end: '2026-12-03' })).toBe(canonicalFieldJson({ end: '2026-12-03', start: '2026-12-01' }));
+    expect(canonicalFieldJson(undefined)).toBe('null');
+    expect(canonicalFieldJson(['b', 'a'])).toBe('["b","a"]'); // arrays keep their order
   });
 });

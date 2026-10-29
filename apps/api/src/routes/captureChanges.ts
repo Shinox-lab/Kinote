@@ -568,6 +568,7 @@ export async function listPageCaptureChanges(actor: Actor, pageId: string, query
       afterMarkdown: change.afterMarkdown,
       status: change.status,
       reason,
+      field: null,
     }));
   });
 }
