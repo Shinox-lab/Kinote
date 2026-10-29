@@ -1,7 +1,7 @@
 import { BlockNoteSchema, createBlockSpec, createExtension, createInlineContentSpec, defaultBlockSpecs, defaultInlineContentSpecs } from '@blocknote/core';
 import { CommentMark } from '@blocknote/core/comments';
 import { ServerBlockNoteEditor } from '@blocknote/server-util';
-import { MENTION_PATH, PAGE_LINK_PATH, calloutConfig, collectionViewConfig, fileEmbedConfig, mentionConfig, mentionPath, pageLinkConfig, pageLinkPath } from '@kinote/contracts';
+import { MENTION_PATH, PAGE_LINK_PATH, UNTITLED_DRAWING, calloutConfig, collectionViewConfig, drawingConfig, fileEmbedConfig, mentionConfig, mentionPath, pageLinkConfig, pageLinkPath } from '@kinote/contracts';
 import type { BlockLike } from './blocks.js';
 
 /**
@@ -74,9 +74,26 @@ const collectionView = createBlockSpec(collectionViewConfig, {
   },
 })();
 
+/**
+ * A drawing on the server: its text (`Drawing: {title}` and the drawing's
+ * words, filled in by the snapshot), one line per run, so Markdown and the
+ * index carry it. The scene itself is never rendered here.
+ */
+const drawing = createBlockSpec(drawingConfig, {
+  render: (block) => {
+    const dom = document.createElement('p');
+    const text = String(block.props.text || `Drawing: ${String(block.props.title).trim() || UNTITLED_DRAWING}`);
+    text.split('\n').forEach((line, i) => {
+      if (i > 0) dom.append(document.createElement('br'));
+      dom.append(line);
+    });
+    return { dom };
+  },
+})();
+
 /** The wiki's block schema: BlockNote's defaults plus page links and mentions. */
 export const wikiSchema = BlockNoteSchema.create({
-  blockSpecs: { ...defaultBlockSpecs, fileEmbed, callout, collectionView },
+  blockSpecs: { ...defaultBlockSpecs, fileEmbed, callout, collectionView, drawing },
   inlineContentSpecs: { ...defaultInlineContentSpecs, pageLink, mention },
 });
 

@@ -1,3 +1,5 @@
+import { UNTITLED_DRAWING, drawingConfig } from '@kinote/contracts';
+
 /**
  * Flattening of real BlockNote blocks (the shape `yDocToBlocks` returns:
  * `{ id, type, props, content: InlineContent[] | TableContent, children }`)
@@ -78,7 +80,12 @@ export function flattenBlocks(blocks: BlockLike[]): FlatBlock[] {
     for (const b of list) {
       // A collection view has no text of its own, and never its collection's title: the collection may be in a
       // space this page's readers can't open.
-      const text = b.type === 'collectionView' ? 'Collection view' : blockText(b.content);
+      const text =
+        b.type === 'collectionView'
+          ? 'Collection view'
+          : b.type === drawingConfig.type
+            ? String(b.props?.text || `Drawing: ${String(b.props?.title ?? '').trim() || UNTITLED_DRAWING}`)
+            : blockText(b.content);
       const flat: FlatBlock = { id: b.id, type: b.type, text, depth };
       if (b.type === 'heading') {
         const level = Number(b.props?.level);

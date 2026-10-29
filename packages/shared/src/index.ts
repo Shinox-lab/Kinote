@@ -20,3 +20,4 @@ export {
 export { flattenBlocks, blockFullText, type FlatBlock, type BlockLike } from './blocks.js';
 export { HttpCollabClient, COLLAB_CALL_TIMEOUT_MS, type CollabClient } from './collabClient.js';
 export { wikiSchema, createServerEditor, pageLinksOf, mentionsOf, restorePageLinks } from './editorSchema.js';
+export { drawingBlockIds, liveElements } from './drawings.js';

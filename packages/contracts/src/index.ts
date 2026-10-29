@@ -4,6 +4,7 @@ export * from './errors.js';
 export * from './editor.js';
 export * from './collections.js';
 export * from './views.js';
+export * from './drawings.js';
 import { CollectionSchema, FieldChangeSchema } from './collections.js';
 
 export const TenantRoleSchema = z.enum(['owner', 'admin', 'member', 'viewer']);
