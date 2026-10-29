@@ -17,7 +17,7 @@ import {
   type DbTransaction,
   type DocumentRow,
 } from '@living-wiki/db';
-import { AppError, FIELDS_MAP, validFields } from '@living-wiki/contracts';
+import { AppError, FIELDS_MAP, storableFields, validFields } from '@living-wiki/contracts';
 import { rowCollectionOf } from './collections/fields.js';
 import { notify, recordPageMentions, usersWithSpaceRole } from './talk/notify.js';
 import { flattenBlocks, pageLinksOf, type BlockLike } from '@living-wiki/shared';
@@ -147,7 +147,8 @@ export async function takePageSnapshot(
     const blocks = editor.yDocToBlocks(ydoc, 'document-store');
     const markdown = (await editor.blocksToMarkdownLossy(blocks)).trim();
     // Collection field values (raw: readers check them against the fields).
-    const fieldsMap = ydoc.getMap(FIELDS_MAP).toJSON() as Record<string, unknown>;
+    // Values Postgres can't store (a NUL) are left out, so they never fail the snapshot.
+    const fieldsMap = storableFields(ydoc.getMap(FIELDS_MAP).toJSON() as Record<string, unknown>);
     const fields = Object.keys(fieldsMap).length > 0 ? fieldsMap : null;
 
     // A row with a value that fits one of its fields has content even with an empty body.

@@ -73,8 +73,16 @@ export const UpdateFieldRequestSchema = z
     options: FieldOptionsSchema.optional(),
     /** Put the field after this one; null puts it first. */
     after: z.string().uuid().nullable().optional(),
+    /** Adds one choice (a select field), kept alongside choices others add at the same time; a name already there changes nothing. */
+    add_choice: ChoiceSchema.omit({ id: true }).optional(),
+    /** Removes one choice by id. */
+    remove_choice: z.string().min(1).max(64).optional(),
   })
-  .refine((v) => v.name !== undefined || v.options !== undefined || v.after !== undefined, 'Nothing to change.');
+  .refine(
+    (v) =>
+      v.name !== undefined || v.options !== undefined || v.after !== undefined || v.add_choice !== undefined || v.remove_choice !== undefined,
+    'Nothing to change.'
+  );
 
 /** `{ [fieldId]: value }`; null clears the field. */
 export const SetFieldsRequestSchema = z.record(z.string().uuid(), z.unknown());
@@ -105,11 +113,32 @@ function choiceIds(def: FieldDef): Set<string> {
   return new Set((def.options.choices ?? []).map((c) => c.id));
 }
 
+const UNSTORABLE = /\u0000|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+
+/**
+ * Whether Postgres jsonb can hold the value: no NUL and no lone surrogate in
+ * any string or key. A value that can't be stored is left out wherever field
+ * values are written to the database, so one bad value never fails a save.
+ */
+export function storable(value: unknown): boolean {
+  if (typeof value === 'string') return !UNSTORABLE.test(value);
+  if (Array.isArray(value)) return value.every(storable);
+  if (value && typeof value === 'object') {
+    return Object.entries(value as Record<string, unknown>).every(([k, v]) => !UNSTORABLE.test(k) && storable(v));
+  }
+  return true;
+}
+
+/** `raw` without the entries Postgres can't store (see `storable`). */
+export function storableFields(raw: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(raw).filter(([k, v]) => !UNSTORABLE.test(k) && v !== undefined && storable(v)));
+}
+
 /** Whether `value` is a non-empty value of `def`'s type. Empty is the field being absent, so empty never fits. */
 export function fieldValueFits(def: FieldDef, value: unknown): boolean {
   switch (def.type) {
     case 'text':
-      return typeof value === 'string' && value.trim() !== '' && value.length <= 10_000;
+      return typeof value === 'string' && value.trim() !== '' && value.length <= 10_000 && storable(value);
     case 'number':
       return typeof value === 'number' && Number.isFinite(value);
     case 'date': {

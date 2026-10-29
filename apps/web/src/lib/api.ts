@@ -62,6 +62,7 @@ import {
   VersionListSchema,
   VersionSummarySchema,
   type AcceptInvitationRequest,
+  type Choice,
   type FieldOptions,
   type FieldType,
   type AddGroupMemberRequest,
@@ -280,7 +281,17 @@ export const api = {
   getCollection: (id: string) => request(`/api/v1/collections/${e(id)}`, CollectionSchema),
   addField: (collectionId: string, body: { name: string; type: FieldType; options?: FieldOptions }) =>
     request(`/api/v1/collections/${e(collectionId)}/fields`, FieldDefSchema, send('POST', body)),
-  updateField: (collectionId: string, fieldId: string, body: { name?: string; options?: FieldOptions; after?: string | null }) =>
+  updateField: (
+    collectionId: string,
+    fieldId: string,
+    body: {
+      name?: string;
+      options?: FieldOptions;
+      after?: string | null;
+      add_choice?: { name: string; color: Choice['color'] };
+      remove_choice?: string;
+    }
+  ) =>
     request(`/api/v1/collections/${e(collectionId)}/fields/${e(fieldId)}`, FieldDefSchema, send('PATCH', body)),
   removeField: (collectionId: string, fieldId: string) =>
     request(`/api/v1/collections/${e(collectionId)}/fields/${e(fieldId)}`, NO_CONTENT, del),

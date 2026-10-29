@@ -3,7 +3,7 @@ import { Database } from '@hocuspocus/extension-database';
 import { and, eq, sql } from 'drizzle-orm';
 import * as Y from 'yjs';
 import { withTenantTx, pages, pageFieldValues } from '@living-wiki/db';
-import { FIELDS_MAP } from '@living-wiki/contracts';
+import { FIELDS_MAP, storableFields } from '@living-wiki/contracts';
 import { parseDocumentName } from '@living-wiki/shared';
 import { authenticateCollabConnection, type CollabContext } from './auth.js';
 import { handleInternalRequest } from './internal.js';
@@ -44,7 +44,8 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 /**
  * Rewrites the page's `page_field_values` from its `fields` map: one row per
  * key, raw (never checked against the collection's fields; readers do that).
- * A key that isn't a field id can't be one, so it is left out.
+ * A key that isn't a field id can't be one, and a value Postgres can't
+ * store can't be either: both are left out.
  */
 async function mirrorFieldValues(
   tx: Parameters<Parameters<typeof withTenantTx>[1]>[0],
@@ -54,8 +55,9 @@ async function mirrorFieldValues(
 ): Promise<void> {
   const doc = new Y.Doc();
   Y.applyUpdate(doc, state);
-  const rows = Object.entries(doc.getMap(FIELDS_MAP).toJSON())
-    .filter(([key, value]) => UUID_RE.test(key) && value !== undefined && value !== null)
+  // Only what Postgres can store: a NUL in one value must never fail the page's own save.
+  const rows = Object.entries(storableFields(doc.getMap(FIELDS_MAP).toJSON()))
+    .filter(([key, value]) => UUID_RE.test(key) && value !== null)
     .map(([fieldId, value]) => ({ tenantId, pageId, fieldId, value }));
   await tx.delete(pageFieldValues).where(and(eq(pageFieldValues.tenantId, tenantId), eq(pageFieldValues.pageId, pageId)));
   if (rows.length > 0) await tx.insert(pageFieldValues).values(rows);

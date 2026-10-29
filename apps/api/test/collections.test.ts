@@ -114,6 +114,26 @@ describe('collections', () => {
     expect(over.json().error).toBe('field_limit');
   });
 
+  test('choices added at the same time are all kept', async () => {
+    const w = await world();
+    await asCollection(w.headers, w.clients);
+    const status = await addField(w.headers, w.clients, { name: 'Status', type: 'select' });
+    const url = `/api/v1/collections/${w.clients}/fields/${status.id}`;
+    const added = await Promise.all(
+      ['Active', 'Lead', 'Lost'].map((name) => req('PATCH', w.headers, url, { add_choice: { name, color: 'green' } }))
+    );
+    expect(added.map((r) => r.statusCode)).toEqual([200, 200, 200]);
+    const names = (await req('GET', w.headers, `/api/v1/collections/${w.clients}`)).json().fields[0].options.choices.map((c: { name: string }) => c.name);
+    expect(names.sort()).toEqual(['Active', 'Lead', 'Lost']);
+
+    const lead = (await req('GET', w.headers, `/api/v1/collections/${w.clients}`)).json().fields[0].options.choices.find((c: { name: string }) => c.name === 'Lead');
+    const removed = await req('PATCH', w.headers, url, { remove_choice: lead.id });
+    expect(removed.json().options.choices.map((c: { name: string }) => c.name).sort()).toEqual(['Active', 'Lost']);
+    // Adding a name that's there already returns the field unchanged.
+    const again = await req('PATCH', w.headers, url, { add_choice: { name: 'active', color: 'red' } });
+    expect(again.json().options.choices).toHaveLength(2);
+  });
+
   test('no collections in the Inbox', async () => {
     const w = await world();
     const mine = await w.page('Mine', 'mine', null, w.inbox);

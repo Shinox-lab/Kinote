@@ -98,12 +98,14 @@ export async function indexVersion(
     }
     rawChunks = chunkPageBlocks(ver.title, ver.blocks as BlockLike[], undefined, ver.fieldLines);
   }
-  if (rawChunks.length === 0) {
+  // A row indexed only by its fields can lose them (a field removed, the page
+  // moved out): nothing left to index then means its chunks go, not a failure.
+  if (rawChunks.length === 0 && !(deps.reindex || ver.fields)) {
     throw new NonRetryableError('version has no indexable content');
   }
 
   const hashes = Array.from(new Set(rawChunks.map((c) => c.contentHash)));
-  const cached = await withTenantTx(tenantId, (tx) =>
+  const cached = hashes.length === 0 ? [] : await withTenantTx(tenantId, (tx) =>
     tx
       .select({ contentHash: embeddingCache.contentHash, embedding: embeddingCache.embedding })
       .from(embeddingCache)

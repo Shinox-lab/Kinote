@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { FIELD_TYPES, type Choice, type Collection, type FieldDef, type FieldType } from '@living-wiki/contracts';
 import { api } from '../../lib/api.js';
-import { FIELD_TYPE_LABELS, newChoiceId, nextChoiceColor, removalWarning } from '../../lib/fields.js';
+import { FIELD_TYPE_LABELS, nextChoiceColor, removalWarning } from '../../lib/fields.js';
 import { Confirm } from '../lifecycle.js';
 import { TitleInput } from '../sidebar/TitleInput.js';
 import { Button, ErrorNote } from '../ui.js';
@@ -43,7 +43,7 @@ function FieldRow({
   const addChoice = () => {
     const name = choiceName.trim();
     if (!name || choices.some((c) => c.name.toLowerCase() === name.toLowerCase())) return;
-    update.mutate({ options: { choices: [...choices, { id: newChoiceId(), name, color: nextChoiceColor(choices) }] } });
+    update.mutate({ add_choice: { name, color: nextChoiceColor(choices) } });
     setChoiceName('');
   };
   const askRemove = async (choice?: Choice) => {
@@ -141,8 +141,7 @@ export function FieldSetup({ collection, canEdit, onChanged }: { collection: Col
   const remove = async (p: Pending) => {
     if (p.kind === 'field') await api.removeField(collection.id, p.def.id);
     else {
-      const choices = (p.def.options.choices ?? []).filter((c) => c.id !== p.choice.id);
-      await api.updateField(collection.id, p.def.id, { options: { choices } });
+      await api.updateField(collection.id, p.def.id, { remove_choice: p.choice.id });
     }
     setPending(null);
     onChanged();

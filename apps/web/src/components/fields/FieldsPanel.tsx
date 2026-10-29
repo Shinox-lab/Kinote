@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type * as Y from 'yjs';
 import { FIELDS_MAP, validFields, type Choice, type Collection, type FieldNames } from '@living-wiki/contracts';
 import { api } from '../../lib/api.js';
-import { emptyFieldCount, newChoiceId, nextChoiceColor } from '../../lib/fields.js';
+import { emptyFieldCount, nextChoiceColor } from '../../lib/fields.js';
 import { useTenantKey } from '../../lib/queries.js';
 import { FieldEditor, FieldValue } from './FieldEditor.js';
 
@@ -102,12 +102,12 @@ export function FieldsPanel({
   const addChoice = async (fieldId: string, name: string): Promise<Choice | null> => {
     const def = collection.fields.find((f) => f.id === fieldId);
     if (!def || !canEditFields) return null;
-    const choices = def.options.choices ?? [];
-    const choice: Choice = { id: newChoiceId(), name, color: nextChoiceColor(choices) };
     try {
-      await api.updateField(collection.id, fieldId, { options: { choices: [...choices, choice] } });
+      const updated = await api.updateField(collection.id, fieldId, {
+        add_choice: { name, color: nextChoiceColor(def.options.choices ?? []) },
+      });
       await qc.invalidateQueries({ queryKey: pageKey });
-      return choice;
+      return updated.options.choices?.find((c) => c.name.toLowerCase() === name.toLowerCase()) ?? null;
     } catch {
       return null;
     }

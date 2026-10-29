@@ -51,14 +51,17 @@ export async function rowCollectionOf(
 
 /**
  * Names for the person and page values in `raw`: members of the tenant by
- * user id, live pages by id. Anyone or anything else is left out, so it
- * prints as nothing.
+ * user id, live pages of `spaceId` (the row's space) by id. Anyone or
+ * anything else is left out, so it prints as nothing: a page elsewhere may
+ * be one the row's readers can't open, and its title is printed into the
+ * row's index and diffs.
  */
 export async function fieldNames(
   tx: DbTransaction,
   tenantId: string,
   defs: FieldDef[],
-  raw: Record<string, unknown>
+  raw: Record<string, unknown>,
+  spaceId: string
 ): Promise<FieldNames> {
   const ids = (type: FieldDef['type']) =>
     [
@@ -85,7 +88,14 @@ export async function fieldNames(
       : await tx
           .select({ id: documents.id, title: documents.title })
           .from(documents)
-          .where(and(eq(documents.tenantId, tenantId), inArray(documents.id, pageIds), isNull(documents.archivedAt)));
+          .where(
+            and(
+              eq(documents.tenantId, tenantId),
+              inArray(documents.id, pageIds),
+              eq(documents.spaceId, spaceId),
+              isNull(documents.archivedAt)
+            )
+          );
   return {
     users: new Map(people.map((p) => [p.id, p.name])),
     pages: new Map(titles.map((p) => [p.id, p.title])),
@@ -107,6 +117,10 @@ export async function pageFieldEntries(
   if (!fields || typeof fields !== 'object' || Array.isArray(fields) || Object.keys(fields).length === 0) return [];
   const row = await rowCollectionOf(tx, tenantId, documentId);
   if (!row) return [];
+  const [doc] = await tx
+    .select({ spaceId: documents.spaceId })
+    .from(documents)
+    .where(and(eq(documents.tenantId, tenantId), eq(documents.id, documentId)));
   const raw = fields as Record<string, unknown>;
-  return fieldEntries(row.fields, raw, await fieldNames(tx, tenantId, row.fields, raw));
+  return fieldEntries(row.fields, raw, await fieldNames(tx, tenantId, row.fields, raw, doc!.spaceId));
 }

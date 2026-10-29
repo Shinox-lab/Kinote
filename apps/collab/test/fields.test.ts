@@ -98,6 +98,19 @@ describe('collab carries field values', () => {
     expect(await projection(w.tenant.id, w.pageB.id)).toEqual([{ fieldId: f1, value: 'typed live' }]);
   });
 
+  test('a value Postgres can’t store never stops the page from being saved', async () => {
+    const w = await buildCollabWorld(app);
+    const [bad, good] = [randomUUID(), randomUUID()];
+    const client = await connectClient({ port, documentName: w.docName(w.pageB.id), token: w.token(w.pageB.id, 'user', w.editor.userId) });
+    clients.push(client);
+    client.doc.getMap(FIELDS_MAP).set(bad, 'a\u0000b');
+    client.doc.getMap(FIELDS_MAP).set(good, 'fine');
+    await waitFor(() => server.documents.get(w.docName(w.pageB.id))?.getMap(FIELDS_MAP).get(good) === 'fine');
+    await collab.flush(w.docName(w.pageB.id));
+    expect((await storedDoc(w.tenant.id, w.pageB.id)).getMap(FIELDS_MAP).get(good)).toBe('fine');
+    expect(await projection(w.tenant.id, w.pageB.id)).toEqual([{ fieldId: good, value: 'fine' }]);
+  });
+
   test('replace-blocks with fields replaces the whole fields map', async () => {
     const w = await buildCollabWorld(app);
     const [f1, f2] = [randomUUID(), randomUUID()];

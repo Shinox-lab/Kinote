@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import * as Y from 'yjs';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import {
@@ -195,12 +196,13 @@ export async function addField(actor: Actor, collectionId: string, input: unknow
   });
 }
 
-async function fieldRow(tx: DbTransaction, tenantId: string, collectionId: string, fieldId: string) {
+async function fieldRow(tx: DbTransaction, tenantId: string, collectionId: string, fieldId: string, lock = false) {
   assertValidUuid(fieldId, 'field_not_found');
-  const [row] = await tx
+  const query = tx
     .select()
     .from(collectionFields)
     .where(and(eq(collectionFields.tenantId, tenantId), eq(collectionFields.collectionId, collectionId), eq(collectionFields.id, fieldId)));
+  const [row] = lock ? await query.for('update') : await query;
   if (!row) throw new AppError('field_not_found');
   return row;
 }
@@ -210,7 +212,8 @@ export async function updateField(actor: Actor, collectionId: string, fieldId: s
   const body = UpdateFieldRequestSchema.parse(input);
   return withTenantTx(actor.tenantId, async (tx) => {
     await collectionPage(tx, actor, collectionId, 'editor');
-    const row = await fieldRow(tx, actor.tenantId, collectionId, fieldId);
+    // Locked: two people changing the same field's choices take turns, so neither change is lost.
+    const row = await fieldRow(tx, actor.tenantId, collectionId, fieldId, true);
     const def = fieldDefOf(row);
     const changes: Partial<typeof collectionFields.$inferInsert> = {};
     if (body.name !== undefined && body.name !== row.name) {
@@ -218,8 +221,19 @@ export async function updateField(actor: Actor, collectionId: string, fieldId: s
       changes.name = body.name;
     }
     let choicesRemoved = false;
-    if (body.options !== undefined) {
-      const options = checkOptions(def.type, body.options);
+    let wanted = body.options;
+    if (body.add_choice !== undefined || body.remove_choice !== undefined) {
+      if (def.type !== 'select' && def.type !== 'multi_select') throw new AppError('validation_failed', 'Only choice fields have choices.');
+      let choices = [...(wanted?.choices ?? def.options.choices ?? [])];
+      if (body.remove_choice !== undefined) choices = choices.filter((c) => c.id !== body.remove_choice);
+      const add = body.add_choice;
+      if (add && !choices.some((c) => c.name.toLowerCase() === add.name.toLowerCase())) {
+        choices.push({ id: randomUUID().slice(0, 8), ...add });
+      }
+      wanted = { ...(wanted ?? def.options), choices };
+    }
+    if (wanted !== undefined) {
+      const options = checkOptions(def.type, wanted);
       const kept = new Set((options.choices ?? []).map((c) => c.id));
       choicesRemoved = (def.options.choices ?? []).some((c) => !kept.has(c.id));
       changes.options = options;
@@ -306,6 +320,21 @@ export async function setPageFields(actor: Actor, pageId: string, input: unknown
       const def = row.fields.find((f) => f.id === fieldId);
       if (!def) throw new AppError('field_not_found');
       if (value !== null && !fieldValueFits(def, value)) throw new AppError('field_invalid_value');
+      // A page field may only point at pages the person can open.
+      if (def.type === 'page' && Array.isArray(value)) {
+        for (const id of value as string[]) {
+          const [target] = await tx
+            .select()
+            .from(documents)
+            .where(and(eq(documents.tenantId, actor.tenantId), eq(documents.id, id), isNull(documents.archivedAt)));
+          if (!target) throw new AppError('field_invalid_value');
+          try {
+            await requireDocumentRole(tx, actor, target, 'viewer');
+          } catch {
+            throw new AppError('field_invalid_value');
+          }
+        }
+      }
     }
   });
   if (Object.keys(body).length > 0) {

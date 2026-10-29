@@ -53,6 +53,12 @@ describe('fieldValueFits', () => {
     expect(fieldValueFits(note, 5)).toBe(false);
   });
 
+  test('text Postgres can’t store never fits (NUL, lone surrogates)', () => {
+    expect(fieldValueFits(note, 'a\u0000b')).toBe(false);
+    expect(fieldValueFits(note, 'a\ud800b')).toBe(false);
+    expect(fieldValueFits(note, 'emoji 😀 ok')).toBe(true);
+  });
+
   test('empty values never fit: absence is empty', () => {
     expect(fieldValueFits(note, '')).toBe(false);
     expect(fieldValueFits(tags, [])).toBe(false);

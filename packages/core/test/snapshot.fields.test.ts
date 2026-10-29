@@ -41,7 +41,7 @@ describe('snapshots carry field values', () => {
         ])
         .returning();
     });
-    return { tenant, owner, headers: headers as Headers, clients, george, plain, status: status!, launch: launch! };
+    return { tenant, owner, headers: headers as Headers, spaceId: space.id as string, clients, george, plain, status: status!, launch: launch! };
   }
 
   /** Changes the stored page document as a live edit would, then lets a snapshot read it. */
@@ -104,6 +104,16 @@ describe('snapshots carry field values', () => {
     expect(await snap(w.tenant.id, w.owner.userId, w.plain)).toBeNull();
   });
 
+  test('a value Postgres can’t store is left out of the version, never failing it', async () => {
+    const w = await world();
+    await edit(w.tenant.id, w.george, (doc) => {
+      doc.getMap(FIELDS_MAP).set(w.status.id, 'active');
+      doc.getMap(FIELDS_MAP).set(w.launch.id, { start: '2026-12-01', note: 'x\u0000' });
+    });
+    const v = await snap(w.tenant.id, w.owner.userId, w.george, true);
+    expect(v!.fields).toEqual({ [w.status.id]: 'active' });
+  });
+
   test('ill-typed values are left out of the header', async () => {
     const w = await world();
     await edit(w.tenant.id, w.george, (doc) => {
@@ -117,7 +127,7 @@ describe('snapshots carry field values', () => {
       expect(await rowCollectionOf(tx, w.tenant.id, w.plain)).toBeNull();
       const defs = await collectionFieldDefs(tx, w.tenant.id, w.clients);
       const raw = v!.fields as Record<string, unknown>;
-      return fieldLines(defs, raw, await fieldNames(tx, w.tenant.id, defs, raw));
+      return fieldLines(defs, raw, await fieldNames(tx, w.tenant.id, defs, raw, w.spaceId));
     });
     expect(lines).toEqual(['Launch date: 2026-12-01 (1 December 2026)']);
     const [stored] = await withTenantTx(w.tenant.id, (tx) => tx.select().from(versions).where(eq(versions.id, v!.id)));

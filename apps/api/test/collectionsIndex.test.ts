@@ -1,8 +1,9 @@
 import { describe, test, beforeAll, afterEach, afterAll, expect } from 'vitest';
 import { and, asc, eq } from 'drizzle-orm';
-import { chunks, withTenantTx } from '@living-wiki/db';
+import * as Y from 'yjs';
+import { chunks, jobs, pages, withTenantTx } from '@living-wiki/db';
 import { FIELDS_MAP } from '@living-wiki/contracts';
-import { DeterministicEmbeddingProvider } from '@living-wiki/core';
+import { DeterministicEmbeddingProvider, takePageSnapshot } from '@living-wiki/core';
 import { collabSettle, type CollabServer } from '../../collab/src/server.js';
 import { startCollabServer } from '../../collab/test/support/wsClient.js';
 import { storedDoc } from '../../collab/test/support/collabWorld.js';
@@ -157,6 +158,67 @@ describe('collection fields in the index', () => {
     const status = diff.find((e) => e.blockId === `field:${w.status.id}`);
     expect(status).toMatchObject({ change: 'changed', before: 'Status: Prospect', after: 'Status: Active' });
     expect(diff.find((e) => e.blockId === `field:${w.launch.id}`)).toMatchObject({ change: 'added' });
+  });
+
+  test('a page field never prints the title of a page outside the row’s space', async () => {
+    const w = await world();
+    const related = (await req('POST', w.headers, `/api/v1/collections/${w.clients}/fields`, { name: 'Related', type: 'page' })).json();
+    const secretSpace = (await req('POST', w.headers, '/api/v1/spaces', { name: 'Board', slug: 'board' })).json().id as string;
+    const secret = (
+      await req('POST', w.headers, '/api/v1/pages', { space_id: secretSpace, title: 'Secret plan', slug: 'secret', markdown: 'Hush.' })
+    ).json().id as string;
+    const sibling = await w.page('Tavros', 'tavros');
+    await setFields(w.headers, w.george, { [related.id]: [secret, sibling] });
+    await snapshot(w.headers, w.george);
+    await run(w.tenant.id);
+    const [first] = await chunkTexts(w.tenant.id, w.george);
+    expect(first).toContain('Related: Tavros');
+    expect(first).not.toContain('Secret plan');
+
+    // Someone who can't open a page can't put it in a field.
+    const editor = await signUpMember(app, w.tenant.id, 'member');
+    await req('POST', w.headers, `/api/v1/spaces/${w.space}/grants`, { principal_type: 'user', principal_id: editor.userId, role: 'editor' });
+    const refused = await req('PATCH', editor.headers, `/api/v1/pages/${w.george}/fields`, { [related.id]: [secret] });
+    expect(refused.statusCode).toBe(400);
+    expect(refused.json().error).toBe('field_invalid_value');
+  });
+
+  test('a row indexed only by its fields leaves Search when its field is removed', async () => {
+    const w = await world();
+    const empty = await w.page('Tavros', 'tavros', w.clients, '');
+    await setFields(w.headers, empty, { [w.status.id]: 'lead' });
+    await snapshot(w.headers, empty);
+    await run(w.tenant.id);
+    expect(await chunkTexts(w.tenant.id, empty)).toEqual(['# Tavros\n\nStatus: Prospect']);
+    expect((await req('DELETE', w.headers, `/api/v1/collections/${w.clients}/fields/${w.status.id}`)).statusCode).toBe(204);
+    await run(w.tenant.id);
+    expect(await chunkTexts(w.tenant.id, empty)).toEqual([]);
+    const dead = await withTenantTx(w.tenant.id, (tx) =>
+      tx.select({ status: jobs.status }).from(jobs).where(and(eq(jobs.tenantId, w.tenant.id), eq(jobs.queue, 'document.reindex')))
+    );
+    expect(dead.map((j) => j.status)).toEqual(['completed']);
+  });
+
+  test('a version holding a key that isn’t a field id still restores', async () => {
+    const w = await world();
+    await setFields(w.headers, w.george, { [w.status.id]: 'lead' });
+    await collab.flush(`${w.tenant.id}:${w.george}`).catch(() => undefined);
+    await withTenantTx(w.tenant.id, async (tx) => {
+      const [row] = await tx.select().from(pages).where(and(eq(pages.tenantId, w.tenant.id), eq(pages.documentId, w.george)));
+      const doc = new Y.Doc();
+      Y.applyUpdate(doc, new Uint8Array(row!.ydocState));
+      doc.getMap(FIELDS_MAP).set('junk', 'x');
+      await tx.update(pages).set({ ydocState: Buffer.from(Y.encodeStateAsUpdate(doc)), liveChangedSinceSnapshot: true }).where(eq(pages.documentId, w.george));
+    });
+    const v1 = (
+      await takePageSnapshot({ tenantId: w.tenant.id, pageId: w.george, reason: 'submit', actorType: 'user', actorId: w.owner.userId, manual: true })
+    )!;
+    expect(v1.fields).toMatchObject({ junk: 'x' });
+    await setFields(w.headers, w.george, { [w.status.id]: 'active' });
+    await snapshot(w.headers, w.george);
+    const restored = await req('POST', w.headers, `/api/v1/pages/${w.george}/versions/${v1.number}/restore`);
+    expect(restored.statusCode, restored.body).toBeLessThan(300);
+    expect((await storedDoc(w.tenant.id, w.george)).getMap(FIELDS_MAP).get(w.status.id)).toBe('lead');
   });
 
   test('restore brings back fields; removed ones stay hidden', async () => {

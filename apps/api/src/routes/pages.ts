@@ -670,7 +670,12 @@ export async function restorePageVersion(
     ) {
       throw new AppError('no_changes', 'The latest version already has this content.');
     }
-    const fields = wanted.fields && typeof wanted.fields === 'object' ? (wanted.fields as Record<string, unknown>) : {};
+    // Only keys that can be field ids go back (a stray key a client wrote can't be one).
+    const fields = Object.fromEntries(
+      Object.entries(wanted.fields && typeof wanted.fields === 'object' ? (wanted.fields as Record<string, unknown>) : {}).filter(
+        ([key]) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(key)
+      )
+    );
     return { title: wanted.title, blocks: storedBlocks(wanted.blocks), fields };
   });
 
