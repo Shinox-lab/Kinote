@@ -308,6 +308,14 @@ rest) and a 5 GB image; see `docs/live-checks/2026-10-slice-2-live-check.md` for
 The console's viewers (Markdown, DOCX, XLSX, PDF) load on demand. `pnpm web:build && pnpm bundle:report` prints the
 size of every chunk and fails if a viewer library is in the entry chunk (set `BUNDLE_BASELINE_KB` to also guard its size).
 
+The XLSX preview uses `@extend-ai/react-xlsx` 0.18.1 (MIT). It is still a lazy chunk, but a cold first open downloads
+about 2.3 MB gzip (viewer JS, the Duke WASM, the worker and a font fallback) before the workbook. The web nginx must
+gzip `.js`, `.mjs`, `.css` and `.wasm` and serve `.wasm` as `application/wasm`; without that the WASM is 4.4 MB instead
+of 1.66 MB. The preview is capped at the existing 25 MB `PREVIEW_LIMIT_BYTES`; a larger file is a download card and its
+bytes are never fetched. A corrupt or timed-out workbook also falls back to the download card. The DOM renderer is the
+accessibility choice: a 10k × 20 workbook is about 1.6 s and 33 MB JS heap on the benchmark machine, and a 50k × 20
+workbook about 6.5 s and 120 MB. The 25 MB cap is a memory bound as well as a network bound.
+
 The extractor shares an internal network with the worker only: no internet, no database, no object storage. The worker
 sends the bytes and gets text back. With the extractor stopped, TXT, MD and CSV still work, audio and video are stored
 for download, and other files wait for it and fail with a plain sentence after their retries (Retry recovers them).
