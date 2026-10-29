@@ -51,9 +51,11 @@ export async function markdownBlocks(markdown: string): Promise<BlockLike[]> {
   return restorePageLinks((await editor.tryParseMarkdownToBlocks(markdown)) as BlockLike[]);
 }
 
-/** A new page's stored Yjs state: `blocks` under `title`. */
-export function encodeBlocksYDoc(title: string, blocks: BlockLike[]): Buffer {
+/** A new page's stored Yjs state: `blocks` under `title`, with `fields` as its field values. */
+export function encodeBlocksYDoc(title: string, blocks: BlockLike[], fields: Record<string, unknown> = {}): Buffer {
   const doc = editor.blocksToYDoc(blocks as any, 'document-store');
   doc.getMap('meta').set('title', title);
+  const map = doc.getMap(FIELDS_MAP);
+  for (const [fieldId, value] of Object.entries(fields)) map.set(fieldId, value);
   return Buffer.from(Y.encodeStateAsUpdate(doc));
 }

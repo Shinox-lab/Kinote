@@ -11,6 +11,7 @@ import {
   captures,
   citations,
   documents,
+  pageFieldValues,
   pagePendingContributors,
   pages,
   spaces,
@@ -18,11 +19,12 @@ import {
   writeAuditEvent,
   type DbTransaction,
 } from '@kinote/db';
-import { AppError, FIELD_BLOCK_PREFIX, canonicalFieldJson } from '@kinote/contracts';
+import { AppError, FIELD_BLOCK_PREFIX, canonicalFieldJson, storable } from '@kinote/contracts';
 import { documentName, type BlockLike, type CollabClient } from '@kinote/shared';
 import type { EmbeddingProvider } from '../embedding.js';
 import type { RoutingModel } from '../placement/model.js';
 import { takePageSnapshot } from '../snapshot.js';
+import { rowCollectionOf } from '../collections/fields.js';
 import { blockMarkdown, encodeBlocksYDoc, markdownBlocks, readLiveBlocks } from './liveBlocks.js';
 import { decideShape, planCapture, splitCaptureText, type CheckedEdit, type Gate, type PlannedFact } from './plan.js';
 import { planDocument, uniqueChildTitle } from './document.js';
@@ -507,7 +509,9 @@ export async function applyPlannedFacts(
  * Right before applying: a block a person changed since planning (its text
  * differs from what was planned on, or a person edited it within the
  * space's protection window) is not overwritten; that edit becomes a
- * suggestion. Edits whose block is gone are dropped.
+ * suggestion. Edits whose block is gone are dropped. Fields alike: a field
+ * whose value changed since planning, or that a person changed within the
+ * window, is a suggestion; one the row no longer has is dropped.
  */
 async function recheck(tenantId: string, pageId: string, list: Item[], now: Date) {
   return withTenantTx(tenantId, async (tx) => {
@@ -519,6 +523,22 @@ async function recheck(tenantId: string, pageId: string, list: Item[], now: Date
       .innerJoin(spaces, and(eq(spaces.tenantId, pages.tenantId), eq(spaces.id, pages.spaceId)))
       .where(and(eq(pages.tenantId, tenantId), eq(pages.documentId, pageId)));
     const since = new Date(now.getTime() - (space?.seconds ?? 0) * 1000);
+    const touchedSince = async (blockId: string) => {
+      const [touched] = await tx
+        .select({ at: blockActivity.changedAt })
+        .from(blockActivity)
+        .where(
+          and(
+            eq(blockActivity.tenantId, tenantId),
+            eq(blockActivity.pageId, pageId),
+            eq(blockActivity.blockId, blockId),
+            eq(blockActivity.actorType, 'user'),
+            gt(blockActivity.changedAt, since)
+          )
+        );
+      return touched !== undefined;
+    };
+    const defs = list.some((i) => i.checked.edit.op.op === 'set_field') ? ((await rowCollectionOf(tx, tenantId, pageId))?.fields ?? []) : [];
     const apply: Item[] = [];
     const gated: Array<Item & { gate: Exclude<Gate, null> }> = [];
     for (const item of list) {
@@ -527,21 +547,17 @@ async function recheck(tenantId: string, pageId: string, list: Item[], now: Date
         if (op.after === null || blocks.has(op.after)) apply.push(item);
         continue;
       }
+      if (op.op === 'set_field') {
+        if (!defs.some((d) => d.id === op.fieldId)) continue;
+        const changed = canonicalFieldJson(live?.fields[op.fieldId] ?? null) !== item.checked.expectedText;
+        if (changed || (await touchedSince(`${FIELD_BLOCK_PREFIX}${op.fieldId}`))) gated.push({ ...item, gate: 'protection' });
+        else apply.push(item);
+        continue;
+      }
       if (op.op !== 'replace') continue;
       const block = blocks.get(op.blockId);
       if (!block) continue;
-      const [touched] = await tx
-        .select({ at: blockActivity.changedAt })
-        .from(blockActivity)
-        .where(
-          and(
-            eq(blockActivity.tenantId, tenantId),
-            eq(blockActivity.pageId, pageId),
-            eq(blockActivity.blockId, op.blockId),
-            eq(blockActivity.actorType, 'user'),
-            gt(blockActivity.changedAt, since)
-          )
-        );
+      const touched = await touchedSince(op.blockId);
       const changed = (await blockMarkdown(block)) !== item.checked.beforeMarkdown;
       if (touched || changed) gated.push({ ...item, gate: 'protection' });
       else apply.push(item);
@@ -554,6 +570,11 @@ async function recheck(tenantId: string, pageId: string, list: Item[], now: Date
 async function freshBlocks(markdown: string): Promise<BlockLike[]> {
   return (await markdownBlocks(markdown)).map((b) => ({ ...b, id: randomUUID() }));
 }
+
+/** An edit sent to collab: its new blocks (`keeps` the replaced block's id), or the field value it sets. */
+type Planned =
+  | { item: Item; blocks: BlockLike[]; keeps: string | null; field?: undefined }
+  | { item: Item; field: { fieldId: string; value: unknown }; blocks?: undefined; keeps?: undefined };
 
 /**
  * Applies a page's ungated edits in one collab change and snapshots it.
@@ -572,7 +593,6 @@ async function applyToPage(
   deps: RouteDeps,
   resultOf: (factId: string) => FactResult
 ): Promise<Array<Item & { gate: Exclude<Gate, null> }>> {
-  type Planned = { item: Item; blocks: BlockLike[]; keeps: string | null };
   const planned: Planned[] = [];
   const ops: Parameters<CollabClient['applyBlockOps']>[0]['ops'] = [];
   for (const item of items) {
@@ -593,6 +613,9 @@ async function applyToPage(
         ...(item.checked.expectedText !== null ? { expectedText: item.checked.expectedText } : {}),
       });
       planned.push({ item, blocks, keeps: op.blockId });
+    } else if (op.op === 'set_field') {
+      ops.push({ op: 'set_field', fieldId: op.fieldId, value: op.value, expected: item.checked.expectedText ?? 'null' });
+      planned.push({ item, field: { fieldId: op.fieldId, value: op.value } });
     }
   }
   if (ops.length === 0) return [];
@@ -654,13 +677,31 @@ async function recordChanges(
   tenantId: string,
   captureId: string,
   pageId: string,
-  planned: Array<{ item: Item; blocks: BlockLike[]; keeps: string | null }>,
+  planned: Planned[],
   routerId: string
 ): Promise<string[]> {
   return withTenantTx(tenantId, async (tx) => {
     const ids: string[] = [];
-    for (const { item, blocks, keeps } of planned) {
-      for (const [i, block] of blocks.entries()) {
+    for (const { item, blocks, keeps, field } of planned) {
+      if (field) {
+        // A field change has a receipt row but no citation: there is no block to cite on.
+        const [row] = await tx
+          .insert(captureChanges)
+          .values({
+            tenantId,
+            captureId,
+            factId: item.factId,
+            documentId: pageId,
+            spaceId: item.checked.spaceId,
+            blockId: `${FIELD_BLOCK_PREFIX}${field.fieldId}`,
+            op: 'set_field',
+            beforeMarkdown: item.checked.beforeMarkdown,
+            afterMarkdown: canonicalFieldJson(field.value),
+          })
+          .returning({ id: captureChanges.id });
+        ids.push(row!.id);
+      }
+      for (const [i, block] of (blocks ?? []).entries()) {
         const replaced = i === 0 && keeps !== null;
         const [row] = await tx
           .insert(captureChanges)
@@ -720,7 +761,13 @@ async function createPageFor(
   if (op.op !== 'create_page') return;
   const created = await createEnginePage(
     tenantId,
-    { spaceId: op.spaceId, parentId: op.parentId, title: op.title, markdown: op.markdown },
+    {
+      spaceId: op.spaceId,
+      parentId: op.parentId,
+      title: op.title,
+      markdown: op.markdown,
+      fields: Object.fromEntries((op.fields ?? []).map((f) => [f.fieldId, f.value])),
+    },
     { captureId, factId: item.factId, quote: item.statement, routerId }
   );
   if (created) resultOf(item.factId).applied.push(created.state);
@@ -734,11 +781,12 @@ const DOCUMENT_QUOTE_CHARS = 280;
  * rows (the first block `create_page`, the rest `insert`) and a capture
  * citation per block, in one transaction (`onCreated` runs in it too), then
  * snapshots it. `quote` null cites each block with its own text (a
- * document's page). Null when the Markdown has no blocks.
+ * document's page). `fields` (already resolved) start in its field values,
+ * each with a `set_field` receipt row. Null when the Markdown has no blocks.
  */
 export async function createEnginePage(
   tenantId: string,
-  page: { spaceId: string; parentId: string | null; title: string; markdown: string },
+  page: { spaceId: string; parentId: string | null; title: string; markdown: string; fields?: Record<string, unknown> },
   ctx: {
     captureId: string;
     factId: string | null;
@@ -768,7 +816,7 @@ export async function createEnginePage(
       tenantId,
       spaceId: page.spaceId,
       slug: slugFor(page.title, doc!.id),
-      ydocState: encodeBlocksYDoc(page.title, blocks),
+      ydocState: encodeBlocksYDoc(page.title, blocks, page.fields),
       liveChangedSinceSnapshot: true,
       agentChangedAt: new Date(),
     });
@@ -812,6 +860,27 @@ export async function createEnginePage(
         createdByType: 'agent',
         createdBy: ctx.routerId,
       });
+    }
+    const fieldRows = Object.entries(page.fields ?? {}).filter(([, value]) => storable(value));
+    if (fieldRows.length > 0) {
+      // Collab mirrors the projection when it stores a page; this page was never in collab.
+      await tx.insert(pageFieldValues).values(fieldRows.map(([fieldId, value]) => ({ tenantId, pageId: doc!.id, fieldId, value })));
+    }
+    for (const [fieldId, value] of Object.entries(page.fields ?? {})) {
+      const [row] = await tx
+        .insert(captureChanges)
+        .values({
+          tenantId,
+          captureId: ctx.captureId,
+          factId: ctx.factId,
+          documentId: doc!.id,
+          spaceId: page.spaceId,
+          blockId: `${FIELD_BLOCK_PREFIX}${fieldId}`,
+          op: 'set_field',
+          afterMarkdown: canonicalFieldJson(value),
+        })
+        .returning({ id: captureChanges.id });
+      rowIds.push(row!.id);
     }
     await ctx.onCreated?.(tx, doc!.id);
     return { pageId: doc!.id, rowIds };

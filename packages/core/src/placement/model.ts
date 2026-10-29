@@ -542,7 +542,7 @@ export class OpenAIPlacementModel implements RoutingModel {
     const pages = candidates
       .map(
         (c) =>
-          `## Page ${c.documentId}: ${c.title}\n${treeLine(c)}\nSummary: ${c.summary}\nOutline: ${c.outline.join(' | ') || '(none)'}\n` +
+          `## Page ${c.documentId}: ${c.title}${c.fieldsOnly ? ' (the document itself: only set_field)' : ''}\n${treeLine(c)}\nSummary: ${c.summary}\nOutline: ${c.outline.join(' | ') || '(none)'}\n` +
           c.blocks.map((b) => `[${b.id}] (${b.type}) ${b.text}`).join('\n') +
           (c.fields?.length ? `\nFields:\n${fieldList(c.fields, c.values)}` : '') +
           (c.collectionFields?.length ? `\nNew pages under it can set fields:\n${fieldList(c.collectionFields, null)}` : '')

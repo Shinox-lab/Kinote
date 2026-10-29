@@ -376,7 +376,10 @@ async function planFact(tenantId: string, ctx: Context, input: PlanFactInput, de
   // 2. Gather candidate pages from passages, cards and the graph, fused.
   const [vector] = await deps.embedder.embed([fact.statement], 'query');
   const { candidates, examples } = await withTenantTx(tenantId, async (tx) => {
-    const candidates = await gatherCandidates(tx, ctx, fact, vector!, resolved, deps.fromDocument?.pageId ?? undefined);
+    let candidates = await gatherCandidates(tx, ctx, fact, vector!, resolved, deps.fromDocument?.pageId ?? undefined);
+    // A document filed as a collection row may set its own page's fields (never its text).
+    const own = deps.fromDocument?.pageId ? await documentPageCandidate(tx, ctx, deps.fromDocument.pageId) : null;
+    if (own) candidates = new Map([[own.card.documentId, own], ...candidates]);
     const spaceIds = [...new Set([...candidates.values()].map((c) => c.spaceId))];
     return { candidates, examples: await similarExamples(tx, tenantId, spaceIds, vector!) };
   });
@@ -470,6 +473,35 @@ export async function gatherCandidates(
     });
   }
   return out;
+}
+
+/** A document's own page as a fields-only candidate: null unless it is a collection row the sender can read. */
+async function documentPageCandidate(tx: DbTransaction, ctx: Context, pageId: string): Promise<Candidate | null> {
+  const tenantId = ctx.filter.tenantId;
+  const [doc] = await tx.select().from(documents).where(and(eq(documents.tenantId, tenantId), eq(documents.id, pageId)));
+  if (!doc || doc.kind !== 'page' || doc.archivedAt || !ctx.filter.spaceIds.includes(doc.spaceId)) return null;
+  const live = await readLiveBlocks(tx, tenantId, pageId);
+  if (!live) return null;
+  const fields = await candidateFields(tx, tenantId, doc, live.fields);
+  if (!fields.card.fields) return null;
+  return {
+    spaceId: doc.spaceId,
+    blocks: new Map(),
+    defs: fields.defs,
+    liveFields: live.fields,
+    card: {
+      documentId: pageId,
+      spaceId: doc.spaceId,
+      parentId: doc.parentId,
+      ...(await pageTree(tx, tenantId, doc)),
+      title: doc.title,
+      summary: '',
+      outline: [],
+      blocks: [],
+      ...fields.card,
+      fieldsOnly: true,
+    },
+  };
 }
 
 /** How many sibling and child titles the planner sees per candidate. */
