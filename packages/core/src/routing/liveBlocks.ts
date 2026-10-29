@@ -3,18 +3,20 @@ import { createServerEditor } from '@kinote/shared';
 import { and, eq } from 'drizzle-orm';
 import { pages, type DbTransaction } from '@kinote/db';
 import { flattenBlocks, restorePageLinks, type BlockLike } from '@kinote/shared';
+import { FIELDS_MAP } from '@kinote/contracts';
 
 const editor = createServerEditor();
 
 /**
- * The page's live title and top-level blocks, read from the stored Yjs state
- * (what collab last stored). Null when the page has no live document.
+ * The page's live title, top-level blocks and raw field values (the `fields`
+ * map, unchecked), read from the stored Yjs state (what collab last stored).
+ * Null when the page has no live document.
  */
 export async function readLiveBlocks(
   tx: DbTransaction,
   tenantId: string,
   pageId: string
-): Promise<{ title: string; blocks: BlockLike[] } | null> {
+): Promise<{ title: string; blocks: BlockLike[]; fields: Record<string, unknown> } | null> {
   const [row] = await tx
     .select({ ydocState: pages.ydocState })
     .from(pages)
@@ -26,6 +28,7 @@ export async function readLiveBlocks(
   return {
     title: typeof title === 'string' ? title : '',
     blocks: editor.yDocToBlocks(doc, 'document-store') as BlockLike[],
+    fields: doc.getMap(FIELDS_MAP).toJSON(),
   };
 }
 

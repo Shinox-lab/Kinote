@@ -77,6 +77,7 @@ export {
   type RoutingModel,
   type CaptureFact,
   type PlanCandidate,
+  type PlanField,
   type PlannedOp,
   type PlannedEdit,
   type PlanEditsInput,

@@ -3,7 +3,17 @@ import { DeterministicPlacementModel, OpenAIPlacementModel, type CaptureFact, ty
 
 const model = new DeterministicPlacementModel();
 
-const tree = { spaceId: 's', parentId: null, path: [] as string[], siblings: [] as string[], children: [] as string[] };
+const tree = {
+  spaceId: 's',
+  parentId: null,
+  path: [] as string[],
+  siblings: [] as string[],
+  children: [] as string[],
+  fields: null,
+  values: {},
+  collectionFields: null,
+  fieldsOnly: false,
+};
 
 const billing: PlanCandidate = {
   ...tree,

@@ -2,12 +2,14 @@ import { randomUUID } from 'node:crypto';
 import * as Y from 'yjs';
 import { createServerEditor } from '@kinote/shared';
 import { and, eq } from 'drizzle-orm';
-import { captures, documents, memberships, pages, spaceGrants, spaces, users, withTenantTx } from '@kinote/db';
+import { captures, collectionFields, collections, documents, memberships, pageFieldValues, pages, spaceGrants, spaces, users, withTenantTx } from '@kinote/db';
+import { FIELDS_MAP, type FieldDef, type FieldType } from '@kinote/contracts';
 import { flattenBlocks, type BlockLike } from '@kinote/shared';
 import {
   DeterministicEmbeddingProvider,
   DeterministicPlacementModel,
   buildPageCard,
+  collectionFieldDefs,
   extractVersionEntities,
 } from '../../src/index.js';
 import { encodePageYDoc } from '../../../../apps/api/src/routes/pages.js';
@@ -113,4 +115,51 @@ export async function addCapture(
       .returning()
   );
   return row!.id;
+}
+
+/** Makes `documentId` a collection with `fields` (choices get ids `<field name>:<choice name>` lower-cased). */
+export async function addCollection(
+  w: World,
+  documentId: string,
+  fields: Array<{ name: string; type: FieldType; choices?: string[] }>
+): Promise<FieldDef[]> {
+  return withTenantTx(w.tenantId, async (tx) => {
+    await tx.insert(collections).values({ tenantId: w.tenantId, documentId, createdBy: w.userId });
+    await tx.insert(collectionFields).values(
+      fields.map((f, i) => ({
+        tenantId: w.tenantId,
+        collectionId: documentId,
+        name: f.name,
+        type: f.type,
+        position: `a${i}`,
+        options: f.choices
+          ? { choices: f.choices.map((c) => ({ id: `${f.name}:${c}`.toLowerCase(), name: c, color: 'gray' as const })) }
+          : {},
+      }))
+    );
+    return collectionFieldDefs(tx, w.tenantId, documentId);
+  });
+}
+
+/** Sets field values on the stored live document and the projection, as collab would (null clears). */
+export async function setLiveFields(w: World, pageId: string, values: Record<string, unknown>) {
+  await withTenantTx(w.tenantId, async (tx) => {
+    const [row] = await tx.select().from(pages).where(and(eq(pages.tenantId, w.tenantId), eq(pages.documentId, pageId)));
+    const doc = new Y.Doc();
+    Y.applyUpdate(doc, row!.ydocState);
+    const map = doc.getMap(FIELDS_MAP);
+    for (const [k, v] of Object.entries(values)) {
+      if (v === null) map.delete(k);
+      else map.set(k, v);
+    }
+    await tx
+      .update(pages)
+      .set({ ydocState: Buffer.from(Y.encodeStateAsUpdate(doc)) })
+      .where(and(eq(pages.tenantId, w.tenantId), eq(pages.documentId, pageId)));
+    await tx.delete(pageFieldValues).where(and(eq(pageFieldValues.tenantId, w.tenantId), eq(pageFieldValues.pageId, pageId)));
+    const kept = Object.entries(map.toJSON());
+    if (kept.length > 0) {
+      await tx.insert(pageFieldValues).values(kept.map(([fieldId, value]) => ({ tenantId: w.tenantId, pageId, fieldId, value })));
+    }
+  });
 }

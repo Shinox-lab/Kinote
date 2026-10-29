@@ -18,7 +18,7 @@ import {
   writeAuditEvent,
   type DbTransaction,
 } from '@kinote/db';
-import { AppError } from '@kinote/contracts';
+import { AppError, FIELD_BLOCK_PREFIX, canonicalFieldJson } from '@kinote/contracts';
 import { documentName, type BlockLike, type CollabClient } from '@kinote/shared';
 import type { EmbeddingProvider } from '../embedding.js';
 import type { RoutingModel } from '../placement/model.js';
@@ -845,6 +845,26 @@ async function writeSuggestions(
   for (const item of list) {
     const op = item.checked.edit.op;
     if (op.op === 'already_known' || op.op === 'create_page') continue;
+    if (op.op === 'set_field') {
+      rows.push({
+        tenantId,
+        documentId: op.documentId,
+        spaceId: item.checked.spaceId,
+        blockId: `${FIELD_BLOCK_PREFIX}${op.fieldId}`,
+        afterBlockId: null,
+        kind: 'set_field',
+        proposedMarkdown: canonicalFieldJson(op.value),
+        proposedBlocks: null,
+        expectedText: item.checked.expectedText,
+        reason: item.checked.edit.reason || 'Proposed by the routing engine.',
+        blockedBy: item.gate,
+        conflictCitationId: null,
+        captureId,
+        factId: item.factId,
+      });
+      resultOf(item.factId).suggested += 1;
+      continue;
+    }
     const markdown = op.op === 'remove' ? null : op.markdown;
     rows.push({
       tenantId,

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { ENTITY_KINDS, EDGE_TYPES, normalizeEntityName } from '@kinote/db';
+import type { FieldType } from '@kinote/contracts';
 import { chatJson, type ChatJsonOptions } from '../llm/chatJson.js';
 
 export type EntityKind = (typeof ENTITY_KINDS)[number];
@@ -32,10 +33,20 @@ export interface CaptureShape {
   /** A title for a document's page. */
   title: string | null;
 }
+/** A collection field as the planner sees it: choice names for selects. */
+export interface PlanField {
+  id: string;
+  name: string;
+  type: FieldType;
+  choices: string[];
+}
 /**
  * A page the planner may edit: its card, outline and live top-level blocks
  * (at most 40), and where it sits: its ancestors' titles (root first) and up
- * to 10 sibling and 10 child titles, newest first.
+ * to 10 sibling and 10 child titles, newest first. A collection row also
+ * carries its fields and their live values; a collection, the fields its new
+ * pages may set. A `fieldsOnly` page (a document's own page) takes only
+ * `set_field` edits.
  */
 export interface PlanCandidate {
   documentId: string;
@@ -48,12 +59,28 @@ export interface PlanCandidate {
   siblings: string[];
   children: string[];
   blocks: Array<{ id: string; type: string; text: string }>;
+  /** The fields of the collection this page is a row of; null when it isn't one. */
+  fields: PlanField[] | null;
+  /** fieldId → the live value as text, for fields that hold one. */
+  values: Record<string, string>;
+  /** Set when the page is a collection: the fields a new page under it may set. */
+  collectionFields: PlanField[] | null;
+  fieldsOnly: boolean;
 }
 export type PlannedOp =
   | { op: 'insert_after'; documentId: string; after: string | null; markdown: string }
   | { op: 'replace'; documentId: string; blockId: string; markdown: string }
   | { op: 'remove'; documentId: string; blockId: string }
-  | { op: 'create_page'; spaceId: string; parentId: string | null; title: string; markdown: string }
+  | {
+      op: 'create_page';
+      spaceId: string;
+      parentId: string | null;
+      title: string;
+      markdown: string;
+      /** Field values for a page under a collection. */
+      fields?: Array<{ fieldId: string; value: unknown }>;
+    }
+  | { op: 'set_field'; documentId: string; fieldId: string; value: unknown }
   | { op: 'already_known'; documentId: string; blockId: string };
 export interface PlannedEdit {
   op: PlannedOp;
@@ -188,9 +215,20 @@ const OpSchema: z.ZodType<PlannedOp, z.ZodTypeDef, unknown> = z.discriminatedUni
   z.object({ op: z.literal('insert_after'), documentId: Id, after: Id.nullable(), markdown: Text }),
   z.object({ op: z.literal('replace'), documentId: Id, blockId: Id, markdown: Text }),
   z.object({ op: z.literal('remove'), documentId: Id, blockId: Id }),
-  z.object({ op: z.literal('create_page'), spaceId: Id, parentId: Id.nullable(), title: Name, markdown: Text }),
+  z.object({
+    op: z.literal('create_page'),
+    spaceId: Id,
+    parentId: Id.nullable(),
+    title: Name,
+    markdown: Text,
+    fields: z
+      .array(z.object({ fieldId: Id, value: z.unknown().transform((v) => v ?? null) }))
+      .max(50)
+      .optional(),
+  }),
+  z.object({ op: z.literal('set_field'), documentId: Id, fieldId: Id, value: z.unknown().transform((v) => v ?? null) }),
   z.object({ op: z.literal('already_known'), documentId: Id, blockId: Id }),
-]);
+]) as z.ZodType<PlannedOp, z.ZodTypeDef, unknown>;
 /** Models usually answer flat ({"op": "replace", "documentId", ..., "confidence"}); nest the op fields. */
 function nestOp(raw: unknown): unknown {
   if (!raw || typeof raw !== 'object') return raw;
@@ -370,7 +408,12 @@ export class DeterministicPlacementModel implements RoutingModel {
   }
 
   /**
-   * In order: a block that already says the statement is `already_known`; a
+   * A field first: when the statement names a row candidate's title and one
+   * of its fields, a removal clears the field and anything else sets it to
+   * the text after the last " to ", " is now " or " is " (closing "."
+   * dropped), both at 0.9.
+   *
+   * Then, in order: a block that already says the statement is `already_known`; a
    * removal removes the first block holding the phrase after "no longer"; a
    * change replaces, and a new fact goes after, the first non-heading block
    * naming one of the fact's names; otherwise the fact goes after the last
@@ -382,6 +425,20 @@ export class DeterministicPlacementModel implements RoutingModel {
     const edit = (op: PlannedOp, confidence: number, reason: string) => ({ edits: [{ op, confidence, reason }] });
     const blocks = candidates.flatMap((c) => c.blocks.map((b) => ({ ...b, documentId: c.documentId })));
     const statement = comparable(fact.statement);
+
+    const lower = fact.statement.toLowerCase();
+    for (const c of candidates) {
+      if (!c.fields || !lower.includes(c.title.toLowerCase())) continue;
+      const field = c.fields.find((f) => lower.includes(f.name.toLowerCase()));
+      if (!field) continue;
+      if (fact.kind === 'removal') {
+        return edit({ op: 'set_field', documentId: c.documentId, fieldId: field.id, value: null }, 0.9, 'The field no longer holds a value.');
+      }
+      const marker = [' to ', ' is now ', ' is '].find((m) => fact.statement.includes(m));
+      if (!marker) continue;
+      const value = fact.statement.slice(fact.statement.lastIndexOf(marker) + marker.length).trim().replace(/\.$/, '');
+      return edit({ op: 'set_field', documentId: c.documentId, fieldId: field.id, value }, 0.9, 'The fact sets this field.');
+    }
 
     const known = blocks.find((b) => comparable(b.text) === statement);
     if (known) {
@@ -486,7 +543,9 @@ export class OpenAIPlacementModel implements RoutingModel {
       .map(
         (c) =>
           `## Page ${c.documentId}: ${c.title}\n${treeLine(c)}\nSummary: ${c.summary}\nOutline: ${c.outline.join(' | ') || '(none)'}\n` +
-          c.blocks.map((b) => `[${b.id}] (${b.type}) ${b.text}`).join('\n')
+          c.blocks.map((b) => `[${b.id}] (${b.type}) ${b.text}`).join('\n') +
+          (c.fields?.length ? `\nFields:\n${fieldList(c.fields, c.values)}` : '') +
+          (c.collectionFields?.length ? `\nNew pages under it can set fields:\n${fieldList(c.collectionFields, null)}` : '')
       )
       .join('\n\n');
     const documentRule = fromDocument
@@ -502,7 +561,11 @@ export class OpenAIPlacementModel implements RoutingModel {
         '{"op":"replace","documentId","blockId","markdown","confidence","reason"}, ' +
         '{"op":"remove","documentId","blockId","confidence","reason"}, ' +
         '{"op":"create_page","spaceId","parentId","title","markdown","confidence","reason"}, ' +
+        '{"op":"set_field","documentId","fieldId","value","confidence","reason"}, ' +
         '{"op":"already_known","documentId","blockId","confidence","reason"}. ' +
+        'set_field changes a field listed under a page; value is a plain value: text, a number, YYYY-MM-DD, ' +
+        'a choice name from the list, a list of choice names, a person\'s name, true/false, or null to clear; never invent a choice. ' +
+        'A create_page under a page that lists "New pages under it can set fields" may carry "fields": [{"fieldId","value"}]. ' +
         'Prefer updating the block that already covers the subject; create a page only when no page fits. ' +
         'Use only page and block ids shown. confidence is 0 to 1; reason is one short sentence.' +
         documentRule,
@@ -533,6 +596,16 @@ export class OpenAIPlacementModel implements RoutingModel {
       schema: PlacementsSchema,
     });
   }
+}
+
+/** `[fieldId] name (type; choices: a, b) = value` lines; `values` null lists no current values. */
+function fieldList(fields: PlanField[], values: Record<string, string> | null): string {
+  return fields
+    .map((f) => {
+      const kind = f.choices.length ? `${f.type}; choices: ${f.choices.join(', ')}` : f.type;
+      return `[${f.id}] ${f.name} (${kind})${values ? ` = ${values[f.id] ?? '(empty)'}` : ''}`;
+    })
+    .join('\n');
 }
 
 /** Where a candidate sits in the page tree, for the model. */

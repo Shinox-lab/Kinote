@@ -14,11 +14,13 @@ import {
   rowsOf,
   type DbTransaction,
 } from '@kinote/db';
-import { AppError } from '@kinote/contracts';
+import { AppError, FIELD_BLOCK_PREFIX, canonicalFieldJson, formatFieldValue, validFields, type FieldDef } from '@kinote/contracts';
 import { blockFullText, type BlockLike } from '@kinote/shared';
 import type { EmbeddingProvider } from '../embedding.js';
 import type { Actor } from '../permissions.js';
-import type { CaptureFact, CaptureShape, PlanCandidate, PlannedEdit, RoutingModel } from '../placement/model.js';
+import type { CaptureFact, CaptureShape, PlanCandidate, PlanField, PlannedEdit, RoutingModel } from '../placement/model.js';
+import { collectionFieldDefs, fieldNames, isCollection, rowCollectionOf } from '../collections/fields.js';
+import { resolveFieldValue } from '../collections/resolve.js';
 import { findEntities, pagesForEntities, searchPageCards, type PlacementFilter } from '../placement/queries.js';
 import { searchWiki } from '../search/hybridSearch.js';
 import { senderAccess, senderActor } from './access.js';
@@ -41,9 +43,13 @@ export interface CheckedEdit {
   spaceId: string;
   /** Non-null: becomes a suggestion. */
   gate: Gate;
-  /** The block's Markdown before a replace or remove. */
+  /** The block's Markdown before a replace or remove; for a set_field, the value as canonical JSON (null when empty). */
   beforeMarkdown: string | null;
-  /** The block's text with its children when planned (replace, remove): collab refuses the op if it changed. */
+  /**
+   * The block's text with its children when planned (replace, remove), or a
+   * set_field's value as canonical JSON (`'null'` when empty): collab refuses
+   * the op if it changed.
+   */
   expectedText: string | null;
   /** A still-valid version citation on the block (R4). */
   conflictCitationId: string | null;
@@ -101,6 +107,32 @@ export interface Candidate {
   spaceId: string;
   card: PlanCandidate;
   blocks: Map<string, BlockLike>;
+  /** The fields of the collection the page is a row of (empty when it isn't one). */
+  defs: FieldDef[];
+  /** The page's raw live field values. */
+  liveFields: Record<string, unknown>;
+}
+
+const planField = (d: FieldDef): PlanField => ({ id: d.id, name: d.name, type: d.type, choices: (d.options.choices ?? []).map((c) => c.name) });
+
+/** What the planner is told about a page's fields: the row's fields and live values, a collection's fields. */
+export async function candidateFields(
+  tx: DbTransaction,
+  tenantId: string,
+  doc: { id: string; spaceId: string },
+  liveFields: Record<string, unknown>
+): Promise<{ defs: FieldDef[]; card: Pick<PlanCandidate, 'fields' | 'values' | 'collectionFields'> }> {
+  const row = await rowCollectionOf(tx, tenantId, doc.id);
+  const defs = row?.fields ?? [];
+  const fitting = validFields(defs, liveFields);
+  const names = await fieldNames(tx, tenantId, defs, fitting, doc.spaceId);
+  const values: Record<string, string> = {};
+  for (const def of defs) {
+    const text = def.id in fitting ? formatFieldValue(def, fitting[def.id], names) : null;
+    if (text !== null) values[def.id] = text;
+  }
+  const collectionFields = (await isCollection(tx, tenantId, doc.id)) ? (await collectionFieldDefs(tx, tenantId, doc.id)).map(planField) : null;
+  return { defs, card: { fields: row ? defs.map(planField) : null, values, collectionFields } };
 }
 
 /**
@@ -417,9 +449,12 @@ export async function gatherCandidates(
     if (!live) continue;
     const card = cards.find((c) => c.documentId === id);
     const top = relevantBlocks(live.blocks, hitBlocks.get(id) ?? new Set(), fact.names);
+    const fields = await candidateFields(tx, ctx.filter.tenantId, doc, live.fields);
     out.set(id, {
       spaceId: doc.spaceId,
       blocks: new Map(live.blocks.map((b) => [b.id, b])),
+      defs: fields.defs,
+      liveFields: live.fields,
       card: {
         documentId: id,
         spaceId: doc.spaceId,
@@ -429,6 +464,8 @@ export async function gatherCandidates(
         summary: card?.summary ?? '',
         outline: card?.outline ?? [],
         blocks: top.map((b) => ({ id: b.id, type: b.type, text: blockText(b) })),
+        ...fields.card,
+        fieldsOnly: false,
       },
     });
   }
@@ -535,11 +572,28 @@ async function checkEdits(
         if (!parent || parent.kind !== 'page' || parent.archivedAt || parent.spaceId !== op.spaceId) continue;
       }
       if (edit.confidence < ROUTING.create) continue;
+      if (op.fields) {
+        valid.push({ ...edit, op: { ...op, fields: await newPageFields(tenantId, op) } });
+        continue;
+      }
       valid.push(edit);
       continue;
     }
+    if (op.op === 'set_field') {
+      const candidate = candidates.get(op.documentId);
+      const def = candidate?.defs.find((d) => d.id === op.fieldId);
+      if (!candidate || !def) continue;
+      if (!waived && edit.confidence < ROUTING.apply) continue;
+      const resolved = await withTenantTx(tenantId, (tx) => resolveFieldValue(tx, tenantId, def, op.value, candidate.spaceId));
+      if (!resolved.ok) continue;
+      const current = candidate.liveFields[op.fieldId];
+      // Clearing a field that is already empty changes nothing.
+      if (resolved.value === null && (current === undefined || current === null)) continue;
+      valid.push({ ...edit, op: { ...op, value: resolved.value } });
+      continue;
+    }
     const candidate = candidates.get(op.documentId);
-    if (!candidate) continue;
+    if (!candidate || candidate.card.fieldsOnly) continue;
     const block = op.op === 'insert_after' ? op.after : op.blockId;
     if (block !== null && !candidate.blocks.has(block)) continue;
     if (op.op !== 'already_known' && !waived && edit.confidence < ROUTING.apply) continue;
@@ -574,23 +628,34 @@ async function checkEdits(
       let conflictCitationId: string | null = null;
       let beforeMarkdown: string | null = null;
       let expectedText: string | null = null;
+      const since = () => {
+        const space = spaceRows.find((s) => s.id === spaceId)!;
+        return new Date(now.getTime() - space.humanProtectionSeconds * 1000);
+      };
+
+      if (op.op === 'set_field') {
+        const current = candidates.get(op.documentId)!.liveFields[op.fieldId];
+        const empty = current === undefined || current === null;
+        const blockId = `${FIELD_BLOCK_PREFIX}${op.fieldId}`;
+        const proposed = canonicalFieldJson(op.value);
+        if (!empty && canonicalFieldJson(current) === proposed) {
+          duplicateOf = { documentId: op.documentId, blockId };
+          continue;
+        }
+        let fieldGate: Gate = op.value === null ? 'removal' : null;
+        if (!fieldGate && (await touchedByPerson(tx, tenantId, op.documentId, blockId, since()))) fieldGate = 'protection';
+        if (!fieldGate && !ctx.editable.has(spaceId)) fieldGate = 'no_edit_access';
+        if (await isFieldDuplicate(tx, tenantId, op.documentId, blockId, proposed)) {
+          duplicateOf = { documentId: op.documentId, blockId };
+          continue;
+        }
+        const seen = canonicalFieldJson(empty ? null : current);
+        checked.push({ edit, spaceId, gate: fieldGate, beforeMarkdown: empty ? null : seen, expectedText: seen, conflictCitationId: null });
+        continue;
+      }
 
       if (op.op === 'replace' || op.op === 'remove') {
-        const space = spaceRows.find((s) => s.id === spaceId)!;
-        const since = new Date(now.getTime() - space.humanProtectionSeconds * 1000);
-        const [touched] = await tx
-          .select()
-          .from(blockActivity)
-          .where(
-            and(
-              eq(blockActivity.tenantId, tenantId),
-              eq(blockActivity.pageId, op.documentId),
-              eq(blockActivity.blockId, op.blockId),
-              eq(blockActivity.actorType, 'user'),
-              gt(blockActivity.changedAt, since)
-            )
-          );
-        if (touched && !gate) gate = 'protection';
+        if ((await touchedByPerson(tx, tenantId, op.documentId, op.blockId, since())) && !gate) gate = 'protection';
         const [cited] = await tx
           .select({ id: citations.id })
           .from(citations)
@@ -634,11 +699,87 @@ async function checkEdits(
   });
 }
 
+/** Whether a person changed the block (or `field:<id>`) of the page since `since`. */
+async function touchedByPerson(tx: DbTransaction, tenantId: string, pageId: string, blockId: string, since: Date): Promise<boolean> {
+  const [touched] = await tx
+    .select({ blockId: blockActivity.blockId })
+    .from(blockActivity)
+    .where(
+      and(
+        eq(blockActivity.tenantId, tenantId),
+        eq(blockActivity.pageId, pageId),
+        eq(blockActivity.blockId, blockId),
+        eq(blockActivity.actorType, 'user'),
+        gt(blockActivity.changedAt, since)
+      )
+    );
+  return touched !== undefined;
+}
+
+/**
+ * The fields a new page under a collection starts with: each planned value
+ * resolved against the collection's fields, unresolved and empty ones left
+ * out, the first per field kept. None when the parent is not a collection.
+ */
+async function newPageFields(
+  tenantId: string,
+  op: Extract<PlannedEdit['op'], { op: 'create_page' }>
+): Promise<Array<{ fieldId: string; value: unknown }>> {
+  const parentId = op.parentId;
+  if (!parentId || !op.fields?.length) return [];
+  return withTenantTx(tenantId, async (tx) => {
+    if (!(await isCollection(tx, tenantId, parentId))) return [];
+    const defs = await collectionFieldDefs(tx, tenantId, parentId);
+    const kept: Array<{ fieldId: string; value: unknown }> = [];
+    for (const entry of op.fields!) {
+      const def = defs.find((d) => d.id === entry.fieldId);
+      if (!def || kept.some((k) => k.fieldId === def.id)) continue;
+      const resolved = await resolveFieldValue(tx, tenantId, def, entry.value, op.spaceId);
+      if (resolved.ok && resolved.value !== null) kept.push({ fieldId: def.id, value: resolved.value });
+    }
+    return kept;
+  });
+}
+
+/** The same field value already waits: an open set_field suggestion, or an applied one whose snapshot waits for review. */
+async function isFieldDuplicate(tx: DbTransaction, tenantId: string, documentId: string, blockId: string, proposed: string): Promise<boolean> {
+  const [open] = await tx
+    .select({ id: suggestions.id })
+    .from(suggestions)
+    .where(
+      and(
+        eq(suggestions.tenantId, tenantId),
+        eq(suggestions.documentId, documentId),
+        eq(suggestions.status, 'open'),
+        eq(suggestions.kind, 'set_field'),
+        eq(suggestions.blockId, blockId),
+        eq(suggestions.proposedMarkdown, proposed)
+      )
+    );
+  if (open) return true;
+  const [waiting] = await tx
+    .select({ id: captureChanges.id })
+    .from(captureChanges)
+    .innerJoin(versions, and(eq(versions.tenantId, captureChanges.tenantId), eq(versions.id, captureChanges.versionId)))
+    .where(
+      and(
+        eq(captureChanges.tenantId, tenantId),
+        eq(captureChanges.documentId, documentId),
+        eq(captureChanges.op, 'set_field'),
+        eq(captureChanges.blockId, blockId),
+        eq(captureChanges.afterMarkdown, proposed),
+        eq(captureChanges.status, 'applied'),
+        eq(versions.status, 'pending_review')
+      )
+    );
+  return waiting !== undefined;
+}
+
 /** The same change already waits: an open suggestion, or an applied change whose snapshot waits for review. */
 async function isDuplicate(
   tx: DbTransaction,
   tenantId: string,
-  op: Exclude<PlannedEdit['op'], { op: 'create_page' } | { op: 'already_known' }>
+  op: Exclude<PlannedEdit['op'], { op: 'create_page' } | { op: 'already_known' } | { op: 'set_field' }>
 ): Promise<boolean> {
   const open = await tx
     .select()
