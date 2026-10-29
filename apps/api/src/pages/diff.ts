@@ -1,5 +1,5 @@
-import { flattenBlocks, type BlockLike, type FlatBlock } from '@kinote/shared';
-import { FIELD_BLOCK_PREFIX, type BlockDiffEntry } from '@kinote/contracts';
+import { drawingBlockIds, flattenBlocks, type BlockLike, type FlatBlock } from '@kinote/shared';
+import { FIELD_BLOCK_PREFIX, drawingConfig, drawingDiff, type BlockDiffEntry, type DrawingElement } from '@kinote/contracts';
 
 export type { BlockDiffEntry };
 
@@ -118,4 +118,45 @@ export function withFieldLines(blocks: BlockLike[], lines: Array<{ fieldId: stri
         }) as BlockLike
     ),
   ];
+}
+
+/** One side of a diff's drawings: its blocks and the scenes they show (`versions.drawings`, or live). */
+export interface DrawingSide {
+  blocks: BlockLike[];
+  drawings: Record<string, DrawingElement[]> | null;
+}
+
+/** blockId → drawingId for the drawing blocks of `blocks`, children included. */
+function drawingIdsByBlock(blocks: BlockLike[]): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const [drawingId, blockId] of drawingBlockIds(blocks)) out.set(blockId, drawingId);
+  return out;
+}
+
+/**
+ * Drawing entries of a diff with their shape counts (`drawingDiff`). A
+ * drawing whose words stayed the same but whose shapes changed is `changed`;
+ * one whose shapes didn't change is left as it is, wherever its block moved.
+ */
+export function withDrawingDiffs(entries: BlockDiffEntry[], before: DrawingSide, after: DrawingSide): BlockDiffEntry[] {
+  const beforeIds = drawingIdsByBlock(before.blocks);
+  const afterIds = drawingIdsByBlock(after.blocks);
+  return entries.map((e) => {
+    if (e.type !== drawingConfig.type) return e;
+    const oldId = beforeIds.get(e.blockId);
+    const newId = afterIds.get(e.blockId);
+    const drawingId = newId ?? oldId;
+    if (!drawingId) return e;
+    const was = e.change === 'added' || !oldId ? [] : (before.drawings?.[oldId] ?? []);
+    const now = e.change === 'removed' || !newId ? [] : (after.drawings?.[newId] ?? []);
+    const counts = drawingDiff(was, now);
+    const moved = counts.added + counts.changed + counts.removed > 0;
+    const change = e.change === 'unchanged' && moved ? 'changed' : e.change;
+    return {
+      ...e,
+      change,
+      ...(change === 'changed' && e.change === 'unchanged' ? { before: e.after } : {}),
+      drawing: { drawingId, ...counts },
+    };
+  });
 }

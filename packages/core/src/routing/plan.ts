@@ -14,7 +14,7 @@ import {
   rowsOf,
   type DbTransaction,
 } from '@kinote/db';
-import { AppError, FIELD_BLOCK_PREFIX, canonicalFieldJson, formatFieldValue, validFields, type FieldDef } from '@kinote/contracts';
+import { AppError, FIELD_BLOCK_PREFIX, drawingConfig, canonicalFieldJson, formatFieldValue, validFields, type FieldDef } from '@kinote/contracts';
 import { blockFullText, type BlockLike } from '@kinote/shared';
 import type { EmbeddingProvider } from '../embedding.js';
 import type { Actor } from '../permissions.js';
@@ -628,6 +628,8 @@ async function checkEdits(
     if (!candidate || candidate.card.fieldsOnly) continue;
     const block = op.op === 'insert_after' ? op.after : op.blockId;
     if (block !== null && !candidate.blocks.has(block)) continue;
+    // The engine reads a drawing's words but never changes the drawing (D13); adding beside it is fine.
+    if ((op.op === 'replace' || op.op === 'remove') && candidate.blocks.get(op.blockId)!.type === drawingConfig.type) continue;
     if (op.op !== 'already_known' && !waived && edit.confidence < ROUTING.apply) continue;
     valid.push(edit);
   }

@@ -639,8 +639,16 @@ export const BlockDiffEntrySchema = z.object({
   author: z
     .object({ type: z.enum(['user', 'agent']), id: z.string(), name: z.string().optional() })
     .optional(),
+  /** A drawing block's shapes added, changed and removed between the two sides. */
+  drawing: z
+    .object({ drawingId: z.string(), added: z.number().int(), changed: z.number().int(), removed: z.number().int() })
+    .optional(),
 });
 export type BlockDiffEntry = z.infer<typeof BlockDiffEntrySchema>;
+
+/** Reply of GET /api/v1/pages/:id/drawings/:drawingId: a drawing's live elements, or a version's. */
+export const DrawingSceneSchema = z.object({ elements: z.array(z.custom<DrawingElement>(isDrawingElement)) });
+export type DrawingScene = z.infer<typeof DrawingSceneSchema>;
 
 /** Reply of GET /api/v1/pages/:id/versions (newest first). */
 /** A version in the page's history: the summary plus its author's display name (a member's name, an agent's name, "System" for a connector, "Former member" for someone who left). */

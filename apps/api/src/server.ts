@@ -71,6 +71,7 @@ import {
   ChunkInspectorSchema,
   SearchResponseSchema,
   AskResponseSchema,
+  DrawingSceneSchema,
 } from '@kinote/contracts';
 import {
   getReadableSpaceIds,
@@ -124,6 +125,7 @@ import {
   getVersionDetail,
   getPageChanges,
   comparePageVersions,
+  getPageDrawing,
   getVersionDiff,
 } from './routes/pages.js';
 import { listReviewQueue } from './routes/reviews.js';
@@ -508,6 +510,11 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
     return reply.send(
       parseReply(BlockDiffSchema, await getPageChanges(actorOf(req), (req.params as any).id))
     );
+  });
+
+  app.get('/api/v1/pages/:id/drawings/:drawingId', async (req, reply) => {
+    const { id, drawingId } = req.params as { id: string; drawingId: string };
+    return reply.send(parseReply(DrawingSceneSchema, await getPageDrawing(actorOf(req), id, drawingId, req.query)));
   });
 
   app.get('/api/v1/pages/:id/compare', async (req, reply) => {

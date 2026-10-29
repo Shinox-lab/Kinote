@@ -1,7 +1,10 @@
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { blockActivity, captureFacts, captureMessages, citations, suggestions, withTenantTx } from '@kinote/db';
+import * as Y from 'yjs';
+import { eq } from 'drizzle-orm';
+import { createServerEditor } from '@kinote/shared';
+import { blockActivity, captureFacts, captureMessages, citations, pages, suggestions, withTenantTx } from '@kinote/db';
 import { createTestDb, type TestDb } from '@kinote/db/testing';
-import { planCapture, type FactPlan, type PlanEditsInput, type RoutingModel } from '../src/index.js';
+import { planCapture, type FactPlan, type PlanEditsInput, type PlannedEdit, type RoutingModel } from '../src/index.js';
 import {
   addCapture,
   addMember,
@@ -86,6 +89,28 @@ describe('planCapture', () => {
     );
     const plan = only(await planned(w.tenantId, await addCapture(w, w.userId, 'Billing moved to Adyen.')));
     expect(plan.status === 'planned' && plan.edits.map((e) => [e.gate, e.conflictCitationId])).toEqual([['conflict', cite!.id]]);
+  });
+
+  it('the engine never replaces or removes a drawing block', async () => {
+    const { w, billing } = await billingWorld();
+    const doc = createServerEditor().blocksToYDoc(
+      [
+        { id: 'p1', type: 'paragraph', content: 'Billing uses Stripe.', children: [] },
+        { id: 'd1', type: 'drawing', props: { drawingId: 'g1', title: 'Billing flow' }, children: [] },
+      ] as any,
+      'document-store'
+    );
+    await withTenantTx(w.tenantId, (tx) =>
+      tx.update(pages).set({ ydocState: Buffer.from(Y.encodeStateAsUpdate(doc)) }).where(eq(pages.documentId, billing.documentId))
+    );
+    const edits: PlannedEdit[] = [
+      { op: { op: 'replace', documentId: billing.documentId, blockId: 'd1', markdown: 'Billing flow v2' }, confidence: 0.9, reason: 'r' },
+      { op: { op: 'remove', documentId: billing.documentId, blockId: 'd1' }, confidence: 0.9, reason: 'r' },
+      { op: { op: 'insert_after', documentId: billing.documentId, after: 'd1', markdown: 'Refunds go through Stripe too.' }, confidence: 0.9, reason: 'r' },
+    ];
+    const drawingModel: RoutingModel = Object.assign(Object.create(model), { async planEdits() { return { edits }; } });
+    const plan = only(await planned(w.tenantId, await addCapture(w, w.userId, 'Refunds go through Stripe too.', { pageId: billing.documentId }), drawingModel));
+    expect(plan.status === 'planned' && plan.edits.map((e) => e.edit.op.op)).toEqual(['insert_after']);
   });
 
   it('a page in a read-only space is gated as no_edit_access', async () => {

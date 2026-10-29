@@ -39,6 +39,7 @@ import {
   type VersionListItem,
   type VersionDetail,
   type BlockDiffEntry,
+  DRAWINGS_MAP,
   isDrawingElement,
   type DrawingElement,
 } from '@kinote/contracts';
@@ -56,6 +57,8 @@ import {
   isCollection,
   enqueueReindex,
   pageFieldEntries,
+  versionDrawings,
+  withDrawingText,
   withoutDrawingText,
 } from '@kinote/core';
 import {
@@ -63,6 +66,7 @@ import {
   getCollabTokenSecret,
   documentName,
   COLLAB_TOKEN_TTL_SECONDS,
+  liveElements,
 } from '@kinote/shared';
 import type { BlockLike } from '@kinote/shared';
 import {
@@ -73,7 +77,7 @@ import {
 } from '../documents/lifecycle.js';
 import { computePageBadge } from '../pages/badge.js';
 import { pageCollectionInfo } from './collections.js';
-import { diffBlocks, withFieldLines } from '../pages/diff.js';
+import { diffBlocks, withDrawingDiffs, withFieldLines, type DrawingSide } from '../pages/diff.js';
 import { resolveActorNames } from '../people.js';
 import { canApprove } from '../pages/approval.js';
 import type { CollabClient } from '@kinote/shared';
@@ -344,9 +348,59 @@ async function indexedBlocks(tx: DbTransaction, tenantId: string, doc: DocumentR
   return row ? withFields(tx, tenantId, doc.id, storedBlocks(row.blocks), row.fields) : null;
 }
 
+/** A stored version's drawings, or null. */
+function storedDrawings(drawings: unknown): Record<string, DrawingElement[]> | null {
+  return drawings && typeof drawings === 'object' && !Array.isArray(drawings) ? (drawings as Record<string, DrawingElement[]>) : null;
+}
+
+/** The indexed version's drawing side of a diff (nothing when none is indexed). */
+async function indexedDrawings(tx: DbTransaction, tenantId: string, doc: DocumentRow): Promise<DrawingSide> {
+  if (!doc.indexedVersionId) return { blocks: [], drawings: null };
+  const [row] = await tx
+    .select({ blocks: versions.blocks, drawings: versions.drawings })
+    .from(versions)
+    .where(and(eq(versions.tenantId, tenantId), eq(versions.id, doc.indexedVersionId)));
+  return row ? { blocks: storedBlocks(row.blocks), drawings: storedDrawings(row.drawings) } : { blocks: [], drawings: null };
+}
+
 /** `blocks` with the page's field lines for `fields` after them, so diffs show field changes. */
 async function withFields(tx: DbTransaction, tenantId: string, pageId: string, blocks: BlockLike[], fields: unknown) {
   return withFieldLines(blocks, await pageFieldEntries(tx, tenantId, pageId, fields));
+}
+
+/**
+ * GET /api/v1/pages/:id/drawings/:drawingId?version=<n>: a drawing's live
+ * elements, or version n's. Page readers only (404 `page_not_found`); a
+ * drawing the page (or version) doesn't have is 404 `block_not_found`.
+ */
+export async function getPageDrawing(actor: Actor, pageId: string, drawingId: string, query: unknown): Promise<{ elements: DrawingElement[] }> {
+  assertValidUuid(pageId, 'page_not_found');
+  const raw = (query as { version?: unknown } | null)?.version;
+  const version = raw === undefined ? null : Number(raw);
+  if (version !== null && !(Number.isInteger(version) && version > 0)) throw new AppError('version_not_found');
+  return withTenantTx(actor.tenantId, async (tx) => {
+    await readablePage(tx, actor, pageId);
+    if (version !== null) {
+      const [row] = await tx
+        .select({ drawings: versions.drawings })
+        .from(versions)
+        .where(and(eq(versions.tenantId, actor.tenantId), eq(versions.documentId, pageId), eq(versions.number, version)));
+      if (!row) throw new AppError('version_not_found');
+      const list = storedDrawings(row.drawings)?.[drawingId];
+      if (!Array.isArray(list)) throw new AppError('block_not_found');
+      return { elements: list.filter(isDrawingElement) };
+    }
+    const [page] = await tx
+      .select({ ydocState: pages.ydocState })
+      .from(pages)
+      .where(and(eq(pages.tenantId, actor.tenantId), eq(pages.documentId, pageId)));
+    if (!page) throw new AppError('page_not_found');
+    const ydoc = new Y.Doc();
+    Y.applyUpdate(ydoc, page.ydocState);
+    const scene = ydoc.getMap<unknown>(DRAWINGS_MAP).get(drawingId);
+    if (!(scene instanceof Y.Map)) throw new AppError('block_not_found');
+    return { elements: liveElements(scene as Y.Map<unknown>) };
+  });
 }
 
 /** GET /api/v1/pages/:id/versions: the page's versions as summaries, newest first. */
@@ -469,16 +523,15 @@ export async function getPageChanges(actor: Actor, pageId: string): Promise<Bloc
     }
     const ydoc = new Y.Doc();
     Y.applyUpdate(ydoc, page.ydocState);
-    const live = await withFields(
-      tx,
-      actor.tenantId,
-      pageId,
-      blockNote.yDocToBlocks(ydoc, 'document-store') as BlockLike[],
-      ydoc.getMap(FIELDS_MAP).toJSON()
-    );
+    // Live drawing blocks read their words from the live scene, as the snapshot will.
+    const liveBlocks = withDrawingText(blockNote.yDocToBlocks(ydoc, 'document-store') as BlockLike[], ydoc);
+    const live = await withFields(tx, actor.tenantId, pageId, liveBlocks, ydoc.getMap(FIELDS_MAP).toJSON());
 
     const activity = await pageActivity(tx, actor.tenantId, pageId);
-    const diff = diffBlocks(before, live, activity);
+    const diff = withDrawingDiffs(diffBlocks(before, live, activity), await indexedDrawings(tx, actor.tenantId, doc), {
+      blocks: liveBlocks,
+      drawings: versionDrawings(liveBlocks, ydoc),
+    });
     // Names for every role that can read the page: the author's display name
     // only, resolved against the tenant's memberships (see resolveActorNames).
     const names = await resolveActorNames(
@@ -513,7 +566,7 @@ export async function comparePageVersions(
   return withTenantTx(actor.tenantId, async (tx) => {
     await readablePage(tx, actor, pageId);
     const rows = await tx
-      .select({ number: versions.number, blocks: versions.blocks, fields: versions.fields })
+      .select({ number: versions.number, blocks: versions.blocks, fields: versions.fields, drawings: versions.drawings })
       .from(versions)
       .where(
         and(
@@ -527,10 +580,15 @@ export async function comparePageVersions(
     if (!fromRow || !toRow) {
       throw new AppError('version_not_found');
     }
-    return diffBlocks(
+    const entries = diffBlocks(
       await withFields(tx, actor.tenantId, pageId, storedBlocks(fromRow.blocks), fromRow.fields),
       await withFields(tx, actor.tenantId, pageId, storedBlocks(toRow.blocks), toRow.fields),
       []
+    );
+    return withDrawingDiffs(
+      entries,
+      { blocks: storedBlocks(fromRow.blocks), drawings: storedDrawings(fromRow.drawings) },
+      { blocks: storedBlocks(toRow.blocks), drawings: storedDrawings(toRow.drawings) }
     );
   });
 }
@@ -546,7 +604,7 @@ export async function getVersionDiff(actor: Actor, versionId: string): Promise<B
   return withTenantTx(actor.tenantId, async (tx) => {
     const { ver, doc } = await readableVersion(tx, actor, versionId);
     const [stored] = await tx
-      .select({ fields: versions.fields })
+      .select({ fields: versions.fields, drawings: versions.drawings })
       .from(versions)
       .where(and(eq(versions.tenantId, actor.tenantId), eq(versions.id, versionId)));
     const after = await withFields(tx, actor.tenantId, doc.id, storedBlocks(ver.blocks), stored?.fields);
@@ -555,8 +613,10 @@ export async function getVersionDiff(actor: Actor, versionId: string): Promise<B
     // shows all its content as `added`.
     const base =
       doc.indexedVersionId === ver.id ? after : ((await indexedBlocks(tx, actor.tenantId, doc)) ?? []);
+    const afterSide = { blocks: storedBlocks(ver.blocks), drawings: storedDrawings(stored?.drawings) };
+    const baseSide = doc.indexedVersionId === ver.id ? afterSide : await indexedDrawings(tx, actor.tenantId, doc);
     // No authors, for the reason given at comparePageVersions.
-    return diffBlocks(base, after, []);
+    return withDrawingDiffs(diffBlocks(base, after, []), baseSide, afterSide);
   });
 }
 
