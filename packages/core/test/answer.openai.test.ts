@@ -79,7 +79,9 @@ describe('OpenAIAnswerProvider', () => {
   });
 
   it('sends collection tables after the passages, one row per line with its own citation', async () => {
-    const fetchImpl = vi.fn(async () => response({ choices: [{ message: { content: 'George [George (v1, updated 2026-10-30)]' } }] }));
+    const fetchImpl = vi.fn(async () =>
+      response({ choices: [{ message: { content: 'George [George (v1, updated 2026-10-30)]' } }] })
+    ) as unknown as typeof fetch;
     await provider(fetchImpl).answer({
       question: 'Which clients launch in December?',
       passages: [passage()],
@@ -99,7 +101,7 @@ describe('OpenAIAnswerProvider', () => {
       ],
     });
     const [, init] = vi.mocked(fetchImpl).mock.calls[0]!;
-    const user = JSON.parse(String((init as RequestInit).body)).messages[1].content as string;
+    const user = JSON.parse(String(init?.body)).messages[1].content as string;
     expect(user).toContain('Tables:\n\nTable: Clients (each row cites itself)\nTitle | Status | Launch date | Cite as\nGeorge |  | 2026-12-01 (1 December 2026) | George (v1, updated 2026-10-30)\n(more rows not shown)');
   });
 
