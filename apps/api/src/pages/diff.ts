@@ -120,10 +120,11 @@ export function withFieldLines(blocks: BlockLike[], lines: Array<{ fieldId: stri
   ];
 }
 
-/** One side of a diff's drawings: its blocks and the scenes they show (`versions.drawings`, or live). */
+/** One side of a diff's drawings: its blocks, the scenes they show (`versions.drawings`, or live), and its version number (null: live). */
 export interface DrawingSide {
   blocks: BlockLike[];
   drawings: Record<string, DrawingElement[]> | null;
+  version: number | null;
 }
 
 /** blockId → drawingId for the drawing blocks of `blocks`, children included. */
@@ -138,7 +139,7 @@ function drawingIdsByBlock(blocks: BlockLike[]): Map<string, string> {
  * drawing whose words stayed the same but whose shapes changed is `changed`;
  * one whose shapes didn't change is left as it is, wherever its block moved.
  */
-export function withDrawingDiffs(entries: BlockDiffEntry[], before: DrawingSide, after: DrawingSide): BlockDiffEntry[] {
+export function withDrawingDiffs(pageId: string, entries: BlockDiffEntry[], before: DrawingSide, after: DrawingSide): BlockDiffEntry[] {
   const beforeIds = drawingIdsByBlock(before.blocks);
   const afterIds = drawingIdsByBlock(after.blocks);
   return entries.map((e) => {
@@ -156,7 +157,7 @@ export function withDrawingDiffs(entries: BlockDiffEntry[], before: DrawingSide,
       ...e,
       change,
       ...(change === 'changed' && e.change === 'unchanged' ? { before: e.after } : {}),
-      drawing: { drawingId, ...counts },
+      drawing: { drawingId, pageId, beforeVersion: before.version, afterVersion: after.version, ...counts },
     };
   });
 }

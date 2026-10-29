@@ -1,5 +1,6 @@
 import type { BlockDiffEntry } from '@kinote/contracts';
 import { changeLabel, changedEntries, type ChangeKind } from '../lib/diff.js';
+import { DrawingChange } from './drawing/DrawingChange.js';
 
 const TONE: Record<ChangeKind, string> = {
   added: 'border-diff-added-line bg-diff-added',
@@ -86,12 +87,18 @@ export function ReviewDocument({ entries, label }: { entries: readonly BlockDiff
                   {changeLabel(kind)}
                 </p>
               )}
-              {kind === 'changed' && (
-                <div className="text-muted line-through">
-                  <BlockText entry={entry} text={text(entry.before)} marker={marker} />
-                </div>
+              {entry.drawing ? (
+                <DrawingChange entry={{ ...entry, drawing: entry.drawing }} />
+              ) : (
+                <>
+                  {kind === 'changed' && (
+                    <div className="text-muted line-through">
+                      <BlockText entry={entry} text={text(entry.before)} marker={marker} />
+                    </div>
+                  )}
+                  <BlockText entry={entry} text={text(kind === 'removed' ? entry.before : entry.after)} marker={marker} />
+                </>
               )}
-              <BlockText entry={entry} text={text(kind === 'removed' ? entry.before : entry.after)} marker={marker} />
             </li>
           );
         })}

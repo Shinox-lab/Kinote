@@ -2,6 +2,7 @@ import type { BlockDiffEntry } from '@kinote/contracts';
 import { changeLabel, changedEntries, diffSummary, type Change } from '../lib/diff.js';
 import { useAuthorNames } from '../lib/queries.js';
 import { authorLabel } from '../lib/wiki.js';
+import { DrawingChange } from './drawing/DrawingChange.js';
 
 const TONE = {
   added: 'border-diff-added-line bg-diff-added',
@@ -26,8 +27,14 @@ function Entry({ entry, names, selfId }: { entry: Change; names: Map<string, str
         )}
       </p>
       {/* Block text is rendered as React text children only: it is page content, never markup. */}
-      {entry.change === 'changed' && <p className="whitespace-pre-wrap break-words text-muted line-through">{text(entry.before)}</p>}
-      <p className="whitespace-pre-wrap break-words text-fg">{text(entry.change === 'removed' ? entry.before : entry.after)}</p>
+      {entry.drawing ? (
+        <DrawingChange entry={{ ...entry, drawing: entry.drawing }} />
+      ) : (
+        <>
+          {entry.change === 'changed' && <p className="whitespace-pre-wrap break-words text-muted line-through">{text(entry.before)}</p>}
+          <p className="whitespace-pre-wrap break-words text-fg">{text(entry.change === 'removed' ? entry.before : entry.after)}</p>
+        </>
+      )}
     </li>
   );
 }

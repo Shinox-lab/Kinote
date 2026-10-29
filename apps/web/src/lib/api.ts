@@ -16,6 +16,7 @@ import {
   ChunkInspectorSchema,
   CreateSourceTokenResponseSchema,
   BlockDiffSchema,
+  DrawingSceneSchema,
   CollabTokenResponseSchema,
   CreateTenantResponseSchema,
   DocumentSummarySchema,
@@ -327,6 +328,11 @@ export const api = {
   getVersion: (id: string) => request(`/api/v1/versions/${e(id)}`, VersionDetailSchema),
   versionDiff: (id: string) => request(`/api/v1/versions/${e(id)}/diff`, BlockDiffSchema),
   pageChanges: (pageId: string) => request(`/api/v1/pages/${e(pageId)}/changes`, BlockDiffSchema),
+  getDrawing: (pageId: string, drawingId: string, version: number | null) =>
+    request(
+      `/api/v1/pages/${e(pageId)}/drawings/${e(drawingId)}${version === null ? '' : `?version=${version}`}`,
+      DrawingSceneSchema
+    ),
   compareVersions: (pageId: string, from: number, to: number) =>
     request(`/api/v1/pages/${e(pageId)}/compare?from=${from}&to=${to}`, BlockDiffSchema),
   restoreVersion: (pageId: string, n: number) =>

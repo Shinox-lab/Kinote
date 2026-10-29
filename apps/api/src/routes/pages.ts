@@ -355,12 +355,14 @@ function storedDrawings(drawings: unknown): Record<string, DrawingElement[]> | n
 
 /** The indexed version's drawing side of a diff (nothing when none is indexed). */
 async function indexedDrawings(tx: DbTransaction, tenantId: string, doc: DocumentRow): Promise<DrawingSide> {
-  if (!doc.indexedVersionId) return { blocks: [], drawings: null };
+  if (!doc.indexedVersionId) return { blocks: [], drawings: null, version: null };
   const [row] = await tx
-    .select({ blocks: versions.blocks, drawings: versions.drawings })
+    .select({ blocks: versions.blocks, drawings: versions.drawings, number: versions.number })
     .from(versions)
     .where(and(eq(versions.tenantId, tenantId), eq(versions.id, doc.indexedVersionId)));
-  return row ? { blocks: storedBlocks(row.blocks), drawings: storedDrawings(row.drawings) } : { blocks: [], drawings: null };
+  return row
+    ? { blocks: storedBlocks(row.blocks), drawings: storedDrawings(row.drawings), version: row.number }
+    : { blocks: [], drawings: null, version: null };
 }
 
 /** `blocks` with the page's field lines for `fields` after them, so diffs show field changes. */
@@ -528,9 +530,10 @@ export async function getPageChanges(actor: Actor, pageId: string): Promise<Bloc
     const live = await withFields(tx, actor.tenantId, pageId, liveBlocks, ydoc.getMap(FIELDS_MAP).toJSON());
 
     const activity = await pageActivity(tx, actor.tenantId, pageId);
-    const diff = withDrawingDiffs(diffBlocks(before, live, activity), await indexedDrawings(tx, actor.tenantId, doc), {
+    const diff = withDrawingDiffs(pageId, diffBlocks(before, live, activity), await indexedDrawings(tx, actor.tenantId, doc), {
       blocks: liveBlocks,
       drawings: versionDrawings(liveBlocks, ydoc),
+      version: null,
     });
     // Names for every role that can read the page: the author's display name
     // only, resolved against the tenant's memberships (see resolveActorNames).
@@ -586,9 +589,10 @@ export async function comparePageVersions(
       []
     );
     return withDrawingDiffs(
+      pageId,
       entries,
-      { blocks: storedBlocks(fromRow.blocks), drawings: storedDrawings(fromRow.drawings) },
-      { blocks: storedBlocks(toRow.blocks), drawings: storedDrawings(toRow.drawings) }
+      { blocks: storedBlocks(fromRow.blocks), drawings: storedDrawings(fromRow.drawings), version: from },
+      { blocks: storedBlocks(toRow.blocks), drawings: storedDrawings(toRow.drawings), version: to }
     );
   });
 }
@@ -613,10 +617,10 @@ export async function getVersionDiff(actor: Actor, versionId: string): Promise<B
     // shows all its content as `added`.
     const base =
       doc.indexedVersionId === ver.id ? after : ((await indexedBlocks(tx, actor.tenantId, doc)) ?? []);
-    const afterSide = { blocks: storedBlocks(ver.blocks), drawings: storedDrawings(stored?.drawings) };
+    const afterSide = { blocks: storedBlocks(ver.blocks), drawings: storedDrawings(stored?.drawings), version: ver.number };
     const baseSide = doc.indexedVersionId === ver.id ? afterSide : await indexedDrawings(tx, actor.tenantId, doc);
     // No authors, for the reason given at comparePageVersions.
-    return withDrawingDiffs(diffBlocks(base, after, []), baseSide, afterSide);
+    return withDrawingDiffs(doc.id, diffBlocks(base, after, []), baseSide, afterSide);
   });
 }
 

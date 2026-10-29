@@ -106,14 +106,14 @@ describe('drawings over the API', () => {
     expect(diff.find((e: { blockId: string }) => e.blockId === 'd1')).toMatchObject({
       change: 'changed',
       type: 'drawing',
-      drawing: { drawingId: 'g1', added: 0, changed: 1, removed: 0 },
+      drawing: { drawingId: 'g1', pageId: w.page, beforeVersion: 1, afterVersion: 2, added: 0, changed: 1, removed: 0 },
     });
     // The live changes view reads the live scene the same way.
     await setLive(w.tenant.id, w.page, [el('A', { x: 40, version: 2 }), el('B'), el('C')]);
     const changes = (await req('GET', w.headers, `/api/v1/pages/${w.page}/changes`)).json();
     expect(changes.find((e: { blockId: string }) => e.blockId === 'd1')).toMatchObject({
       change: 'changed',
-      drawing: { added: 1, changed: 0, removed: 0 },
+      drawing: { beforeVersion: 2, afterVersion: null, added: 1, changed: 0, removed: 0 },
     });
   });
 });

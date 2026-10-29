@@ -639,9 +639,21 @@ export const BlockDiffEntrySchema = z.object({
   author: z
     .object({ type: z.enum(['user', 'agent']), id: z.string(), name: z.string().optional() })
     .optional(),
-  /** A drawing block's shapes added, changed and removed between the two sides. */
+  /**
+   * A drawing block's shapes added, changed and removed between the two sides,
+   * and where to read each side's scene (GET /pages/:pageId/drawings/:drawingId?version=): a version number, or
+   * null for the live page.
+   */
   drawing: z
-    .object({ drawingId: z.string(), added: z.number().int(), changed: z.number().int(), removed: z.number().int() })
+    .object({
+      drawingId: z.string(),
+      pageId: z.string(),
+      beforeVersion: z.number().int().nullable(),
+      afterVersion: z.number().int().nullable(),
+      added: z.number().int(),
+      changed: z.number().int(),
+      removed: z.number().int(),
+    })
     .optional(),
 });
 export type BlockDiffEntry = z.infer<typeof BlockDiffEntrySchema>;

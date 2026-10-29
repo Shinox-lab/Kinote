@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import type { BlockDiffEntry } from '@kinote/contracts';
-import { changeLabel, changedEntries, diffCounts, diffSummary } from '../src/lib/diff.js';
+import { changeLabel, changedEntries, diffCounts, diffSummary, drawingChangeText } from '../src/lib/diff.js';
 
 const entry = (blockId: string, change: BlockDiffEntry['change']): BlockDiffEntry => ({ blockId, change, type: 'paragraph' });
 
@@ -46,5 +46,14 @@ describe('changeLabel', () => {
     expect(changeLabel('added')).toBe('Added');
     expect(changeLabel('changed')).toBe('Changed');
     expect(changeLabel('removed')).toBe('Removed');
+  });
+});
+
+describe('drawingChangeText', () => {
+  test('words the shapes added, changed and removed', () => {
+    expect(drawingChangeText({ added: 3, changed: 1, removed: 2 })).toBe('3 shapes added, 1 changed, 2 removed');
+    expect(drawingChangeText({ added: 1, changed: 0, removed: 0 })).toBe('1 shape added');
+    expect(drawingChangeText({ added: 0, changed: 2, removed: 0 })).toBe('2 shapes changed');
+    expect(drawingChangeText({ added: 0, changed: 0, removed: 0 })).toBe('No changes to the drawing');
   });
 });

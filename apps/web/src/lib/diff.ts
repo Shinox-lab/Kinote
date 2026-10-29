@@ -35,3 +35,16 @@ export function diffSummary(entries: readonly BlockDiffEntry[]): string {
   const parts = ORDER.filter((kind) => counts[kind] > 0).map((kind) => `${counts[kind]} ${kind}`);
   return parts.length > 0 ? parts.join(' · ') : 'No block changes';
 }
+
+/** A drawing's change in words: `3 shapes added, 1 changed, 2 removed` (zero parts left out). */
+export function drawingChangeText(d: { added: number; changed: number; removed: number }): string {
+  const parts = [
+    d.added > 0 ? `${d.added} added` : null,
+    d.changed > 0 ? `${d.changed} changed` : null,
+    d.removed > 0 ? `${d.removed} removed` : null,
+  ].filter((p): p is string => p !== null);
+  if (parts.length === 0) return 'No changes to the drawing';
+  const first = d.added || d.changed || d.removed;
+  parts[0] = `${first} ${first === 1 ? 'shape' : 'shapes'} ${parts[0]!.split(' ')[1]}`;
+  return parts.join(', ');
+}
