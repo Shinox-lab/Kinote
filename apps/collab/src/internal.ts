@@ -1,4 +1,4 @@
-import { createHash, timingSafeEqual } from 'node:crypto';
+import { createHash, randomInt, timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import * as Y from 'yjs';
 import { createServerEditor } from '@kinote/shared';
@@ -14,6 +14,9 @@ import {
   CollabSetTitleRequestSchema,
   CollabSetFieldsRequestSchema,
   FIELDS_MAP,
+  DRAWINGS_MAP,
+  isDrawingElement,
+  type DrawingElement,
   canonicalFieldJson,
   ERROR_SENTENCES,
   type ErrorCode,
@@ -47,7 +50,7 @@ export const INTERNAL_PATHS = {
 export const REVOKED_CLOSE = { code: 4205, reason: 'Reset Connection' } as const;
 
 /** Largest JSON body the internal endpoints read. */
-export const MAX_INTERNAL_BODY_BYTES = 2 * 1024 * 1024;
+export const MAX_INTERNAL_BODY_BYTES = 8 * 1024 * 1024;
 
 const blockNote = createServerEditor();
 
@@ -121,7 +124,7 @@ async function trustedContext(
 export async function replaceDocumentBlocks(server: Hocuspocus, input: unknown): Promise<void> {
   const parsed = CollabReplaceBlocksRequestSchema.safeParse(input);
   if (!parsed.success) throw new AppError('validation_failed');
-  const { documentName, title, blocks, actor, source, fields } = parsed.data;
+  const { documentName, title, blocks, actor, source, fields, drawings } = parsed.data;
   const { tenantId, pageId } = requireDocument(documentName);
 
   // Convert once off-document first: invalid blocks are refused before the
@@ -145,9 +148,39 @@ export async function replaceDocumentBlocks(server: Hocuspocus, input: unknown):
         for (const key of [...map.keys()]) if (!(key in fields)) map.delete(key);
         for (const [key, value] of Object.entries(fields)) map.set(key, value);
       }
+      if (drawings) restoreDrawings(doc, drawings);
     });
   } finally {
     await session.close();
+  }
+}
+
+/**
+ * Each named drawing's scene becomes `elements`: every element is written
+ * with a version past the live one (so open editors take it over what they
+ * hold), and live elements not in `elements` become tombstones the same way.
+ * Drawings not named are left alone.
+ */
+function restoreDrawings(doc: Y.Doc, drawings: Record<string, DrawingElement[]>) {
+  const root = doc.getMap<Y.Map<unknown>>(DRAWINGS_MAP);
+  const nonce = () => randomInt(0, 2 ** 31);
+  for (const [drawingId, elements] of Object.entries(drawings)) {
+    let scene = root.get(drawingId);
+    if (!(scene instanceof Y.Map)) {
+      scene = new Y.Map();
+      root.set(drawingId, scene);
+    }
+    const kept = new Set<string>();
+    for (const element of elements) {
+      const live = scene.get(element.id);
+      const liveVersion = isDrawingElement(live) ? live.version : 0;
+      scene.set(element.id, { ...element, isDeleted: false, version: Math.max(liveVersion, element.version) + 1, versionNonce: nonce() });
+      kept.add(element.id);
+    }
+    for (const [id, live] of [...scene.entries()]) {
+      if (kept.has(id) || !isDrawingElement(live) || live.isDeleted) continue;
+      scene.set(id, { ...live, isDeleted: true, version: live.version + 1, versionNonce: nonce() });
+    }
   }
 }
 

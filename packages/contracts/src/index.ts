@@ -6,6 +6,7 @@ export * from './collections.js';
 export * from './views.js';
 export * from './drawings.js';
 import { CollectionSchema, FieldChangeSchema } from './collections.js';
+import { MAX_DRAWING_ELEMENTS, isDrawingElement, type DrawingElement } from './drawings.js';
 
 export const TenantRoleSchema = z.enum(['owner', 'admin', 'member', 'viewer']);
 export type TenantRole = z.infer<typeof TenantRoleSchema>;
@@ -836,6 +837,10 @@ export const CollabReplaceBlocksRequestSchema = z
     source: z.enum(['restore', 'agent']),
     /** When given, the page's whole `fields` map becomes these values (a restore brings back a version's fields). */
     fields: z.record(z.string().uuid(), z.unknown()).optional(),
+    /** Drawing scenes to bring back, by drawing id: each becomes exactly these elements (the rest are tombstoned). */
+    drawings: z
+      .record(z.string().min(1).max(100), z.array(z.custom<DrawingElement>(isDrawingElement, 'Not a drawing element.')).max(MAX_DRAWING_ELEMENTS))
+      .optional(),
   })
   .superRefine((req, ctx) => {
     const expected = req.source === 'agent' ? 'agent' : 'user';

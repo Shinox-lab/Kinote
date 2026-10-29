@@ -14,13 +14,17 @@ import { BLOCK_FRAGMENT } from './fragment.js';
  *         blockGroup?            (nested children, same shape again)
  *
  * The title lives in the `meta` map, outside the fragment; collection field
- * values in the `fields` map, keyed by field id.
+ * values in the `fields` map, keyed by field id; drawing scenes in the
+ * `drawings` map, keyed by drawing id (each a map of elements).
  */
 
 const BLOCK_CONTAINER = 'blockContainer';
 const META = 'meta';
 /** The page's field values (FIELDS_MAP): a change to a key is named `field:<key>`. */
 const FIELDS = 'fields';
+/** Drawing scenes (DRAWINGS_MAP): a change names the drawing block showing that scene. */
+const DRAWINGS = 'drawings';
+const DRAWING_NODE = 'drawing';
 
 type AnyType = Y.AbstractType<any>;
 
@@ -64,6 +68,40 @@ function collectContainers(type: AnyType, ids: Set<string>): void {
   }
 }
 
+/** drawingId → the id of the first live block showing it, read from the fragment. */
+function drawingBlocks(doc: Y.Doc): Map<string, string> {
+  const out = new Map<string, string>();
+  const fragment = doc.share.get(BLOCK_FRAGMENT);
+  const walk = (type: AnyType) => {
+    if (!(type instanceof Y.XmlElement || type instanceof Y.XmlFragment)) return;
+    for (const child of type.toArray()) {
+      if (!(child instanceof Y.XmlElement)) continue;
+      if (child.nodeName === DRAWING_NODE) {
+        const drawingId = child.getAttribute('drawingId');
+        const container = nearestContainer(child);
+        const id = container?.getAttribute('id');
+        if (typeof drawingId === 'string' && drawingId !== '' && typeof id === 'string' && !out.has(drawingId)) out.set(drawingId, id);
+      }
+      walk(child);
+    }
+  };
+  if (fragment) walk(fragment);
+  return out;
+}
+
+/** The drawing ids a transaction changed scenes of: keys of the `drawings` map, or the key an element map sits under. */
+function changedDrawingIds(tx: Y.Transaction, drawings: AnyType): Set<string> {
+  const ids = new Set<string>();
+  for (const [type, keys] of tx.changed) {
+    if (type === drawings) {
+      for (const key of keys) if (typeof key === 'string' && key !== '') ids.add(key);
+    } else if (parentOf(type) === drawings && typeof type._item?.parentSub === 'string') {
+      ids.add(type._item.parentSub);
+    }
+  }
+  return ids;
+}
+
 /** Created by this transaction (Yjs leaves new types out of `tx.changed`). */
 function isNew(tx: Y.Transaction, item: Y.Item): boolean {
   return item.id.clock >= (tx.beforeState.get(item.id.client) ?? 0);
@@ -81,15 +119,29 @@ function isNew(tx: Y.Transaction, item: Y.Item): boolean {
  * - A deleted block names nothing itself: removing a top-level block changes
  *   only the root `blockGroup` (no container above it); removing a nested
  *   child names its parent, whose content did change.
+ * - A change to a drawing's scene names the block showing that drawing (none
+ *   when no block shows it).
  */
 export function changedBlockIds(tx: Y.Transaction): string[] {
   const ids = new Set<string>();
   const fields = tx.doc.share.get(FIELDS);
+  const drawings = tx.doc.share.get(DRAWINGS);
+  if (drawings) {
+    const changed = changedDrawingIds(tx, drawings);
+    if (changed.size > 0) {
+      const blocks = drawingBlocks(tx.doc);
+      for (const drawingId of changed) {
+        const id = blocks.get(drawingId);
+        if (id) ids.add(id);
+      }
+    }
+  }
   for (const [type, keys] of tx.changed) {
     if (fields && type === fields) {
       for (const key of keys) if (typeof key === 'string' && key !== '') ids.add(`field:${key}`);
       continue;
     }
+    if (drawings && rootOf(type) === drawings) continue;
     if (isDeleted(type)) continue;
     const container = nearestContainer(type);
     if (container) {
@@ -108,8 +160,8 @@ export function changedBlockIds(tx: Y.Transaction): string[] {
 
 /**
  * True when the transaction changed the page: its block fragment, its
- * `meta` map (the title) or its `fields` map (collection field values). Other shared types of the document are not page
- * content and are not attributed, and neither is a change of comment marks only.
+ * `meta` map (the title), its `fields` map (collection field values) or its `drawings` map (drawing scenes). Other shared
+ * types of the document are not page content and are not attributed, and neither is a change of comment marks only.
  */
 /**
  * True when every item the transaction added or deleted is a `comment`
@@ -145,9 +197,12 @@ export function changesPage(tx: Y.Transaction): boolean {
   const fragment = tx.doc.share.get(BLOCK_FRAGMENT);
   const meta = tx.doc.share.get(META);
   const fields = tx.doc.share.get(FIELDS);
+  const drawings = tx.doc.share.get(DRAWINGS);
   for (const type of tx.changed.keys()) {
     const root = rootOf(type);
-    if ((fragment && root === fragment) || (meta && root === meta) || (fields && root === fields)) return true;
+    if ((fragment && root === fragment) || (meta && root === meta) || (fields && root === fields) || (drawings && root === drawings)) {
+      return true;
+    }
   }
   return false;
 }

@@ -1,4 +1,4 @@
-import { AppError, type CollabApplyBlockOpsRequest } from '@kinote/contracts';
+import { AppError, type CollabApplyBlockOpsRequest, type DrawingElement } from '@kinote/contracts';
 import { documentName } from './collabToken.js';
 
 /**
@@ -25,6 +25,8 @@ export interface CollabClient {
     source: 'restore' | 'agent';
     /** When given, the page's whole `fields` map becomes these values. */
     fields?: Record<string, unknown>;
+    /** Drawing scenes to bring back, by drawing id; drawings not named are left alone. */
+    drawings?: Record<string, DrawingElement[]>;
   }): Promise<void>;
   /**
    * Changes single top-level blocks of a live page in one attributed change
@@ -111,6 +113,7 @@ export class HttpCollabClient implements CollabClient {
       actor: a.actor,
       source: a.source,
       ...(a.fields !== undefined ? { fields: a.fields } : {}),
+      ...(a.drawings !== undefined ? { drawings: a.drawings } : {}),
     });
   }
 

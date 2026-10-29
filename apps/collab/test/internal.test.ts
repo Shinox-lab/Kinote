@@ -4,6 +4,7 @@ import net from 'node:net';
 import { and, eq } from 'drizzle-orm';
 import { withTenantTx, pages } from '@kinote/db';
 import type { CollabServer } from '../src/server.js';
+import { MAX_INTERNAL_BODY_BYTES } from '../src/internal.js';
 import { connectClient, startCollabServer, type ConnectedClient } from './support/wsClient.js';
 import { readBlocks, writeBlocks, fragmentText } from './support/blocks.js';
 import {
@@ -190,7 +191,7 @@ describe('collab internal endpoints', () => {
     });
 
     test('a streamed body that grows past the cap is refused and its connection closed', async () => {
-      const big = JSON.stringify({ documentName: 'x', pad: 'a'.repeat(3 * 1024 * 1024) });
+      const big = JSON.stringify({ documentName: 'x', pad: 'a'.repeat(MAX_INTERNAL_BODY_BYTES + 1024 * 1024) });
       const res = await rawRequest(
         `POST /internal/flush HTTP/1.1\r\nHost: x\r\nContent-Type: application/json\r\n` +
           `x-internal-secret: ${TEST_INTERNAL_SECRET}\r\nTransfer-Encoding: chunked\r\n\r\n`,
