@@ -12,6 +12,7 @@ export {
 } from './permissions.js';
 export { takePageSnapshot, type TakePageSnapshotHooks } from './snapshot.js';
 export { indexVersion, type IndexVersionResult, type IndexDeps } from './indexing/indexVersion.js';
+export { enqueueReindex, indexedChildPages, reindexDocument } from './indexing/reindex.js';
 export { loadFileChunks } from './files/loadChunks.js';
 export { principalKey, chunkInboxOwner, pageSlugScope } from './indexing/inboxOwner.js';
 export {

@@ -4,6 +4,7 @@ import { AppError, ERROR_SENTENCES } from '@living-wiki/contracts';
 import {
   takePageSnapshot,
   indexVersion,
+  reindexDocument,
   extractVersion,
   buildPageCard,
   extractVersionEntities,
@@ -255,6 +256,12 @@ export const handlers: Record<string, JobHandler> = {
         actorId: payload.actorId,
         manual: false,
       });
+    },
+  },
+  'document.reindex': {
+    async run(job, ctx) {
+      const payload = job.payload as { documentId: string };
+      await reindexDocument(job.tenantId, payload.documentId, ctx.embeddingProvider, { storage: ctx.storage });
     },
   },
   'version.index': {

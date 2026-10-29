@@ -21,11 +21,18 @@ import { enqueuePlacementJobs } from '../placement/derived.js';
 /** What indexing needs beyond the database: file versions read their extracted text from storage. */
 export interface IndexDeps {
   storage?: ObjectStorage;
+  /**
+   * Re-index the document's already indexed version in place (its field
+   * header changed: a field or choice was removed, or the page moved into or
+   * out of a collection). Its status, the document and the audit trail stay
+   * as they are; only its chunks and placement data are rebuilt.
+   */
+  reindex?: boolean;
 }
 
 export type IndexVersionResult =
   | { outcome: 'indexed' }
-  | { outcome: 'skipped'; reason: 'not_indexing' | 'archived' | 'source_deleted' | 'older_than_indexed' };
+  | { outcome: 'skipped'; reason: 'not_indexing' | 'archived' | 'source_deleted' | 'older_than_indexed' | 'not_indexed' };
 
 /**
  * Rows per multi-row INSERT. Each row binds about a dozen parameters (the
@@ -75,7 +82,9 @@ export async function indexVersion(
     }
     return row;
   });
-  if (ver.status !== 'indexing') return { outcome: 'skipped', reason: 'not_indexing' };
+  if (deps.reindex) {
+    if (ver.status !== 'indexed') return { outcome: 'skipped', reason: 'not_indexed' };
+  } else if (ver.status !== 'indexing') return { outcome: 'skipped', reason: 'not_indexing' };
 
   let rawChunks;
   if (ver.objectKey !== null) {
@@ -159,7 +168,12 @@ export async function indexVersion(
     if (!current) {
       throw new AppError('version_not_found');
     }
-    if (current.status !== 'indexing') return { outcome: 'skipped', reason: 'not_indexing' };
+    if (deps.reindex) {
+      // Only the version still indexed for a live document is rebuilt.
+      if (current.status !== 'indexed' || doc.indexedVersionId !== ver.id || doc.archivedAt || doc.sourceDeletedAt) {
+        return { outcome: 'skipped', reason: 'not_indexed' };
+      }
+    } else if (current.status !== 'indexing') return { outcome: 'skipped', reason: 'not_indexing' };
 
     if (doc.archivedAt) {
       await tx
@@ -236,6 +250,11 @@ export async function indexVersion(
     }));
     for (const batch of batches(chunkRows, INSERT_BATCH_ROWS)) {
       await tx.insert(chunks).values(batch);
+    }
+
+    if (deps.reindex) {
+      if (space.kind !== 'inbox') await enqueuePlacementJobs(tx, tenantId, ver.id, doc.kind);
+      return { outcome: 'indexed' };
     }
 
     if (doc.indexedVersionId && doc.indexedVersionId !== ver.id) {

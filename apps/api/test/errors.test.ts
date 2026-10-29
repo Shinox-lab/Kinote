@@ -278,6 +278,7 @@ describe('error model', () => {
       'document_not_waiting',
       'capture_file_in_use',
       'field_name_taken',
+      'collection_exists',
       'change_already_undone',
       'suggestion_not_open',
       'fact_not_open',

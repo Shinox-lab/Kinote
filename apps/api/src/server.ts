@@ -50,6 +50,10 @@ import {
   LinkTargetListSchema,
   DocumentTitleListSchema,
   PageConnectionsSchema,
+  CollectionSchema,
+  FieldDefSchema,
+  FieldUsageSchema,
+  PageFieldsSchema,
   CommentThreadSchema,
   CommentThreadListSchema,
   MentionableListSchema,
@@ -166,6 +170,16 @@ import {
   updateComment,
 } from './routes/talk.js';
 import { listNotifications, markNotificationsRead } from './routes/notifications.js';
+import {
+  addField,
+  createCollection,
+  fieldUsage,
+  getCollection,
+  removeCollection,
+  removeField,
+  setPageFields,
+  updateField,
+} from './routes/collections.js';
 import { authRoutes, type AuthRateLimit } from './routes/auth.js';
 import { requireSession, resolveActor, resolveSourceActor, type AuthSession, type SourceActor } from './auth/actor.js';
 import { registerErrorHandler } from './errors.js';
@@ -669,6 +683,48 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
   app.get('/api/v1/pages/:id/connections', async (req, reply) => {
     const { id } = req.params as { id: string };
     return reply.send(parseReply(PageConnectionsSchema, await getPageConnections(actorOf(req), id)));
+  });
+
+  app.post('/api/v1/pages/:id/collection', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    return reply.status(201).send(parseReply(CollectionSchema, await createCollection(actorOf(req), id)));
+  });
+
+  app.delete('/api/v1/pages/:id/collection', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    await removeCollection(actorOf(req), id);
+    return reply.status(204).send();
+  });
+
+  app.get('/api/v1/collections/:id', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    return reply.send(parseReply(CollectionSchema, await getCollection(actorOf(req), id)));
+  });
+
+  app.post('/api/v1/collections/:id/fields', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    return reply.status(201).send(parseReply(FieldDefSchema, await addField(actorOf(req), id, req.body)));
+  });
+
+  app.patch('/api/v1/collections/:id/fields/:fieldId', async (req, reply) => {
+    const { id, fieldId } = req.params as { id: string; fieldId: string };
+    return reply.send(parseReply(FieldDefSchema, await updateField(actorOf(req), id, fieldId, req.body)));
+  });
+
+  app.delete('/api/v1/collections/:id/fields/:fieldId', async (req, reply) => {
+    const { id, fieldId } = req.params as { id: string; fieldId: string };
+    await removeField(actorOf(req), id, fieldId);
+    return reply.status(204).send();
+  });
+
+  app.get('/api/v1/collections/:id/fields/:fieldId/usage', async (req, reply) => {
+    const { id, fieldId } = req.params as { id: string; fieldId: string };
+    return reply.send(parseReply(FieldUsageSchema, await fieldUsage(actorOf(req), id, fieldId, req.query)));
+  });
+
+  app.patch('/api/v1/pages/:id/fields', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    return reply.send(parseReply(PageFieldsSchema, await setPageFields(actorOf(req), id, req.body, opts.collab)));
   });
 
   app.get('/api/v1/pages/:id/threads', async (req, reply) => {

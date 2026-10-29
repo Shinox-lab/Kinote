@@ -50,6 +50,8 @@ import {
   type Actor,
   movePlacementIndex,
   notify,
+  isCollection,
+  enqueueReindex,
 } from '@living-wiki/core';
 import {
   signCollabToken,
@@ -65,6 +67,7 @@ import {
   returnToReview,
 } from '../documents/lifecycle.js';
 import { computePageBadge } from '../pages/badge.js';
+import { pageCollectionInfo } from './collections.js';
 import { diffBlocks } from '../pages/diff.js';
 import { resolveActorNames } from '../people.js';
 import { canApprove } from '../pages/approval.js';
@@ -283,6 +286,7 @@ export async function getPageDetails(actor: Actor, pageId: string): Promise<Page
         actorId: a.actorId,
         changedAt: a.changedAt.toISOString(),
       })),
+      ...(await pageCollectionInfo(tx, actor.tenantId, doc)),
     };
   });
 }
@@ -1216,6 +1220,13 @@ export async function movePage(
         .update(pages)
         .set({ spaceId: parsed.target_space_id, slugScope: pageSlugScope(targetSpace.kind, doc) })
         .where(and(eq(pages.tenantId, actor.tenantId), eq(pages.documentId, pageId)));
+    }
+
+    // Under a collection or not decides the page's field header in the index.
+    if (doc.parentId !== parsed.target_parent_id && doc.indexedVersionId) {
+      const wasRow = doc.parentId !== null && (await isCollection(tx, actor.tenantId, doc.parentId));
+      const isRow = parsed.target_parent_id !== null && (await isCollection(tx, actor.tenantId, parsed.target_parent_id));
+      if (wasRow || isRow) await enqueueReindex(tx, actor.tenantId, [pageId]);
     }
 
     await writeAuditEvent(tx, {

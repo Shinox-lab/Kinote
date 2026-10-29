@@ -3,6 +3,7 @@ import { z } from 'zod';
 export * from './errors.js';
 export * from './editor.js';
 export * from './collections.js';
+import { CollectionSchema } from './collections.js';
 
 export const TenantRoleSchema = z.enum(['owner', 'admin', 'member', 'viewer']);
 export type TenantRole = z.infer<typeof TenantRoleSchema>;
@@ -467,6 +468,9 @@ export const PageDetailsSchema = z.object({
   indexedVersion: VersionSummarySchema.nullable(),
   versions: z.array(VersionSummarySchema),
   blockActivity: z.array(BlockActivitySchema),
+  /** The page's own collection, when it is one, and the collection it is a row of. */
+  collection: CollectionSchema.nullable(),
+  rowOf: CollectionSchema.nullable(),
 });
 export type PageDetails = z.infer<typeof PageDetailsSchema>;
 
