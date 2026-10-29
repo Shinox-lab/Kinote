@@ -1,19 +1,66 @@
-import { useCallback, useEffect, useState } from 'react';
-import type { FileVersion } from '@living-wiki/contracts';
+import { Suspense, lazy, useCallback, useEffect, useState } from 'react';
+import type { FileVersion, UploadFileResponse } from '@living-wiki/contracts';
 import { XlsxViewer as ExtendXlsxViewer, useXlsxViewerController } from '@extend-ai/react-xlsx';
-import { Loading } from '../components/ui.js';
+import { Button, Loading } from '../components/ui.js';
 import { initialSheet } from '../lib/tablePreview.js';
 import { PREVIEW_LIMIT_BYTES, VIEWER_TIMEOUT_MS } from '../lib/viewers.js';
 import { useResolvedTheme } from '../lib/useResolvedTheme.js';
 import { DownloadCard } from './DownloadCard.js';
 
-export default function XlsxViewer({ bytes, version, page }: { bytes: ArrayBuffer; version: FileVersion; page?: number }) {
+const GridCraftEditor = lazy(() => import('./GridCraftEditor.js'));
+
+export default function XlsxViewer({
+  bytes,
+  version,
+  page,
+  onSave,
+  onDirtyChange,
+}: {
+  bytes: ArrayBuffer;
+  version: FileVersion;
+  page?: number;
+  onSave?: (file: File) => Promise<UploadFileResponse>;
+  onDirtyChange?: (dirty: boolean) => void;
+}) {
+  const [editing, setEditing] = useState(false);
   const [timedOut, setTimedOut] = useState(false);
   const onTimeout = useCallback(() => setTimedOut(true), []);
-  if (timedOut) {
-    return <DownloadCard version={version} reason="This workbook took too long to preview." />;
+
+  if (editing && onSave) {
+    return (
+      <Suspense fallback={<Loading what="editor" />}>
+        <GridCraftEditor
+          bytes={bytes}
+          version={version}
+          onSave={onSave}
+          onDirtyChange={onDirtyChange}
+          onClose={() => setEditing(false)}
+        />
+      </Suspense>
+    );
   }
-  return <ExtendPreview bytes={bytes} version={version} page={page} onTimeout={onTimeout} />;
+
+  return (
+    <>
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <p className="text-xs text-muted">Read-only preview</p>
+        {onSave && (
+          <Button
+            variant="secondary"
+            className="h-8 px-2.5 py-1 text-xs max-md:hidden"
+            onClick={() => setEditing(true)}
+          >
+            Edit in GridCraft
+          </Button>
+        )}
+      </div>
+      {timedOut ? (
+        <DownloadCard version={version} reason="This workbook took too long to preview." />
+      ) : (
+        <ExtendPreview bytes={bytes} version={version} page={page} onTimeout={onTimeout} />
+      )}
+    </>
+  );
 }
 
 function ExtendPreview({

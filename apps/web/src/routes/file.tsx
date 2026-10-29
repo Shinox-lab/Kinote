@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link, useParams, useSearch } from '@tanstack/react-router';
+import { Link, useBlocker, useParams, useSearch } from '@tanstack/react-router';
 import { useMutation } from '@tanstack/react-query';
 import type { FileDetails, FileVersion } from '@living-wiki/contracts';
 import { ApiError, api } from '../lib/api.js';
 import { saveVersion } from '../lib/download.js';
 import { fileBanner, fileControls, formatBytes, publishedVersionId } from '../lib/fileUi.js';
 import { fileType } from '../lib/fileType.js';
+import { MIME } from '../lib/mime.js';
 import { relativeTime } from '../lib/pageStatus.js';
 import {
   useFile,
@@ -104,11 +105,13 @@ export function FilePage() {
   const wide = useMediaQuery('(min-width: 1200px)');
   const [railOpen, setRailOpen] = useState(wide);
   const [renaming, setRenaming] = useState(false);
+  const [editorDirty, setEditorDirty] = useState(false);
   const { data: spaces = [] } = useSpaces();
   const { data: file, error, isPending } = useFile(fileId);
   const { role, shown } = useShownVersion(file, search.v);
   const picker = useRef<HTMLInputElement>(null);
   const sheet = useRef<HTMLDivElement>(null);
+  const leavePrompted = useRef(false);
 
   const space = file ? spaces.find((s) => s.id === file.spaceId) : undefined;
   const archived = file ? file.archivedAt !== null : false;
@@ -149,6 +152,11 @@ export function FilePage() {
     mutationFn: (form: FormData) => api.replaceFile(fileId, form),
     onSettled: changed,
   });
+  const saveEditedFile = async (file: File) => {
+    const form = new FormData();
+    form.set('file', file, file.name);
+    return replace.mutateAsync(form);
+  };
   const retry = useMutation({
     mutationFn: (versionId: string) => api.retryVersion(versionId),
     onSettled: changed,
@@ -168,6 +176,22 @@ export function FilePage() {
     rename.reset();
     // A different file starts with its own title, not the one being edited.
   }, [fileId]);
+
+  const { status, proceed, reset } = useBlocker({ shouldBlockFn: () => editorDirty, withResolver: true });
+  useEffect(() => {
+    if (status !== 'blocked') {
+      leavePrompted.current = false;
+      return;
+    }
+    if (leavePrompted.current) return;
+    leavePrompted.current = true;
+    if (window.confirm('Discard unsaved spreadsheet changes?')) proceed();
+    else reset();
+  }, [status, proceed, reset]);
+
+  useEffect(() => {
+    setEditorDirty(false);
+  }, [fileId, shown?.id]);
 
   if (isPending) return <Loading what="file" />;
   if (error || !file) {
@@ -200,6 +224,15 @@ export function FilePage() {
     hasPublished: file.indexedVersion !== null,
     role,
   });
+  const canEditSpreadsheet =
+    controls.replace && shown !== null && shown.id === file.latestVersion?.id && shown.mimeType === MIME.xlsx;
+  const olderSpreadsheet =
+    controls.replace &&
+    shown !== null &&
+    shown.mimeType === MIME.xlsx &&
+    file.latestVersion !== null &&
+    file.latestVersion.mimeType === MIME.xlsx &&
+    shown.id !== file.latestVersion.id;
   const failedId = file.latestVersion?.id;
   const type = fileType(file.title, shown?.mimeType ?? latest?.mimeType);
   const info = (
@@ -320,6 +353,11 @@ export function FilePage() {
           That is the same file that is already here.
         </p>
       )}
+      {replace.data && !replace.data.unchanged && (
+        <p role="status" className="text-sm text-muted">
+          Saved as version {replace.data.version.number}. The new version is being read.
+        </p>
+      )}
       {controls.replace && (
         <input
           ref={picker}
@@ -339,9 +377,17 @@ export function FilePage() {
 
       <div className={wide && railOpen ? 'grid grid-cols-[minmax(0,1fr)_300px] items-start gap-4' : ''}>
         <div className="min-w-0">
+          {olderSpreadsheet && (
+            <p className="mb-2 text-sm text-muted">Viewing an older version. Open the latest version to edit it.</p>
+          )}
           {shown ? (
             <section aria-label="Preview" className="rounded-lg bg-file-mat p-3 md:p-4">
-              <FileViewer version={shown} page={search.page} />
+              <FileViewer
+                version={shown}
+                page={search.page}
+                onSave={canEditSpreadsheet ? saveEditedFile : undefined}
+                onDirtyChange={canEditSpreadsheet ? setEditorDirty : undefined}
+              />
             </section>
           ) : (
             <p className="rounded-lg bg-hover px-4 py-8 text-center text-sm text-muted">Nothing has been published yet.</p>
