@@ -6,6 +6,22 @@ describe('parseGridCraftMessage', () => {
     expect(parseGridCraftMessage({ type: 'ready', extra: true })).toEqual({ type: 'ready' });
   });
 
+  test('accepts the official gridcraft: prefixed messages', () => {
+    const bytes = new Uint8Array([1, 2, 3]).buffer;
+    expect(parseGridCraftMessage({ type: 'gridcraft:ready', version: '0.13.0' })).toEqual({ type: 'ready' });
+    expect(parseGridCraftMessage({ type: 'gridcraft:dirty', dirty: true })).toEqual({ type: 'dirty', dirty: true });
+    expect(parseGridCraftMessage({ type: 'gridcraft:save', name: 'Budget.xlsx', bytes })).toEqual({
+      type: 'save',
+      name: 'Budget.xlsx',
+      bytes,
+    });
+    expect(parseGridCraftMessage({ type: 'gridcraft:failed', error: 'no WebGL' })).toEqual({
+      type: 'failed',
+      error: 'no WebGL',
+    });
+    expect(parseGridCraftMessage({ type: 'gridcraft:other' })).toBeNull();
+  });
+
   test('accepts a boolean dirty flag and rejects anything else', () => {
     expect(parseGridCraftMessage({ type: 'dirty', dirty: true })).toEqual({ type: 'dirty', dirty: true });
     expect(parseGridCraftMessage({ type: 'dirty', dirty: false })).toEqual({ type: 'dirty', dirty: false });

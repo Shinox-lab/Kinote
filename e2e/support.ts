@@ -1,6 +1,7 @@
 // Shared helpers of the console specs. Accounts and workspaces that a spec is not
 // testing are made through the api (fast); everything a spec asserts goes through the UI.
 import { expect, type APIRequestContext, type Browser, type Locator, type Page } from '@playwright/test';
+import type { UploadFileResponse } from '@living-wiki/contracts';
 
 export const PASSWORD = 'correct-horse-battery';
 
@@ -210,6 +211,26 @@ export async function uploadViaApi(
   const text = await res.text();
   if (!res.ok()) throw new Error(`upload ${file.name} -> ${res.status()} ${text}`);
   return (JSON.parse(text) as { document: { id: string } }).document.id;
+}
+
+/** Replaces a file through the api, creating the next version. */
+export async function replaceViaApi(
+  request: APIRequestContext,
+  world: World,
+  account: Account,
+  fileId: string,
+  file: TestFile
+): Promise<UploadFileResponse> {
+  const res = await request.fetch(`/api/v1/files/${fileId}/versions`, {
+    method: 'POST',
+    headers: { authorization: `Bearer ${account.token}`, 'x-tenant-id': world.tenantId },
+    multipart: {
+      file: { name: file.name, mimeType: file.mimeType, buffer: file.buffer },
+    },
+  });
+  const text = await res.text();
+  if (!res.ok()) throw new Error(`replace ${file.name} -> ${res.status()} ${text}`);
+  return JSON.parse(text) as UploadFileResponse;
 }
 
 /**

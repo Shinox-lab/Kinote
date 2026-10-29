@@ -9,9 +9,11 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 
 /** What the editor sent, if it is one of the host messages we understand. */
 export function parseGridCraftMessage(data: unknown): GridCraftMessage | null {
-  if (!isRecord(data)) return null;
+  if (!isRecord(data) || typeof data.type !== 'string') return null;
+  // The editor sends `gridcraft:ready` etc.; accept the short form too so callers can use either.
+  const type = data.type.startsWith('gridcraft:') ? data.type.slice('gridcraft:'.length) : data.type;
 
-  switch (data.type) {
+  switch (type) {
     case 'ready':
       return { type: 'ready' };
     case 'dirty':
