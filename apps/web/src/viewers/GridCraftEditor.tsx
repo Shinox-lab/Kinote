@@ -3,6 +3,7 @@ import type { FileVersion, UploadFileResponse } from '@living-wiki/contracts';
 import { errorMessage } from '../lib/api.js';
 import { loadSession } from '../lib/session.js';
 import { Button } from '../components/ui.js';
+import { downloadFileName } from '../lib/fileUi.js';
 import { gridcraftUrl, isSpreadsheetSave, parseGridCraftMessage } from './gridcraft.js';
 
 export interface GridCraftEditorProps {
@@ -12,6 +13,9 @@ export interface GridCraftEditorProps {
   onDirtyChange?: (dirty: boolean) => void;
   onClose: () => void;
 }
+
+/** How long the editor gets to say it is ready before we give up and point at the preview. */
+const START_TIMEOUT_MS = 30_000;
 
 interface FailedCopy {
   name: string;
@@ -24,7 +28,7 @@ function downloadBytes(name: string, bytes: ArrayBuffer): void {
   try {
     const link = document.createElement('a');
     link.href = url;
-    link.download = name;
+    link.download = downloadFileName(name);
     link.rel = 'noopener';
     document.body.append(link);
     link.click();
@@ -41,7 +45,6 @@ export default function GridCraftEditor({ bytes, version, onSave, onDirtyChange,
   const versionRef = useRef(version);
   const onSaveRef = useRef(onSave);
   const onDirtyChangeRef = useRef(onDirtyChange);
-  const dirtyRef = useRef(false);
   const dirtyEpoch = useRef(0);
   const saveChain = useRef<Promise<void>>(Promise.resolve());
 
@@ -49,6 +52,7 @@ export default function GridCraftEditor({ bytes, version, onSave, onDirtyChange,
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(0);
   const [savedVersion, setSavedVersion] = useState<number | null>(null);
+  const [unchanged, setUnchanged] = useState(false);
   const [saveFailed, setSaveFailed] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [downloadedName, setDownloadedName] = useState<string | null>(null);
@@ -67,6 +71,15 @@ export default function GridCraftEditor({ bytes, version, onSave, onDirtyChange,
   }, [parentDirty]);
 
   useEffect(() => {
+    if (opened) return;
+    const timer = setTimeout(
+      () => setStartError("GridCraft couldn't start: it did not respond. Use the read-only preview."),
+      START_TIMEOUT_MS,
+    );
+    return () => clearTimeout(timer);
+  }, [opened]);
+
+  useEffect(() => {
     mounted.current = true;
 
     const queueSave = (fileBytes: ArrayBuffer, currentVersion: FileVersion) => {
@@ -80,13 +93,13 @@ export default function GridCraftEditor({ bytes, version, onSave, onDirtyChange,
           );
           if (!mounted.current) return;
           setSavedVersion(response.version.number);
+          setUnchanged(response.unchanged);
           setSaveError(null);
           setDownloadedName(null);
           setFailedCopy(null);
           setSaveFailed(false);
           // A later edit sends its own dirty:true; only a save with no newer edit clears the parent.
           if (dirtyEpoch.current === epoch) {
-            dirtyRef.current = false;
             setDirty(false);
           }
         } catch (error) {
@@ -119,18 +132,21 @@ export default function GridCraftEditor({ bytes, version, onSave, onDirtyChange,
           break;
         }
         case 'dirty':
-          dirtyRef.current = message.dirty;
           dirtyEpoch.current += 1;
           setDirty(message.dirty);
           if (message.dirty) {
+            // The edits have moved on: an earlier failed save or download no longer matches them.
             setSaveError(null);
             setDownloadedName(null);
+            setFailedCopy(null);
+            setSaveFailed(false);
+            setUnchanged(false);
           }
           break;
         case 'save': {
           const currentVersion = versionRef.current;
           if (!isSpreadsheetSave(message.name, currentVersion.fileName)) {
-            const name = message.name.trim() || currentVersion.fileName;
+            const name = downloadFileName(message.name);
             downloadBytes(name, message.bytes);
             setDownloadedName(name);
             setSaveError(null);
@@ -142,7 +158,7 @@ export default function GridCraftEditor({ bytes, version, onSave, onDirtyChange,
           break;
         }
         case 'failed':
-          setStartError(`GridCraft couldn't start: ${message.error}.`);
+          setStartError(`GridCraft couldn't start: ${message.error}. Use the read-only preview.`);
           break;
       }
     };
@@ -160,13 +176,15 @@ export default function GridCraftEditor({ bytes, version, onSave, onDirtyChange,
     : saving > 0
       ? 'Saving…'
       : saveError
-        ? `Couldn't save the workbook. ${saveError} Download a copy instead.`
+        ? `Couldn't save: ${saveError}. Your edits are still here; download a copy.`
         : downloadedName
-          ? `Downloaded a copy of ${downloadedName}.`
+          ? `GridCraft is bound to ${version.fileName}. Downloaded a copy instead.`
           : dirty
             ? 'Unsaved changes'
             : savedVersion !== null
-              ? `Saved as version ${savedVersion}.`
+              ? unchanged
+                ? 'No changes to save.'
+                : `Saved as version ${savedVersion}.`
               : opened
                 ? `Editing ${version.fileName}. Press Ctrl+S to save a new version.`
                 : 'Loading editor…';

@@ -174,6 +174,7 @@ export function FilePage() {
   useEffect(() => {
     setRenaming(false);
     rename.reset();
+    replace.reset();
     // A different file starts with its own title, not the one being edited.
   }, [fileId]);
 

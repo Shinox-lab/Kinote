@@ -105,11 +105,20 @@ test('editor opens and saves a new version', async ({ browser, request }) => {
   const frame = page.frameLocator('iframe[title="Budget.xlsx spreadsheet editor"]');
   await expect(frame.locator('#opened')).toHaveText(`Opened Budget.xlsx (${original.buffer.length} bytes)`);
 
-  // The parent page is not the editor: a save from it must be ignored by the source check.
-  await page.evaluate(() =>
-    window.postMessage({ type: 'gridcraft:save', name: 'Budget.xlsx', bytes: new ArrayBuffer(1) }, '*')
-  );
-  await page.waitForTimeout(300);
+  // Another opaque-origin frame has origin 'null' too, but it is not the editor window.
+  await page.evaluate((base64) => {
+    const impostor = document.createElement('iframe');
+    impostor.setAttribute('sandbox', 'allow-scripts');
+    impostor.hidden = true;
+    impostor.srcdoc =
+      '<script>const b = Uint8Array.from(atob("' + base64 + '"), (c) => c.charCodeAt(0)).buffer;' +
+      'parent.postMessage({ type: "gridcraft:save", name: "Budget.xlsx", bytes: b }, "*");</scr' + 'ipt>';
+    document.body.append(impostor);
+  }, edited.buffer.toString('base64'));
+  await expect
+    .poll(async () => (await versionsOf(request, world, world.owner, id)).length, { timeout: 1500 })
+    .toBe(1);
+  await page.waitForTimeout(500);
   expect(await versionsOf(request, world, world.owner, id)).toHaveLength(1);
 
   await frame.locator('#save').click();
@@ -189,7 +198,68 @@ test('a non-XLSX save downloads instead of uploading', async ({ browser, request
   await frame.locator('#save-pdf').click();
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toBe('Budget.pdf');
-  await expect(page.getByRole('status').filter({ hasText: 'Downloaded a copy of Budget.pdf.' })).toBeVisible();
+  await expect(page.getByRole('status').filter({ hasText: 'GridCraft is bound to Budget.xlsx. Downloaded a copy instead.' })).toBeVisible();
   await page.waitForTimeout(300);
   expect(await versionsOf(request, world, world.owner, id)).toHaveLength(1);
+});
+
+test('an editor that never starts falls back to a message', async ({ browser, request }) => {
+  const world = await seedWorld(request, { reviewRequired: false });
+  const id = await uploadViaApi(request, world, world.owner, BOOK(world.suffix));
+  await waitForFileBadge(request, world, world.owner, id, /^Indexed/);
+
+  const page = await openAs(browser, world, world.owner);
+  await page.route(/\/gridcraft\//, (route) => route.fulfill({ status: 502, body: 'Bad gateway' }));
+  await page.clock.install();
+  await page.goto(`/w/${world.slug}/f/${id}`);
+  await page.getByRole('button', { name: 'Edit in GridCraft' }).click();
+  await expect(page.getByRole('status').filter({ hasText: 'Loading editor…' })).toBeVisible();
+  // The start timer is armed by an effect; keep advancing the fake clock until it has fired.
+  await expect
+    .poll(async () => {
+      await page.clock.fastForward(31_000);
+      return page.getByText("GridCraft couldn't start: it did not respond.").count();
+    })
+    .toBeGreaterThan(0);
+  await expect(
+    page.getByRole('status').filter({ hasText: "GridCraft couldn't start: it did not respond. Use the read-only preview." })
+  ).toBeVisible();
+  await page.getByRole('button', { name: 'Back to preview' }).click();
+  await expect(page.getByRole('region', { name: 'Preview' }).getByRole('cell', { name: 'Sales' })).toBeVisible();
+});
+
+test('a rejected save keeps the edits, offers a copy and blocks navigation', async ({ browser, request }) => {
+  const world = await seedWorld(request, { reviewRequired: false });
+  const file = BOOK(world.suffix);
+  const id = await uploadViaApi(request, world, world.owner, file);
+  await waitForFileBadge(request, world, world.owner, id, /^Indexed/);
+
+  const page = await openAs(browser, world, world.owner);
+  await page.route(/\/api\/v1\/files\/[^/]+\/versions$/, (route) =>
+    route.request().method() === 'POST'
+      ? route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: { code: 'internal', message: 'Disk full' } }) })
+      : route.fallback()
+  );
+  const frame = await openFakeEditor(page, world, id, file);
+  await frame.locator('#dirty').click();
+  await frame.locator('#save').click();
+
+  await expect(page.getByRole('status').filter({ hasText: /^Couldn't save: .*Your edits are still here; download a copy\.$/ })).toBeVisible();
+  expect(await versionsOf(request, world, world.owner, id)).toHaveLength(1);
+
+  const downloadPromise = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Download a copy' }).click();
+  expect((await downloadPromise).suggestedFilename()).toBe('Budget.xlsx');
+
+  // Even though GridCraft reported itself clean, the page still holds unsaved bytes.
+  await frame.locator('#clean').click();
+  const dialogMessage = new Promise<string>((resolve) => {
+    page.once('dialog', (dialog) => {
+      resolve(dialog.message());
+      void dialog.dismiss();
+    });
+  });
+  await page.locator('nav[aria-label="Breadcrumb"]').getByRole('link', { name: 'Docs' }).click();
+  expect(await dialogMessage).toBe('Discard unsaved spreadsheet changes?');
+  await expect(page).toHaveURL(new RegExp(`/f/${id}$`));
 });
