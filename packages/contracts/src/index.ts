@@ -3,6 +3,7 @@ import { z } from 'zod';
 export * from './errors.js';
 export * from './editor.js';
 export * from './collections.js';
+export * from './views.js';
 import { CollectionSchema } from './collections.js';
 
 export const TenantRoleSchema = z.enum(['owner', 'admin', 'member', 'viewer']);
