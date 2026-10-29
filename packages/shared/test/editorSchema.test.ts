@@ -128,3 +128,19 @@ describe('callouts', () => {
     expect(md).toContain('Tip here');
   });
 });
+
+describe('collection views', () => {
+  const view = (): any => ({ type: 'collectionView', props: { collectionId: ID, title: 'Clients', views: '[{"id":"v1","layout":"board"}]' } });
+
+  it('a view block keeps its collection and settings through the Yjs document', () => {
+    const doc = editor.blocksToYDoc([view()], 'document-store');
+    const [b] = editor.yDocToBlocks(doc, 'document-store') as any[];
+    expect(b).toMatchObject({ type: 'collectionView', props: { collectionId: ID, title: 'Clients', views: '[{"id":"v1","layout":"board"}]' } });
+  });
+
+  it('reads as one line naming the collection, in Markdown and as block text', async () => {
+    const md = await editor.blocksToMarkdownLossy([view()]);
+    expect(md.trim()).toBe(`Collection view: [Clients](/p/${ID})`);
+    expect(flattenBlocks([view()])[0]!.text).toBe('Collection view: Clients');
+  });
+});

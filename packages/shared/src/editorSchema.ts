@@ -1,7 +1,7 @@
 import { BlockNoteSchema, createBlockSpec, createExtension, createInlineContentSpec, defaultBlockSpecs, defaultInlineContentSpecs } from '@blocknote/core';
 import { CommentMark } from '@blocknote/core/comments';
 import { ServerBlockNoteEditor } from '@blocknote/server-util';
-import { MENTION_PATH, PAGE_LINK_PATH, calloutConfig, fileEmbedConfig, mentionConfig, mentionPath, pageLinkConfig, pageLinkPath } from '@living-wiki/contracts';
+import { MENTION_PATH, PAGE_LINK_PATH, calloutConfig, collectionViewConfig, fileEmbedConfig, mentionConfig, mentionPath, pageLinkConfig, pageLinkPath } from '@living-wiki/contracts';
 import type { BlockLike } from './blocks.js';
 
 /**
@@ -57,9 +57,22 @@ const callout = createBlockSpec(calloutConfig, {
   },
 })();
 
+/** A collection view on the server: one line naming its collection, linked to it (its rows live on their own pages). */
+const collectionView = createBlockSpec(collectionViewConfig, {
+  render: (block) => {
+    const dom = document.createElement('p');
+    dom.append('Collection view: ');
+    const a = document.createElement('a');
+    a.href = pageLinkPath(block.props.collectionId);
+    a.textContent = linkLabel(block.props.title || 'Untitled');
+    dom.append(a);
+    return { dom };
+  },
+})();
+
 /** The wiki's block schema: BlockNote's defaults plus page links and mentions. */
 export const wikiSchema = BlockNoteSchema.create({
-  blockSpecs: { ...defaultBlockSpecs, fileEmbed, callout },
+  blockSpecs: { ...defaultBlockSpecs, fileEmbed, callout, collectionView },
   inlineContentSpecs: { ...defaultInlineContentSpecs, pageLink, mention },
 });
 

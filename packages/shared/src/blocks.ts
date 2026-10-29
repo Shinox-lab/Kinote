@@ -76,7 +76,9 @@ export function flattenBlocks(blocks: BlockLike[]): FlatBlock[] {
   const out: FlatBlock[] = [];
   const walk = (list: BlockLike[], depth: number) => {
     for (const b of list) {
-      const flat: FlatBlock = { id: b.id, type: b.type, text: blockText(b.content), depth };
+      // A collection view has no text of its own; it reads as the collection it shows.
+      const text = b.type === 'collectionView' ? `Collection view: ${String(b.props?.title ?? '') || 'Untitled'}` : blockText(b.content);
+      const flat: FlatBlock = { id: b.id, type: b.type, text, depth };
       if (b.type === 'heading') {
         const level = Number(b.props?.level);
         flat.level = Number.isInteger(level) && level >= 1 ? level : 1;
