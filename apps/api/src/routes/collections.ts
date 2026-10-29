@@ -1,12 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import * as Y from 'yjs';
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { and, asc, eq, ilike, isNull, sql } from 'drizzle-orm';
 import {
   collectionFields,
   collections,
   documents,
   pageFieldValues,
   pages,
+  spaces,
   withTenantTx,
   writeAuditEvent,
   type DbTransaction,
@@ -14,7 +15,11 @@ import {
 } from '@living-wiki/db';
 import {
   AppError,
+  CollectionRowsRequestSchema,
   CreateFieldRequestSchema,
+  MAX_VIEW_ROWS,
+  compareRows,
+  rowMatches,
   FIELDS_MAP,
   MAX_FIELDS,
   SetFieldsRequestSchema,
@@ -22,6 +27,8 @@ import {
   fieldValueFits,
   validFields,
   type Collection,
+  type CollectionPick,
+  type CollectionRows,
   type FieldDef,
   type FieldOptions,
   type FieldType,
@@ -38,6 +45,7 @@ import {
   type Actor,
 } from '@living-wiki/core';
 import type { CollabClient } from '@living-wiki/shared';
+import { spaceOfDocument, visibleDocuments } from './connections.js';
 
 /**
  * Collections (spec C1, C2, C11): a page whose direct sub-pages share typed
@@ -355,5 +363,67 @@ export async function setPageFields(actor: Actor, pageId: string, input: unknown
     if (page) Y.applyUpdate(doc, new Uint8Array(page.ydocState));
     const row = await rowCollectionOf(tx, actor.tenantId, pageId);
     return { fields: row ? validFields(row.fields, doc.getMap(FIELDS_MAP).toJSON()) : {} };
+  });
+}
+
+/**
+ * POST /api/v1/collections/:id/rows: the rows a view shows (spec C7, C8). A
+ * reader of the collection page gets its live sub-pages with the values that
+ * fit their fields, filtered and sorted here, at most MAX_VIEW_ROWS of them.
+ * Anyone else gets collection_not_found: nothing about it is shown.
+ */
+export async function collectionRows(actor: Actor, collectionId: string, input: unknown): Promise<CollectionRows> {
+  const { filters, sorts } = CollectionRowsRequestSchema.parse(input ?? {});
+  return withTenantTx(actor.tenantId, async (tx) => {
+    const doc = await collectionPage(tx, actor, collectionId, 'viewer');
+    const collection = await collectionOf(tx, actor.tenantId, doc);
+    const pageRows = await tx
+      .select({ id: documents.id, title: documents.title, icon: documents.icon })
+      .from(documents)
+      .where(
+        and(
+          eq(documents.tenantId, actor.tenantId),
+          eq(documents.parentId, collectionId),
+          eq(documents.kind, 'page'),
+          isNull(documents.archivedAt)
+        )
+      );
+    const raw = new Map<string, Record<string, unknown>>();
+    if (pageRows.length > 0 && collection.fields.length > 0) {
+      const values = await tx
+        .select({ pageId: pageFieldValues.pageId, fieldId: pageFieldValues.fieldId, value: pageFieldValues.value })
+        .from(pageFieldValues)
+        .innerJoin(documents, and(eq(documents.tenantId, pageFieldValues.tenantId), eq(documents.id, pageFieldValues.pageId)))
+        .where(and(eq(pageFieldValues.tenantId, actor.tenantId), eq(documents.parentId, collectionId)));
+      for (const v of values) {
+        const forPage = raw.get(v.pageId) ?? {};
+        forPage[v.fieldId] = v.value;
+        raw.set(v.pageId, forPage);
+      }
+    }
+    const ctx = { me: actor.principalType === 'user' ? actor.principalId : null, today: new Date().toISOString().slice(0, 10) };
+    const rows = pageRows
+      .map((p) => ({ ...p, values: validFields(collection.fields, raw.get(p.id) ?? {}) }))
+      .filter((r) => rowMatches(collection.fields, r, filters, ctx))
+      .sort(compareRows(collection.fields, sorts));
+    return { collection, rows: rows.slice(0, MAX_VIEW_ROWS), truncated: rows.length > MAX_VIEW_ROWS };
+  });
+}
+
+/** GET /api/v1/collections?q=: collections the person can read, for a view block's picker (at most 20). */
+export async function listCollections(actor: Actor, query: unknown): Promise<CollectionPick[]> {
+  const q = typeof (query as { q?: unknown })?.q === 'string' ? (query as { q: string }).q.trim().slice(0, 200) : '';
+  return withTenantTx(actor.tenantId, async (tx) => {
+    const visible = await visibleDocuments(tx, actor);
+    if (!visible) return [];
+    const escaped = q.replace(/[\\%_]/g, (c) => `\\${c}`);
+    return tx
+      .select({ id: documents.id, title: documents.title, icon: documents.icon, spaceName: spaces.name })
+      .from(collections)
+      .innerJoin(documents, and(eq(documents.tenantId, collections.tenantId), eq(documents.id, collections.documentId)))
+      .innerJoin(spaces, spaceOfDocument)
+      .where(and(eq(collections.tenantId, actor.tenantId), visible, q ? ilike(documents.title, `%${escaped}%`) : undefined))
+      .orderBy(asc(documents.title))
+      .limit(20);
   });
 }

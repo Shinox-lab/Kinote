@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { fieldValueFits, type FieldDef } from './collections.js';
+import { CollectionSchema, fieldValueFits, type FieldDef } from './collections.js';
 
 /**
  * Collection views (spec C6–C8): a `collectionView` block names a collection
@@ -292,3 +292,21 @@ export type CollectionRow = z.infer<typeof CollectionRowSchema>;
 
 /** The most rows one view loads. */
 export const MAX_VIEW_ROWS = 1000;
+
+export const CollectionRowsSchema = z.object({
+  collection: CollectionSchema,
+  rows: z.array(CollectionRowSchema),
+  /** More rows than `MAX_VIEW_ROWS` matched; only the first ones are here. */
+  truncated: z.boolean(),
+});
+export type CollectionRows = z.infer<typeof CollectionRowsSchema>;
+
+/** A collection a view block can show (the picker). */
+export const CollectionPickSchema = z.object({
+  id: z.string().uuid(),
+  title: z.string(),
+  icon: z.string().nullable(),
+  spaceName: z.string(),
+});
+export const CollectionPickListSchema = z.array(CollectionPickSchema);
+export type CollectionPick = z.infer<typeof CollectionPickSchema>;

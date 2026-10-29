@@ -51,6 +51,8 @@ import {
   DocumentTitleListSchema,
   PageConnectionsSchema,
   CollectionSchema,
+  CollectionPickListSchema,
+  CollectionRowsSchema,
   FieldDefSchema,
   FieldUsageSchema,
   PageFieldsSchema,
@@ -172,7 +174,9 @@ import {
 import { listNotifications, markNotificationsRead } from './routes/notifications.js';
 import {
   addField,
+  collectionRows,
   createCollection,
+  listCollections,
   fieldUsage,
   getCollection,
   removeCollection,
@@ -694,6 +698,15 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
     const { id } = req.params as { id: string };
     await removeCollection(actorOf(req), id);
     return reply.status(204).send();
+  });
+
+  app.get('/api/v1/collections', async (req, reply) => {
+    return reply.send(parseReply(CollectionPickListSchema, await listCollections(actorOf(req), req.query)));
+  });
+
+  app.post('/api/v1/collections/:id/rows', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    return reply.send(parseReply(CollectionRowsSchema, await collectionRows(actorOf(req), id, req.body)));
   });
 
   app.get('/api/v1/collections/:id', async (req, reply) => {
