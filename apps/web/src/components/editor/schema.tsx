@@ -69,7 +69,11 @@ const collectionView = createReactBlockSpec(collectionViewConfig, {
       title={block.props.title}
       views={block.props.views}
       editable={editor.isEditable}
-      update={(props) => editor.updateBlock(block, { props })}
+      update={(edit) => {
+        // Read the block as it is now: another person may have changed its views since this render.
+        const now = editor.getBlock(block.id);
+        if (now?.type === 'collectionView') editor.updateBlock(now, { props: edit(now.props) });
+      }}
     />
   ),
   toExternalHTML: ({ block }) => (

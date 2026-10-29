@@ -13,7 +13,7 @@ import {
   type ViewFilter,
   type ViewLayout,
 } from '@living-wiki/contracts';
-import { dateFields, groupableFields, viewDateField, viewGroupField } from '../../lib/views.js';
+import { dateFields, groupableFields, replaceView, viewDateField, viewGroupField, type ViewsEdit } from '../../lib/views.js';
 
 const CHIP = 'rounded-md px-2 py-1 text-xs text-muted hover:bg-hover hover:text-fg max-md:min-h-11';
 const SELECT = 'rounded border border-line bg-surface px-1.5 py-1 text-xs text-fg max-md:min-h-11';
@@ -116,11 +116,11 @@ export function ViewToolbar({
   fields: FieldDef[];
   names: FieldNames;
   onSelect: (id: string) => void;
-  onChangeViews: (next: View[], select?: string) => void;
+  onChangeViews: (edit: ViewsEdit, select?: string) => void;
 }) {
   const [panel, setPanel] = useState<'filter' | 'sort' | 'fields' | 'view' | null>(null);
   const toggle = (p: typeof panel) => setPanel((cur) => (cur === p ? null : p));
-  const change = (next: View) => onChangeViews(views.map((v) => (v.id === next.id ? next : v)));
+  const change = (next: View) => onChangeViews(replaceView(next));
   const fieldOptions = [{ id: TITLE_FIELD, name: 'Title' }, ...fields];
   const groupable = groupableFields(fields);
   const dated = dateFields(fields);
@@ -132,7 +132,7 @@ export function ViewToolbar({
       groupBy: layout === 'board' ? (groupable[0]?.id ?? null) : null,
       dateField: layout === 'calendar' || layout === 'timeline' ? (dated[0]?.id ?? null) : null,
     };
-    onChangeViews([...views, next], id);
+    onChangeViews((vs) => [...vs, next], id);
   };
   const setFilter = (i: number, f: ViewFilter) => change({ ...view, filters: view.filters.map((x, j) => (j === i ? f : x)) });
 
@@ -389,7 +389,7 @@ export function ViewToolbar({
               className={`${CHIP} self-start`}
               onClick={() => {
                 const rest = views.filter((v) => v.id !== view.id);
-                onChangeViews(rest, rest[0]!.id);
+                onChangeViews((vs) => vs.filter((v) => v.id !== view.id), rest[0]!.id);
                 setPanel(null);
               }}
             >

@@ -373,7 +373,7 @@ export async function setPageFields(actor: Actor, pageId: string, input: unknown
  * Anyone else gets collection_not_found: nothing about it is shown.
  */
 export async function collectionRows(actor: Actor, collectionId: string, input: unknown): Promise<CollectionRows> {
-  const { filters, sorts } = CollectionRowsRequestSchema.parse(input ?? {});
+  const { filters, sorts, today } = CollectionRowsRequestSchema.parse(input ?? {});
   return withTenantTx(actor.tenantId, async (tx) => {
     const doc = await collectionPage(tx, actor, collectionId, 'viewer');
     const collection = await collectionOf(tx, actor.tenantId, doc);
@@ -402,14 +402,21 @@ export async function collectionRows(actor: Actor, collectionId: string, input: 
         .select({ pageId: pageFieldValues.pageId, fieldId: pageFieldValues.fieldId, value: pageFieldValues.value })
         .from(pageFieldValues)
         .innerJoin(documents, and(eq(documents.tenantId, pageFieldValues.tenantId), eq(documents.id, pageFieldValues.pageId)))
-        .where(and(eq(pageFieldValues.tenantId, actor.tenantId), eq(documents.parentId, collectionId)));
+        .where(
+          and(
+            eq(pageFieldValues.tenantId, actor.tenantId),
+            eq(documents.parentId, collectionId),
+            eq(documents.kind, 'page'),
+            isNull(documents.archivedAt)
+          )
+        );
       for (const v of values) {
         const forPage = raw.get(v.pageId) ?? {};
         forPage[v.fieldId] = v.value;
         raw.set(v.pageId, forPage);
       }
     }
-    const ctx = { me: actor.principalType === 'user' ? actor.principalId : null, today: new Date().toISOString().slice(0, 10) };
+    const ctx = { me: actor.principalType === 'user' ? actor.principalId : null, today: today ?? new Date().toISOString().slice(0, 10) };
     const rows = pageRows
       .map((p) => ({ ...p, values: validFields(collection.fields, raw.get(p.id) ?? {}) }))
       .filter((r) => rowMatches(collection.fields, r, filters, ctx))

@@ -1,5 +1,5 @@
 import type { CollectionRow, FieldDef } from '@living-wiki/contracts';
-import { groupRows, visibleFields } from '../../lib/views.js';
+import { groupRows, tableGroupField, visibleFields } from '../../lib/views.js';
 import { FieldEditor, FieldValue } from '../fields/FieldEditor.js';
 import type { LayoutProps } from './types.js';
 
@@ -31,7 +31,7 @@ export function Cell({ row, def, p }: { row: CollectionRow; def: FieldDef; p: La
 /** The table layout (spec C7): Title then the shown fields, cells edited in place, optionally grouped. */
 export function TableView(p: LayoutProps) {
   const fields = visibleFields(p.collection.fields, p.view.visible);
-  const groupDef = p.collection.fields.find((f) => f.id === p.view.groupBy);
+  const groupDef = tableGroupField(p.collection.fields, p.view);
   const groups = groupDef ? groupRows(p.rows, groupDef, p.names) : [{ key: '', label: '', rows: p.rows }];
 
   return (

@@ -304,7 +304,7 @@ export const api = {
       `/api/v1/collections/${e(collectionId)}/fields/${e(fieldId)}/usage${choice ? `?choice=${e(choice)}` : ''}`,
       FieldUsageSchema
     ),
-  collectionRows: (collectionId: string, body: { filters: ViewFilter[]; sorts: ViewSort[] }) =>
+  collectionRows: (collectionId: string, body: { filters: ViewFilter[]; sorts: ViewSort[]; today?: string }) =>
     request(`/api/v1/collections/${e(collectionId)}/rows`, CollectionRowsSchema, send('POST', body)),
   listCollections: (q: string) => request(`/api/v1/collections?q=${e(q)}`, CollectionPickListSchema),
   setPageFields: (pageId: string, values: Record<string, unknown>) =>

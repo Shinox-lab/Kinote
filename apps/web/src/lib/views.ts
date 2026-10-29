@@ -1,4 +1,4 @@
-import { fieldValueFits, groupKeysOf, type CollectionRow, type FieldDef, type FieldNames, type View } from '@living-wiki/contracts';
+import { fieldValueFits, groupKeysOf, parseViews, type CollectionRow, type FieldDef, type FieldNames, type View } from '@living-wiki/contracts';
 
 /** A date field's value. */
 export interface DateValue {
@@ -13,7 +13,16 @@ export const addDays = (s: string, n: number) => {
   return d.toISOString().slice(0, 10);
 };
 export const daysBetween = (a: string, b: string) => Math.round((day(b).getTime() - day(a).getTime()) / 86_400_000);
-export const todayIso = () => new Date().toISOString().slice(0, 10);
+/** `YYYY-MM-DD` of `date` on the viewer's own clock. */
+export const localDay = (date: Date) =>
+  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+export const todayIso = () => localDay(new Date());
+
+/** A change to a block's views, made to whatever is saved when it lands rather than to what was on screen. */
+export type ViewsEdit = (views: View[]) => View[];
+export const replaceView = (next: View): ViewsEdit => (views) => views.map((v) => (v.id === next.id ? next : v));
+/** The saved views JSON `json` after `edit`. */
+export const editViews = (json: string, edit: ViewsEdit) => JSON.stringify(edit(parseViews(json)));
 
 /** The fields a view shows, in its order: all of them when it lists none; removed ones are skipped. */
 export function visibleFields(defs: FieldDef[], visible: string[] | null): FieldDef[] {
@@ -28,6 +37,8 @@ export const dateFields = (defs: FieldDef[]) => defs.filter((d) => d.type === 'd
 /** A board's grouping field: the chosen one, else the first that can group. */
 export const viewGroupField = (defs: FieldDef[], view: Pick<View, 'groupBy'>) =>
   groupableFields(defs).find((d) => d.id === view.groupBy) ?? groupableFields(defs)[0];
+/** A table's grouping field: only a chosen one that can group. */
+export const tableGroupField = (defs: FieldDef[], view: Pick<View, 'groupBy'>) => groupableFields(defs).find((d) => d.id === view.groupBy);
 /** A calendar's or timeline's date field: the chosen one, else the first date field. */
 export const viewDateField = (defs: FieldDef[], view: Pick<View, 'dateField'>) =>
   dateFields(defs).find((d) => d.id === view.dateField) ?? dateFields(defs)[0];
@@ -76,9 +87,9 @@ export function boardMove(def: FieldDef, value: unknown, from: string, to: strin
   if (def.type === 'checkbox') return to === 'true';
   if (def.type === 'select') return to === '' ? null : to;
   const current = fieldValueFits(def, value) ? (value as string[]) : [];
-  const kept = current.filter((id) => id !== from && id !== to);
-  const next = to === '' ? kept : [...kept, to];
-  return next.length > 0 ? next : null;
+  // "No value" means nobody, so the card leaves every person's column.
+  if (to === '') return null;
+  return [...current.filter((id) => id !== from && id !== to), to];
 }
 
 /** The Monday-first weeks a month's calendar shows (`YYYY-MM`), each 7 days. */

@@ -96,17 +96,21 @@ export function WikiMenus({ editor, place }: { editor: WikiEditor; place: Editor
         group: 'Pages',
         onItemClick: () => {
           const here = editor.getTextCursorPosition().block;
-          // On a collection page the view shows its own sub-pages; elsewhere the block asks which collection.
+          // The block goes in now, so nothing typed meanwhile is lost; on a collection page it then
+          // shows its own sub-pages, elsewhere it asks which collection.
+          const block = { type: 'collectionView' as const, props: { collectionId: '', title: '', views: '' } };
+          const empty = Array.isArray(here.content) && here.content.length === 0;
+          const [made] = empty ? editor.replaceBlocks([here], [block]).insertedBlocks : editor.insertBlocks([block], here, 'after');
+          if (!made) return;
           void api
             .getCollection(place.pageId)
-            .then((c) => ({ collectionId: c.id, title: '', views: JSON.stringify([defaultView()]) }))
-            .catch(() => ({ collectionId: '', title: '', views: '' }))
-            .then((props) => {
-              const block = { type: 'collectionView' as const, props };
-              const empty = Array.isArray(here.content) && here.content.length === 0;
-              if (empty && editor.getBlock(here.id)) editor.replaceBlocks([here], [block]);
-              else editor.insertBlocks([block], here, 'after');
-            });
+            .then((c) => {
+              const now = editor.getBlock(made.id);
+              if (now?.type === 'collectionView' && !now.props.collectionId) {
+                editor.updateBlock(now, { props: { collectionId: c.id, views: JSON.stringify([defaultView()]) } });
+              }
+            })
+            .catch(() => undefined);
         },
       },
       {

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
-import type { FieldDef } from '@living-wiki/contracts';
-import { boardMove, calendarWeeks, groupRows, moveDate, resizeEnd, timelineBar, timelineDays, visibleFields } from '../src/lib/views.js';
+import { defaultView, parseViews, type FieldDef } from '@living-wiki/contracts';
+import { boardMove, calendarWeeks, editViews, groupRows, localDay, moveDate, replaceView, resizeEnd, tableGroupField, timelineBar, timelineDays, visibleFields } from '../src/lib/views.js';
 
 const U1 = '11111111-1111-4111-8111-111111111111';
 const U2 = '22222222-2222-4222-8222-222222222222';
@@ -43,13 +43,43 @@ describe('boardMove', () => {
     expect(boardMove(status, 'lead', 'lead', 'active')).toBe('active');
     expect(boardMove(status, 'lead', 'lead', '')).toBeNull();
     expect(boardMove(status, 'lead', 'lead', 'lead')).toBeUndefined();
-    expect(boardMove(owner, [U1, U2], U1, '')).toEqual([U2]);
+    // "No value" means nobody: the card leaves every person's column.
+    expect(boardMove(owner, [U1, U2], U1, '')).toBeNull();
     expect(boardMove(owner, [U1], U1, '')).toBeNull();
     expect(boardMove(owner, [U1], U1, U2)).toEqual([U2]);
     expect(boardMove(owner, [U1, U2], U1, U2)).toEqual([U2]);
     expect(boardMove(owner, undefined, '', U1)).toEqual([U1]);
     expect(boardMove(done, undefined, 'false', 'true')).toBe(true);
     expect(boardMove(done, true, 'true', 'false')).toBe(false);
+  });
+});
+
+describe('localDay', () => {
+  test('the day on the viewer’s own clock, not UTC', () => {
+    // Late evening west of UTC (or just after midnight east of it) is another day in UTC.
+    expect(localDay(new Date(2026, 9, 29, 23, 30))).toBe('2026-10-29');
+    expect(localDay(new Date(2026, 0, 1, 0, 5))).toBe('2026-01-01');
+  });
+});
+
+describe('tableGroupField', () => {
+  test('only a field that can group; none when nothing is chosen', () => {
+    const note = f('note', 'text');
+    expect(tableGroupField([status, note], { groupBy: 'status' })?.id).toBe('status');
+    expect(tableGroupField([status, note], { groupBy: 'note' })).toBeUndefined();
+    expect(tableGroupField([status, note], { groupBy: null })).toBeUndefined();
+  });
+});
+
+describe('editViews', () => {
+  test('an edit lands on the latest saved views, so a tab someone else just added stays', () => {
+    const a = { ...defaultView(), id: 'a', name: 'All' };
+    const b = { ...defaultView('board'), id: 'b', name: 'Board' };
+    const latest = JSON.stringify([a, b]);
+    const renamed = { ...a, name: 'Everything' };
+    expect(parseViews(editViews(latest, replaceView(renamed)))).toEqual([renamed, b]);
+    // A view someone else removed isn't brought back by an edit to it.
+    expect(parseViews(editViews(JSON.stringify([b]), replaceView(renamed)))).toEqual([b]);
   });
 });
 

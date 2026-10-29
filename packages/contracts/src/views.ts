@@ -303,6 +303,8 @@ export function groupKeysOf(def: FieldDef, value: unknown): string[] {
 export const CollectionRowsRequestSchema = z.object({
   filters: z.array(ViewFilterSchema).max(20).default([]),
   sorts: z.array(ViewSortSchema).max(5).default([]),
+  /** The viewer's own day, for "this week" and the like; the server's UTC day when absent. */
+  today: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
 });
 export const CollectionRowSchema = z.object({
   id: z.string().uuid(),

@@ -69,6 +69,18 @@ describe('collection rows for views', () => {
 
   const rows = (headers: Headers, collectionId: string, body: unknown = {}) => req('POST', headers, `/api/v1/collections/${collectionId}/rows`, body);
 
+  test("date windows use the viewer's own day when it is sent", async () => {
+    const w = await world();
+    const launch = (await req('POST', w.headers, `/api/v1/collections/${w.clients}/fields`, { name: 'Launch', type: 'date' })).json();
+    expect((await req('PATCH', w.headers, `/api/v1/pages/${w.george}/fields`, { [launch.id]: { start: '2026-11-02' } })).statusCode).toBe(200);
+    const thisWeek = (today: string) =>
+      rows(w.headers, w.clients, { filters: [{ fieldId: launch.id, op: 'this_week' }], today }).then((r) => r.json().rows.map((x: { title: string }) => x.title));
+    // Sunday 1 Nov and Monday 2 Nov are in different weeks.
+    expect(await thisWeek('2026-11-02')).toEqual(['George']);
+    expect(await thisWeek('2026-11-01')).toEqual([]);
+    expect((await rows(w.headers, w.clients, { today: 'soon' })).statusCode).toBe(400);
+  });
+
   test('filters and sorts on the server; values are the ones that fit', async () => {
     const w = await world();
     const all = await rows(w.headers, w.clients, { sorts: [{ fieldId: 'title', dir: 'asc' }] });
