@@ -39,8 +39,8 @@ merged into local `main`; nothing has been pushed. Since 2026-10-30, work goes s
 | XLSX preview and GridCraft spreadsheet editor | Merged 2026-10-29/30 | `specs/2026-10-29-extend-xlsx-preview-design.md`, `specs/2026-10-29-gridcraft-xlsx-editor-design.md` |
 | Phase C1a: collection fields | Merged 2026-10-29 | `specs/2026-10-29-phase-c-collections-design.md` · `plans/2026-10-29-phase-c1a-fields.md` |
 | Phase C1b: collection views (table, board, calendar, timeline) | Merged 2026-10-30, with polish fixes (`4da272a`) | same spec · `plans/2026-10-29-phase-c1b-views.md` |
-| **Phase C1c: the engine writes fields; Search and Ask understand them** | **Next** | same spec |
-| Phase C: Excalidraw drawings | Not started; needs its own spec | — |
+| Phase C1c: the engine writes fields; Ask reads collections | Built 2026-10-30 on branch `phase-c1c-c2`, not yet on `main` | same spec · `plans/2026-10-30-phase-c1c-engine-fields-and-ask.md` |
+| **Phase C2: Excalidraw drawings** | **Next** | `specs/2026-10-30-phase-c-drawings-design.md` · `plans/2026-10-30-phase-c2-drawings.md` |
 | Agents and MCP rework for external agents | Not started; needs its own spec | — |
 | WhatsApp, then Google Drive | Not started | slices 4–5 below |
 
@@ -48,6 +48,8 @@ Spec and plan paths are under `docs/superpowers/`.
 
 Known gaps:
 - The small issues deferred from the C1a review are still open.
+- C1c: `pnpm test:pg` and the live check (`live-checks/2026-10-phase-c1c-live-check.md`) have not been run; the only
+  Postgres running was the owner's own stack.
 - The Postgres test suite (`pgtest.sh`) has not been run for Phase C, because Docker was down. The PGlite unit and
   end-to-end suites pass.
 
