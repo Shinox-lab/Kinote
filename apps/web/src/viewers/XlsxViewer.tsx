@@ -1,60 +1,53 @@
-import { useMemo, useState } from 'react';
-import { SHEET_PREVIEW_COLUMNS, SHEET_PREVIEW_ROWS, capSheet, initialSheet } from '../lib/tablePreview.js';
-import { VIEWER_TIMEOUT_MS, withTimeout } from '../lib/viewers.js';
+import { useEffect, useState } from 'react';
+import type { FileVersion } from '@living-wiki/contracts';
+import { XlsxViewer as ExtendXlsxViewer, useXlsxViewerController } from '@extend-ai/react-xlsx';
 import { Loading } from '../components/ui.js';
-import { PreviewTable } from './PreviewTable.js';
-import { useAsyncOrThrow } from './useAsyncOrThrow.js';
+import { initialSheet } from '../lib/tablePreview.js';
+import { PREVIEW_LIMIT_BYTES, VIEWER_TIMEOUT_MS } from '../lib/viewers.js';
+import { useResolvedTheme } from '../lib/useResolvedTheme.js';
+import { DownloadCard } from './DownloadCard.js';
 
-/** A workbook as tabs of tables: each sheet cut to 200 rows by 26 columns, values shown as text. */
-export default function XlsxViewer({ bytes, versionId, name, page }: { bytes: ArrayBuffer; versionId: string; name: string; page?: number }) {
-  const sheets = useAsyncOrThrow(versionId, () =>
-    withTimeout(
-      import('read-excel-file/browser').then(async (m) => {
-        const read = (m as unknown as { default?: (input: ArrayBuffer) => Promise<{ sheet: string; data: unknown[][] }[]> }).default;
-        if (!read) throw new Error('The spreadsheet reader is not available.');
-        const all = await read(bytes);
-        return all.map((s) => ({ name: s.sheet, ...capSheet(s.data) }));
-      }),
-      VIEWER_TIMEOUT_MS
-    )
-  );
-  const first = useMemo(() => initialSheet(sheets?.length ?? 0, page), [sheets, page]);
-  const [chosen, setChosen] = useState<number | null>(null);
-  if (!sheets) return <Loading what="workbook" />;
-  if (sheets.length === 0) return <p className="text-sm text-muted">This workbook has no sheets.</p>;
-  const index = Math.min(chosen ?? first, sheets.length - 1);
-  const sheet = sheets[index]!;
+export default function XlsxViewer({ bytes, version, page }: { bytes: ArrayBuffer; version: FileVersion; page?: number }) {
+  return <ExtendPreview bytes={bytes} version={version} page={page} />;
+}
+
+function ExtendPreview({ bytes, version, page }: { bytes: ArrayBuffer; version: FileVersion; page?: number }) {
+  const theme = useResolvedTheme();
+  const controller = useXlsxViewerController({
+    file: bytes,
+    fileName: version.fileName,
+    readOnly: true,
+    useWorker: true,
+    maxFileSizeBytes: PREVIEW_LIMIT_BYTES,
+  });
+  const [timedOut, setTimedOut] = useState(false);
+
+  useEffect(() => {
+    if (!controller.isLoading) return;
+    const timer = window.setTimeout(() => setTimedOut(true), VIEWER_TIMEOUT_MS);
+    return () => window.clearTimeout(timer);
+  }, [controller.isLoading, version.id]);
+
+  // The controller has no initial-sheet prop. Set it after the workbook's sheets arrive;
+  // everything else (default first sheet, clamping) is the existing initialSheet rule.
+  useEffect(() => {
+    if (controller.isLoading || controller.sheets.length === 0) return;
+    controller.setActiveSheetIndex(initialSheet(controller.sheets.length, page));
+  }, [controller.isLoading, controller.sheets.length, controller.setActiveSheetIndex, page, version.id]);
+
+  if (timedOut) {
+    return <DownloadCard version={version} reason="This workbook took too long to preview." />;
+  }
+
   return (
-    <div className="flex flex-col gap-2">
-      <div role="tablist" aria-label={`Sheets of ${name}`} className="flex flex-wrap gap-1">
-        {sheets.map((s, i) => (
-          <button
-            key={i}
-            type="button"
-            role="tab"
-            id={`sheet-tab-${i}`}
-            aria-selected={i === index}
-            aria-controls="sheet-panel"
-            onClick={() => setChosen(i)}
-            className={`rounded-md px-3 py-1.5 text-sm ${i === index ? 'bg-active font-medium' : 'text-muted hover:bg-hover'}`}
-          >
-            {s.name}
-          </button>
-        ))}
-      </div>
-      <div role="tabpanel" id="sheet-panel" aria-labelledby={`sheet-tab-${index}`}>
-        {sheet.rows.length === 0 ? (
-          <p className="text-sm text-muted">This sheet is empty.</p>
-        ) : (
-          <PreviewTable rows={sheet.rows} header={false} letters caption={`${sheet.name} of ${name}`} />
-        )}
-      </div>
-      {sheet.truncated && (
-        <p className="text-xs text-muted">
-          Showing the first {SHEET_PREVIEW_ROWS} rows and {SHEET_PREVIEW_COLUMNS} columns of this sheet ({sheet.rowCount.toLocaleString('en-US')} rows,{' '}
-          {sheet.colCount} columns). Download the file to see the rest.
-        </p>
-      )}
-    </div>
+    <ExtendXlsxViewer
+      controller={controller}
+      height="clamp(420px, 70vh, 760px)"
+      isDark={theme === 'dark'}
+      experimentalCanvas={false}
+      loadingState={<Loading what="workbook" />}
+      errorState={<DownloadCard version={version} reason="This workbook can't be previewed." />}
+      fileTooLargeState={<DownloadCard version={version} reason="This workbook is too large to preview here." />}
+    />
   );
 }

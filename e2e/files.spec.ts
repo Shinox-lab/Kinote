@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { corruptDocx, docx, pptx, realPdf, xlsx } from './fixtures.js';
+import { corruptDocx, docx, pptx, realPdf, XLSX_MIME, xlsx } from './fixtures.js';
 import {
   addMember,
   approveAll,
@@ -307,6 +307,7 @@ test('a CSV opens as a table of text, and a workbook as tabs; the page number pi
   await expect(preview).toContainText('Showing the first 1,000 of 1,103 rows');
 
   await page.goto(`/w/${world.slug}/f/${book}`);
+  await expect(preview.getByRole('grid')).toBeVisible();
   await expect(preview.getByRole('tab', { name: 'Income' })).toHaveAttribute('aria-selected', 'true');
   await expect(preview.getByRole('cell', { name: 'Sales' })).toBeVisible();
   await preview.getByRole('tab', { name: 'Costs' }).click();
@@ -317,6 +318,26 @@ test('a CSV opens as a table of text, and a workbook as tabs; the page number pi
   await expect(preview.getByRole('tab', { name: 'Costs' })).toHaveAttribute('aria-selected', 'true');
   await expect(preview.getByRole('cell', { name: 'Power' })).toBeVisible();
   expect(dialogs).toEqual([]);
+});
+
+test('a workbook that cannot be read falls back to a download', async ({ browser, request }) => {
+  const world = await seedWorld(request, { reviewRequired: false });
+  const book = await uploadViaApi(
+    request,
+    world,
+    world.owner,
+    xlsx('Budget.xlsx', world.suffix, [{ name: 'Income', rows: [['Item', 'Amount'], ['Sales', 1200]] }])
+  );
+  await waitForFileBadge(request, world, world.owner, book, /^Indexed/);
+
+  const page = await openAs(browser, world, world.owner);
+  await page.route('**/api/v1/versions/*/file', (route) =>
+    route.fulfill({ status: 200, contentType: XLSX_MIME, body: Buffer.from('not a workbook') })
+  );
+  await page.goto(`/w/${world.slug}/f/${book}`);
+  const preview = page.getByRole('region', { name: 'Preview' });
+  await expect(preview.getByText("This workbook can't be previewed.")).toBeVisible();
+  await expect(preview.getByRole('button', { name: 'Download Budget.xlsx' })).toBeVisible();
 });
 
 test('a PDF opens on the page a search result points to, and a slide deck as text', async ({ browser, request }) => {

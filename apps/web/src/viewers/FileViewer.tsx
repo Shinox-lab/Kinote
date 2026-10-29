@@ -28,9 +28,7 @@ const VIEWERS: Partial<Record<ViewerKind, ComponentType<ViewerProps>>> = {
   markdown: ({ bytes }) => <MarkdownViewer bytes={bytes} />,
   pdf: ({ bytes, page }) => <PdfViewer bytes={bytes} page={page} />,
   csv: ({ bytes, version }) => <CsvViewer bytes={bytes} name={version.fileName} />,
-  xlsx: ({ bytes, version, page }) => (
-    <XlsxViewer bytes={bytes} versionId={version.id} name={version.fileName} page={page} />
-  ),
+  xlsx: ({ bytes, version, page }) => <XlsxViewer bytes={bytes} version={version} page={page} />,
   docx: ({ bytes, version }) => <DocxViewer bytes={bytes} versionId={version.id} />,
   image: ({ bytes, version }) => <ImageViewer bytes={bytes} mimeType={version.mimeType} name={version.fileName} />,
 };

@@ -79,7 +79,11 @@ export function corruptDocx(name: string, label: string): TestFile {
 
 export const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
-/** A small workbook: each sheet is a name and rows of text or numbers. `label` makes the bytes unique. */
+/**
+ * A small workbook: each sheet is a name and rows of text or numbers. `label` makes the bytes unique.
+ * The fake-extractor marker is appended after the ZIP end, not stored as a member: Extend treats an
+ * extra member as an invalid workbook, while the raw-byte fake extractor still finds the text.
+ */
 export function xlsx(name: string, label: string, sheets: { name: string; rows: (string | number)[][] }[]): TestFile {
   const strings: string[] = [];
   const index = (s: string) => {
@@ -118,8 +122,9 @@ export function xlsx(name: string, label: string, sheets: { name: string; rows: 
   entries['xl/sharedStrings.xml'] = `<?xml version="1.0" encoding="UTF-8"?><sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="${strings.length}" uniqueCount="${strings.length}">${strings
     .map((s) => `<si><t xml:space="preserve">${escapeXml(s)}</t></si>`)
     .join('')}</sst>`;
-  entries['fake-extract.txt'] = marker(`${label}\n${sheets.flatMap((s) => s.rows.map((r) => r.join(' '))).join('\n')}`);
-  return { name, mimeType: XLSX_MIME, buffer: zip(entries) };
+  const workbook = zip(entries);
+  const markerText = marker(`${label}\n${sheets.flatMap((s) => s.rows.map((r) => r.join(' '))).join('\n')}`);
+  return { name, mimeType: XLSX_MIME, buffer: Buffer.concat([workbook, Buffer.from(markerText)]) };
 }
 
 /**
