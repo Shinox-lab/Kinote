@@ -39,8 +39,8 @@ merged into local `main`; nothing has been pushed. Since 2026-10-30, work goes s
 | XLSX preview and GridCraft spreadsheet editor | Merged 2026-10-29/30 | `specs/2026-10-29-extend-xlsx-preview-design.md`, `specs/2026-10-29-gridcraft-xlsx-editor-design.md` |
 | Phase C1a: collection fields | Merged 2026-10-29 | `specs/2026-10-29-phase-c-collections-design.md` · `plans/2026-10-29-phase-c1a-fields.md` |
 | Phase C1b: collection views (table, board, calendar, timeline) | Merged 2026-10-30, with polish fixes (`4da272a`) | same spec · `plans/2026-10-29-phase-c1b-views.md` |
-| Phase C1c: the engine writes fields; Ask reads collections | Built 2026-10-30 on branch `phase-c1c-c2`, not yet on `main` | same spec · `plans/2026-10-30-phase-c1c-engine-fields-and-ask.md` |
-| Phase C2: Excalidraw drawings | Built 2026-10-30 on branch `phase-c1c-c2`, not yet on `main` | `specs/2026-10-30-phase-c-drawings-design.md` · `plans/2026-10-30-phase-c2-drawings.md` |
+| Phase C1c: the engine writes fields; Ask reads collections | Merged 2026-10-30 | same spec · `plans/2026-10-30-phase-c1c-engine-fields-and-ask.md` |
+| Phase C2: Excalidraw drawings | Merged 2026-10-30 | `specs/2026-10-30-phase-c-drawings-design.md` · `plans/2026-10-30-phase-c2-drawings.md` |
 | **Agents and MCP rework for external agents** | **Next**; needs its own spec | — |
 | WhatsApp, then Google Drive | Not started | slices 4–5 below |
 
