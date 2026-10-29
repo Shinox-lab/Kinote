@@ -157,6 +157,7 @@ export {
   type NotificationKind,
 } from './talk/notify.js';
 export { resolveFieldValue, type ResolvedFieldValue } from './collections/resolve.js';
+export { describeFieldChange, fieldIdOf } from './collections/describe.js';
 export { collectionFieldDefs, fieldDefOf, fieldNames, isCollection, pageFieldEntries, rowCollectionOf } from './collections/fields.js';
 export { relocateFile, returnToReview, type RelocateTarget } from './files/relocate.js';
 export {

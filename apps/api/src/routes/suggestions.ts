@@ -10,17 +10,19 @@ import {
   writeAuditEvent,
   type DbTransaction,
 } from '@kinote/db';
-import { AppError, type SuggestionSummary } from '@kinote/contracts';
+import { AppError, fieldValueFits, type SuggestionSummary } from '@kinote/contracts';
 import {
   assertValidUuid,
   ensureRouterAgent,
+  fieldIdOf,
   markdownBlocks,
   requireDocumentRole,
+  rowCollectionOf,
   takePageSnapshot,
   type Actor,
 } from '@kinote/core';
 import { documentName, type BlockLike, type CollabClient } from '@kinote/shared';
-import { conflictNames, toSuggestionSummary } from './captures.js';
+import { conflictNames, suggestionField, toSuggestionSummary } from './captures.js';
 import { approveVersion } from './pages.js';
 
 type SuggestionRow = typeof suggestions.$inferSelect;
@@ -41,7 +43,11 @@ export async function listPageSuggestions(actor: Actor, pageId: string): Promise
       .where(and(eq(suggestions.tenantId, actor.tenantId), eq(suggestions.documentId, pageId), eq(suggestions.status, 'open')))
       .orderBy(suggestions.createdAt);
     const names = await conflictNames(tx, actor.tenantId, rows);
-    return rows.map((r) => toSuggestionSummary(r, r.conflictCitationId ? names.get(r.conflictCitationId) ?? null : null));
+    const out: SuggestionSummary[] = [];
+    for (const r of rows) {
+      out.push(toSuggestionSummary(r, r.conflictCitationId ? names.get(r.conflictCitationId) ?? null : null, await suggestionField(tx, actor.tenantId, r)));
+    }
+    return out;
   });
 }
 
@@ -98,7 +104,16 @@ async function setStatus(tenantId: string, id: string, status: 'open' | 'stale')
   );
 }
 
-async function opsFor(row: SuggestionRow): Promise<{ ops: Parameters<CollabClient['applyBlockOps']>[0]['ops']; added: BlockLike[] }> {
+async function opsFor(tenantId: string, row: SuggestionRow): Promise<{ ops: Parameters<CollabClient['applyBlockOps']>[0]['ops']; added: BlockLike[] }> {
+  if (row.kind === 'set_field') {
+    // Stale when the field is gone, or the value no longer fits it (a choice was removed).
+    const fieldId = fieldIdOf(row.blockId);
+    const defs = await withTenantTx(tenantId, async (tx) => (await rowCollectionOf(tx, tenantId, row.documentId))?.fields ?? []);
+    const def = defs.find((d) => d.id === fieldId);
+    const value = row.proposedMarkdown === null ? null : JSON.parse(row.proposedMarkdown);
+    if (!def || (value !== null && !fieldValueFits(def, value))) throw new AppError('suggestion_not_open');
+    return { ops: [{ op: 'set_field', fieldId: def.id, value, expected: row.expectedText ?? 'null' }], added: [] };
+  }
   const expected = row.expectedText !== null ? { expectedText: row.expectedText } : {};
   if (row.kind === 'remove') return { ops: [{ op: 'remove', blockId: row.blockId!, ...expected }], added: [] };
   const blocks: BlockLike[] = (await markdownBlocks(row.proposedMarkdown ?? '')).map((b) => ({ ...b, id: randomUUID() }));
@@ -120,7 +135,8 @@ async function opsFor(row: SuggestionRow): Promise<{ ops: Parameters<CollabClien
  * space the acceptance approves that snapshot when nothing else was waiting
  * on the page; otherwise the change joins the waiting snapshot. A block that
  * has gone, or changed since the suggestion was made, makes it `stale` (409
- * `suggestion_not_open`).
+ * `suggestion_not_open`); for a field, also a removed field or a value that
+ * no longer fits it.
  */
 export async function acceptSuggestion(actor: Actor, id: string, collab?: CollabClient): Promise<SuggestionSummary> {
   if (!collab) throw new AppError('internal_error');
@@ -137,7 +153,7 @@ export async function acceptSuggestion(actor: Actor, id: string, collab?: Collab
 
   let added: BlockLike[];
   try {
-    const built = await opsFor(row);
+    const built = await opsFor(actor.tenantId, row);
     added = built.added;
     await collab.applyBlockOps({
       tenantId: actor.tenantId,
@@ -198,7 +214,7 @@ export async function acceptSuggestion(actor: Actor, id: string, collab?: Collab
       subjectId: id,
       payload: { documentId: row.documentId, kind: row.kind, captureId: row.captureId, versionId: version?.id ?? null },
     });
-    return toSuggestionSummary(row, null);
+    return toSuggestionSummary(row, null, await suggestionField(tx, actor.tenantId, row));
   });
 }
 
@@ -216,6 +232,6 @@ export async function declineSuggestion(actor: Actor, id: string): Promise<Sugge
       subjectId: id,
       payload: { documentId: row.documentId, kind: row.kind, captureId: row.captureId },
     });
-    return toSuggestionSummary(row, null);
+    return toSuggestionSummary(row, null, await suggestionField(tx, actor.tenantId, row));
   });
 }

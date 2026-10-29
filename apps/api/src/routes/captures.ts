@@ -26,7 +26,7 @@ import {
   type SuggestionSummary,
   type FieldChange,
 } from '@kinote/contracts';
-import { assertValidUuid, isTenantAdmin, senderAccess, type Actor } from '@kinote/core';
+import { assertValidUuid, describeFieldChange, fieldIdOf, isTenantAdmin, senderAccess, type Actor } from '@kinote/core';
 import { resolveActorNames } from '../people.js';
 
 type CaptureRow = typeof captures.$inferSelect;
@@ -236,6 +236,24 @@ export async function visibleCapture(
   return row;
 }
 
+/** The field change of a `set_field` receipt row, as the console shows it; null for a block change. */
+export async function changeField(
+  tx: DbTransaction,
+  tenantId: string,
+  row: Pick<typeof captureChanges.$inferSelect, 'op' | 'documentId' | 'blockId' | 'beforeMarkdown' | 'afterMarkdown'>
+): Promise<FieldChange | null> {
+  const fieldId = row.op === 'set_field' ? fieldIdOf(row.blockId) : null;
+  return fieldId === null ? null : describeFieldChange(tx, tenantId, row.documentId, fieldId, row.beforeMarkdown, row.afterMarkdown);
+}
+
+/** The field change a `set_field` suggestion proposes (from the value seen to the one proposed); null otherwise. */
+export async function suggestionField(tx: DbTransaction, tenantId: string, row: SuggestionRow): Promise<FieldChange | null> {
+  const fieldId = row.kind === 'set_field' ? fieldIdOf(row.blockId) : null;
+  if (fieldId === null) return null;
+  const json = (s: string | null) => (s === null || s === 'null' ? null : s);
+  return describeFieldChange(tx, tenantId, row.documentId, fieldId, json(row.expectedText), json(row.proposedMarkdown));
+}
+
 export function toSuggestionSummary(row: SuggestionRow, conflictWith: string | null, field: FieldChange | null = null): SuggestionSummary {
   return {
     id: row.id,
@@ -389,7 +407,7 @@ export async function captureReceipt(tx: DbTransaction, viewer: Actor, captureId
       afterMarkdown: c.change.afterMarkdown,
       status: c.change.status,
       reason: c.reason,
-      field: null,
+      field: await changeField(tx, viewer.tenantId, c.change),
     });
     if (c.versionStatus === 'pending_review') page.waiting = true;
   }
@@ -397,7 +415,11 @@ export async function captureReceipt(tx: DbTransaction, viewer: Actor, captureId
     const page = pageOf(p.suggestion.spaceId, p.spaceName, p.suggestion.documentId, p.title);
     if (!page) continue;
     page.suggestions.push(
-      toSuggestionSummary(p.suggestion, p.suggestion.conflictCitationId ? names.get(p.suggestion.conflictCitationId) ?? null : null)
+      toSuggestionSummary(
+        p.suggestion,
+        p.suggestion.conflictCitationId ? names.get(p.suggestion.conflictCitationId) ?? null : null,
+        await suggestionField(tx, viewer.tenantId, p.suggestion)
+      )
     );
   }
 

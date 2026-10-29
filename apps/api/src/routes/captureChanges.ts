@@ -12,6 +12,7 @@ import {
 } from '@kinote/db';
 import {
   AppError,
+  canonicalFieldJson,
   MoveChangeRequestSchema,
   MoveDocumentRequestSchema,
   PlaceDocumentRequestSchema,
@@ -23,6 +24,7 @@ import {
 import {
   assertValidUuid,
   blockMarkdown,
+  fieldIdOf,
   isTenantAdmin,
   markdownBlocks,
   readLiveBlocks,
@@ -30,12 +32,13 @@ import {
   requireDocumentRole,
   requireSpaceRole,
   returnCaptureFile,
+  rowCollectionOf,
   takePageSnapshot,
   type Actor,
   type EmbeddingProvider,
 } from '@kinote/core';
 import { blockFullText, documentName, type BlockLike, type CollabClient } from '@kinote/shared';
-import { enqueueCaptureRoute, summaries, visibleCapture } from './captures.js';
+import { changeField, enqueueCaptureRoute, summaries, visibleCapture } from './captures.js';
 import { archivePageTx, lockPage, movePage } from './pages.js';
 
 type ChangeRow = typeof captureChanges.$inferSelect;
@@ -80,7 +83,9 @@ async function mayUndo(tx: DbTransaction, actor: Actor, _capture: CaptureRow, ch
  * Restores each change's block to what it said before, as a new edit by
  * `actor` (rule 6: history is never rewritten). A block whose content no
  * longer equals the engine's result was changed by someone since: it is left
- * alone and reported. Inserted blocks are removed.
+ * alone and reported. Inserted blocks are removed. A field goes back to its
+ * value before (cleared when it was empty) only while it still holds the
+ * engine's value and the page still has the field.
  */
 async function undoChanges(
   actor: Actor,
@@ -93,16 +98,36 @@ async function undoChanges(
   for (const c of changes) byPage.set(c.documentId, [...(byPage.get(c.documentId) ?? []), c]);
 
   for (const [pageId, list] of byPage) {
-    if (list.every((c) => c.factId === null) && (await isDocumentPage(actor.tenantId, list[0]!.captureId, pageId))) {
+    // A document's own page goes as a whole (its field changes with it); a field change alone is undone like any other.
+    const blockRows = list.filter((c) => c.op !== 'set_field');
+    if (
+      blockRows.length > 0 &&
+      blockRows.every((c) => c.factId === null) &&
+      (await isDocumentPage(actor.tenantId, list[0]!.captureId, pageId))
+    ) {
       await undoDocumentPage(actor, pageId, list, collab, result);
       continue;
     }
     await collab.flush(documentName(actor.tenantId, pageId));
-    const live = await withTenantTx(actor.tenantId, (tx) => readLiveBlocks(tx, actor.tenantId, pageId));
+    const { live, defs } = await withTenantTx(actor.tenantId, async (tx) => ({
+      live: await readLiveBlocks(tx, actor.tenantId, pageId),
+      defs: list.some((c) => c.op === 'set_field') ? ((await rowCollectionOf(tx, actor.tenantId, pageId))?.fields ?? []) : [],
+    }));
     const blocks = new Map((live?.blocks ?? []).map((b) => [b.id, b]));
     type Op = Parameters<CollabClient['applyBlockOps']>[0]['ops'][number];
     const planned: Array<{ change: ChangeRow; op: Op }> = [];
     for (const change of list) {
+      const fieldId = change.op === 'set_field' ? fieldIdOf(change.blockId) : null;
+      if (fieldId !== null) {
+        const current = canonicalFieldJson(live?.fields[fieldId] ?? null);
+        if (!defs.some((d) => d.id === fieldId) || current !== change.afterMarkdown) {
+          result.changedSince.push(change.id);
+          continue;
+        }
+        const value = change.beforeMarkdown === null ? null : JSON.parse(change.beforeMarkdown);
+        planned.push({ change, op: { op: 'set_field', fieldId, value, expected: change.afterMarkdown } });
+        continue;
+      }
       const block = blocks.get(change.blockId);
       if (!block || (await blockMarkdown(block)) !== change.afterMarkdown) {
         result.changedSince.push(change.id);
@@ -254,10 +279,12 @@ async function undoDocumentPage(
       .from(captures)
       .where(and(eq(captures.tenantId, actor.tenantId), eq(captures.id, list[0]!.captureId)));
     const liveBlocks = live?.blocks ?? [];
+    // Field changes don't count: the page's fields go with it.
+    const blockRows = all.filter((c) => c.op !== 'set_field');
     if (!live || doc.title !== capture?.documentTitle || live.title !== doc.title) return false;
-    if (liveBlocks.length !== all.length || !liveBlocks.every((b) => all.some((c) => c.blockId === b.id))) return false;
+    if (liveBlocks.length !== blockRows.length || !liveBlocks.every((b) => blockRows.some((c) => c.blockId === b.id))) return false;
     for (const block of liveBlocks) {
-      const change = all.find((c) => c.blockId === block.id)!;
+      const change = blockRows.find((c) => c.blockId === block.id)!;
       if ((await blockMarkdown(block)) !== change.afterMarkdown) return false;
     }
     const [other] = await tx
@@ -558,18 +585,22 @@ export async function listPageCaptureChanges(actor: Actor, pageId: string, query
         )
       )
       .orderBy(captureChanges.createdAt);
-    return rows.map(({ change, reason }) => ({
-      id: change.id,
-      factId: change.factId,
-      documentId: change.documentId,
-      op: change.op,
-      blockId: change.blockId,
-      beforeMarkdown: change.beforeMarkdown,
-      afterMarkdown: change.afterMarkdown,
-      status: change.status,
-      reason,
-      field: null,
-    }));
+    const out = [];
+    for (const { change, reason } of rows) {
+      out.push({
+        id: change.id,
+        factId: change.factId,
+        documentId: change.documentId,
+        op: change.op,
+        blockId: change.blockId,
+        beforeMarkdown: change.beforeMarkdown,
+        afterMarkdown: change.afterMarkdown,
+        status: change.status,
+        reason,
+        field: await changeField(tx, actor.tenantId, change),
+      });
+    }
+    return out;
   });
 }
 
