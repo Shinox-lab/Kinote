@@ -359,6 +359,7 @@ describe('restore a version', () => {
       },
       applyBlockOps: (a) => real.applyBlockOps(a),
       setTitle: (a) => real.setTitle(a),
+      setFields: (a) => real.setFields(a),
       revoke: (t) => real.revoke(t),
     };
     const flakyApp = buildTestApp({ collab: flaky });

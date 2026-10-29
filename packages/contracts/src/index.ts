@@ -826,6 +826,8 @@ export const CollabReplaceBlocksRequestSchema = z
       id: z.string().uuid(),
     }),
     source: z.enum(['restore', 'agent']),
+    /** When given, the page's whole `fields` map becomes these values (a restore brings back a version's fields). */
+    fields: z.record(z.string().uuid(), z.unknown()).optional(),
   })
   .superRefine((req, ctx) => {
     const expected = req.source === 'agent' ? 'agent' : 'user';
@@ -855,6 +857,28 @@ export const CollabSetTitleRequestSchema = z.object({
 export type CollabSetTitleRequest = z.infer<typeof CollabSetTitleRequestSchema>;
 
 const BlocksSchema = z.array(z.record(z.unknown())).min(1).max(1_000);
+
+/**
+ * Body of POST /internal/set-fields: sets field values of a live page in one
+ * attributed change; null removes a value. Values are not checked here (the
+ * caller checked them against the collection's fields).
+ */
+export const CollabSetFieldsRequestSchema = z
+  .object({
+    documentName: z.string().min(1).max(200),
+    actor: z.object({ type: z.enum(['user', 'agent']), id: z.string().uuid() }),
+    source: z.enum(['agent', 'human']),
+    values: z
+      .record(z.string().uuid(), z.unknown())
+      .refine((v) => Object.keys(v).length > 0 && Object.keys(v).length <= 100, 'Between 1 and 100 values.'),
+  })
+  .superRefine((req, ctx) => {
+    const expected = req.source === 'agent' ? 'agent' : 'user';
+    if (req.actor.type !== expected) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['actor', 'type'], message: `A ${req.source} change must be made by a${expected === 'agent' ? 'n agent' : ' user'}.` });
+    }
+  });
+export type CollabSetFieldsRequest = z.infer<typeof CollabSetFieldsRequestSchema>;
 
 /**
  * Body of POST /internal/apply-block-ops: changes single top-level blocks of a

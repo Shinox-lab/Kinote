@@ -162,6 +162,7 @@ describe('live editing sessions are revoked on access changes', () => {
       async replaceBlocks() {},
       async applyBlockOps() {},
       async setTitle() {},
+      async setFields() {},
       async revoke(target) {
         calls.push(target);
       },
@@ -204,6 +205,7 @@ describe('live editing sessions are revoked on access changes', () => {
       async replaceBlocks() {},
       async applyBlockOps() {},
       async setTitle() {},
+      async setFields() {},
       async revoke() {
         throw new AppError('internal_error');
       },

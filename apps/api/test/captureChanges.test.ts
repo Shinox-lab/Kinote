@@ -141,6 +141,7 @@ describe('undo, wrong page and needs a home', () => {
       flush: (n) => collab.flush(n),
       replaceBlocks: (a) => collab.replaceBlocks(a),
       setTitle: (a) => collab.setTitle(a),
+      setFields: (a) => collab.setFields(a),
       revoke: (t) => collab.revoke(t),
       async applyBlockOps(a) {
         if (!raced) {

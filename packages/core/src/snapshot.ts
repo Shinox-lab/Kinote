@@ -17,7 +17,8 @@ import {
   type DbTransaction,
   type DocumentRow,
 } from '@living-wiki/db';
-import { AppError } from '@living-wiki/contracts';
+import { AppError, FIELDS_MAP, validFields } from '@living-wiki/contracts';
+import { rowCollectionOf } from './collections/fields.js';
 import { notify, recordPageMentions, usersWithSpaceRole } from './talk/notify.js';
 import { flattenBlocks, pageLinksOf, type BlockLike } from '@living-wiki/shared';
 
@@ -49,6 +50,16 @@ export function extractWikiLinks(
     }
   }
   return out;
+}
+
+/** JSON with object keys sorted at every level, so equal values hash the same. */
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
+  if (value && typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+    return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${canonicalJson(v)}`).join(',')}}`;
+  }
+  return JSON.stringify(value) ?? 'null';
 }
 
 export interface TakePageSnapshotHooks {
@@ -135,8 +146,18 @@ export async function takePageSnapshot(
 
     const blocks = editor.yDocToBlocks(ydoc, 'document-store');
     const markdown = (await editor.blocksToMarkdownLossy(blocks)).trim();
+    // Collection field values (raw: readers check them against the fields).
+    const fieldsMap = ydoc.getMap(FIELDS_MAP).toJSON() as Record<string, unknown>;
+    const fields = Object.keys(fieldsMap).length > 0 ? fieldsMap : null;
 
-    if (!markdown) {
+    // A row with a value that fits one of its fields has content even with an empty body.
+    let hasFieldContent = false;
+    if (!markdown && fields) {
+      const row = await rowCollectionOf(tx, tenantId, pageId);
+      hasFieldContent = row !== null && Object.keys(validFields(row.fields, fields)).length > 0;
+    }
+
+    if (!markdown && !hasFieldContent) {
       if (manual) {
         throw new AppError('empty_file', 'Page body cannot be empty.');
       }
@@ -146,7 +167,9 @@ export async function takePageSnapshot(
     const title = ydoc.getMap('meta').get('title')?.toString() || docRow.title;
     // Rule 11: The title is part of the indexed text, so a rename is a content change
     const indexedPayload = `# ${title}\n\n${markdown}`;
-    const contentHash = createHash('sha256').update(indexedPayload, 'utf8').digest('hex');
+    // Pages without fields hash exactly as before fields existed (no new versions on upgrade).
+    const hashed = fields ? `${indexedPayload}\n\n${canonicalJson(fields)}` : indexedPayload;
+    const contentHash = createHash('sha256').update(hashed, 'utf8').digest('hex');
 
     // Same content as the latest version: nothing to snapshot. Except that a
     // manual snapshot of a WITHDRAWN latest version is how a withdrawn (or
@@ -197,6 +220,7 @@ export async function takePageSnapshot(
         createdBy: actorId,
         markdown,
         blocks,
+        fields,
         ydocSnapshot: pageRow.ydocState,
       })
       .returning();

@@ -13,11 +13,14 @@ import { BLOCK_FRAGMENT } from './fragment.js';
  *         <content element named by the block type, e.g. paragraph> > XmlText
  *         blockGroup?            (nested children, same shape again)
  *
- * The title lives in the `meta` map, outside the fragment.
+ * The title lives in the `meta` map, outside the fragment; collection field
+ * values in the `fields` map, keyed by field id.
  */
 
 const BLOCK_CONTAINER = 'blockContainer';
 const META = 'meta';
+/** The page's field values (FIELDS_MAP): a change to a key is named `field:<key>`. */
+const FIELDS = 'fields';
 
 type AnyType = Y.AbstractType<any>;
 
@@ -81,7 +84,12 @@ function isNew(tx: Y.Transaction, item: Y.Item): boolean {
  */
 export function changedBlockIds(tx: Y.Transaction): string[] {
   const ids = new Set<string>();
-  for (const type of tx.changed.keys()) {
+  const fields = tx.doc.share.get(FIELDS);
+  for (const [type, keys] of tx.changed) {
+    if (fields && type === fields) {
+      for (const key of keys) if (typeof key === 'string' && key !== '') ids.add(`field:${key}`);
+      continue;
+    }
     if (isDeleted(type)) continue;
     const container = nearestContainer(type);
     if (container) {
@@ -99,8 +107,8 @@ export function changedBlockIds(tx: Y.Transaction): string[] {
 }
 
 /**
- * True when the transaction changed the page: its block fragment or its
- * `meta` map (the title). Other shared types of the document are not page
+ * True when the transaction changed the page: its block fragment, its
+ * `meta` map (the title) or its `fields` map (collection field values). Other shared types of the document are not page
  * content and are not attributed, and neither is a change of comment marks only.
  */
 /**
@@ -136,9 +144,10 @@ export function changesPage(tx: Y.Transaction): boolean {
   if (onlyCommentMarks(tx)) return false;
   const fragment = tx.doc.share.get(BLOCK_FRAGMENT);
   const meta = tx.doc.share.get(META);
+  const fields = tx.doc.share.get(FIELDS);
   for (const type of tx.changed.keys()) {
     const root = rootOf(type);
-    if ((fragment && root === fragment) || (meta && root === meta)) return true;
+    if ((fragment && root === fragment) || (meta && root === meta) || (fields && root === fields)) return true;
   }
   return false;
 }

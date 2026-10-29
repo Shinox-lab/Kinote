@@ -23,6 +23,8 @@ export interface CollabClient {
     title: string;
     actor: { type: 'user' | 'agent'; id: string };
     source: 'restore' | 'agent';
+    /** When given, the page's whole `fields` map becomes these values. */
+    fields?: Record<string, unknown>;
   }): Promise<void>;
   /**
    * Changes single top-level blocks of a live page in one attributed change
@@ -53,6 +55,20 @@ export interface CollabClient {
     pageId: string;
     title: string;
     actor: { type: 'user' | 'agent'; id: string };
+  }): Promise<void>;
+  /**
+   * Sets field values of a live page (null removes one) in one attributed
+   * change. Values are not checked by collab: check them first.
+   *
+   * Never call it while holding `lockDocument` on that page, for the same
+   * reason as `replaceBlocks`.
+   */
+  setFields(a: {
+    tenantId: string;
+    pageId: string;
+    values: Record<string, unknown>;
+    actor: { type: 'user' | 'agent'; id: string };
+    source: 'human' | 'agent';
   }): Promise<void>;
   /**
    * Closes the live editing connections of a tenant (only `userId`'s when
@@ -94,6 +110,16 @@ export class HttpCollabClient implements CollabClient {
       blocks: a.blocks,
       actor: a.actor,
       source: a.source,
+      ...(a.fields !== undefined ? { fields: a.fields } : {}),
+    });
+  }
+
+  async setFields(a: Parameters<CollabClient['setFields']>[0]): Promise<void> {
+    await this.#post('/internal/set-fields', {
+      documentName: documentName(a.tenantId, a.pageId),
+      actor: a.actor,
+      source: a.source,
+      values: a.values,
     });
   }
 

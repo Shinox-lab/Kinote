@@ -12,6 +12,8 @@ import {
   CollabReplaceBlocksRequestSchema,
   CollabRevokeRequestSchema,
   CollabSetTitleRequestSchema,
+  CollabSetFieldsRequestSchema,
+  FIELDS_MAP,
   ERROR_SENTENCES,
   type ErrorCode,
 } from '@living-wiki/contracts';
@@ -32,6 +34,7 @@ export const INTERNAL_PATHS = {
   replaceBlocks: '/internal/replace-blocks',
   applyBlockOps: '/internal/apply-block-ops',
   setTitle: '/internal/set-title',
+  setFields: '/internal/set-fields',
   revoke: '/internal/revoke',
 } as const;
 
@@ -117,7 +120,7 @@ async function trustedContext(
 export async function replaceDocumentBlocks(server: Hocuspocus, input: unknown): Promise<void> {
   const parsed = CollabReplaceBlocksRequestSchema.safeParse(input);
   if (!parsed.success) throw new AppError('validation_failed');
-  const { documentName, title, blocks, actor, source } = parsed.data;
+  const { documentName, title, blocks, actor, source, fields } = parsed.data;
   const { tenantId, pageId } = requireDocument(documentName);
 
   // Convert once off-document first: invalid blocks are refused before the
@@ -136,6 +139,37 @@ export async function replaceDocumentBlocks(server: Hocuspocus, input: unknown):
       fragment.delete(0, fragment.length);
       blockNote.blocksToYXmlFragment(blocks as any, fragment);
       doc.getMap('meta').set('title', title);
+      if (fields) {
+        const map = doc.getMap(FIELDS_MAP);
+        for (const key of [...map.keys()]) if (!(key in fields)) map.delete(key);
+        for (const [key, value] of Object.entries(fields)) map.set(key, value);
+      }
+    });
+  } finally {
+    await session.close();
+  }
+}
+
+/**
+ * POST /internal/set-fields: sets (or, for null, removes) field values of a
+ * live page in one transaction attributed to `actor` with `source`. Nothing
+ * else on the page changes.
+ */
+export async function setDocumentFields(server: Hocuspocus, input: unknown): Promise<void> {
+  const parsed = CollabSetFieldsRequestSchema.safeParse(input);
+  if (!parsed.success) throw new AppError('validation_failed');
+  const { documentName, actor, source, values } = parsed.data;
+  const { tenantId, pageId } = requireDocument(documentName);
+
+  const context = await trustedContext(tenantId, pageId, actor);
+  const session = await openTrustedDirectSession(server, documentName, context);
+  try {
+    await session.transact({ source, actorId: actor.id }, (doc) => {
+      const map = doc.getMap(FIELDS_MAP);
+      for (const [key, value] of Object.entries(values)) {
+        if (value === null || value === undefined) map.delete(key);
+        else map.set(key, value);
+      }
     });
   } finally {
     await session.close();
@@ -244,6 +278,7 @@ const HANDLERS: Record<string, (server: Hocuspocus, input: unknown) => Promise<v
   [INTERNAL_PATHS.replaceBlocks]: replaceDocumentBlocks,
   [INTERNAL_PATHS.applyBlockOps]: applyDocumentBlockOps,
   [INTERNAL_PATHS.setTitle]: setDocumentTitle,
+  [INTERNAL_PATHS.setFields]: setDocumentFields,
   [INTERNAL_PATHS.revoke]: revokeConnections,
 };
 

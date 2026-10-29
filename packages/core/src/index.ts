@@ -154,6 +154,7 @@ export {
   type NotificationInput,
   type NotificationKind,
 } from './talk/notify.js';
+export { collectionFieldDefs, fieldDefOf, fieldNames, isCollection, rowCollectionOf } from './collections/fields.js';
 export { relocateFile, returnToReview, type RelocateTarget } from './files/relocate.js';
 export {
   prepareCaptureFile,

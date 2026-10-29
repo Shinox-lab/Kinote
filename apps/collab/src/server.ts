@@ -1,7 +1,9 @@
 import { Server, type Extension, type Hocuspocus } from '@hocuspocus/server';
 import { Database } from '@hocuspocus/extension-database';
 import { and, eq, sql } from 'drizzle-orm';
-import { withTenantTx, pages } from '@living-wiki/db';
+import * as Y from 'yjs';
+import { withTenantTx, pages, pageFieldValues } from '@living-wiki/db';
+import { FIELDS_MAP } from '@living-wiki/contracts';
 import { parseDocumentName } from '@living-wiki/shared';
 import { authenticateCollabConnection, type CollabContext } from './auth.js';
 import { handleInternalRequest } from './internal.js';
@@ -37,6 +39,28 @@ function requireDocumentName(name: string): { tenantId: string; pageId: string }
   return parsed;
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Rewrites the page's `page_field_values` from its `fields` map: one row per
+ * key, raw (never checked against the collection's fields; readers do that).
+ * A key that isn't a field id can't be one, so it is left out.
+ */
+async function mirrorFieldValues(
+  tx: Parameters<Parameters<typeof withTenantTx>[1]>[0],
+  tenantId: string,
+  pageId: string,
+  state: Uint8Array
+): Promise<void> {
+  const doc = new Y.Doc();
+  Y.applyUpdate(doc, state);
+  const rows = Object.entries(doc.getMap(FIELDS_MAP).toJSON())
+    .filter(([key, value]) => UUID_RE.test(key) && value !== undefined && value !== null)
+    .map(([fieldId, value]) => ({ tenantId, pageId, fieldId, value }));
+  await tx.delete(pageFieldValues).where(and(eq(pageFieldValues.tenantId, tenantId), eq(pageFieldValues.pageId, pageId)));
+  if (rows.length > 0) await tx.insert(pageFieldValues).values(rows);
+}
+
 /** Postgres store: the page's whole Yjs state lives in `pages.ydoc_state`. */
 function pageStateStore(): Database {
   return new Database({
@@ -58,7 +82,7 @@ function pageStateStore(): Database {
         // live-changed (R20), so a snapshot that read the older state just
         // before this landed cannot leave the page looking unchanged since
         // it. Identical bytes change nothing and are not written again.
-        await tx
+        const changed = await tx
           .update(pages)
           .set({ ydocState: bytes, liveUpdatedAt: sql`now()`, liveChangedSinceSnapshot: true })
           .where(
@@ -67,7 +91,11 @@ function pageStateStore(): Database {
               eq(pages.documentId, pageId),
               sql`${pages.ydocState} IS DISTINCT FROM ${bytes}`
             )
-          );
+          )
+          .returning({ id: pages.documentId });
+        // Collection views read field values from this mirror, kept in the
+        // same transaction as the state it mirrors.
+        if (changed.length > 0) await mirrorFieldValues(tx, tenantId, pageId, state);
       });
     },
   });

@@ -34,6 +34,9 @@ export const unavailableCollab: CollabClient = {
   async setTitle() {
     throw new AppError('internal_error');
   },
+  async setFields() {
+    throw new AppError('internal_error');
+  },
   async revoke() {
     throw new AppError('internal_error');
   },

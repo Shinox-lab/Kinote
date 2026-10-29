@@ -97,6 +97,7 @@ describe('manual snapshots flush the live document first', () => {
       async replaceBlocks() {},
       async applyBlockOps() {},
       async setTitle() {},
+      async setFields() {},
       async revoke() {},
     };
     const stubApp = buildTestApp({ collab: stub });

@@ -152,6 +152,7 @@ describe('routeCapture', () => {
       flush: (n) => collab.flush(n),
       replaceBlocks: (a) => collab.replaceBlocks(a),
       setTitle: (a) => collab.setTitle(a),
+      setFields: (a) => collab.setFields(a),
       revoke: (t) => collab.revoke(t),
       async applyBlockOps(a) {
         if (a.actor.type === 'agent') {
@@ -229,6 +230,7 @@ describe('routeCapture', () => {
       replaceBlocks: (a) => collab.replaceBlocks(a),
       applyBlockOps: (a) => collab.applyBlockOps(a),
       setTitle: (a) => collab.setTitle(a),
+      setFields: (a) => collab.setFields(a),
       revoke: (t) => collab.revoke(t),
     };
     const once = () => routeCapture({ tenantId: w.tenantId, captureId, holder: 'test' }, { model, embedder, collab: flaky });
