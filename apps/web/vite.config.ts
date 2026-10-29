@@ -10,7 +10,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 export default defineConfig(({ mode }) => {
   // The repo's .env (read here without a prefix filter) says which host ports the stack
   // published; the shell environment still wins. See dev-targets.ts.
-  const { apiUrl, collabUrl } = devTargets({
+  const { apiUrl, collabUrl, gridcraftUrl } = devTargets({
     ...loadEnv(mode, path.resolve(here, '..', '..'), ''),
     ...process.env,
   });
@@ -32,6 +32,8 @@ export default defineConfig(({ mode }) => {
         '/mcp': { target: apiUrl, changeOrigin: true },
         // The live-editing websocket (collab server), same origin too: /collab is stripped before forwarding.
         '/collab': { target: collabUrl, ws: true, changeOrigin: true, rewrite: (p) => p.replace(/^\/collab/, '') },
+        // The GridCraft static editor, same origin too: /gridcraft is stripped before forwarding.
+        '/gridcraft': { target: gridcraftUrl, changeOrigin: true, rewrite: (p) => p.replace(/^\/gridcraft/, '') },
       },
     },
     resolve: {
