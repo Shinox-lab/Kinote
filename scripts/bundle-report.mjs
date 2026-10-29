@@ -15,7 +15,7 @@ const assets = path.join(dist, 'assets');
 const SIGNATURES = {
   'pdf.js': 'PDFWorker',
   mammoth: 'mammoth',
-  'read-excel-file': 'sharedStrings',
+  '@extend-ai/react-xlsx': 'react-xlsx-viewer',
   marked: 'markedjs',
   dompurify: 'ALLOWED_URI_REGEXP',
 };

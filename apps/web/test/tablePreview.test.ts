@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { capSheet, columnLabel, initialSheet, parseCsvRows } from '../src/lib/tablePreview.js';
+import { columnLabel, initialSheet, parseCsvRows } from '../src/lib/tablePreview.js';
 
 describe('parseCsvRows', () => {
   test('plain rows, CRLF, a BOM and a trailing empty line', () => {
@@ -33,28 +33,6 @@ describe('parseCsvRows', () => {
   test('empty text has no rows; an unterminated quote ends with the text', () => {
     expect(parseCsvRows('')).toEqual({ rows: [], totalRows: 0, truncated: false });
     expect(parseCsvRows('a,"b\nc').rows).toEqual([['a', 'b\nc']]);
-  });
-});
-
-describe('capSheet', () => {
-  test('a big sheet is cut to 200 rows by 26 columns and says so', () => {
-    const rows = Array.from({ length: 300 }, (_, r) => Array.from({ length: 40 }, (_, c) => `${r}:${c}`));
-    const out = capSheet(rows);
-    expect(out.rows).toHaveLength(200);
-    expect(out.rows[0]).toHaveLength(26);
-    expect(out.rowCount).toBe(300);
-    expect(out.colCount).toBe(40);
-    expect(out.truncated).toBe(true);
-  });
-
-  test('a small sheet is whole', () => {
-    expect(capSheet([['a', 1], ['b', 2]])).toEqual({ rows: [['a', '1'], ['b', '2']], rowCount: 2, colCount: 2, truncated: false });
-  });
-
-  test('every value is shown as plain text and nothing is evaluated', () => {
-    const when = new Date('2026-10-20T00:00:00.000Z');
-    const out = capSheet([[null, undefined, 3.5, true, when, '=HYPERLINK("http://evil","x")', '<b>x</b>']]);
-    expect(out.rows[0]).toEqual(['', '', '3.5', 'TRUE', '2026-10-20', '=HYPERLINK("http://evil","x")', '<b>x</b>']);
   });
 });
 

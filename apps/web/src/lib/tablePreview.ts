@@ -1,9 +1,7 @@
-// Parsing and capping for the CSV and spreadsheet previews. Everything comes out as plain strings: a cell
-// is shown as text, never evaluated (a formula-looking cell is just its characters).
+// Parsing for the CSV preview and sheet selection for the XLSX preview. CSV values are plain strings:
+// a cell is shown as text, never evaluated (a formula-looking cell is just its characters).
 
 export const CSV_PREVIEW_ROWS = 1000;
-export const SHEET_PREVIEW_ROWS = 200;
-export const SHEET_PREVIEW_COLUMNS = 26;
 
 /** RFC 4180 records (quotes, doubled quotes, line breaks inside quotes, CRLF, a BOM); keeps the first `maxRows`, counts all. */
 export function parseCsvRows(text: string, maxRows = CSV_PREVIEW_ROWS): { rows: string[][]; totalRows: number; truncated: boolean } {
@@ -54,28 +52,6 @@ export function parseCsvRows(text: string, maxRows = CSV_PREVIEW_ROWS): { rows: 
   }
   if (started || cell !== '' || row.length > 0) endRecord();
   return { rows, totalRows: total, truncated: total > rows.length };
-}
-
-function show(value: unknown): string {
-  if (value === null || value === undefined) return '';
-  if (value instanceof Date) return Number.isNaN(value.getTime()) ? '' : value.toISOString().slice(0, 10);
-  if (typeof value === 'boolean') return value ? 'TRUE' : 'FALSE';
-  return String(value);
-}
-
-/** The top-left corner of a sheet (200 rows by 26 columns) as text, with the sheet's full size. */
-export function capSheet(
-  rows: readonly (readonly unknown[])[],
-  maxRows = SHEET_PREVIEW_ROWS,
-  maxCols = SHEET_PREVIEW_COLUMNS
-): { rows: string[][]; rowCount: number; colCount: number; truncated: boolean } {
-  const colCount = rows.reduce((n, r) => Math.max(n, r.length), 0);
-  return {
-    rows: rows.slice(0, maxRows).map((r) => r.slice(0, maxCols).map(show)),
-    rowCount: rows.length,
-    colCount,
-    truncated: rows.length > maxRows || colCount > maxCols,
-  };
 }
 
 /** A spreadsheet's column name: 0 is A, 25 is Z, 26 is AA. */

@@ -2,11 +2,12 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, test } from 'vitest';
 
-// The viewers and their libraries (pdf.js, mammoth, a spreadsheet reader, marked, DOMPurify) are heavy:
-// they load only when a file is opened. These checks keep a viewer from sliding into the main bundle.
+// The viewers and their libraries (pdf.js, mammoth, Extend UI's XLSX viewer, marked, DOMPurify)
+// are heavy: they load only when a file is opened. These checks keep a viewer from sliding into
+// the main bundle.
 
 const SRC = new URL('../src', import.meta.url).pathname;
-const LIBRARIES = ['pdfjs-dist', 'mammoth', 'read-excel-file', 'marked', 'dompurify'];
+const LIBRARIES = ['pdfjs-dist', 'mammoth', '@extend-ai/react-xlsx', 'marked', 'dompurify'];
 
 function sources(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
