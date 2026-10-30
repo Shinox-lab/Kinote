@@ -20,6 +20,20 @@ cp .env.example .env    # fill in the six secrets, see Self-hosting → Quick st
 | `pnpm stack:up` | Starts only Postgres and MinIO, then runs the migrations from your machine. |
 | `pnpm stack:down` | Stops the stack **and deletes its data**. |
 
+## Demo data
+
+`pnpm seed:demo` fills a workspace with a small fictional design studio through the API: three spaces (one with review
+on), about 25 pages, a Roadmap collection, a PDF and a spreadsheet, and three colleagues to edit and review with. Every
+page is indexed, so search, Ask and routing have something to work with.
+
+```sh
+pnpm seed:demo                                                   # a new workspace and four new accounts
+SEED_PASSWORD='<your password>' pnpm seed:demo --into <workspace-slug> --email <you@example.com>
+```
+
+The second form fills a workspace you already own or administer; you take the part of its owner. Both print who to
+sign in as.
+
 ## Tests
 
 | Command | What it runs | What it needs |

@@ -29,24 +29,40 @@ function log(message: string): void {
   console.log(`seed: ${message}`);
 }
 
+/** An existing workspace to fill instead of making a new one; `owner` must be its owner or an admin. */
+export interface SeedInto {
+  owner: Account;
+  tenantId: string;
+  slug: string;
+}
+
 /**
- * A fresh Northwind Studio workspace through the public API: four people, three spaces (Clients with review on), the
+ * The Northwind Studio content through the public API: four people, three spaces (Clients with review on), the
  * pages, the Roadmap collection with its fields and values, every page indexed (Clients approved by Mei), and a grace
- * period for the worker's page cards.
+ * period for the worker's page cards. A new workspace by default; with `into`, an existing one, where `into.owner`
+ * stands in for Priya and the other three people are signed up and invited.
  */
-export async function seedDemo(request: APIRequestContext): Promise<Demo> {
+export async function seedDemo(request: APIRequestContext, o: { into?: SeedInto } = {}): Promise<Demo> {
   const suffix = uniqueSuffix();
   const who = {} as Record<PersonKey, Account>;
-  for (const key of Object.keys(people) as PersonKey[]) who[key] = await signUpAccount(request, people[key].name, suffix);
+  for (const key of Object.keys(people) as PersonKey[]) {
+    who[key] = key === 'priya' && o.into ? o.into.owner : await signUpAccount(request, people[key].name, suffix);
+  }
   const owner = who.priya;
 
-  const slug = `${workspace.slug}-${suffix}`;
-  const { tenant } = await call<{ tenant: { id: string } }>(request, '/tenants', {
-    account: owner,
-    method: 'POST',
-    data: { name: workspace.name, slug },
-  });
-  const tenantId = tenant.id;
+  let tenantId: string;
+  let slug: string;
+  if (o.into) {
+    ({ tenantId, slug } = o.into);
+  } else {
+    slug = `${workspace.slug}-${suffix}`;
+    const { tenant } = await call<{ tenant: { id: string } }>(request, '/tenants', {
+      account: owner,
+      method: 'POST',
+      data: { name: workspace.name, slug },
+    });
+    tenantId = tenant.id;
+  }
   const as = (account: Account) => <T>(path: string, method: 'GET' | 'POST' | 'PATCH' = 'GET', data?: unknown) =>
     call<T>(request, path, { account, tenantId, method, data });
   log(`workspace ${slug}`);
