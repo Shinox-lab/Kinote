@@ -1,0 +1,33 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  html, body { margin: 0; }
+  body {
+    width: 1280px; height: 640px; overflow: hidden; background: #f5f2ed; color: #24211d;
+    font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+    display: grid; grid-template-columns: 470px 1fr; align-items: center;
+  }
+  .text { padding: 0 0 0 72px; }
+  .text img { height: 52px; }
+  h1 { font-size: 46px; line-height: 1.1; letter-spacing: -0.02em; margin: 36px 0 18px; font-weight: 700; }
+  p { font-size: 21px; line-height: 1.45; color: #6b645b; margin: 0; }
+  .window {
+    margin-left: 24px; width: 900px; border-radius: 16px; overflow: hidden; background: #fff;
+    border: 1px solid #e8e2d9; box-shadow: 0 8px 24px rgba(60, 48, 30, 0.12), 0 1px 3px rgba(60, 48, 30, 0.06);
+  }
+  .bar { display: flex; gap: 8px; padding: 13px 16px; background: #f5f2ed; border-bottom: 1px solid #e8e2d9; }
+  .bar i { width: 12px; height: 12px; border-radius: 50%; background: #e8e2d9; }
+  .window img { display: block; width: 100%; }
+</style>
+</head>
+<body>
+  <div class="text">
+    <img src="../public/logo-light.svg" alt="Kinote">
+    <h1>Write it down once. Kinote files it everywhere it belongs.</h1>
+    <p>A shared wiki for people and AI agents. Open source, self-hostable.</p>
+  </div>
+  <div class="window"><div class="bar"><i></i><i></i><i></i></div><img src="../public/clips/capture.jpg" alt=""></div>
+</body>
+</html>
