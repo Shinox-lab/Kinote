@@ -67,6 +67,7 @@ test('a view on the collection page: table, + New, a cell edit, a filter, a boar
 
   // Edit a cell: Tavros becomes Active.
   const tavrosRow = table.getByRole('row').filter({ hasText: 'Tavros' });
+  await tavrosRow.getByRole('button', { name: 'Edit Status' }).click();
   await tavrosRow.getByRole('group', { name: 'Status' }).getByRole('button', { name: 'Active' }).click();
   await expect(tavrosRow.getByRole('group', { name: 'Status' }).getByRole('button', { name: 'Active' })).toHaveAttribute('aria-pressed', 'true');
 

@@ -168,11 +168,13 @@ function ChoiceField({ def, value, onChange, onAddChoice }: Omit<FieldEditorProp
 function PickerField({ def, value, names, pageId, onChange }: Omit<FieldEditorProps, 'onAddChoice'>) {
   const ids = (value as string[] | undefined) ?? [];
   const [query, setQuery] = useState('');
+  // The list belongs to the box: it opens on focus and closes when focus leaves, so a table of these stays quiet.
+  const [open, setOpen] = useState(false);
   const [options, setOptions] = useState<Array<{ id: string; label: string }>>([]);
   useEffect(() => {
     let live = true;
     const q = query.trim();
-    if (def.type === 'page' && q === '') {
+    if (!open || (def.type === 'page' && q === '')) {
       setOptions([]);
       return;
     }
@@ -184,12 +186,12 @@ function PickerField({ def, value, names, pageId, onChange }: Omit<FieldEditorPr
     return () => {
       live = false;
     };
-  }, [query, def.type, pageId, ids.join(',')]);
+  }, [open, query, def.type, pageId, ids.join(',')]);
   const label = (id: string) =>
     (def.type === 'person' ? names.users.get(id) : names.pages.get(id)) ??
     (def.type === 'person' ? 'Former member' : 'Page unavailable');
   return (
-    <div className="flex flex-col gap-1">
+    <div className="relative flex flex-col gap-1">
       <span className="flex flex-wrap gap-1">
         {ids.map((id) => (
           <span key={id} className="inline-flex items-center gap-1 rounded bg-hover px-1.5 py-0.5 text-xs text-fg">
@@ -213,14 +215,23 @@ function PickerField({ def, value, names, pageId, onChange }: Omit<FieldEditorPr
         value={query}
         placeholder={def.type === 'person' ? 'Add a person' : 'Add a page'}
         onChange={(e) => setQuery(e.target.value)}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setOpen(false)}
+        onKeyDown={(e) => e.key === 'Escape' && setOpen(false)}
         className={INPUT}
       />
-      {options.length > 0 && (query.trim() !== '' || def.type === 'person') && (
-        <ul role="listbox" aria-label={`${def.name} options`} className="rounded border border-line bg-surface p-1 shadow-pop">
+      {open && options.length > 0 && (query.trim() !== '' || def.type === 'person') && (
+        <ul
+          role="listbox"
+          aria-label={`${def.name} options`}
+          className="absolute left-0 right-0 top-full z-30 mt-1 min-w-[12rem] rounded border border-line bg-surface p-1 shadow-pop"
+        >
           {options.map((o) => (
             <li key={o.id} role="option" aria-selected={false}>
               <button
                 type="button"
+                // Keeps focus in the box, so the list is still there when the click lands.
+                onMouseDown={(e) => e.preventDefault()}
                 onClick={() => {
                   onChange([...ids, o.id]);
                   setQuery('');

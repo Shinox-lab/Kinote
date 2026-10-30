@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react';
 import type { CollectionRow, FieldDef } from '@kinote/contracts';
 import { groupRows, tableGroupField, visibleFields } from '../../lib/views.js';
 import { FieldEditor, FieldValue } from '../fields/FieldEditor.js';
@@ -13,10 +14,21 @@ export function RowTitle({ row, open }: { row: CollectionRow; open: (id: string)
   );
 }
 
-/** One cell: an editor for those who may change rows, the value otherwise. */
+/**
+ * One cell. Readers see the value. Editors see the value too, as one line, and get the field's editor once they click
+ * it; it closes again when focus leaves the cell, so a table of select, date and person fields stays one row high.
+ * A checkbox is its own editor and is always shown.
+ */
 export function Cell({ row, def, p }: { row: CollectionRow; def: FieldDef; p: LayoutProps }) {
-  if (!p.canEdit) return <FieldValue def={def} value={row.values[def.id]} names={p.names} />;
-  return (
+  const [editing, setEditing] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (editing) box.current?.querySelector<HTMLElement>('input, select, textarea, button')?.focus();
+  }, [editing]);
+
+  const value = <FieldValue def={def} value={row.values[def.id]} names={p.names} />;
+  if (!p.canEdit) return value;
+  const editor = (
     <FieldEditor
       def={def}
       value={row.values[def.id]}
@@ -25,6 +37,31 @@ export function Cell({ row, def, p }: { row: CollectionRow; def: FieldDef; p: La
       onChange={(v) => p.setValue(row.id, def.id, v)}
       onAddChoice={(name) => p.addChoice(def.id, name)}
     />
+  );
+  if (def.type === 'checkbox') return editor;
+  if (!editing) {
+    return (
+      <button
+        type="button"
+        aria-label={`Edit ${def.name}`}
+        onClick={() => setEditing(true)}
+        className="block w-full min-w-[6rem] rounded px-1.5 py-1 text-left hover:bg-hover max-md:min-h-11"
+      >
+        {value}
+      </button>
+    );
+  }
+  return (
+    <div
+      ref={box}
+      className="min-w-[12rem]"
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setEditing(false);
+      }}
+      onKeyDown={(e) => e.key === 'Escape' && setEditing(false)}
+    >
+      {editor}
+    </div>
   );
 }
 
