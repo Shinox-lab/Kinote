@@ -1,5 +1,5 @@
 import type { PageWidth } from '@kinote/contracts';
-import { useSyncExternalStore } from 'react';
+import { useEffect, useRef, useSyncExternalStore } from 'react';
 
 // Which page's history drawer is open, and which tab it should show. The
 // status chip lives in the page screen, so the state is shared here, outside React.
@@ -61,3 +61,18 @@ export const PAGE_WIDTH_OPTIONS: ReadonlyArray<{ value: PageWidth; label: string
   { value: 'wide', label: 'Wide' },
   { value: 'full', label: 'Full' },
 ];
+
+/**
+ * Calls `refetch` whenever `value` changes after it was first seen (undefined while loading is not a value). The page
+ * screen passes the polled count of unindexed changes, so the page and its status chip follow edits made in this
+ * tab or another one, and indexing that happened by itself, without a reload.
+ */
+export function useRefetchWhenChanged(value: number | undefined, refetch: () => void): void {
+  const seen = useRef<number | undefined>(undefined);
+  useEffect(() => {
+    if (value === undefined) return;
+    const before = seen.current;
+    seen.current = value;
+    if (before !== undefined && before !== value) refetch();
+  }, [value]);
+}

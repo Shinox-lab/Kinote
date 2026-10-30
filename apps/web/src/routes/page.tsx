@@ -12,7 +12,7 @@ import {
 import { captureHighlightCss, suggestionMarkerCss } from '../lib/capture.js';
 import { CaptureBanner } from '../components/capture/CaptureBanner.js';
 import { SuggestionsPanel } from '../components/capture/SuggestionsPanel.js';
-import { closeHistory, openHistory, pageWidthClass, useHistoryOpen, useHistoryTab } from '../lib/pageUi.js';
+import { closeHistory, openHistory, pageWidthClass, useHistoryOpen, useHistoryTab, useRefetchWhenChanged } from '../lib/pageUi.js';
 import { usePageView } from '../lib/usePageView.js';
 import { useLivePage } from '../lib/useLivePage.js';
 import { loadSession } from '../lib/session.js';
@@ -111,6 +111,7 @@ export function PagePage() {
   const refresh = useRefresh();
   const { page, error, isPending, spaces, space, archived, controls, reload, changed } = usePageView(pageId);
   const { data: entries } = usePageChanges(pageId);
+  useRefetchWhenChanged(entries ? visibleChanges(entries).length : undefined, reload);
   const { capture: captureId, comments: commentsOpen } = useSearch({ from: '/w/$tenantSlug/p/$pageId' });
   const { data: captureChanges } = usePageCaptureChanges(pageId, captureId);
   const { data: suggestions } = usePageSuggestions(pageId);

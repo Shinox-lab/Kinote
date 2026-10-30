@@ -67,7 +67,7 @@ describe('a person field', () => {
     const onChange = vi.fn();
     const input = await renderOwner(onChange);
     await act(async () => input.focus());
-    const mei = [...list()!.querySelectorAll('button')].find((b) => b.textContent === 'Mei Lin')!;
+    const mei = Array.from(list()!.querySelectorAll('button')).find((b) => b.textContent === 'Mei Lin')!;
     await act(async () => {
       mei.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
       mei.click();
