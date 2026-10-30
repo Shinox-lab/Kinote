@@ -1,0 +1,66 @@
+/*
+ * Kinote's own tokens (apps/web/src/index.css), mapped onto VitePress's.
+ * VitePress puts `.dark` on <html> and follows the system setting by default.
+ */
+:root {
+  --k-page: #fcfbf9;
+  --k-sidebar: #f5f2ed;
+  --k-surface: #ffffff;
+  --k-fg: #24211d;
+  --k-muted: #6b645b;
+  --k-faint: #8d857b;
+  --k-line: #e8e2d9;
+  --k-accent: #6550c9;
+  --k-accent-fg: #ffffff;
+  --k-accent-text: #5b43c7;
+  --k-accent-soft: #ece6fa;
+  --k-shadow: 0 8px 24px rgba(60, 48, 30, 0.12), 0 1px 3px rgba(60, 48, 30, 0.06);
+  --k-font-sans: ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+}
+
+.dark {
+  --k-page: #1a1713;
+  --k-sidebar: #141210;
+  --k-surface: #221e19;
+  --k-fg: #ece6dd;
+  --k-muted: #a79c8e;
+  --k-faint: #7c7266;
+  --k-line: #302a23;
+  --k-accent: #a08cff;
+  --k-accent-fg: #1a1713;
+  --k-accent-text: #c8b9ff;
+  --k-accent-soft: #2c2542;
+  --k-shadow: 0 10px 30px rgba(0, 0, 0, 0.55);
+}
+
+:root,
+.dark {
+  --vp-c-brand-1: var(--k-accent-text);
+  --vp-c-brand-2: var(--k-accent);
+  --vp-c-brand-3: var(--k-accent);
+  --vp-c-brand-soft: var(--k-accent-soft);
+  --vp-c-bg: var(--k-page);
+  --vp-c-bg-alt: var(--k-sidebar);
+  --vp-c-bg-elv: var(--k-surface);
+  --vp-c-bg-soft: var(--k-sidebar);
+  --vp-c-text-1: var(--k-fg);
+  --vp-c-text-2: var(--k-muted);
+  --vp-c-text-3: var(--k-faint);
+  --vp-c-divider: var(--k-line);
+  --vp-c-gutter: var(--k-line);
+  --vp-font-family-base: var(--k-font-sans);
+  --vp-button-brand-bg: var(--k-accent);
+  --vp-button-brand-border: var(--k-accent);
+  --vp-button-brand-text: var(--k-accent-fg);
+  --vp-button-brand-hover-bg: var(--k-accent-text);
+  --vp-button-brand-hover-border: var(--k-accent-text);
+  --vp-button-brand-hover-text: var(--k-accent-fg);
+  --vp-button-brand-active-bg: var(--k-accent-text);
+  --vp-button-brand-active-border: var(--k-accent-text);
+  --vp-button-brand-active-text: var(--k-accent-fg);
+  --vp-home-hero-name-color: var(--k-fg);
+}
+
+.VPNavBar .logo {
+  height: 26px;
+}
