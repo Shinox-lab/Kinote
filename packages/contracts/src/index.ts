@@ -1482,6 +1482,15 @@ export const MentionableSchema = z.object({
 export type Mentionable = z.infer<typeof MentionableSchema>;
 export const MentionableListSchema = z.array(MentionableSchema);
 
+/** A group an editor may mention: each person in it who can read the page is told. */
+export const MentionableGroupSchema = z.object({
+  groupId: z.string().uuid(),
+  name: z.string(),
+  memberCount: z.number().int().min(0),
+});
+export type MentionableGroup = z.infer<typeof MentionableGroupSchema>;
+export const MentionableGroupListSchema = z.array(MentionableGroupSchema);
+
 export const NotificationKindSchema = z.enum([
   'mention',
   'comment_reply',

@@ -17,6 +17,7 @@ import {
   CommentRequestSchema,
   CreateThreadRequestSchema,
   MentionableQuerySchema,
+  type MentionableGroup,
   type CommentThread,
   type Mentionable,
 } from '@kinote/contracts';
@@ -27,6 +28,8 @@ import {
   isTenantAdmin,
   memberActors,
   memberNames,
+  groupNames,
+  groupUsers,
   notify,
   requireDocumentRole,
   textMentions,
@@ -175,7 +178,11 @@ async function tellAboutComment(
     commentId: comment.id,
     excerpt: excerptOf(text),
   };
-  const mentioned = textMentions(text, await memberNames(tx, tenantId)).filter((id) => id !== actor.principalId);
+  // `@Full Name` mentions a person; `@Group name` mentions everyone in the group.
+  const people = textMentions(text, await memberNames(tx, tenantId));
+  const mentionedGroups = textMentions(text, await groupNames(tx, tenantId));
+  const viaGroups = [...(await groupUsers(tx, tenantId, mentionedGroups)).values()].flat();
+  const mentioned = [...new Set([...people, ...viaGroups])].filter((id) => id !== actor.principalId);
   if (mentioned.length > 0) {
     const fresh = await tx
       .insert(userMentions)
@@ -365,6 +372,22 @@ export async function setThreadResolved(actor: Actor, threadId: string, resolved
       payload: { documentId: doc.id },
     });
     return oneThread(tx, actor.tenantId, thread.id);
+  });
+}
+
+/** GET /api/v1/mentionable/groups: for an editor of the page, the workspace's groups by name, with their size. */
+export async function listMentionableGroups(actor: Actor, query: unknown): Promise<MentionableGroup[]> {
+  requireUser(actor);
+  const { page_id, q, limit } = MentionableQuerySchema.parse(query);
+  return withTenantTx(actor.tenantId, async (tx) => {
+    await pageFor(tx, actor, page_id, 'editor');
+    const term = q.trim().toLowerCase();
+    const named = (await groupNames(tx, actor.tenantId))
+      .filter((g) => term === '' || g.name.toLowerCase().split(/\s+/).some((w) => w.startsWith(term)) || g.name.toLowerCase().startsWith(term))
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .slice(0, limit);
+    const inGroups = await groupUsers(tx, actor.tenantId, named.map((g) => g.id));
+    return named.map((g) => ({ groupId: g.id, name: g.name, memberCount: inGroups.get(g.id)?.length ?? 0 }));
   });
 }
 

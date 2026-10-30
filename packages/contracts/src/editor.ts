@@ -32,6 +32,21 @@ export const mentionConfig = {
 export const mentionPath = (userId: string) => `/u/${userId}`;
 export const MENTION_PATH = /^\/u\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
 
+/** A mentioned group: everyone in it who can read the page is told, as if each were mentioned. */
+export const groupMentionConfig = {
+  type: 'groupMention',
+  propSchema: {
+    groupId: { default: '' },
+    /** The group's name when it was mentioned: what plain text reads. */
+    name: { default: '' },
+  },
+  content: 'none',
+} as const;
+
+/** The Markdown form of a group mention. */
+export const groupMentionPath = (groupId: string) => `/g/${groupId}`;
+export const GROUP_MENTION_PATH = /^\/g\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
+
 /**
  * A file pasted into a page: a link to the file document (never a raw storage
  * URL), so permissions, renames and new versions keep working.

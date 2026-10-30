@@ -149,6 +149,12 @@
   padding: 0 3px;
 }
 
+/* A mentioned group: tinted, so it reads as more than one person. */
+.bn-container .bn-editor .mention-group {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+
 /* A callout: tinted, led by its emoji (a button that changes it). */
 .bn-container .bn-editor .callout {
   align-items: flex-start;

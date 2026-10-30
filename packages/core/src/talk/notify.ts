@@ -1,6 +1,8 @@
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import {
   blockActivity,
+  groupMembers,
+  groups,
   memberships,
   notifications,
   userMentions,
@@ -9,7 +11,7 @@ import {
   type DocumentRow,
   type NOTIFICATION_KINDS,
 } from '@kinote/db';
-import { flattenBlocks, mentionsOf, type BlockLike } from '@kinote/shared';
+import { flattenBlocks, groupMentionsOf, mentionsOf, type BlockLike } from '@kinote/shared';
 import { requireDocumentRole, requireSpaceRole, type Actor, type SpaceRole } from '../permissions.js';
 
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
@@ -115,9 +117,32 @@ export async function recordPageMentions(
   blocks: BlockLike[],
   fallback: { type: 'user' | 'agent'; id: string }
 ): Promise<void> {
-  const found = mentionsOf(blocks);
-  if (found.length === 0) return;
+  const people = mentionsOf(blocks);
+  const groupsFound = groupMentionsOf(blocks);
+  if (people.length === 0 && groupsFound.length === 0) return;
   const tenantId = doc.tenantId;
+
+  // A mentioned group stands for each person in it, apart from whoever wrote the block.
+  const fromGroups: Array<{ blockId: string; userId: string }> = [];
+  if (groupsFound.length > 0) {
+    const inGroups = await groupUsers(tx, tenantId, [...new Set(groupsFound.map((g) => g.groupId))]);
+    const writers = await blockWriters(tx, tenantId, doc.id, [...new Set(groupsFound.map((g) => g.blockId))]);
+    for (const g of groupsFound) {
+      const writer = writers.get(g.blockId) ?? (fallback.type === 'user' ? fallback.id : null);
+      for (const userId of inGroups.get(g.groupId) ?? []) {
+        if (userId !== writer && userId !== fallback.id) fromGroups.push({ blockId: g.blockId, userId });
+      }
+    }
+  }
+  const seen = new Set<string>();
+  const found = [...people, ...fromGroups].filter((m) => {
+    const key = `${m.blockId}\u0000${m.userId}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  if (found.length === 0) return;
+
   const known = new Set((await memberActors(tx, tenantId, [...new Set(found.map((m) => m.userId))])).map((a) => a.principalId));
   const mine = found.filter((m) => known.has(m.userId));
   if (mine.length === 0) return;
@@ -200,6 +225,32 @@ export function textMentions(text: string, members: Array<{ id: string; name: st
     }
   }
   return out;
+}
+
+/** The people (not agents) in each of `groupIds`, by group. */
+export async function groupUsers(tx: DbTransaction, tenantId: string, groupIds: string[]): Promise<Map<string, string[]>> {
+  const out = new Map<string, string[]>();
+  if (groupIds.length === 0) return out;
+  const rows = await tx
+    .select({ groupId: groupMembers.groupId, userId: groupMembers.principalId })
+    .from(groupMembers)
+    .where(and(eq(groupMembers.tenantId, tenantId), inArray(groupMembers.groupId, groupIds), eq(groupMembers.principalType, 'user')));
+  for (const r of rows) out.set(r.groupId, [...(out.get(r.groupId) ?? []), r.userId]);
+  return out;
+}
+
+/** The person who last edited each block, where that was a person. */
+async function blockWriters(tx: DbTransaction, tenantId: string, pageId: string, blockIds: string[]): Promise<Map<string, string>> {
+  const rows = await tx
+    .select({ blockId: blockActivity.blockId, actorType: blockActivity.actorType, actorId: blockActivity.actorId })
+    .from(blockActivity)
+    .where(and(eq(blockActivity.tenantId, tenantId), eq(blockActivity.pageId, pageId), inArray(blockActivity.blockId, blockIds)));
+  return new Map(rows.filter((r) => r.actorType === 'user').map((r) => [r.blockId, r.actorId]));
+}
+
+/** The workspace's groups with their names, for `@Group name` in comments. */
+export async function groupNames(tx: DbTransaction, tenantId: string): Promise<Array<{ id: string; name: string }>> {
+  return tx.select({ id: groups.id, name: groups.name }).from(groups).where(eq(groups.tenantId, tenantId));
 }
 
 /** The workspace's people with their names, for comment mentions. */

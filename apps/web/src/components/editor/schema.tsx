@@ -1,6 +1,6 @@
 import { BlockNoteSchema, defaultBlockSpecs, defaultInlineContentSpecs } from '@blocknote/core';
 import { createReactBlockSpec, createReactInlineContentSpec } from '@blocknote/react';
-import { UNTITLED_DRAWING, calloutConfig, collectionViewConfig, drawingConfig, fileEmbedConfig, mentionConfig, mentionPath, pageLinkConfig, pageLinkPath } from '@kinote/contracts';
+import { UNTITLED_DRAWING, calloutConfig, collectionViewConfig, drawingConfig, fileEmbedConfig, groupMentionConfig, groupMentionPath, mentionConfig, mentionPath, pageLinkConfig, pageLinkPath } from '@kinote/contracts';
 import { FileEmbedView } from './FileEmbedView.js';
 import { PageLinkView } from './PageLinkView.js';
 import { CollectionViewBlock } from '../views/CollectionViewBlock.js';
@@ -26,6 +26,18 @@ const mention = createReactInlineContentSpec(mentionConfig, {
   ),
   toExternalHTML: ({ inlineContent }) => (
     <a href={mentionPath(inlineContent.props.userId)}>@{inlineContent.props.name || 'Someone'}</a>
+  ),
+});
+
+/** A mentioned group: everyone in it who can read the page is told (`groupMentionConfig`, the same on the server). */
+const groupMention = createReactInlineContentSpec(groupMentionConfig, {
+  render: ({ inlineContent }) => (
+    <span className="mention mention-group" data-group-mention={inlineContent.props.groupId}>
+      @{inlineContent.props.name || 'Group'}
+    </span>
+  ),
+  toExternalHTML: ({ inlineContent }) => (
+    <a href={groupMentionPath(inlineContent.props.groupId)}>@{inlineContent.props.name || 'Group'}</a>
   ),
 });
 
@@ -107,7 +119,7 @@ const drawing = createReactBlockSpec(drawingConfig, {
 /** The wiki's block schema: BlockNote's defaults plus page links, mentions, embedded files, callouts, collection views and drawings (the same as the server's). */
 export const wikiSchema = BlockNoteSchema.create({
   blockSpecs: { ...defaultBlockSpecs, fileEmbed, callout, collectionView, drawing },
-  inlineContentSpecs: { ...defaultInlineContentSpecs, pageLink, mention },
+  inlineContentSpecs: { ...defaultInlineContentSpecs, pageLink, mention, groupMention },
 });
 
 export type WikiEditor = typeof wikiSchema.BlockNoteEditor;

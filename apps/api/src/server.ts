@@ -60,6 +60,7 @@ import {
   CommentThreadSchema,
   CommentThreadListSchema,
   MentionableListSchema,
+  MentionableGroupListSchema,
   NotificationListSchema,
   RetryVersionResponseSchema,
   UploadFileResponseSchema,
@@ -171,6 +172,7 @@ import {
   deleteComment,
   deleteThread,
   listMentionable,
+  listMentionableGroups,
   listThreads,
   setThreadResolved,
   updateComment,
@@ -793,6 +795,10 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
     const { id } = req.params as { id: string };
     await deleteComment(actorOf(req), id);
     return reply.status(204).send();
+  });
+
+  app.get('/api/v1/mentionable/groups', async (req, reply) => {
+    return reply.send(parseReply(MentionableGroupListSchema, await listMentionableGroups(actorOf(req), req.query)));
   });
 
   app.get('/api/v1/mentionable', async (req, reply) => {

@@ -1,7 +1,7 @@
 import { BlockNoteSchema, createBlockSpec, createExtension, createInlineContentSpec, defaultBlockSpecs, defaultInlineContentSpecs } from '@blocknote/core';
 import { CommentMark } from '@blocknote/core/comments';
 import { ServerBlockNoteEditor } from '@blocknote/server-util';
-import { MENTION_PATH, PAGE_LINK_PATH, UNTITLED_DRAWING, calloutConfig, collectionViewConfig, drawingConfig, fileEmbedConfig, mentionConfig, mentionPath, pageLinkConfig, pageLinkPath } from '@kinote/contracts';
+import { GROUP_MENTION_PATH, MENTION_PATH, PAGE_LINK_PATH, UNTITLED_DRAWING, calloutConfig, collectionViewConfig, drawingConfig, fileEmbedConfig, groupMentionConfig, groupMentionPath, mentionConfig, mentionPath, pageLinkConfig, pageLinkPath } from '@kinote/contracts';
 import type { BlockLike } from './blocks.js';
 
 /**
@@ -31,6 +31,16 @@ const mention = createInlineContentSpec(mentionConfig, {
     const a = document.createElement('a');
     a.href = mentionPath(inline.props.userId);
     a.textContent = linkLabel(`@${inline.props.name || 'Someone'}`);
+    return { dom: a };
+  },
+});
+
+/** The server side of a group mention: a link to the group, so Markdown keeps which group it is. */
+const groupMention = createInlineContentSpec(groupMentionConfig, {
+  render: (inline) => {
+    const a = document.createElement('a');
+    a.href = groupMentionPath(inline.props.groupId);
+    a.textContent = linkLabel(`@${inline.props.name || 'Group'}`);
     return { dom: a };
   },
 });
@@ -94,7 +104,7 @@ const drawing = createBlockSpec(drawingConfig, {
 /** The wiki's block schema: BlockNote's defaults plus page links and mentions. */
 export const wikiSchema = BlockNoteSchema.create({
   blockSpecs: { ...defaultBlockSpecs, fileEmbed, callout, collectionView, drawing },
-  inlineContentSpecs: { ...defaultInlineContentSpecs, pageLink, mention },
+  inlineContentSpecs: { ...defaultInlineContentSpecs, pageLink, mention, groupMention },
 });
 
 /**
@@ -169,6 +179,11 @@ export function mentionsOf(blocks: BlockLike[]): Array<{ blockId: string; userId
   return inlineNodesOf(blocks, mentionConfig.type, 'userId').map((n) => ({ blockId: n.blockId, userId: n.key }));
 }
 
+/** Which groups are mentioned in which block (children included), once per (block, group), ids lower-cased. */
+export function groupMentionsOf(blocks: BlockLike[]): Array<{ blockId: string; groupId: string }> {
+  return inlineNodesOf(blocks, groupMentionConfig.type, 'groupId').map((n) => ({ blockId: n.blockId, groupId: n.key }));
+}
+
 function linkText(content: unknown): string {
   if (!Array.isArray(content)) return '';
   return content.map((c) => (isRecord(c) && typeof c.text === 'string' ? c.text : '')).join('');
@@ -188,6 +203,10 @@ export function restorePageLinks<T extends BlockLike>(blocks: T[]): T[] {
       const person = MENTION_PATH.exec(item.href);
       if (person) {
         return { type: mentionConfig.type, props: { userId: person[1]!.toLowerCase(), name: linkText(item.content).replace(/^@/, '') } };
+      }
+      const group = GROUP_MENTION_PATH.exec(item.href);
+      if (group) {
+        return { type: groupMentionConfig.type, props: { groupId: group[1]!.toLowerCase(), name: linkText(item.content).replace(/^@/, '') } };
       }
       return item;
     });

@@ -76,3 +76,26 @@ test('@ mentions a person; once the page is saved they are told', async ({ brows
   await expect(edPage).toHaveURL(new RegExp(`/p/${pageId}#block-`));
   await expect(editorOf(edPage).locator('.mention')).toHaveText('@Ed Editor');
 });
+
+test('@ mentions a group; once the page is saved its members are told', async ({ browser, request }) => {
+  const as = { account: world.owner, tenantId: world.tenantId };
+  const group = await call<{ id: string }>(request, '/groups', { ...as, method: 'POST', data: { name: 'Design crew' } });
+  await call(request, `/groups/${group.id}/members`, { ...as, method: 'POST', data: { principal_type: 'user', principal_id: ed.user.id } });
+
+  const page = await openAs(browser, world, world.owner);
+  const pageId = await createPageInSpace(page, world, 'Handoff');
+  await typeAtEnd(page, 'Over to @Design');
+  const option = page.getByRole('option', { name: /Design crew/ });
+  await expect(option).toContainText('Group · 1 person');
+  await option.click();
+  await expect(editorOf(page).locator('.mention-group')).toHaveText('@Design crew');
+
+  await expect(async () => {
+    await call(request, `/pages/${pageId}/snapshot`, { ...as, method: 'POST' }).catch(() => undefined);
+    const box = await call<{ items: Array<{ kind: string; documentId: string; excerpt: string }> }>(request, '/notifications', {
+      account: ed,
+      tenantId: world.tenantId,
+    });
+    expect(box.items).toEqual(expect.arrayContaining([expect.objectContaining({ kind: 'mention', documentId: pageId, excerpt: 'Over to @Design crew' })]));
+  }).toPass({ timeout: 30_000 });
+});

@@ -41,7 +41,7 @@ function insertLink(editor: WikiEditor, documentId: string, title: string) {
 
 /**
  * The `[[` page picker, the `@` mention picker and the slash menu with the
- * wiki's extras (Link to page, New sub-page, Mention a person, Callout, Drawing).
+ * wiki's extras (Link to page, New sub-page, Mention a person or group, Callout, Drawing).
  * Only for an editable editor.
  */
 export function WikiMenus({ editor, place }: { editor: WikiEditor; place: EditorPlace }) {
@@ -155,10 +155,11 @@ export function WikiMenus({ editor, place }: { editor: WikiEditor; place: Editor
     return filterSuggestionItems(withExtras(getDefaultReactSlashMenuItems(editor), extras), query);
   };
 
-  // `@`: people first (greyed when they can't read this page: they would not be told), then pages.
+  // `@`: people first (greyed when they can't read this page: they would not be told), then groups, then pages.
   const mentionItems = async (query: string): Promise<DefaultReactSuggestionItem[]> => {
-    const [people, pages] = await Promise.all([
+    const [people, groups, pages] = await Promise.all([
       api.mentionable(place.pageId, query).catch(() => []),
+      api.mentionableGroups(place.pageId, query).catch(() => []),
       query.trim() ? api.linkTargets(query).catch(() => []) : Promise.resolve([]),
     ]);
     return [
@@ -167,6 +168,12 @@ export function WikiMenus({ editor, place }: { editor: WikiEditor; place: Editor
         subtext: p.canRead ? undefined : 'No access to this space',
         group: 'People',
         onItemClick: () => editor.insertInlineContent([{ type: 'mention', props: { userId: p.userId, name: p.name } }, ' ']),
+      })),
+      ...groups.map((g) => ({
+        title: g.name,
+        subtext: `Group · ${g.memberCount} ${g.memberCount === 1 ? 'person' : 'people'}`,
+        group: 'Groups',
+        onItemClick: () => editor.insertInlineContent([{ type: 'groupMention', props: { groupId: g.groupId, name: g.name } }, ' ']),
       })),
       ...linkMenuEntries(pages.slice(0, 3), query, { canCreate: false, selfId: place.pageId }).flatMap((entry) =>
         entry.kind === 'target'

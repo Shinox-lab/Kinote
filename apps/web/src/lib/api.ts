@@ -47,6 +47,7 @@ import {
   CommentThreadSchema,
   CommentThreadListSchema,
   MentionableListSchema,
+  MentionableGroupListSchema,
   NotificationListSchema,
   RetryVersionResponseSchema,
   ReviewListSchema,
@@ -364,6 +365,8 @@ export const api = {
     request(`/api/v1/threads/${e(threadId)}/unresolve`, CommentThreadSchema, send('POST')),
   mentionable: (pageId: string, q: string) =>
     request(`/api/v1/mentionable?page_id=${e(pageId)}&q=${e(q)}`, MentionableListSchema),
+  mentionableGroups: (pageId: string, q: string) =>
+    request(`/api/v1/mentionable/groups?page_id=${e(pageId)}&q=${e(q)}`, MentionableGroupListSchema),
   notifications: () => request('/api/v1/notifications', NotificationListSchema),
   markNotificationsRead: (ids?: string[]) =>
     request('/api/v1/notifications/read', NO_CONTENT, send('POST', ids ? { ids } : {})),

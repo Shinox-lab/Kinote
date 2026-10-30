@@ -44,6 +44,8 @@ function inlineText(content: unknown): string {
       else if (item.type === 'pageLink' && isRecord(item.props)) out += String(item.props.title ?? '');
       // A mention reads as `@name` (`mentionConfig`).
       else if (item.type === 'mention' && isRecord(item.props)) out += `@${String(item.props.name ?? '')}`;
+      // So does a group mention (`groupMentionConfig`).
+      else if (item.type === 'groupMention' && isRecord(item.props)) out += `@${String(item.props.name ?? '')}`;
     }
   }
   return out;

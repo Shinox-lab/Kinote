@@ -98,6 +98,44 @@ describe('comments, mentions and notifications', () => {
       expect((await inbox(outsider.headers)).items).toEqual([]);
     });
 
+    test('a group mention tells each member who can read the page, once; not whoever wrote it', async () => {
+      const w = await world();
+      const ed = await w.member('Ed Editor', 'editor');
+      const ria = await w.member('Ria Reader', 'viewer');
+      const outsider = await w.member('Olga Outside', null);
+      const group = (await post(w.headers, '/api/v1/groups', { name: 'Design' })).json().id as string;
+      for (const id of [ed.userId, ria.userId, outsider.userId, w.owner.userId]) {
+        const add = await post(w.headers, `/api/v1/groups/${group}/members`, { principal_type: 'user', principal_id: id });
+        expect(add.statusCode, add.body).toBe(200);
+      }
+      const pageId = await w.page('Plan', `Over to [@Design](/g/${group}) and [@Ed Editor](/u/${ed.userId}) for review.`);
+      await w.snapshot(pageId);
+      await w.snapshot(pageId).catch(() => undefined);
+
+      for (const reader of [ed, ria]) {
+        const box = await inbox(reader.headers);
+        expect(box.items).toEqual([
+          expect.objectContaining({ kind: 'mention', documentId: pageId, excerpt: 'Over to @Design and @Ed Editor for review.' }),
+        ]);
+      }
+      expect((await inbox(outsider.headers)).items).toEqual([]);
+      expect((await inbox(w.headers)).items).toEqual([]);
+    });
+
+    test('mentionable groups: names matching the query, with their size; only for those who may edit', async () => {
+      const w = await world();
+      const viewer = await w.member('Val Viewer', 'viewer');
+      const design = (await post(w.headers, '/api/v1/groups', { name: 'Design' })).json().id as string;
+      await post(w.headers, '/api/v1/groups', { name: 'Finance' });
+      await post(w.headers, `/api/v1/groups/${design}/members`, { principal_type: 'user', principal_id: viewer.userId });
+      const pageId = await w.page('Plan', 'x');
+
+      const res = await get(w.headers, `/api/v1/mentionable/groups?page_id=${pageId}&q=des`);
+      expect(res.statusCode, res.body).toBe(200);
+      expect(res.json()).toEqual([{ groupId: design, name: 'Design', memberCount: 1 }]);
+      expect((await get(viewer.headers, `/api/v1/mentionable/groups?page_id=${pageId}`)).statusCode).toBe(403);
+    });
+
     test('only people who may edit the page list who can be mentioned', async () => {
       const w = await world();
       const viewer = await w.member('Val Viewer', 'viewer');
@@ -154,6 +192,20 @@ describe('comments, mentions and notifications', () => {
 
       const list = await get(ed.headers, `/api/v1/pages/${pageId}/threads`);
       expect(list.json().map((t: { comments: unknown[] }) => t.comments.length)).toEqual([3]);
+    });
+
+    test('@Group in a comment tells the group, apart from the commenter', async () => {
+      const w = await world();
+      const ed = await w.member('Ed Editor', 'editor');
+      const ria = await w.member('Ria Reader', 'editor');
+      const group = (await post(w.headers, '/api/v1/groups', { name: 'Design team' })).json().id as string;
+      for (const id of [ed.userId, ria.userId]) await post(w.headers, `/api/v1/groups/${group}/members`, { principal_type: 'user', principal_id: id });
+      const pageId = await w.page('Plan', 'The launch is in May.');
+
+      const started = await post(ed.headers, `/api/v1/pages/${pageId}/threads`, { body: body('@Design team can you check the date?') });
+      expect(started.statusCode, started.body).toBe(201);
+      expect((await inbox(ria.headers)).items).toEqual([expect.objectContaining({ kind: 'mention', actorName: 'Ed Editor' })]);
+      expect((await inbox(ed.headers)).items).toEqual([]);
     });
 
     test('viewers read threads but cannot start or reply', async () => {

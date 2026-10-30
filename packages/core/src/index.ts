@@ -149,6 +149,8 @@ export {
   excerptOf,
   memberActors,
   memberNames,
+  groupNames,
+  groupUsers,
   canOpen,
   usersWithSpaceRole,
   recordPageMentions,

@@ -1,7 +1,7 @@
 import * as Y from 'yjs';
 import { describe, expect, it } from 'vitest';
 import { flattenBlocks } from '../src/blocks.js';
-import { createServerEditor, mentionsOf, pageLinksOf, restorePageLinks } from '../src/editorSchema.js';
+import { createServerEditor, groupMentionsOf, mentionsOf, pageLinksOf, restorePageLinks } from '../src/editorSchema.js';
 
 const editor = createServerEditor();
 const ID = '0b6f3b5e-9c2a-4f43-8d0e-2f1b8f7c1a11';
@@ -111,6 +111,36 @@ describe('mentions', () => {
     const b = mentionBlock();
     b.content.push(b.content[1]);
     expect(mentionsOf([b])).toEqual([{ blockId: 'm1', userId: USER }]);
+  });
+});
+
+describe('group mentions', () => {
+  const GROUP = '2b6f0c1d-8e9a-4b3c-a1d2-e3f4a5b6c7d8';
+  const groupBlock = (): any => ({
+    id: 'g1',
+    type: 'paragraph',
+    content: ['Over to ', { type: 'groupMention', props: { groupId: GROUP, name: 'Design' } }, ' for review'],
+  });
+
+  it('keeps a group mention through the Yjs document and reads it as @name', () => {
+    const doc = editor.blocksToYDoc([groupBlock()], 'document-store');
+    const blocks = editor.yDocToBlocks(doc, 'document-store') as any[];
+    expect(blocks[0].content[1]).toEqual({ type: 'groupMention', props: { groupId: GROUP, name: 'Design' } });
+    expect(flattenBlocks(blocks)[0]!.text).toBe('Over to @Design for review');
+  });
+
+  it('survives the Markdown round trip as a /g/ link', async () => {
+    const md = await editor.blocksToMarkdownLossy([groupBlock()]);
+    expect(md.trim()).toBe(`Over to [@Design](/g/${GROUP}) for review`);
+    const [b] = restorePageLinks((await editor.tryParseMarkdownToBlocks(md)) as any) as any[];
+    expect(b.content[1]).toEqual({ type: 'groupMention', props: { groupId: GROUP, name: 'Design' } });
+  });
+
+  it('lists which groups are mentioned in which block, once each, and not as people', () => {
+    const b = groupBlock();
+    b.content.push(b.content[1]);
+    expect(groupMentionsOf([b])).toEqual([{ blockId: 'g1', groupId: GROUP }]);
+    expect(mentionsOf([b])).toEqual([]);
   });
 });
 
