@@ -1,5 +1,6 @@
 // pnpm clips [name...]: seeds a fresh demo workspace on the running stack, records each clip from the real app, and
 // encodes it into site/public/clips (MP4 + poster) and docs/assets/clips (README GIFs). See the site's contributing docs.
+import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -51,6 +52,39 @@ async function stackAnswers(request: APIRequestContext): Promise<boolean> {
   }
 }
 
+const BACKLOG_SQL =
+  "select count(*) from jobs where status in ('queued', 'running') and queue in ('version.index', 'version.card', 'version.entities')";
+
+/**
+ * Waits until the worker has indexed and summarised every page, because routing reads those summaries and a capture's
+ * job queues behind them. Reads the job table through the compose stack's own Postgres; without it, waits a fixed time.
+ */
+async function waitForWorker(): Promise<void> {
+  const backlog = (): number | null => {
+    try {
+      const out = execFileSync('docker', ['compose', 'exec', '-T', 'postgres', 'psql', '-U', 'postgres', '-d', 'kinote', '-tAc', BACKLOG_SQL], {
+        cwd: root,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      });
+      return Number(out.trim());
+    } catch {
+      return null;
+    }
+  };
+  const deadline = Date.now() + 20 * 60_000;
+  for (let left = backlog(); left !== 0; left = backlog()) {
+    if (left === null) {
+      console.log('clips: cannot read the job queue; waiting 3 minutes for the worker instead');
+      await new Promise((r) => setTimeout(r, 180_000));
+      return;
+    }
+    if (Date.now() > deadline) fail(`the worker still has ${left} indexing jobs after 20 minutes`);
+    console.log(`clips: waiting for the worker (${left} jobs left)`);
+    await new Promise((r) => setTimeout(r, 15_000));
+  }
+}
+
 async function main(): Promise<void> {
   const env = { ...readEnv(), ...process.env } as Record<string, string | undefined>;
   const baseURL = env.CLIPS_BASE_URL ?? `http://127.0.0.1:${env.WEB_HOST_PORT ?? '8081'}`;
@@ -70,8 +104,10 @@ async function main(): Promise<void> {
   const demo: Demo =
     env.CLIPS_REUSE_DEMO === '1' && existsSync(demoFile) ? JSON.parse(readFileSync(demoFile, 'utf8')) : await seedDemo(request);
   writeFileSync(demoFile, JSON.stringify(demo));
+  await waitForWorker();
 
-  const browser = await chromium.launch();
+  // One browser per view: two pages in one browser share focus, and the one in the background loses its caret.
+  const browsers = [await chromium.launch(), await chromium.launch()];
   const results: Array<{ name: string; seconds: number; mp4: number; gif?: number }> = [];
   try {
     for (const clip of clips) {
@@ -79,8 +115,8 @@ async function main(): Promise<void> {
       const accounts = accountsFor(clip.name);
       const views = clip.layout === 'side-by-side' ? accounts.slice(0, 2) : accounts.slice(0, 1);
       const pages: Page[] = [];
-      for (const who of views) {
-        const context = await browser.newContext({
+      for (const [i, who] of views.entries()) {
+        const context = await browsers[i].newContext({
           baseURL,
           viewport: clip.viewport,
           deviceScaleFactor: 1.5,
@@ -130,7 +166,7 @@ async function main(): Promise<void> {
       results.push({ name: clip.name, seconds: out.seconds, mp4: statSync(out.mp4).size, gif: out.gif ? statSync(out.gif).size : undefined });
     }
   } finally {
-    await browser.close();
+    await Promise.all(browsers.map((b) => b.close()));
     await request.dispose();
   }
 

@@ -61,7 +61,22 @@ export async function glide(page: Page, target: Locator, o: { click?: boolean } 
   await page.mouse.up();
 }
 
-/** Types at a human pace. */
+/**
+ * Types at a human pace. When `target` already has focus (an editor the clip clicked into), types where the caret is:
+ * pressSequentially would focus it again and move the caret to the start of the document.
+ */
 export async function typeHuman(target: Locator, text: string): Promise<void> {
-  await target.pressSequentially(text, { delay: 28 });
+  const focused = await target.evaluate((el) => el.contains(document.activeElement));
+  if (focused) await target.page().keyboard.type(text, { delay: 28 });
+  else await target.pressSequentially(text, { delay: 28 });
+}
+
+// Playwright follows the platform's editing keys: on macOS, End only scrolls; Cmd+arrows move the caret.
+const mac = process.platform === 'darwin';
+
+/** Moves the caret to the end of the current line. */
+export async function lineEnd(page: Page): Promise<void> {
+  await page.keyboard.press(mac ? 'Meta+ArrowRight' : 'End');
+  // The editor reads the new selection on the next selectionchange; give it a moment before typing.
+  await page.waitForTimeout(150);
 }
