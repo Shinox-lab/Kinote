@@ -8,7 +8,8 @@
     "build": "vitepress build",
     "preview": "vitepress preview --port 4173",
     "check": "tsx scripts/check-content.ts",
-    "typecheck": "vue-tsc --noEmit -p tsconfig.json"
+    "typecheck": "vue-tsc --noEmit -p tsconfig.json",
+    "test:site": "playwright test -c playwright.site.config.ts"
   },
   "devDependencies": {
     "exceljs": "4.4.0",
