@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
-import type { RecentItem, UpdateItem } from '@kinote/contracts';
-import { useRecent, useSpaces, useUpdates, useWorkspace } from '../lib/queries.js';
+import type { AttentionItem, AttentionReason, RecentItem, UpdateItem } from '@kinote/contracts';
+import { useAttention, useRecent, useSpaces, useUpdates, useWorkspace } from '../lib/queries.js';
 import { loadSession } from '../lib/session.js';
 import { relativeTime, updateSentence } from '../lib/updates.js';
 import { authorColor } from '../lib/wiki.js';
@@ -15,6 +15,65 @@ import { isKnownIcon } from '../lib/emoji.js';
 import { ErrorNote, Loading } from '../components/ui.js';
 
 const UPDATES_FIRST = 6;
+const ATTENTION_FIRST = 5;
+
+const REASON: Record<AttentionReason, { label: string; tone: string }> = {
+  failed: { label: 'Failed', tone: 'bg-danger-bg text-danger' },
+  review: { label: 'Review', tone: 'bg-review-bg text-review-text' },
+  unindexed: { label: 'Not indexed', tone: 'bg-warn-bg text-warn-text' },
+};
+
+/** One page or file that needs someone: what, where, its status as the page shows it, and since when. */
+function AttentionRow({ item, now }: { item: AttentionItem; now: Date }) {
+  const { tenant } = useWorkspace();
+  const reason = REASON[item.reason];
+  return (
+    <li>
+      <DocumentLink
+        tenantSlug={tenant.slug}
+        kind={item.document.kind}
+        id={item.document.id}
+        className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md px-2 py-2 hover:bg-hover"
+      >
+        <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ${reason.tone}`}>{reason.label}</span>
+        <span className="min-w-0 flex-1 truncate text-sm font-medium text-fg">
+          {item.document.title || 'Untitled'}
+          <span className="font-normal text-muted"> · {item.document.spaceName}</span>
+        </span>
+        <span className="text-xs text-muted">{item.badge}</span>
+        <time dateTime={item.changedAt} className="shrink-0 text-xs text-muted">
+          {relativeTime(item.changedAt, now)}
+        </time>
+      </DocumentLink>
+    </li>
+  );
+}
+
+/** Failed indexing, waiting reviews and unindexed edits across the spaces you can read; hidden when there are none. */
+function AttentionSection({ now }: { now: Date }) {
+  const attention = useAttention();
+  const [all, setAll] = useState(false);
+  const items = attention.data ?? [];
+  if (items.length === 0) return attention.error ? <ErrorNote error={attention.error} /> : null;
+  const shown = all ? items : items.slice(0, ATTENTION_FIRST);
+  return (
+    <section aria-labelledby="home-attention" className="flex flex-col gap-2">
+      <h2 id="home-attention" className="text-xs font-medium uppercase tracking-wide text-muted">
+        Needs attention <span className="font-normal normal-case tracking-normal">{items.length}</span>
+      </h2>
+      <ul className="flex flex-col rounded-lg border border-line bg-surface p-1">
+        {shown.map((item) => (
+          <AttentionRow key={item.document.id} item={item} now={now} />
+        ))}
+      </ul>
+      {items.length > ATTENTION_FIRST && !all && (
+        <button type="button" onClick={() => setAll(true)} className="self-start px-2 py-1 text-xs font-medium text-accent-text hover:underline">
+          Show all {items.length}
+        </button>
+      )}
+    </section>
+  );
+}
 const UPDATES_MOST = 30;
 
 function ago(iso: string, now: Date): string {
@@ -161,6 +220,8 @@ export function WorkspaceHomePage() {
         />
       </form>
 
+      <AttentionSection now={now} />
+
       {recent.error && <ErrorNote error={recent.error} />}
       {recentItems.length > 0 && (
         <section aria-labelledby="home-continue" className="flex flex-col gap-2">
@@ -182,6 +243,7 @@ export function WorkspaceHomePage() {
         <h2 id="home-updates" className="text-xs font-medium uppercase tracking-wide text-muted">
           Updates
         </h2>
+        <p className="-mt-1 text-xs text-muted">Every version saved, indexed or sent for review, newest first.</p>
         {updates.isPending && <Loading what="updates" />}
         <ErrorNote error={updates.error} />
         {updates.data && items.length === 0 && <p className="text-sm text-muted">Nothing has changed yet.</p>}

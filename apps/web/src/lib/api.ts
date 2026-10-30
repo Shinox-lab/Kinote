@@ -47,6 +47,7 @@ import {
   CommentThreadSchema,
   CommentThreadListSchema,
   MentionableListSchema,
+  AttentionListSchema,
   MentionableGroupListSchema,
   NotificationListSchema,
   RetryVersionResponseSchema,
@@ -343,6 +344,7 @@ export const api = {
   reviewQueue: (spaceId?: string) =>
     request(`/api/v1/reviews${spaceId ? `?space_id=${e(spaceId)}` : ''}`, ReviewListSchema),
   updates: (limit = 8) => request(`/api/v1/updates?limit=${limit}`, UpdatesResponseSchema),
+  attention: () => request('/api/v1/attention', AttentionListSchema),
   recent: (limit = 3) => request(`/api/v1/recent?limit=${limit}`, RecentResponseSchema),
 
   // Links

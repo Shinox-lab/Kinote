@@ -66,3 +66,26 @@ test('Home: greeting, Continue, grouped Updates and the search field; the sideba
   await expect(owner.getByRole('heading', { name: 'Home file.txt', level: 1 })).toBeVisible();
   expect(file).toBeTruthy();
 });
+
+test('Home: Needs attention lists pages with unindexed changes, and drops them once indexed', async ({ browser, request }) => {
+  const world = await seedWorld(request, { reviewRequired: false });
+  const owner = await openAs(browser, world, world.owner);
+  await createPageInSpace(owner, world, 'Draft plan');
+  await typeAtEnd(owner, 'Not indexed yet.');
+  await expect(owner.getByRole('textbox').first()).toContainText('Not indexed yet');
+
+  await owner.goto(`/w/${world.slug}`);
+  const attention = owner.getByRole('region', { name: 'Needs attention' });
+  const row = attention.getByRole('link', { name: /Draft plan/ });
+  await expect(row).toBeVisible();
+  await expect(row).toContainText('Docs');
+  await expect(row).toContainText(/Saved · indexing soon|unindexed/i);
+
+  await row.click();
+  await runPageAction(owner, 'Index now');
+  await expect(async () => {
+    await expect(badgeOf(owner)).toHaveText('Indexed · v1', { timeout: 2_000 });
+  }).toPass({ timeout: 30_000 });
+  await owner.goto(`/w/${world.slug}`);
+  await expect(owner.getByRole('region', { name: 'Needs attention' })).toHaveCount(0);
+});

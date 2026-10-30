@@ -60,6 +60,7 @@ import {
   CommentThreadSchema,
   CommentThreadListSchema,
   MentionableListSchema,
+  AttentionListSchema,
   MentionableGroupListSchema,
   NotificationListSchema,
   RetryVersionResponseSchema,
@@ -164,6 +165,7 @@ import {
   withdrawFile,
 } from './routes/files.js';
 import { listUpdates } from './routes/updates.js';
+import { listAttention } from './routes/attention.js';
 import { listRecent } from './routes/recent.js';
 import { getPageConnections, listDocumentTitles, listLinkTargets } from './routes/connections.js';
 import {
@@ -685,6 +687,10 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
   app.post('/api/v1/files/:id/withdraw', async (req, reply) => {
     const res = await withdrawFile(actorOf(req), (req.params as any).id);
     return reply.send(parseReply(DocumentSummarySchema, res));
+  });
+
+  app.get('/api/v1/attention', async (req, reply) => {
+    return reply.send(parseReply(AttentionListSchema, await listAttention(actorOf(req))));
   });
 
   app.get('/api/v1/updates', async (req, reply) => {

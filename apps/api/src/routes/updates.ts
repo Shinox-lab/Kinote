@@ -7,10 +7,10 @@ import { resolveActorNames } from '../people.js';
 /** The statuses worth announcing; superseded, extracting, indexing and stored rows are plumbing. */
 const SHOWN_STATUSES = ['pending_review', 'indexed', 'rejected', 'withdrawn', 'failed'] as const;
 
-type ReadableSpace = { id: string; name: string; kind: string };
+export type ReadableSpace = { id: string; name: string; kind: string; reviewRequired: boolean };
 
 /** The non-archived spaces the actor can read (the same gate every read route uses); unreadable ones are skipped. */
-async function readableSpaces(tx: DbTransaction, actor: Actor): Promise<ReadableSpace[]> {
+export async function readableSpaces(tx: DbTransaction, actor: Actor): Promise<ReadableSpace[]> {
   const candidates = await tx
     .select({ id: spaces.id })
     .from(spaces)
@@ -19,7 +19,7 @@ async function readableSpaces(tx: DbTransaction, actor: Actor): Promise<Readable
   for (const { id } of candidates) {
     try {
       const { space } = await requireSpaceRole(tx, actor, id, 'viewer');
-      readable.push({ id: space.id, name: space.name, kind: space.kind });
+      readable.push({ id: space.id, name: space.name, kind: space.kind, reviewRequired: space.reviewRequired });
     } catch (err) {
       if (err instanceof AppError && (err.code === 'space_not_found' || err.code === 'forbidden')) continue;
       throw err;

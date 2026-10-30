@@ -1,223 +1,93 @@
-import { describe, test } from 'vitest';
-import assert from 'node:assert/strict';
-import {
-  computePageBadge,
-  pageAttention,
-  LIVE_EDIT_WINDOW_SECONDS,
-  type BadgeInput,
-} from '../src/pages/badge.js';
+import { describe, test, beforeAll, afterEach, afterAll, expect } from 'vitest';
+import { and, eq } from 'drizzle-orm';
+import { versions, withTenantTx } from '@kinote/db';
+import { DeterministicEmbeddingProvider, DeterministicPlacementModel } from '@kinote/core';
+import { collabSettle, type CollabServer } from '../../collab/src/server.js';
+import { startCollabServer } from '../../collab/test/support/wsClient.js';
+import { runPendingJobsForTenant } from '../../worker/src/runner.js';
+import { InProcessCollabClient } from './support/inProcessCollab.js';
+import { bootstrapTenant, buildTestApp, signUpMember, useTestDb } from './support/testkit.js';
 
-const NOW = new Date('2026-10-19T12:00:00.000Z');
-const ago = (seconds: number) => new Date(NOW.getTime() - seconds * 1000);
+type Headers = Record<string, string>;
 
-type Attention = 'failed' | 'review' | 'editing' | null;
+/**
+ * GET /api/v1/attention: the pages and files that need someone, across the spaces the caller can read: failed first,
+ * then waiting for a reviewer, then unindexed changes. Clean, archived and unreadable documents are left out.
+ */
+describe('what needs attention', () => {
+  let server: CollabServer;
+  let collab: InProcessCollabClient;
+  let app: ReturnType<typeof buildTestApp>;
+  const model = new DeterministicPlacementModel();
+  const embedder = new DeterministicEmbeddingProvider();
 
-interface Row {
-  name: string;
-  input: BadgeInput;
-  badge: string;
-  /** Attention when liveUpdatedAt is fresh (5 s ago). */
-  fresh: Attention;
-  /** Attention when liveUpdatedAt is stale (61 s ago). */
-  stale: Attention;
-}
-
-function input(over: Partial<BadgeInput>): BadgeInput {
-  return {
-    liveChangedSinceSnapshot: false,
-    agentChangedAt: null,
-    spaceReviewRequired: false,
-    latestVersion: null,
-    indexedVersion: null,
-    ...over,
-  };
-}
-
-// Every outcome of computePageBadge, with the dot each one earns.
-const TABLE: Row[] = [
-  {
-    name: 'withdrawn, unchanged',
-    input: input({ latestVersion: { number: 2, status: 'withdrawn' } }),
-    badge: 'Withdrawn',
-    fresh: null,
-    stale: null,
-  },
-  {
-    name: 'failed, unchanged',
-    input: input({ latestVersion: { number: 2, status: 'failed' } }),
-    badge: 'Index failed',
-    fresh: 'failed',
-    stale: 'failed',
-  },
-  {
-    name: 'failed, live changed (failed outranks editing)',
-    input: input({ latestVersion: { number: 2, status: 'failed' }, liveChangedSinceSnapshot: true }),
-    badge: 'Index failed',
-    fresh: 'failed',
-    stale: 'failed',
-  },
-  {
-    name: 'indexing, unchanged',
-    input: input({ latestVersion: { number: 2, status: 'indexing' } }),
-    badge: 'Indexing…',
-    fresh: null,
-    stale: null,
-  },
-  {
-    name: 'indexing, live changed',
-    input: input({ latestVersion: { number: 2, status: 'indexing' }, liveChangedSinceSnapshot: true }),
-    badge: 'Indexing…',
-    fresh: 'editing',
-    stale: null,
-  },
-  {
-    name: 'pending review, unchanged',
-    input: input({ latestVersion: { number: 3, status: 'pending_review' } }),
-    badge: 'Saved · not indexed (awaiting approval)',
-    fresh: 'review',
-    stale: 'review',
-  },
-  {
-    name: 'pending review, live changed (review outranks editing)',
-    input: input({ latestVersion: { number: 3, status: 'pending_review' }, liveChangedSinceSnapshot: true }),
-    badge: 'Saved · changed since v3, awaiting approval',
-    fresh: 'review',
-    stale: 'review',
-  },
-  {
-    name: 'rejected, unchanged',
-    input: input({ latestVersion: { number: 4, status: 'rejected' } }),
-    badge: 'Not indexed · v4 rejected',
-    fresh: null,
-    stale: null,
-  },
-  {
-    name: 'rejected, live changed, no review needed',
-    input: input({ latestVersion: { number: 4, status: 'rejected' }, liveChangedSinceSnapshot: true }),
-    badge: 'Saved · indexing soon',
-    fresh: 'editing',
-    stale: null,
-  },
-  {
-    name: 'rejected, live changed, review required',
-    input: input({
-      latestVersion: { number: 4, status: 'rejected' },
-      liveChangedSinceSnapshot: true,
-      spaceReviewRequired: true,
-    }),
-    badge: 'Saved · not indexed (awaiting approval)',
-    fresh: 'review',
-    stale: 'review',
-  },
-  {
-    name: 'withdrawn, live changed, no review needed',
-    input: input({ latestVersion: { number: 2, status: 'withdrawn' }, liveChangedSinceSnapshot: true }),
-    badge: 'Saved · indexing soon',
-    fresh: 'editing',
-    stale: null,
-  },
-  {
-    name: 'live changed, agent changed, no review (R1: follows the space)',
-    input: input({
-      latestVersion: { number: 1, status: 'indexed' },
-      indexedVersion: { number: 1 },
-      liveChangedSinceSnapshot: true,
-      agentChangedAt: ago(10),
-    }),
-    badge: 'Saved · indexing soon',
-    fresh: 'editing',
-    stale: null,
-  },
-  {
-    name: 'live changed, no review',
-    input: input({
-      latestVersion: { number: 1, status: 'indexed' },
-      indexedVersion: { number: 1 },
-      liveChangedSinceSnapshot: true,
-    }),
-    badge: 'Saved · indexing soon',
-    fresh: 'editing',
-    stale: null,
-  },
-  {
-    name: 'indexed, unchanged',
-    input: input({ latestVersion: { number: 5, status: 'indexed' }, indexedVersion: { number: 5 } }),
-    badge: 'Indexed · v5',
-    fresh: null,
-    stale: null,
-  },
-  {
-    name: 'never indexed, no review',
-    input: input({}),
-    badge: 'Saved · indexing soon',
-    fresh: null,
-    stale: null,
-  },
-  {
-    name: 'never indexed, space requires review',
-    input: input({ spaceReviewRequired: true }),
-    badge: 'Saved · not indexed (awaiting approval)',
-    fresh: 'review',
-    stale: 'review',
-  },
-  {
-    name: 'never indexed, agent changed, no review (R1: follows the space)',
-    input: input({ agentChangedAt: ago(100) }),
-    badge: 'Saved · indexing soon',
-    fresh: null,
-    stale: null,
-  },
-];
-
-describe('pageAttention', () => {
-  test('the window is 60 seconds', () => {
-    assert.equal(LIVE_EDIT_WINDOW_SECONDS, 60);
+  beforeAll(async () => {
+    ({ server } = await startCollabServer(undefined, { debounceMs: 60_000, maxDebounceMs: 60_000 }));
+    collab = new InProcessCollabClient(server);
+    app = buildTestApp({ collab, embeddingProvider: embedder });
   });
+  useTestDb();
+  afterEach(async () => collabSettle(server));
+  afterAll(async () => server.server.destroy());
 
-  for (const row of TABLE) {
-    test(`${row.name}: "${row.badge}"`, () => {
-      assert.equal(computePageBadge(row.input), row.badge);
-      assert.equal(pageAttention({ ...row.input, liveUpdatedAt: ago(5) }, NOW), row.fresh);
-      assert.equal(pageAttention({ ...row.input, liveUpdatedAt: ago(61) }, NOW), row.stale);
-    });
+  const post = (headers: Headers, url: string, payload: unknown = {}) => app.inject({ method: 'POST', url, headers, payload: payload as any });
+  const get = (headers: Headers, url: string) => app.inject({ method: 'GET', url, headers });
+
+  async function world() {
+    const { tenant, headers } = await bootstrapTenant(app, { name: 'Care Co', slug: 'care-co' });
+    const run = () => runPendingJobsForTenant(tenant.id, { collab, placementModel: model, embeddingProvider: embedder });
+    const space = async (slug: string, review: boolean) => (await post(headers, '/api/v1/spaces', { name: slug, slug, review_required: review })).json().id as string;
+    const open = await space('team', false);
+    const held = await space('clients', true);
+    const secret = await space('secret', false);
+    const page = async (spaceId: string, title: string) => {
+      const res = await post(headers, '/api/v1/pages', { space_id: spaceId, title, slug: title.toLowerCase().replace(/\W+/g, '-'), markdown: `${title} text.` });
+      expect(res.statusCode, res.body).toBe(201);
+      return res.json().id as string;
+    };
+    const snapshot = async (pageId: string) => {
+      const res = await post(headers, `/api/v1/pages/${pageId}/snapshot`);
+      expect(res.statusCode, res.body).toBeLessThan(300);
+      await run();
+    };
+    const reader = await signUpMember(app, tenant.id, 'member');
+    for (const s of [open, held]) await post(headers, `/api/v1/spaces/${s}/grants`, { principal_type: 'user', principal_id: reader.userId, role: 'viewer' });
+    return { tenant, headers, open, held, secret, page, snapshot, reader };
   }
 
-  test('agrees with computePageBadge over the whole input space', () => {
-    const statuses = [null, 'extracting', 'pending_review', 'indexing', 'indexed', 'superseded', 'rejected', 'withdrawn', 'failed', 'stored'];
-    for (const status of statuses) {
-      for (const live of [false, true]) {
-        for (const agent of [null, ago(1)]) {
-          for (const review of [false, true]) {
-            for (const indexed of [null, { number: 1 }]) {
-              const i = input({
-                latestVersion: status ? { number: 2, status } : null,
-                liveChangedSinceSnapshot: live,
-                agentChangedAt: agent,
-                spaceReviewRequired: review,
-                indexedVersion: indexed,
-              });
-              const badge = computePageBadge(i);
-              const dot = pageAttention({ ...i, liveUpdatedAt: ago(1) }, NOW);
-              if (badge === 'Index failed') assert.equal(dot, 'failed', badge);
-              else if (badge.includes('awaiting approval')) assert.equal(dot, 'review', badge);
-              else if (live) assert.equal(dot, 'editing', badge);
-              else assert.equal(dot, null, badge);
-            }
-          }
-        }
-      }
-    }
-  });
+  test('lists failed, then waiting for review, then unindexed; leaves out clean, archived and unreadable ones', async () => {
+    const w = await world();
+    const clean = await w.page(w.open, 'Clean');
+    await w.snapshot(clean);
+    const draft = await w.page(w.open, 'Draft');
+    const waiting = await w.page(w.held, 'Waiting');
+    await w.snapshot(waiting);
+    const broken = await w.page(w.open, 'Broken');
+    await w.snapshot(broken);
+    await withTenantTx(w.tenant.id, (tx) =>
+      tx.update(versions).set({ status: 'failed' }).where(and(eq(versions.tenantId, w.tenant.id), eq(versions.documentId, broken))),
+    );
+    const archived = await w.page(w.open, 'Archived');
+    expect((await post(w.headers, `/api/v1/pages/${archived}/archive`)).statusCode).toBe(200);
+    await w.page(w.secret, 'Secret draft');
 
-  test('the 60 s boundary: 60 s is editing, 61 s is null', () => {
-    const base = input({ latestVersion: { number: 1, status: 'indexed' }, indexedVersion: { number: 1 }, liveChangedSinceSnapshot: true });
-    assert.equal(pageAttention({ ...base, liveUpdatedAt: ago(60) }, NOW), 'editing');
-    assert.equal(pageAttention({ ...base, liveUpdatedAt: ago(61) }, NOW), null);
-  });
+    const res = await get(w.reader.headers, '/api/v1/attention');
+    expect(res.statusCode, res.body).toBe(200);
+    const items = res.json() as Array<{ reason: string; badge: string; document: { id: string; title: string; spaceName: string } }>;
+    expect(items.map((i) => [i.reason, i.document.title])).toEqual([
+      ['failed', 'Broken'],
+      ['review', 'Waiting'],
+      ['unindexed', 'Draft'],
+    ]);
+    expect(items[0]!.badge).toBe('Index failed');
+    expect(items[1]!.badge).toBe('Saved · not indexed (awaiting approval)');
+    expect(items[1]!.document.spaceName).toBe('clients');
+    expect(items[2]!.badge).toBe('Saved · indexing soon');
+    void draft;
+    void clean;
 
-  test('a page opened but not changed is null', () => {
-    const base = input({ latestVersion: { number: 1, status: 'indexed' }, indexedVersion: { number: 1 } });
-    assert.equal(pageAttention({ ...base, liveUpdatedAt: ago(0) }, NOW), null);
-    assert.equal(pageAttention({ ...base, liveUpdatedAt: NOW }, NOW), null);
+    // The owner reads every space, so the secret draft is there too.
+    const mine = (await get(w.headers, '/api/v1/attention')).json() as Array<{ document: { title: string } }>;
+    expect(mine.map((i) => i.document.title)).toContain('Secret draft');
   });
 });

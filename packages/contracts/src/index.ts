@@ -575,6 +575,27 @@ export type UpdatesQuery = z.infer<typeof UpdatesQuerySchema>;
  * a connector's version (`id` null, name "System"); a user who left the
  * workspace shows as "Former member". No markdown, blocks or Yjs bytes.
  */
+/** Why a document needs someone: indexing failed, a version waits for a reviewer, or its edits aren't indexed yet. */
+export const AttentionReasonSchema = z.enum(['failed', 'review', 'unindexed']);
+export type AttentionReason = z.infer<typeof AttentionReasonSchema>;
+
+/** One entry of GET /api/v1/attention: the document, why it needs attention, and its status as the page shows it. */
+export const AttentionItemSchema = z.object({
+  reason: AttentionReasonSchema,
+  badge: z.string(),
+  /** When it last changed: the live edit for a page, the latest version for a file. */
+  changedAt: z.string().datetime(),
+  document: z.object({
+    id: z.string().uuid(),
+    title: z.string(),
+    kind: z.enum(['page', 'file']),
+    spaceId: z.string().uuid(),
+    spaceName: z.string(),
+  }),
+});
+export type AttentionItem = z.infer<typeof AttentionItemSchema>;
+export const AttentionListSchema = z.array(AttentionItemSchema);
+
 export const UpdateItemSchema = z.object({
   versionId: z.string().uuid(),
   number: z.number().int(),

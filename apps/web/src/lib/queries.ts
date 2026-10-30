@@ -129,6 +129,17 @@ export function useRecent(limit = 3) {
 }
 
 /** The workspace's recent changes for Home: asked again on focus and on a timer, never trusted from cache. */
+/** Pages and files that need someone (failed, waiting for review, unindexed changes), looked at again every 30 s. */
+export function useAttention() {
+  return useQuery({
+    queryKey: useTenantKey('attention'),
+    queryFn: () => api.attention(),
+    staleTime: 0,
+    refetchOnWindowFocus: true,
+    refetchInterval: 30_000,
+  });
+}
+
 export function useUpdates(limit: number) {
   return useQuery({
     queryKey: useTenantKey('updates', limit),
