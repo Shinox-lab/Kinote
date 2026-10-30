@@ -1,10 +1,13 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { useNavigate, useSearch } from '@tanstack/react-router';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { AskCitation, AskResponse, SearchPassage } from '@kinote/contracts';
 import { api } from '../lib/api.js';
 import { useSpaces, useWorkspace } from '../lib/queries.js';
 import { answerSegments, headingLine, queryAllows } from '../lib/search.js';
+import { useRecentSearches, type RecentSearch } from '../lib/recentSearches.js';
+import { relativeTime } from '../lib/pageStatus.js';
+import { loadSession } from '../lib/session.js';
 import { isKnownIcon } from '../lib/emoji.js';
 import { AppTopBar } from '../components/AppTopBar.js';
 import { DocumentLink } from '../components/DocumentLink.js';
@@ -135,6 +138,41 @@ function ResultRow({ passage, spaceName }: { passage: SearchPassage; spaceName: 
   );
 }
 
+/** The person's recent searches, shown while the box is empty: pick one to run it again (its answer comes back too). */
+function RecentList({
+  list,
+  spaces,
+  onOpen,
+  onRemove,
+}: {
+  list: RecentSearch[];
+  spaces: Array<{ id: string; name: string }>;
+  onOpen: (r: RecentSearch) => void;
+  onRemove: (r: RecentSearch) => void;
+}) {
+  if (list.length === 0) return null;
+  return (
+    <section aria-label="Recent searches" className="flex flex-col gap-1">
+      <h2 className="text-xs font-semibold uppercase tracking-wide text-muted">Recent searches</h2>
+      <ul className="flex flex-col divide-y divide-line">
+        {list.map((r) => (
+          <li key={`${r.space}:${r.q}`} className="flex items-center gap-2">
+            <button type="button" onClick={() => onOpen(r)} className="flex min-w-0 flex-1 items-baseline gap-2 py-2 text-left hover:underline max-md:min-h-11">
+              <span className="min-w-0 truncate text-sm text-fg">{r.q}</span>
+              {r.space !== '' && <span className="shrink-0 text-xs text-muted">{spaces.find((s) => s.id === r.space)?.name ?? ''}</span>}
+              {r.answer && <span className="shrink-0 rounded-full bg-accent-soft px-2 py-0.5 text-[10.5px] font-medium text-accent-text">Answered</span>}
+              <span className="ml-auto shrink-0 text-xs text-muted">{relativeTime(r.at)}</span>
+            </button>
+            <button type="button" aria-label={`Remove ${r.q} from recent searches`} onClick={() => onRemove(r)} className="rounded px-2 py-1 text-muted hover:bg-hover hover:text-fg max-md:min-h-11">
+              ×
+            </button>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 /** `/w/$tenantSlug/search`: a shareable semantic search, with an optional cited answer above the rows. */
 export function SearchPage() {
   const { tenant } = useWorkspace();
@@ -144,15 +182,16 @@ export function SearchPage() {
   const q = params.q ?? '';
   const spaceId = params.space ?? '';
   const [draft, setDraft] = useState(q);
-  const [answerWanted, setAnswerWanted] = useState(false);
+  // In the address, so leaving Search while an answer is on its way and coming back still shows it.
+  const answerWanted = params.ask === true;
   const [showAll, setShowAll] = useState(false);
   const allows = queryAllows(q);
+  const recent = useRecentSearches(tenant.id, loadSession()?.user.id ?? '');
+  const queryClient = useQueryClient();
+  const askKey = (question: string, space: string) => ['t', tenant.id, 'ask', question, space];
 
   useEffect(() => setDraft(q), [q]);
-  useEffect(() => {
-    setAnswerWanted(false);
-    setShowAll(false);
-  }, [q, spaceId]);
+  useEffect(() => setShowAll(false), [q, spaceId]);
 
   const filter = spaceId === '' ? {} : { space_ids: [spaceId] };
   const search = useQuery({
@@ -160,24 +199,51 @@ export function SearchPage() {
     queryFn: () => api.search({ query: q.trim(), limit: 50, ...filter }),
     enabled: q.trim() !== '' && allows.search,
   });
+  // Not refetched by itself: coming back to Search shows the answer (or the request still running) as it was.
   const ask = useQuery({
-    queryKey: ['t', tenant.id, 'ask', q, spaceId],
+    queryKey: askKey(q, spaceId),
     queryFn: () => api.ask({ question: q.trim(), ...filter }),
     enabled: answerWanted && q.trim() !== '' && allows.ask,
+    staleTime: Infinity,
+    gcTime: 30 * 60_000,
   });
+
+  // Every search that ran goes to the top of the recent list; an answer is kept with its search.
+  useEffect(() => {
+    if (search.isSuccess && q.trim() !== '') recent.add({ q, space: spaceId, at: new Date().toISOString() });
+  }, [search.isSuccess, q, spaceId]);
+  useEffect(() => {
+    const kept = recent.list.find((r) => r.space === spaceId && r.q.toLowerCase() === q.trim().toLowerCase());
+    if (ask.data && ask.dataUpdatedAt > (kept?.answer ? Date.parse(kept.at) : 0)) {
+      recent.add({ q, space: spaceId, at: new Date(ask.dataUpdatedAt).toISOString(), answer: ask.data });
+    }
+  }, [ask.dataUpdatedAt]);
+
+  /** "Get an answer" always asks the model afresh. */
+  function askNow() {
+    queryClient.removeQueries({ queryKey: askKey(q, spaceId), exact: true });
+    go(q, spaceId, true);
+  }
+
+  /** A recent search comes back with its kept answer, if it had one; "Ask again" refreshes it. */
+  function reopen(r: RecentSearch) {
+    if (r.answer) queryClient.setQueryData(askKey(r.q, r.space), r.answer, { updatedAt: Date.parse(r.at) });
+    go(r.q, r.space, r.answer !== undefined);
+  }
 
   const scopes = [
     { value: '', label: 'All spaces' },
     ...spaces.filter((s) => s.archivedAt === null).map((s) => ({ value: s.id, label: s.name })),
   ];
 
-  function go(nextQuery: string, nextSpace: string) {
+  function go(nextQuery: string, nextSpace: string, withAnswer = false) {
     navigate({
       to: '/w/$tenantSlug/search',
       params: { tenantSlug: tenant.slug },
       search: {
         ...(nextQuery.trim() !== '' ? { q: nextQuery.trim() } : {}),
         ...(nextSpace !== '' ? { space: nextSpace } : {}),
+        ...(withAnswer ? { ask: true as const } : {}),
       },
     });
   }
@@ -227,9 +293,23 @@ export function SearchPage() {
           </label>
         </form>
 
+        {q.trim() === '' && <RecentList list={recent.list} spaces={spaces} onOpen={reopen} onRemove={recent.remove} />}
+
         {ask.isFetching && <Loading what="answer" />}
         <ErrorNote error={ask.error} />
-        {answerWanted && ask.data && <Answer answer={ask.data} spaces={spaces} />}
+        {answerWanted && ask.data && (
+          <>
+            <Answer answer={ask.data} spaces={spaces} />
+            {!ask.isFetching && (
+              <p className="-mt-2 flex items-center gap-2 text-xs text-muted">
+                Answered {relativeTime(new Date(ask.dataUpdatedAt).toISOString())}
+                <button type="button" onClick={() => void ask.refetch()} className="font-medium text-accent-text hover:underline">
+                  Ask again
+                </button>
+              </p>
+            )}
+          </>
+        )}
 
         {search.isPending && q.trim() !== '' && <Loading what="results" />}
         <ErrorNote error={search.error} />
@@ -242,7 +322,7 @@ export function SearchPage() {
               </p>
               <button
                 type="button"
-                onClick={() => setAnswerWanted(true)}
+                onClick={askNow}
                 disabled={!allows.ask || ask.isFetching}
                 className="inline-flex items-center gap-1.5 rounded-md bg-accent-soft px-2.5 py-1.5 text-xs font-medium text-accent-text hover:opacity-90 disabled:opacity-50 max-md:min-h-11 max-md:w-full max-md:justify-center"
               >

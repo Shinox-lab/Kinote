@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import type { AskCitation } from '@kinote/contracts';
-import { answerSegments, headingLine, queryAllows } from '../src/lib/search.js';
+import { answerSegments, headingLine, parseSearchSearch, queryAllows } from '../src/lib/search.js';
 
 const uuid = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 
@@ -73,5 +73,18 @@ describe('queryAllows', () => {
     expect(queryAllows('x'.repeat(501))).toEqual({ search: false, ask: true });
     expect(queryAllows('x'.repeat(1000))).toEqual({ search: false, ask: true });
     expect(queryAllows('x'.repeat(1001))).toEqual({ search: false, ask: false });
+  });
+});
+
+describe('the ask param', () => {
+  test('ask=1 keeps the answer wanted across navigation', () => {
+    expect(parseSearchSearch({ q: 'vacation', ask: '1' })).toEqual({ q: 'vacation', ask: true });
+    expect(parseSearchSearch({ q: 'vacation', ask: 1 })).toEqual({ q: 'vacation', ask: true });
+    expect(parseSearchSearch({ q: 'vacation', ask: true })).toEqual({ q: 'vacation', ask: true });
+  });
+
+  test('without a query, or with any other value, there is no ask', () => {
+    expect(parseSearchSearch({ ask: '1' })).toEqual({});
+    expect(parseSearchSearch({ q: 'vacation', ask: 'yes' })).toEqual({ q: 'vacation' });
   });
 });

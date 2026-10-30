@@ -33,11 +33,15 @@ export function answerSegments(answer: string, citations: readonly AskCitation[]
   return segments;
 }
 
-/** The Search screen's shareable params: the query and one space. */
-export function parseSearchSearch(search: Record<string, unknown>): { q?: string; space?: string } {
+/**
+ * The Search screen's shareable params: the query, one space, and whether an answer was asked for. `ask` lives in the
+ * address so leaving the screen and coming back keeps the answer (or the request still running) in view.
+ */
+export function parseSearchSearch(search: Record<string, unknown>): { q?: string; space?: string; ask?: true } {
   const q = typeof search.q === 'string' && search.q.trim() !== '' ? search.q.slice(0, SEARCH_MAX) : undefined;
   const space = typeof search.space === 'string' && search.space !== '' ? search.space : undefined;
-  return { ...(q !== undefined ? { q } : {}), ...(space !== undefined ? { space } : {}) };
+  const ask = q !== undefined && (search.ask === '1' || search.ask === 1 || search.ask === true);
+  return { ...(q !== undefined ? { q } : {}), ...(space !== undefined ? { space } : {}), ...(ask ? { ask: true as const } : {}) };
 }
 
 /** A passage's heading path as one line; empty when the passage has none. */
