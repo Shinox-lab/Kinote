@@ -45,5 +45,5 @@ export default function DrawingPreview({ pageId, drawingId, version, label }: { 
 
   if (scene.isError || failed) return <p className="text-xs text-muted">This drawing couldn't load</p>;
   if (scene.data && scene.data.elements.length === 0) return <p className="text-xs text-muted">Empty drawing</p>;
-  return <div ref={box} role="img" aria-label={label} className="min-h-16 w-full overflow-hidden rounded border border-[var(--border)] p-1" />;
+  return <div ref={box} role="img" aria-label={label} className="min-h-16 w-full overflow-hidden rounded border border-line p-1" />;
 }

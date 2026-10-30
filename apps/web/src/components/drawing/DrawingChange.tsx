@@ -29,7 +29,7 @@ export function DrawingChange({ entry }: { entry: BlockDiffEntry & { drawing: No
         {sides.map((side) => (
           <figure key={side.label} className="flex min-w-0 flex-col gap-0.5">
             {sides.length === 2 && <figcaption className="text-[10px] font-semibold uppercase tracking-wide text-muted">{side.label}</figcaption>}
-            <Suspense fallback={<div className="h-16 rounded border border-[var(--border)]" />}>
+            <Suspense fallback={<div className="h-16 rounded border border-line" />}>
               <DrawingPreview pageId={d.pageId} drawingId={d.drawingId} version={side.version} label={`${side.label} drawing`} />
             </Suspense>
           </figure>

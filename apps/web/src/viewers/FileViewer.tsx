@@ -13,6 +13,7 @@ export interface ViewerProps {
   page?: number;
   onSave?: (file: File) => Promise<UploadFileResponse>;
   onDirtyChange?: (dirty: boolean) => void;
+  onEditingChange?: (editing: boolean) => void;
 }
 
 // Every viewer is its own chunk: its code (and the library behind it) loads only when a file of its type is opened.
@@ -30,8 +31,15 @@ const VIEWERS: Partial<Record<ViewerKind, ComponentType<ViewerProps>>> = {
   markdown: ({ bytes }) => <MarkdownViewer bytes={bytes} />,
   pdf: ({ bytes, page }) => <PdfViewer bytes={bytes} page={page} />,
   csv: ({ bytes, version }) => <CsvViewer bytes={bytes} name={version.fileName} />,
-  xlsx: ({ bytes, version, page, onSave, onDirtyChange }) => (
-    <XlsxViewer bytes={bytes} version={version} page={page} onSave={onSave} onDirtyChange={onDirtyChange} />
+  xlsx: ({ bytes, version, page, onSave, onDirtyChange, onEditingChange }) => (
+    <XlsxViewer
+      bytes={bytes}
+      version={version}
+      page={page}
+      onSave={onSave}
+      onDirtyChange={onDirtyChange}
+      onEditingChange={onEditingChange}
+    />
   ),
   docx: ({ bytes, version }) => <DocxViewer bytes={bytes} versionId={version.id} />,
   image: ({ bytes, version }) => <ImageViewer bytes={bytes} mimeType={version.mimeType} name={version.fileName} />,
@@ -43,18 +51,29 @@ function Bytes({
   page,
   onSave,
   onDirtyChange,
+  onEditingChange,
 }: {
   version: FileVersion;
   kind: ViewerKind;
   page?: number;
   onSave?: (file: File) => Promise<UploadFileResponse>;
   onDirtyChange?: (dirty: boolean) => void;
+  onEditingChange?: (editing: boolean) => void;
 }) {
   const { data, error, isPending } = useFileBytes(version.id);
   const View = VIEWERS[kind];
   if (isPending) return <Loading what="preview" />;
   if (error || !data || !View) return <DownloadCard version={version} reason="This file can't be previewed." />;
-  return <View bytes={data.bytes} version={version} page={page} onSave={onSave} onDirtyChange={onDirtyChange} />;
+  return (
+    <View
+      bytes={data.bytes}
+      version={version}
+      page={page}
+      onSave={onSave}
+      onDirtyChange={onDirtyChange}
+      onEditingChange={onEditingChange}
+    />
+  );
 }
 
 /**
@@ -66,11 +85,13 @@ export function FileViewer({
   page,
   onSave,
   onDirtyChange,
+  onEditingChange,
 }: {
   version: FileVersion;
   page?: number;
   onSave?: (file: File) => Promise<UploadFileResponse>;
   onDirtyChange?: (dirty: boolean) => void;
+  onEditingChange?: (editing: boolean) => void;
 }) {
   const kind = viewerFor(version.mimeType, version.sizeBytes);
   const fallback = <DownloadCard version={version} reason="This file can't be previewed." />;
@@ -89,7 +110,14 @@ export function FileViewer({
         {kind === 'pptx' ? (
           <PptxViewer versionId={version.id} page={page} />
         ) : (
-          <Bytes version={version} kind={kind} page={page} onSave={onSave} onDirtyChange={onDirtyChange} />
+          <Bytes
+            version={version}
+            kind={kind}
+            page={page}
+            onSave={onSave}
+            onDirtyChange={onDirtyChange}
+            onEditingChange={onEditingChange}
+          />
         )}
       </Suspense>
     </ViewerBoundary>

@@ -15,14 +15,21 @@ export default function XlsxViewer({
   page,
   onSave,
   onDirtyChange,
+  onEditingChange,
 }: {
   bytes: ArrayBuffer;
   version: FileVersion;
   page?: number;
   onSave?: (file: File) => Promise<UploadFileResponse>;
   onDirtyChange?: (dirty: boolean) => void;
+  /** Told when GridCraft opens and closes, so the page can keep this version on screen while it is open. */
+  onEditingChange?: (editing: boolean) => void;
 }) {
-  const [editing, setEditing] = useState(false);
+  const [editing, setEditingState] = useState(false);
+  const setEditing = (next: boolean) => {
+    setEditingState(next);
+    onEditingChange?.(next);
+  };
   const [timedOut, setTimedOut] = useState(false);
   const onTimeout = useCallback(() => setTimedOut(true), []);
 

@@ -12,12 +12,27 @@ import { useRefresh } from '../../lib/queries.js';
 import { LINK_TRIGGER } from './linkTrigger.js';
 import type { WikiEditor } from './schema.js';
 import { drawingMenuItem, useLiveDoc } from '../drawing/drawingRules.js';
+import { CalloutIcon, CollectionViewIcon, DrawingIcon, LinkIcon, MentionIcon, SubPageIcon } from '../icons.js';
+
+/** The size of BlockNote's own slash menu icons. */
+const MENU_ICON = { width: 18, height: 18 };
 
 
 /** Where the page being edited lives: new pages made from a menu go under it. */
 export interface EditorPlace {
   pageId: string;
   spaceId: string;
+}
+
+/** Each extra goes after the last item of its group, so every group heading shows once. */
+export function withExtras<T extends { group?: string }>(items: T[], extras: T[]): T[] {
+  const out = [...items];
+  for (const extra of extras) {
+    let at = out.length - 1;
+    while (at >= 0 && out[at]!.group !== extra.group) at -= 1;
+    out.splice(at < 0 ? out.length : at + 1, 0, extra);
+  }
+  return out;
 }
 
 function insertLink(editor: WikiEditor, documentId: string, title: string) {
@@ -67,6 +82,7 @@ export function WikiMenus({ editor, place }: { editor: WikiEditor; place: Editor
       {
         title: 'Link to page',
         subtext: 'Link to another page',
+        icon: <LinkIcon {...MENU_ICON} />,
         aliases: ['link', 'page', '[['],
         group: 'Pages',
         onItemClick: () =>
@@ -78,6 +94,7 @@ export function WikiMenus({ editor, place }: { editor: WikiEditor; place: Editor
       {
         title: 'Callout',
         subtext: 'A note that stands out',
+        icon: <CalloutIcon {...MENU_ICON} />,
         aliases: ['callout', 'note', 'tip', 'warning'],
         group: 'Basic blocks',
         onItemClick: () => {
@@ -91,10 +108,11 @@ export function WikiMenus({ editor, place }: { editor: WikiEditor; place: Editor
           }
         },
       },
-      drawingMenuItem(editor, live?.ydoc ?? null),
+      { ...drawingMenuItem(editor, live?.ydoc ?? null), icon: <DrawingIcon {...MENU_ICON} /> },
       {
         title: 'Collection view',
         subtext: 'A table, board, calendar or timeline of a collection',
+        icon: <CollectionViewIcon {...MENU_ICON} />,
         aliases: ['collection', 'database', 'table', 'board', 'calendar', 'timeline', 'view'],
         group: 'Pages',
         onItemClick: () => {
@@ -119,6 +137,7 @@ export function WikiMenus({ editor, place }: { editor: WikiEditor; place: Editor
       {
         title: 'Mention a person',
         subtext: 'Tell someone about this',
+        icon: <MentionIcon {...MENU_ICON} />,
         aliases: ['mention', 'person', '@'],
         group: 'Pages',
         onItemClick: () =>
@@ -127,12 +146,13 @@ export function WikiMenus({ editor, place }: { editor: WikiEditor; place: Editor
       {
         title: 'New sub-page',
         subtext: 'A page under this one, linked here',
+        icon: <SubPageIcon {...MENU_ICON} />,
         aliases: ['subpage', 'child', 'page'],
         group: 'Pages',
         onItemClick: () => void newChildPage('Untitled'),
       },
     ];
-    return filterSuggestionItems([...getDefaultReactSlashMenuItems(editor), ...extras], query);
+    return filterSuggestionItems(withExtras(getDefaultReactSlashMenuItems(editor), extras), query);
   };
 
   // `@`: people first (greyed when they can't read this page: they would not be told), then pages.

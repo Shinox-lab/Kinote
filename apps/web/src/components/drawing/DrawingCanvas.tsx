@@ -7,7 +7,7 @@ import { Excalidraw, reconcileElements } from '@excalidraw/excalidraw';
 import '@excalidraw/excalidraw/index.css';
 import { DRAWINGS_MAP, liveElementsOf, type DrawingElement } from '@kinote/contracts';
 import { loadSession } from '../../lib/session.js';
-import { bindDrawing } from './binding.js';
+import { bindDrawing, detached } from './binding.js';
 import { IMAGE_REFUSED, isImagePaste, withoutImages, type LiveDoc } from './drawingRules.js';
 
 type ExcalidrawApi = Parameters<NonNullable<Parameters<typeof Excalidraw>[0]['excalidrawAPI']>>[0];
@@ -43,7 +43,7 @@ export default function DrawingCanvas({
   const origin = useMemo(() => ({ drawingId }), [drawingId]);
   const initialElements = useMemo(() => {
     const scene = live.ydoc.getMap<unknown>(DRAWINGS_MAP).get(drawingId) as { entries(): Iterable<[string, unknown]> } | undefined;
-    return scene && typeof scene.entries === 'function' ? liveElementsOf(scene.entries()) : [];
+    return scene && typeof scene.entries === 'function' ? liveElementsOf(scene.entries()).map(detached) : [];
     // The initial scene only: the binding keeps it live from here.
   }, [live.ydoc, drawingId]);
 

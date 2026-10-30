@@ -127,6 +127,21 @@ test('editor opens and saves a new version', async ({ browser, request }) => {
   expect(versions.map((version) => version.number)).toEqual([2, 1]);
   await waitForFileBadge(request, world, world.owner, id, /^Indexed · v2$/);
   await expect(page.getByRole('status', { name: /File status: Indexed · v2/ })).toBeVisible();
+
+  // The editor stays open on the same workbook after a save (here in full screen), and saves again.
+  await expect(page.getByRole('status').filter({ hasText: /^Saved as version 2\.$/ })).toBeVisible();
+  await expect(frame.locator('#opened')).toHaveText(`Opened Budget.xlsx (${original.buffer.length} bytes)`);
+  await page.getByRole('button', { name: 'Full screen' }).click();
+  await frame.locator('#dirty').click();
+  await frame.locator('#save').click();
+  await expect(page.getByRole('status').filter({ hasText: 'No changes to save.' })).toBeVisible();
+  await expect(page.getByRole('dialog', { name: 'Budget.xlsx spreadsheet editor' })).toBeVisible();
+  await page.getByRole('button', { name: 'Exit full screen' }).click();
+
+  // Back to the preview shows the latest version.
+  await page.getByRole('button', { name: 'Back to preview' }).click();
+  await expect(preview.getByText('Read-only preview')).toBeVisible();
+  await expect(preview.getByRole('cell', { name: '1300' })).toBeVisible();
 });
 
 test('viewers and older versions stay read-only', async ({ browser, request }) => {

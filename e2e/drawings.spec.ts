@@ -17,6 +17,8 @@ interface Element {
   id: string;
   type: string;
   text?: string;
+  width?: number;
+  height?: number;
   isDeleted?: boolean;
 }
 
@@ -60,10 +62,15 @@ async function writeText(page: Page, drawingId: string, x: number, y: number, te
   await page.keyboard.press('Escape');
 }
 
-/** The live (stored) elements of a drawing, through the api. */
+/** The live (stored) elements of a drawing, through the api; none until collab has stored the block (its store is debounced). */
 async function liveShapes(page: Page, world: World, account: Account, pageId: string, drawingId: string): Promise<Element[]> {
-  const res = await call<{ elements: Element[] }>(page.request, `/pages/${pageId}/drawings/${drawingId}`, { account, tenantId: world.tenantId });
-  return res.elements;
+  try {
+    const res = await call<{ elements: Element[] }>(page.request, `/pages/${pageId}/drawings/${drawingId}`, { account, tenantId: world.tenantId });
+    return res.elements;
+  } catch (error) {
+    if (String(error).includes('block_not_found')) return [];
+    throw error;
+  }
 }
 const rectangles = (list: Element[]) => list.filter((e) => e.type === 'rectangle').length;
 
@@ -88,6 +95,21 @@ test('two people draw in one drawing and both keep their shapes', async ({ brows
     await expect(canvasOf(p, drawingId)).toBeVisible();
   }
   await expect.poll(async () => rectangles(await liveShapes(b, world, bea, pageId, drawingId))).toBe(2);
+});
+
+test('a shape keeps the size it was drawn at after a reload', async ({ browser, request }) => {
+  const world = await seedWorld(request, { reviewRequired: false });
+  const a = await openAs(browser, world, world.owner);
+  const pageId = await createPageInSpace(a, world, 'Sizes');
+  const drawingId = await insertDrawing(a);
+  await drawRectangle(a, drawingId, 60, 60);
+  // The stored shape is the finished one (80 × 60), not a copy from partway through the drag.
+  await expect
+    .poll(async () => (await liveShapes(a, world, world.owner, pageId, drawingId)).map((e) => [Math.round(e.width ?? 0), Math.round(e.height ?? 0)]), { timeout: 30_000 })
+    .toEqual([[80, 60]]);
+  await a.reload();
+  await expect(canvasOf(a, drawingId)).toBeVisible();
+  expect((await liveShapes(a, world, world.owner, pageId, drawingId)).map((e) => [Math.round(e.width ?? 0), Math.round(e.height ?? 0)])).toEqual([[80, 60]]);
 });
 
 test('a drawing in a review space waits, then its words are searchable', async ({ browser, request }) => {

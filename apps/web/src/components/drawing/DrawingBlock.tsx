@@ -135,13 +135,13 @@ export function DrawingBlock({
       <div
         className={
           expanded
-            ? 'fixed inset-0 z-50 flex flex-col bg-[var(--bg)]'
-            : 'relative w-full overflow-hidden rounded-md border border-[var(--border)]'
+            ? 'fixed inset-0 z-50 flex flex-col bg-page'
+            : 'relative w-full overflow-hidden rounded-md border border-line'
         }
         style={expanded ? undefined : { height: shown }}
       >
         {expanded && (
-          <div className="flex items-center justify-between border-b border-[var(--border)] px-3 py-2 text-sm">
+          <div className="flex items-center justify-between border-b border-line px-3 py-2 text-sm">
             <span className="font-medium text-fg">{title.trim() || UNTITLED_DRAWING}</span>
             <Button variant="secondary" onClick={() => setExpanded(false)}>
               Close

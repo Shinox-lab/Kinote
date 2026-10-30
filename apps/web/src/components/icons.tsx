@@ -153,3 +153,44 @@ export const MoreIcon = (p: IconProps) => (
     <circle cx="18.5" cy="12" r="1.2" fill="currentColor" />
   </Icon>
 );
+
+// The slash menu's own items, beside BlockNote's built-in ones.
+export const LinkIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1" />
+    <path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1" />
+  </Icon>
+);
+export const CalloutIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M12 3.5a5.5 5.5 0 0 0-3.3 9.9c.5.4.8 1 .8 1.6v.5h5V15c0-.6.3-1.2.8-1.6A5.5 5.5 0 0 0 12 3.5Z" />
+    <path d="M9.5 18.5h5M10.5 21h3" />
+  </Icon>
+);
+export const DrawingIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <circle cx="7.5" cy="7.5" r="3.5" />
+    <rect x="13" y="4" width="7" height="7" rx="1" />
+    <path d="M7.5 13.5 11 20H4l3.5-6.5Z" />
+    <path d="M14 18.5c1.2-2 2.5-2 3 0s1.8 2 3 0" />
+  </Icon>
+);
+export const CollectionViewIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <rect x="3.5" y="4" width="17" height="4.5" rx="1.5" />
+    <rect x="3.5" y="11" width="7.5" height="9" rx="1.5" />
+    <rect x="13" y="11" width="7.5" height="5" rx="1.5" />
+  </Icon>
+);
+export const MentionIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <circle cx="12" cy="12" r="3.5" />
+    <path d="M15.5 12v1.5a2.5 2.5 0 0 0 5 0V12a8.5 8.5 0 1 0-3.4 6.8" />
+  </Icon>
+);
+export const SubPageIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M7 3.5h7l4 4V20a.5.5 0 0 1-.5.5h-10.5a.5.5 0 0 1-.5-.5V4a.5.5 0 0 1 .5-.5Z" />
+    <path d="M14 3.5V8h4M12 11v6M9 14h6" />
+  </Icon>
+);

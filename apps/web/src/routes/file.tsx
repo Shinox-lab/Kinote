@@ -106,6 +106,8 @@ export function FilePage() {
   const [railOpen, setRailOpen] = useState(wide);
   const [renaming, setRenaming] = useState(false);
   const [editorDirty, setEditorDirty] = useState(false);
+  // The version GridCraft opened: kept on screen while it is open, so saving a new version doesn't close it.
+  const [editingVersion, setEditingVersion] = useState<FileVersion | null>(null);
   const { data: spaces = [] } = useSpaces();
   const { data: file, error, isPending } = useFile(fileId);
   const { role, shown } = useShownVersion(file, search.v);
@@ -195,8 +197,13 @@ export function FilePage() {
   }, [status, proceed, reset]);
 
   useEffect(() => {
+    setEditingVersion(null);
+  }, [fileId, search.v]);
+  const viewed = editingVersion ?? shown;
+
+  useEffect(() => {
     setEditorDirty(false);
-  }, [fileId, shown?.id]);
+  }, [fileId, viewed?.id]);
 
   if (isPending) return <Loading what="file" />;
   if (error || !file) {
@@ -230,7 +237,10 @@ export function FilePage() {
     role,
   });
   const canEditSpreadsheet =
-    controls.replace && shown !== null && shown.id === file.latestVersion?.id && shown.mimeType === MIME.xlsx;
+    controls.replace &&
+    viewed !== null &&
+    viewed.mimeType === MIME.xlsx &&
+    (viewed.id === editingVersion?.id || viewed.id === file.latestVersion?.id);
   const olderSpreadsheet =
     controls.replace &&
     shown !== null &&
@@ -385,13 +395,14 @@ export function FilePage() {
           {olderSpreadsheet && (
             <p className="mb-2 text-sm text-muted">Viewing an older version. Open the latest version to edit it.</p>
           )}
-          {shown ? (
+          {viewed ? (
             <section aria-label="Preview" className="rounded-lg bg-file-mat p-3 md:p-4">
               <FileViewer
-                version={shown}
+                version={viewed}
                 page={search.page}
                 onSave={canEditSpreadsheet ? saveEditedFile : undefined}
                 onDirtyChange={canEditSpreadsheet ? setEditorDirty : undefined}
+                onEditingChange={canEditSpreadsheet ? (on) => setEditingVersion(on ? viewed : null) : undefined}
               />
             </section>
           ) : (

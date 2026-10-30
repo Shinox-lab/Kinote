@@ -37,6 +37,14 @@ function sceneOf(doc: Y.Doc, drawingId: string): Y.Map<unknown> | undefined {
 const same = (a: DrawingElement, b: DrawingElement) => a.version === b.version && a.versionNonce === b.versionNonce;
 
 /**
+ * A copy of an element for the other side. Excalidraw changes elements in
+ * place while a shape is drawn or moved; the page document keeps the object
+ * it was given, so a shared object would change the stored copy too and the
+ * edit would never be written.
+ */
+export const detached = (e: DrawingElement): DrawingElement => structuredClone(e);
+
+/**
  * Keeps an Excalidraw canvas and its scene in the page document in step.
  * `onChange` (Excalidraw's) writes elements that differ from the stored
  * ones and win over them, at most one transaction per `throttleMs` (with
@@ -77,7 +85,7 @@ export function bindDrawing(opts: {
       return;
     }
     if (isDrawingElement(stored) && newerElement(stored, e) === stored) {
-      losers.set(e.id, stored);
+      losers.set(e.id, detached(stored));
       return;
     }
     losers.delete(e.id);
@@ -125,7 +133,7 @@ export function bindDrawing(opts: {
       for (const e of list) {
         const isNew = !scene.has(e.id);
         if (isNew && !e.isDeleted && (live >= MAX_DRAWING_ELEMENTS || bytes >= MAX_DRAWING_BYTES)) continue;
-        scene.set(e.id, e);
+        scene.set(e.id, detached(e));
         if (isNew && !e.isDeleted) {
           live += 1;
           bytes += JSON.stringify(e).length;
@@ -154,10 +162,10 @@ export function bindDrawing(opts: {
       if (event.target === scene) {
         for (const key of event.keysChanged) {
           const value = scene.get(key);
-          if (isDrawingElement(value)) changed.push(value);
+          if (isDrawingElement(value)) changed.push(detached(value));
         }
       } else if (event.target === doc.getMap(DRAWINGS_MAP) && event.keysChanged.has(drawingId)) {
-        for (const value of scene.values()) if (isDrawingElement(value)) changed.push(value);
+        for (const value of scene.values()) if (isDrawingElement(value)) changed.push(detached(value));
       }
     }
     if (changed.length === 0) return;

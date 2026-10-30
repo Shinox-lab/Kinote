@@ -241,6 +241,37 @@ describe('bindDrawing', () => {
     b.destroy();
     expect(writes).toHaveLength(0);
   });
+
+  test('an element Excalidraw changes in place after a write still reaches the other document', () => {
+    const { a, b } = pair();
+    const ba = bind(a, fakeScene());
+    bind(b, fakeScene());
+    // Excalidraw's mutateElement edits the same object while a shape is dragged out.
+    const shape: DrawingElement = el('A', { width: 10 });
+    ba.onChange([shape]);
+    ba.flush();
+    shape.width = 80;
+    shape.version = 2;
+    ba.onChange([shape]);
+    ba.flush();
+    expect(stored(b).A).toMatchObject({ width: 80, version: 2 });
+  });
+
+  test('a remote element on the canvas is not the stored copy', () => {
+    const { a, b } = pair();
+    const ba = bind(a, fakeScene());
+    const sb = fakeScene();
+    const bb = bind(b, sb);
+    ba.onChange([el('A', { width: 10 })]);
+    ba.flush();
+    // Bea's canvas then moves it in place, as Excalidraw does.
+    const onCanvas = sb.elements.find((e) => e.id === 'A')!;
+    onCanvas.width = 80;
+    onCanvas.version = 2;
+    bb.onChange(sb.elements);
+    bb.flush();
+    expect(stored(a).A).toMatchObject({ width: 80, version: 2 });
+  });
 });
 
 describe('createDrawing', () => {
