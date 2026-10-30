@@ -12,6 +12,7 @@
     "site:dev": "pnpm --filter @kinote/site dev",
     "site:build": "pnpm --filter @kinote/site build",
     "site:check": "pnpm --filter @kinote/site check",
+    "clips": "tsx site/clips/run.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "db:generate": "drizzle-kit generate",
