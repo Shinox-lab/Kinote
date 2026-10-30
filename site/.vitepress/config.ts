@@ -26,7 +26,15 @@ export default defineConfig({
     siteTitle: false,
     nav: [
       { text: 'Features', link: '/#features' },
-      { text: 'Docs', link: '/guide/', activeMatch: '^/(guide|self-host|contributing)/' },
+      {
+        text: 'Docs',
+        activeMatch: '^/(guide|self-host|contributing)/',
+        items: [
+          { text: 'Using Kinote', link: '/guide/' },
+          { text: 'Self-hosting', link: '/self-host/' },
+          { text: 'Contributing', link: '/contributing/' },
+        ],
+      },
       { text: 'Roadmap', link: '/roadmap' },
     ],
     socialLinks: [{ icon: 'github', link: 'https://github.com/Shinox-lab/Kinote' }],
@@ -48,8 +56,30 @@ export default defineConfig({
           ],
         },
       ],
-      '/self-host/': [{ text: 'Self-hosting', items: [{ text: 'Quick start', link: '/self-host/' }] }],
-      '/contributing/': [{ text: 'Contributing', items: [{ text: 'Repo layout', link: '/contributing/' }] }],
+      '/self-host/': [
+        {
+          text: 'Self-hosting',
+          items: [
+            { text: 'Quick start', link: '/self-host/' },
+            { text: 'Configuration', link: '/self-host/configuration' },
+            { text: 'Database and row-level security', link: '/self-host/database' },
+            { text: 'Ports and reverse proxies', link: '/self-host/proxy' },
+            { text: 'Object storage', link: '/self-host/storage' },
+            { text: 'Upgrading and backups', link: '/self-host/upgrading' },
+          ],
+        },
+      ],
+      '/contributing/': [
+        {
+          text: 'Contributing',
+          items: [
+            { text: 'Repo layout and services', link: '/contributing/' },
+            { text: 'Development', link: '/contributing/development' },
+            { text: 'How we work', link: '/contributing/how-we-work' },
+            { text: 'Conventions', link: '/contributing/conventions' },
+          ],
+        },
+      ],
     },
     search: { provider: 'local' },
     editLink: {
