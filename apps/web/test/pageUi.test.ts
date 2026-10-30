@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
-import { closeHistory, getHistoryOpenFor, getHistoryTab, openHistory, subscribeHistory } from '../src/lib/pageUi.js';
+import { PAGE_WIDTH_OPTIONS, closeHistory, getHistoryOpenFor, getHistoryTab, openHistory, pageWidthClass, subscribeHistory } from '../src/lib/pageUi.js';
 
 afterEach(() => closeHistory());
 
@@ -37,5 +37,25 @@ describe('history drawer state', () => {
     stop();
     openHistory('page-3');
     expect(listener).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('page width', () => {
+  test('default keeps the reading column, wide widens it, full uses the whole screen', () => {
+    expect(pageWidthClass('default')).toBe('max-w-[660px]');
+    expect(pageWidthClass('wide')).toBe('max-w-[960px]');
+    expect(pageWidthClass('full')).toBe('max-w-none');
+  });
+
+  test('a page from a server without widths reads at the default width', () => {
+    expect(pageWidthClass(undefined)).toBe('max-w-[660px]');
+  });
+
+  test('the menu offers the three widths in order', () => {
+    expect(PAGE_WIDTH_OPTIONS.map((o) => [o.value, o.label])).toEqual([
+      ['default', 'Default'],
+      ['wide', 'Wide'],
+      ['full', 'Full'],
+    ]);
   });
 });

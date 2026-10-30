@@ -1,3 +1,4 @@
+import type { PageWidth } from '@kinote/contracts';
 import { useSyncExternalStore } from 'react';
 
 // Which page's history drawer is open, and which tab it should show. The
@@ -42,3 +43,21 @@ export function useHistoryTab(pageId: string): HistoryTab | null {
     () => null
   );
 }
+
+/** The page column for each width. Tailwind sees the full class names here, so they are never purged. */
+const PAGE_WIDTH_CLASS: Record<PageWidth, string> = {
+  default: 'max-w-[660px]',
+  wide: 'max-w-[960px]',
+  full: 'max-w-none',
+};
+
+/** The column class of a page's width; a page without one (an older server) reads at the default width. */
+export function pageWidthClass(width: PageWidth | undefined): string {
+  return PAGE_WIDTH_CLASS[width ?? 'default'];
+}
+
+export const PAGE_WIDTH_OPTIONS: ReadonlyArray<{ value: PageWidth; label: string }> = [
+  { value: 'default', label: 'Default' },
+  { value: 'wide', label: 'Wide' },
+  { value: 'full', label: 'Full' },
+];

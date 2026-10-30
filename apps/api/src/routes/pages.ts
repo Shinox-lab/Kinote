@@ -285,6 +285,7 @@ export async function getPageDetails(actor: Actor, pageId: string): Promise<Page
       liveBlocks,
       liveChangedSinceSnapshot: page.liveChangedSinceSnapshot,
       agentChangedAt: page.agentChangedAt?.toISOString() ?? null,
+      width: page.width,
       archivedAt: doc.archivedAt?.toISOString() ?? null,
       latestVersion,
       indexedVersion,
@@ -1199,27 +1200,50 @@ export async function renamePage(
 
   return withTenantTx(actor.tenantId, async (tx) => {
     const doc = await lockPage(tx, actor.tenantId, pageId);
-    const [updated] = await tx
-      .update(documents)
-      .set({
-        ...(hasTitle ? { title: parsed.title } : {}),
-        ...(parsed.icon !== undefined ? { icon: parsed.icon } : {}),
-      })
-      .where(and(eq(documents.tenantId, actor.tenantId), eq(documents.id, pageId)))
-      .returning();
-    await writeAuditEvent(tx, {
-      tenantId: actor.tenantId,
-      type: 'page.renamed',
-      actorType: actor.principalType,
-      actorId: actor.principalId,
-      subjectType: 'page',
-      subjectId: pageId,
-      payload: {
-        previousTitle: doc.title,
-        title: updated.title,
-        ...(parsed.icon !== undefined ? { icon: parsed.icon } : {}),
-      },
-    });
+    const renames = hasTitle || parsed.icon !== undefined;
+    let updated = doc;
+    if (renames) {
+      [updated] = await tx
+        .update(documents)
+        .set({
+          ...(hasTitle ? { title: parsed.title } : {}),
+          ...(parsed.icon !== undefined ? { icon: parsed.icon } : {}),
+        })
+        .where(and(eq(documents.tenantId, actor.tenantId), eq(documents.id, pageId)))
+        .returning();
+      await writeAuditEvent(tx, {
+        tenantId: actor.tenantId,
+        type: 'page.renamed',
+        actorType: actor.principalType,
+        actorId: actor.principalId,
+        subjectType: 'page',
+        subjectId: pageId,
+        payload: {
+          previousTitle: doc.title,
+          title: updated.title,
+          ...(parsed.icon !== undefined ? { icon: parsed.icon } : {}),
+        },
+      });
+    }
+    if (parsed.width !== undefined) {
+      const [before] = await tx
+        .select({ width: pages.width })
+        .from(pages)
+        .where(and(eq(pages.tenantId, actor.tenantId), eq(pages.documentId, pageId)));
+      await tx
+        .update(pages)
+        .set({ width: parsed.width })
+        .where(and(eq(pages.tenantId, actor.tenantId), eq(pages.documentId, pageId)));
+      await writeAuditEvent(tx, {
+        tenantId: actor.tenantId,
+        type: 'page.width_changed',
+        actorType: actor.principalType,
+        actorId: actor.principalId,
+        subjectType: 'page',
+        subjectId: pageId,
+        payload: { previousWidth: before.width, width: parsed.width },
+      });
+    }
     return toDocumentSummary(updated);
   });
 }

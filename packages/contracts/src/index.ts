@@ -58,6 +58,7 @@ export const AuditEventTypeSchema = z.enum([
   'page.created',
   'page.moved',
   'page.renamed',
+  'page.width_changed',
   'page.archived',
   'page.restored',
   'page.withdrawn',
@@ -361,17 +362,24 @@ export const IconSchema = z
   );
 export type Icon = z.infer<typeof IconSchema>;
 
+/** How wide a page reads: the default column, a wider one, or the full width of the screen. */
+export const PAGE_WIDTHS = ['default', 'wide', 'full'] as const;
+export const PageWidthSchema = z.enum(PAGE_WIDTHS);
+export type PageWidth = z.infer<typeof PageWidthSchema>;
+
 /**
- * Body of PATCH /api/v1/pages/:id: a new title, a new icon (null clears) or
- * both; at least one field is required. The title follows the same bound as
- * creation. A title change also updates the live collab document.
+ * Body of PATCH /api/v1/pages/:id: a new title, a new icon (null clears), a
+ * new width, or any of them together; at least one field is required. The
+ * title follows the same bound as creation. A title change also updates the
+ * live collab document.
  */
 export const UpdatePageRequestSchema = z
   .object({
     title: z.string().trim().min(1).max(200).optional(),
     icon: IconSchema.nullable().optional(),
+    width: PageWidthSchema.optional(),
   })
-  .refine((v) => v.title !== undefined || v.icon !== undefined, 'title or icon is required');
+  .refine((v) => v.title !== undefined || v.icon !== undefined || v.width !== undefined, 'title, icon or width is required');
 export type UpdatePageRequest = z.input<typeof UpdatePageRequestSchema>;
 
 
@@ -466,6 +474,7 @@ export const PageDetailsSchema = z.object({
   liveBlocks: z.array(z.object({ id: z.string(), type: z.string() }).passthrough()),
   liveChangedSinceSnapshot: z.boolean(),
   agentChangedAt: z.string().datetime().nullable(),
+  width: PageWidthSchema,
   archivedAt: z.string().datetime().nullable(),
   latestVersion: VersionSummarySchema.nullable(),
   indexedVersion: VersionSummarySchema.nullable(),

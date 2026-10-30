@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
-import type { PageDetails, SpaceResponse } from '@kinote/contracts';
+import type { PageDetails, PageWidth, SpaceResponse } from '@kinote/contracts';
 import { api } from '../lib/api.js';
+import { PAGE_WIDTH_OPTIONS } from '../lib/pageUi.js';
 import type { PageControls } from '../lib/wiki.js';
 import { MoreIcon } from './icons.js';
 import { Confirm, MoveForm, PANEL } from './lifecycle.js';
@@ -12,8 +13,8 @@ type Action = 'rename' | 'move' | 'collection' | 'uncollection' | 'withdraw' | '
 
 /**
  * The page's lifecycle actions: move, turning it into a collection (or back),
- * withdraw, archive (and restoring an archived page), as `controls` allows for
- * the actor's role. `onChanged` runs after each one
+ * withdraw, archive (and restoring an archived page), and the page's width
+ * (the same for everyone), as `controls` allows for the actor's role. `onChanged` runs after each one
  * succeeds, so the page and its badge are fetched again.
  */
 export function LifecycleMenu({
@@ -45,6 +46,10 @@ export function LifecycleMenu({
       setAction(null);
       onChanged();
     },
+  });
+  const resize = useMutation({
+    mutationFn: (width: PageWidth) => api.updatePage(page.id, { width }),
+    onSuccess: onChanged,
   });
   // Pages in the Inbox are one person's: they can't be collections.
   const inInbox = spaces.find((s) => s.id === page.spaceId)?.kind === 'inbox';
@@ -115,6 +120,27 @@ export function LifecycleMenu({
                   </button>
                 </li>
               ))}
+              {controls.move && (
+                <li className="mt-1 border-t border-line px-3 pb-1 pt-2">
+                  <p className="mb-1.5 text-xs font-medium text-muted">Width</p>
+                  <div role="group" aria-label="Page width" className="flex gap-1 rounded-md border border-line p-0.5">
+                    {PAGE_WIDTH_OPTIONS.map((o) => (
+                      <button
+                        key={o.value}
+                        type="button"
+                        aria-pressed={(resize.isPending ? resize.variables : page.width) === o.value}
+                        onClick={() => resize.mutate(o.value)}
+                        className={`flex-1 rounded px-2 py-1 text-xs font-medium max-md:min-h-11 ${
+                          (resize.isPending ? resize.variables : page.width) === o.value ? 'bg-active text-fg' : 'text-muted hover:text-fg'
+                        }`}
+                      >
+                        {o.label}
+                      </button>
+                    ))}
+                  </div>
+                  <ErrorNote error={resize.error} />
+                </li>
+              )}
             </ul>
           )}
         </div>

@@ -12,7 +12,7 @@ import {
 import { captureHighlightCss, suggestionMarkerCss } from '../lib/capture.js';
 import { CaptureBanner } from '../components/capture/CaptureBanner.js';
 import { SuggestionsPanel } from '../components/capture/SuggestionsPanel.js';
-import { closeHistory, openHistory, useHistoryOpen, useHistoryTab } from '../lib/pageUi.js';
+import { closeHistory, openHistory, pageWidthClass, useHistoryOpen, useHistoryTab } from '../lib/pageUi.js';
 import { usePageView } from '../lib/usePageView.js';
 import { useLivePage } from '../lib/useLivePage.js';
 import { loadSession } from '../lib/session.js';
@@ -172,7 +172,7 @@ export function PagePage() {
           </>
         }
       />
-      <article className="mx-auto flex w-full max-w-[660px] flex-col gap-4 pt-4">
+      <article className={`mx-auto flex w-full ${pageWidthClass(page.width)} flex-col gap-4 pt-4`}>
         {/* The changed blocks wear their author's colour here, as in the sidebar's list; in
             "changes from this capture" mode the capture's blocks wear the Routing engine's instead. */}
         <style>{captureId ? captureHighlightCss(captureChanges ?? []) : blockHighlightCss(entries ?? [])}</style>

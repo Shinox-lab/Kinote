@@ -32,6 +32,9 @@ A page is a document you write in, like a page in a notebook. To add one:
 Type `/` on an empty line to see what you can add: headings, lists, tables, callouts, a drawing, a view of a
 collection, a link to another page and more.
 
+To give a page more room, open the **…** menu at the top right and pick a **Width**: **Default**, **Wide** or
+**Full**. The width belongs to the page, so everyone who opens it sees the same layout.
+
 Kinote saves as you type. A little while after you stop, the page is **indexed**, which means search and Ask can find
 what you wrote. The chip under the title tells you where the page stands. [Review and page status](./review) explains
 each one.

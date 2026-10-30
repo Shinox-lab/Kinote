@@ -106,6 +106,8 @@ export const pages = pgTable(
     liveUpdatedAt: timestamp('live_updated_at', { withTimezone: true }).notNull().defaultNow(),
     liveChangedSinceSnapshot: boolean('live_changed_since_snapshot').notNull().default(false),
     agentChangedAt: timestamp('agent_changed_at', { withTimezone: true }),
+    /** How wide the page reads: a layout choice of the page, the same for everyone who opens it. */
+    width: text('width', { enum: ['default', 'wide', 'full'] }).notNull().default('default'),
   },
   (t) => [uniqueIndex('pages_space_slug_idx').on(t.tenantId, t.spaceId, t.slugScope, t.slug)]
 );

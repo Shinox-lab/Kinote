@@ -1,0 +1,1 @@
+ALTER TABLE "pages" ADD COLUMN "width" text DEFAULT 'default' NOT NULL;

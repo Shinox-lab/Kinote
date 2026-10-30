@@ -246,6 +246,13 @@
       "when": 1793299429072,
       "tag": "0034_c2_drawings",
       "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1793374106002,
+      "tag": "0035_page_width",
+      "breakpoints": true
     }
   ]
 }
