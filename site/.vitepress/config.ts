@@ -31,7 +31,23 @@ export default defineConfig({
     ],
     socialLinks: [{ icon: 'github', link: 'https://github.com/Shinox-lab/Kinote' }],
     sidebar: {
-      '/guide/': [{ text: 'Using Kinote', items: [{ text: 'Workspaces, spaces and pages', link: '/guide/' }] }],
+      '/guide/': [
+        {
+          text: 'Using Kinote',
+          items: [
+            { text: 'Workspaces, spaces and pages', link: '/guide/' },
+            { text: 'Capture and routing', link: '/guide/capture' },
+            { text: 'Editing together', link: '/guide/editing-together' },
+            { text: 'Review and page status', link: '/guide/review' },
+            { text: 'Files', link: '/guide/files' },
+            { text: 'Search and Ask', link: '/guide/search-and-ask' },
+            { text: 'Collections and views', link: '/guide/collections' },
+            { text: 'Drawings', link: '/guide/drawings' },
+            { text: 'Links and comments', link: '/guide/links-and-comments' },
+            { text: 'Members and roles', link: '/guide/members' },
+          ],
+        },
+      ],
       '/self-host/': [{ text: 'Self-hosting', items: [{ text: 'Quick start', link: '/self-host/' }] }],
       '/contributing/': [{ text: 'Contributing', items: [{ text: 'Repo layout', link: '/contributing/' }] }],
     },
