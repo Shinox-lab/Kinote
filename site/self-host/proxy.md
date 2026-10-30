@@ -5,7 +5,7 @@
 Everything people use goes through the **web** service: the app, the API under `/api`, live editing under `/collab`,
 and the spreadsheet editor under `/gridcraft/`. So you only ever need one domain, pointed at the web service.
 
-Locally, the web service is published on `http://localhost:8080` (`WEB_HOST_PORT`). The other services' host ports
+Locally, the web service is published on `http://localhost:8081` (`WEB_HOST_PORT`). The other services' host ports
 (`55543` for Postgres, `59000`/`59001` for MinIO, `8787` for the API, `1234` for live editing, `8082` for the
 spreadsheet editor) are bound to `127.0.0.1` for local tools and tests. On a server, you can remove the `ports:` entries
 from `postgres`, `minio`, `api` and `collab` in `docker-compose.yml`; the web service doesn't need them.

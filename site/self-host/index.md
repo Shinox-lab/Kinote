@@ -49,10 +49,10 @@ docker compose up -d
 ```
 
 The database is set up automatically before the app starts. When the containers are healthy, open
-`http://localhost:8080`.
+`http://localhost:8081`.
 
-`pnpm dev` does the same if you have Node.js and pnpm: it checks `.env`, builds everything, waits until it's healthy
-and prints the address.
+`pnpm dev` does the same if you have Node.js and pnpm: it checks `.env`, builds everything and
+waits until it's healthy.
 
 ## 4. Sign up
 

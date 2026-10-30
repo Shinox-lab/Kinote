@@ -58,7 +58,7 @@ const commands = [
       <pre><code><span v-for="c in commands" :key="c">{{ c }}<br /></span></code></pre>
       <p>
         Fill in the secrets in <code>.env</code> before the last command; the guide shows how. Then open
-        <code>http://localhost:8080</code> and sign up the first account.
+        <code>http://localhost:8081</code> and sign up the first account.
       </p>
       <a class="btn" :href="withBase('/self-host/')">Read the self-hosting guide</a>
     </section>

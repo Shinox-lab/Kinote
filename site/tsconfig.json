@@ -2,9 +2,33 @@
   "extends": "../tsconfig.base.json",
   "compilerOptions": {
     "noEmit": true,
-    "types": ["node"],
-    "lib": ["ES2023", "DOM", "DOM.Iterable"]
+    "types": [
+      "node"
+    ],
+    "lib": [
+      "ES2023",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "baseUrl": ".",
+    "paths": {
+      "@kinote/contracts": [
+        "../packages/contracts/src/index.ts"
+      ]
+    }
   },
-  "include": [".vitepress/**/*.ts", ".vitepress/**/*.vue", "scripts/**/*.ts", "clips/**/*.ts", "tests/**/*.ts", "*.ts"],
-  "exclude": ["node_modules", ".vitepress/dist", ".vitepress/cache", "clips/.work"]
+  "include": [
+    ".vitepress/**/*.ts",
+    ".vitepress/**/*.vue",
+    "scripts/**/*.ts",
+    "clips/**/*.ts",
+    "tests/**/*.ts",
+    "*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    ".vitepress/dist",
+    ".vitepress/cache",
+    "clips/.work"
+  ]
 }

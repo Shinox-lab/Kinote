@@ -24,7 +24,7 @@ them the same way. After a change, run `docker compose up -d` again to apply it.
 
 | Setting | Default | What it does |
 |---|---|---|
-| `WEB_HOST_PORT` | `8080` | Where the app is published on your machine. |
+| `WEB_HOST_PORT` | `8081` | Where the app is published on your machine. |
 | `POSTGRES_HOST_PORT`, `MINIO_HOST_PORT`, `MINIO_CONSOLE_HOST_PORT` | `55543`, `59000`, `59001` | Ports for local tools. |
 | `API_HOST_PORT`, `COLLAB_HOST_PORT`, `GRIDCRAFT_HOST_PORT` | `8787`, `1234`, `8082` | Used by the test suites and UI development only. |
 | `TRUST_PROXY` | `false` | How many proxies sit in front of the app. See [Ports and reverse proxies](./proxy). |

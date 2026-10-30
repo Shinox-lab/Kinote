@@ -15,7 +15,7 @@ cp .env.example .env    # fill in the six secrets, see Self-hosting → Quick st
 
 | Command | What it does |
 |---|---|
-| `pnpm dev` | Builds and starts the whole stack with Docker Compose, waits until it's healthy and prints the address (`http://localhost:8080`). |
+| `pnpm dev` | Builds and starts the whole stack with Docker Compose and waits until it's healthy. The app is then at `http://localhost:8081`. |
 | `pnpm web` | Serves just the web app with Vite and hot reload, against a running stack. Use it for UI work. |
 | `pnpm stack:up` | Starts only Postgres and MinIO, then runs the migrations from your machine. |
 | `pnpm stack:down` | Stops the stack **and deletes its data**. |
