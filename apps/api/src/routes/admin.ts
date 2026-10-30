@@ -17,6 +17,7 @@ import {
   AppError,
   type Member,
   type Group,
+  type GroupMember,
   type Grant,
   type TenantRole,
 } from '@kinote/contracts';
@@ -208,6 +209,36 @@ export async function createGroup(actor: Actor, input: unknown): Promise<Group> 
   return withTenantTx(actor.tenantId, async (tx) => {
     const [group] = await tx.insert(groups).values({ tenantId: actor.tenantId, name }).returning();
     return { id: group.id, name: group.name, memberCount: 0 };
+  });
+}
+
+/** Who is in a group: people and agents with their names, sorted by name (tenant admins only). */
+export async function listGroupMembers(actor: Actor, rawGroupId: string): Promise<GroupMember[]> {
+  requireTenantAdmin(actor);
+  const groupId = principalUuid(rawGroupId);
+  return withTenantTx(actor.tenantId, async (tx) => {
+    await requireGroup(tx, actor.tenantId, groupId);
+    const rows = await tx
+      .select({ principalType: groupMembers.principalType, principalId: groupMembers.principalId })
+      .from(groupMembers)
+      .where(and(eq(groupMembers.tenantId, actor.tenantId), eq(groupMembers.groupId, groupId)));
+    const ids = (type: 'user' | 'agent') => rows.filter((r) => r.principalType === type).map((r) => r.principalId);
+    const names = new Map<string, string>();
+    if (ids('user').length > 0) {
+      for (const u of await tx.select({ id: users.id, name: users.name }).from(users).where(inArray(users.id, ids('user')))) {
+        names.set(u.id, u.name);
+      }
+    }
+    if (ids('agent').length > 0) {
+      const found = await tx
+        .select({ id: agents.id, name: agents.name })
+        .from(agents)
+        .where(and(eq(agents.tenantId, actor.tenantId), inArray(agents.id, ids('agent'))));
+      for (const a of found) names.set(a.id, a.name);
+    }
+    return rows
+      .map((r) => ({ principalType: r.principalType as 'user' | 'agent', principalId: r.principalId, name: names.get(r.principalId) ?? 'Unknown' }))
+      .sort((a, b) => a.name.localeCompare(b.name));
   });
 }
 

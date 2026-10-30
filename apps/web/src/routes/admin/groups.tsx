@@ -19,7 +19,7 @@ function GroupRow({ group }: { group: Group }) {
           {open ? 'Close' : 'Manage members'}
         </Button>
       </div>
-      {open && <GroupMembers groupId={group.id} />}
+      {open && <GroupMembers group={group} />}
     </li>
   );
 }

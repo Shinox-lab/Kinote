@@ -36,6 +36,11 @@ export function useGroups() {
   return useQuery({ queryKey: useTenantKey('groups'), queryFn: () => api.listGroups() });
 }
 
+/** Who is in a group; under the groups key, so refreshing groups refreshes it too. */
+export function useGroupMembers(groupId: string) {
+  return useQuery({ queryKey: useTenantKey('groups', groupId, 'members'), queryFn: () => api.groupMembers(groupId) });
+}
+
 export function useGrants(spaceId: string) {
   return useQuery({ queryKey: useTenantKey('grants', spaceId), queryFn: () => api.listGrants(spaceId) });
 }

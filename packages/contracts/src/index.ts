@@ -311,6 +311,15 @@ export const GroupMemberResponseSchema = z.object({
 });
 export type GroupMemberResponse = z.infer<typeof GroupMemberResponseSchema>;
 
+/** One member of a group, as GET /api/v1/groups/:id/members lists them (by name). */
+export const GroupMemberSchema = z.object({
+  principalType: z.enum(['user', 'agent']),
+  principalId: z.string().uuid(),
+  name: z.string(),
+});
+export type GroupMember = z.infer<typeof GroupMemberSchema>;
+export const GroupMemberListSchema = z.array(GroupMemberSchema);
+
 /** Reply of GET /api/v1/spaces/:id/grants. */
 export const GrantListSchema = z.array(GrantSchema);
 

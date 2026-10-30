@@ -25,6 +25,7 @@ import {
   ERROR_SENTENCES,
   GrantListSchema,
   GroupListSchema,
+  GroupMemberListSchema,
   GroupMemberResponseSchema,
   GroupSchema,
   InviteMemberResponseSchema,
@@ -270,6 +271,7 @@ export const api = {
     request(`/api/v1/members/${e(userId)}`, MemberSchema, send('PATCH', body)),
   removeMember: (userId: string) => request(`/api/v1/members/${e(userId)}`, NO_CONTENT, del),
   listGroups: () => request('/api/v1/groups', GroupListSchema),
+  groupMembers: (groupId: string) => request(`/api/v1/groups/${e(groupId)}/members`, GroupMemberListSchema),
   createGroup: (body: CreateGroupRequest) => request('/api/v1/groups', GroupSchema, send('POST', body)),
   addGroupMember: (groupId: string, body: AddGroupMemberRequest) =>
     request(`/api/v1/groups/${e(groupId)}/members`, GroupMemberResponseSchema, send('POST', body)),

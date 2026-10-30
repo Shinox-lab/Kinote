@@ -261,6 +261,30 @@ describe('members, groups and grants administration', () => {
   });
 
   describe('groups', () => {
+    test("an admin sees who is in a group, people and agents by name; others can't", async () => {
+      const w = await world();
+      const agentId = await createAgent(w.tenant.id, w.owner.userId, { name: 'Scribe' });
+      const group = await createGroup(w.headers, 'Writers');
+      for (const [type, id] of [['user', w.member.userId], ['agent', agentId], ['user', w.viewer.userId]] as const) {
+        const add = await call('POST', `/api/v1/groups/${group.id}/members`, w.headers, { principal_type: type, principal_id: id });
+        assert.equal(add.statusCode, 200, add.body);
+      }
+
+      const res = await call('GET', `/api/v1/groups/${group.id}/members`, w.admin.headers);
+      assert.equal(res.statusCode, 200, res.body);
+      const list = res.json() as Array<{ principalType: string; principalId: string; name: string }>;
+      assert.deepEqual(
+        list.map((m) => `${m.principalType}:${m.principalId}`).sort(),
+        [`user:${w.member.userId}`, `agent:${agentId}`, `user:${w.viewer.userId}`].sort(),
+      );
+      assert.ok(list.find((m) => m.principalId === agentId)?.name === 'Scribe');
+      assert.ok(list.every((m) => m.name.length > 0));
+      assert.deepEqual(list.map((m) => m.name), [...list.map((m) => m.name)].sort((a, b) => a.localeCompare(b)));
+
+      expectError(await call('GET', `/api/v1/groups/${group.id}/members`, w.member.headers), 403, 'forbidden');
+      expectError(await call('GET', '/api/v1/groups/00000000-0000-4000-8000-000000000000/members', w.headers), 404, 'principal_not_found');
+    });
+
     test('create, duplicate name, add member, idempotent re-add, counts and remove', async () => {
       const w = await world();
       const agentId = await createAgent(w.tenant.id, w.owner.userId, { name: 'Scribe' });

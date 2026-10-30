@@ -31,6 +31,7 @@ import {
   MemberListSchema,
   GroupSchema,
   GroupListSchema,
+  GroupMemberListSchema,
   SourceListSchema,
   SourceSchema,
   SourceTokenSchema,
@@ -99,6 +100,7 @@ import {
   changeMemberRole,
   removeMember,
   listGroups,
+  listGroupMembers,
   createGroup,
   addGroupMember,
   removeGroupMember,
@@ -446,6 +448,10 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
   app.post('/api/v1/groups', async (req, reply) => {
     const res = await createGroup(actorOf(req), req.body);
     return reply.status(201).send(parseReply(GroupSchema, res));
+  });
+
+  app.get('/api/v1/groups/:id/members', async (req, reply) => {
+    return reply.send(parseReply(GroupMemberListSchema, await listGroupMembers(actorOf(req), (req.params as any).id)));
   });
 
   app.post('/api/v1/groups/:id/members', async (req, reply) => {
