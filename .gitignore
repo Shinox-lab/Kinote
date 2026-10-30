@@ -4,3 +4,6 @@ dist
 playwright-report
 test-results
 .superpowers
+site/.vitepress/dist
+site/.vitepress/cache
+site/clips/.work

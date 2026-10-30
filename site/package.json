@@ -1,0 +1,19 @@
+{
+  "name": "@kinote/site",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vitepress dev",
+    "build": "vitepress build",
+    "preview": "vitepress preview --port 4173",
+    "check": "tsx scripts/check-content.ts",
+    "typecheck": "vue-tsc --noEmit -p tsconfig.json"
+  },
+  "devDependencies": {
+    "exceljs": "4.4.0",
+    "vitepress": "1.6.3",
+    "vue": "3.5.13",
+    "vue-tsc": "2.2.12"
+  }
+}

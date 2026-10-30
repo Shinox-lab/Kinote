@@ -1,0 +1,10 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "types": ["node"],
+    "lib": ["ES2023", "DOM", "DOM.Iterable"]
+  },
+  "include": [".vitepress/**/*.ts", ".vitepress/**/*.vue", "scripts/**/*.ts", "clips/**/*.ts", "tests/**/*.ts", "*.ts"],
+  "exclude": ["node_modules", ".vitepress/dist", ".vitepress/cache", "clips/.work"]
+}
