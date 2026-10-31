@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import type { AskCitation } from '@kinote/contracts';
-import { answerSegments, headingLine, parseSearchSearch, queryAllows } from '../src/lib/search.js';
+import { answerMarkdown, answerSegments, headingLine, parseSearchSearch, queryAllows } from '../src/lib/search.js';
 
 const uuid = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 
@@ -51,6 +51,21 @@ describe('answerSegments', () => {
 
   test('never treats answer text as markup', () => {
     expect(answerSegments('<b>hi</b>', [])).toEqual([{ type: 'text', text: '<b>hi</b>' }]);
+  });
+});
+
+describe('answerMarkdown', () => {
+  test('keeps the Markdown and turns a citation marker into a numbered link', () => {
+    expect(answerMarkdown(`**Take 20 days** [${a.citeAs}] off.`, [a], 'acme', 'https://app.test')).toBe(
+      '**Take 20 days** [[1]](https://app.test/w/acme/p/00000000-0000-4000-8000-000000000001) off.'
+    );
+  });
+
+  test('numbers links by their position in the sources, and a file citation keeps its page', () => {
+    const file = { ...b, documentKind: 'file' as const, pageFrom: 3 };
+    expect(answerMarkdown(`[${b.citeAs}] then [${a.citeAs}]`, [a, file], 'acme', 'https://app.test')).toBe(
+      '[[2]](https://app.test/w/acme/f/00000000-0000-4000-8000-000000000002?page=3) then [[1]](https://app.test/w/acme/p/00000000-0000-4000-8000-000000000001)'
+    );
   });
 });
 

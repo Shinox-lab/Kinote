@@ -1,4 +1,5 @@
 import type { AskCitation } from '@kinote/contracts';
+import { documentHref } from './documentLink.js';
 
 // Pure helpers behind the search screen: mapping an answer's citation markers to
 // the returned citations. Everything stays plain text; nothing here builds markup.
@@ -31,6 +32,26 @@ export function answerSegments(answer: string, citations: readonly AskCitation[]
     rest = rest.slice(next.at + next.marker.length);
   }
   return segments;
+}
+
+/**
+ * The answer as Markdown, with each `[citeAs]` marker turned into a numbered link to its document.
+ * `origin` makes the links absolute: the shared sanitiser drops relative ones.
+ */
+export function answerMarkdown(
+  answer: string,
+  citations: readonly AskCitation[],
+  tenantSlug: string,
+  origin: string
+): string {
+  return answerSegments(answer, citations)
+    .map((segment) => {
+      if (segment.type === 'text') return segment.text;
+      const { documentKind, documentId, pageFrom } = segment.citation;
+      const number = citations.indexOf(segment.citation) + 1;
+      return `[[${number}]](${origin}${documentHref(tenantSlug, documentKind, documentId, { page: pageFrom })})`;
+    })
+    .join('');
 }
 
 /**

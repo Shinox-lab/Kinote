@@ -1,10 +1,10 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { lazy, Suspense, useEffect, useState, type MouseEvent, type ReactNode } from 'react';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { AskCitation, AskResponse, SearchPassage } from '@kinote/contracts';
 import { api } from '../lib/api.js';
 import { useSpaces, useWorkspace } from '../lib/queries.js';
-import { answerSegments, headingLine, queryAllows } from '../lib/search.js';
+import { answerMarkdown, headingLine, queryAllows } from '../lib/search.js';
 import { useRecentSearches, type RecentSearch } from '../lib/recentSearches.js';
 import { relativeTime } from '../lib/pageStatus.js';
 import { loadSession } from '../lib/session.js';
@@ -16,6 +16,9 @@ import { PageIcon, SearchIcon, SparkleIcon } from '../components/icons.js';
 import { ErrorNote, Loading } from '../components/ui.js';
 
 const RESULT_FIRST = 6;
+
+// Marked and DOMPurify are heavy: they load only once an answer is on screen.
+const MarkdownText = lazy(() => import('../viewers/MarkdownText.js'));
 
 function SourceLink({
   target,
@@ -48,8 +51,20 @@ function Answer({
   answer: AskResponse;
   spaces: { id: string; name: string }[];
 }) {
-  const segments = answerSegments(answer.answer, answer.citations);
+  const { tenant } = useWorkspace();
+  const navigate = useNavigate();
+  const source = answerMarkdown(answer.answer, answer.citations, tenant.slug, window.location.origin);
   const spaceName = (citation: AskCitation) => spaces.find((s) => s.id === citation.spaceId)?.name ?? '';
+
+  /** Citation links point into the workspace; follow them without leaving the app. */
+  function follow(event: MouseEvent<HTMLDivElement>) {
+    const anchor = (event.target as HTMLElement).closest('a');
+    if (!anchor || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    if (anchor.origin !== window.location.origin) return;
+    event.preventDefault();
+    navigate({ href: `${anchor.pathname}${anchor.search}${anchor.hash}` });
+  }
+
   return (
     <section aria-label="Answer" className="flex flex-col gap-3 rounded-lg border border-review-line bg-review-bg p-4">
       <h2 className="text-xs font-semibold uppercase tracking-wide text-review-text">
@@ -57,17 +72,11 @@ function Answer({
       </h2>
       {answer.foundRelevant ? (
         <>
-          <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-fg">
-            {segments.map((segment, index) =>
-              segment.type === 'text' ? (
-                segment.text
-              ) : (
-                <SourceLink key={index} target={segment.citation} className="font-medium text-accent-text hover:underline">
-                  {`[${answer.citations.indexOf(segment.citation) + 1}]`}
-                </SourceLink>
-              )
-            )}
-          </p>
+          <div onClick={follow}>
+            <Suspense fallback={<p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-fg">{answer.answer}</p>}>
+              <MarkdownText source={source} />
+            </Suspense>
+          </div>
           {answer.citations.length > 0 && (
             <div>
               <h3 className="mb-1 text-xs font-semibold text-fg">Sources</h3>
