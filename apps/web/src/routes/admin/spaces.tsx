@@ -7,6 +7,7 @@ import { useRefresh, useSpaces } from '../../lib/queries.js';
 import { useFocusTrap } from '../../lib/useFocusTrap.js';
 import { useMediaQuery } from '../../lib/useMediaQuery.js';
 import { BookIcon, InboxIcon } from '../../components/icons.js';
+import { DemoSeedCard } from '../../components/DemoSeedCard.js';
 import { SpaceCard } from '../../components/SpaceCard.js';
 import { Button, Checkbox, ErrorNote, Loading, TextField } from '../../components/ui.js';
 
@@ -106,6 +107,7 @@ export function SpacesPage() {
 
   return (
     <div className="flex flex-col gap-4">
+      <DemoSeedCard />
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-muted">
           {spaces?.length ?? 0} {spaces?.length === 1 ? 'space' : 'spaces'}

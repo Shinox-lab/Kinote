@@ -15,7 +15,8 @@ export interface AdminScreen {
     | '/w/$tenantSlug/admin/members'
     | '/w/$tenantSlug/admin/groups'
     | '/w/$tenantSlug/admin/spaces'
-    | '/w/$tenantSlug/admin/sources';
+    | '/w/$tenantSlug/admin/sources'
+    | '/w/$tenantSlug/admin/workspace';
   label: string;
 }
 
@@ -26,8 +27,12 @@ const ADMIN_SCREENS: AdminScreen[] = [
   { to: '/w/$tenantSlug/admin/sources', label: 'Sources' },
 ];
 
-/** The admin screens a role may open: all of them for owners and admins, none otherwise. */
+/** Deleting the workspace is for owners only. */
+const OWNER_SCREENS: AdminScreen[] = [{ to: '/w/$tenantSlug/admin/workspace', label: 'Workspace' }];
+
+/** The admin screens a role may open: all of them for owners, all but Workspace for admins, none otherwise. */
 export function adminScreens(role: TenantRole): AdminScreen[] {
+  if (role === 'owner') return [...ADMIN_SCREENS, ...OWNER_SCREENS];
   return canAdminister(role) ? ADMIN_SCREENS : [];
 }
 

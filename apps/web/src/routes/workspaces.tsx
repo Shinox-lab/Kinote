@@ -9,7 +9,7 @@ import { AuthShell, Button, ErrorNote, TextField } from '../components/ui.js';
 import { loadSession, saveSession } from '../lib/session.js';
 
 /** `/` for a user without a workspace: name one and become its owner. */
-export function CreateWorkspacePage() {
+export function CreateWorkspacePage({ additional = false }: { additional?: boolean } = {}) {
   const router = useRouter();
   const [name, setName] = useState('');
   const [slug, setSlug] = useState('');
@@ -36,9 +36,11 @@ export function CreateWorkspacePage() {
   };
 
   return (
-    <AuthShell title="Create your workspace">
+    <AuthShell title={additional ? 'Create a workspace' : 'Create your workspace'}>
       <p className="mb-4 text-sm text-muted">
-        You are not in a workspace yet. Create one, or open an invitation link someone sent you.
+        {additional
+          ? 'A separate workspace with its own spaces, people and pages. You become its owner.'
+          : 'You are not in a workspace yet. Create one, or open an invitation link someone sent you.'}
       </p>
       <form onSubmit={submit} className="flex flex-col gap-4">
         <TextField label="Workspace name" value={name} onChange={changeName} required />

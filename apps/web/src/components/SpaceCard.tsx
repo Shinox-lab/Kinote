@@ -69,9 +69,12 @@ export function SpaceCard({ space }: { space: SpaceResponse }) {
             />
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button variant="secondary" aria-expanded={showGrants} onClick={() => setShowGrants(!showGrants)}>
-              {showGrants ? 'Hide access' : 'Manage access'}
-            </Button>
+            {/* The Inbox is personal: every member has one, and its items are private to their creator. */}
+            {space.kind !== 'inbox' && (
+              <Button variant="secondary" aria-expanded={showGrants} onClick={() => setShowGrants(!showGrants)}>
+                {showGrants ? 'Hide access' : 'Manage access'}
+              </Button>
+            )}
             {space.kind !== 'inbox' &&
               (confirmArchive ? (
                 <>
@@ -89,7 +92,7 @@ export function SpaceCard({ space }: { space: SpaceResponse }) {
               ))}
           </div>
           <ErrorNote error={update.error ?? archive.error} />
-          {showGrants && <SpaceGrants spaceId={space.id} />}
+          {showGrants && space.kind !== 'inbox' && <SpaceGrants spaceId={space.id} />}
         </div>
       )}
     </section>

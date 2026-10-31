@@ -174,3 +174,6 @@ export {
   CAPTURE_FILE_MESSAGES,
   type CaptureFileState,
 } from './routing/captureFile.js';
+export { seedDemo, uploadDemoFiles, signUpAccount, uniqueSuffix, DEMO_PASSWORD, type Demo, type DemoAccount, type DemoFile, type DemoHttp, type SeedInto, type SeedOptions } from './demo/seed.js';
+export { readDemoFiles } from './demo/files.js';
+export { people as demoPeople, workspace as demoWorkspace, type PersonKey as DemoPersonKey } from './demo/content.js';

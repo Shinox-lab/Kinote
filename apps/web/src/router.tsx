@@ -18,6 +18,7 @@ import { AdminLayout } from './routes/admin/layout.js';
 import { GroupsPage } from './routes/admin/groups.js';
 import { MembersPage } from './routes/admin/members.js';
 import { SpacesPage } from './routes/admin/spaces.js';
+import { WorkspaceSettingsPage } from './routes/admin/workspace.js';
 import { parseFileSearch } from './lib/documentLink.js';
 import { parseReviewSearch } from './lib/review.js';
 import { parseSearchSearch } from './lib/search.js';
@@ -120,6 +121,15 @@ const indexRoute = createRoute({
   component: CreateWorkspacePage,
 });
 
+const newWorkspaceRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/new-workspace',
+  beforeLoad: ({ location }) => {
+    requireSession(location.href);
+  },
+  component: () => <CreateWorkspacePage additional />,
+});
+
 const workspaceRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/w/$tenantSlug',
@@ -208,6 +218,11 @@ const adminIndexRoute = createRoute({
 const membersRoute = createRoute({ getParentRoute: () => adminRoute, path: 'members', component: MembersPage });
 const groupsRoute = createRoute({ getParentRoute: () => adminRoute, path: 'groups', component: GroupsPage });
 const spacesRoute = createRoute({ getParentRoute: () => adminRoute, path: 'spaces', component: SpacesPage });
+const workspaceSettingsRoute = createRoute({
+  getParentRoute: () => adminRoute,
+  path: 'workspace',
+  component: WorkspaceSettingsPage,
+});
 const sourcesRoute = createRoute({
   getParentRoute: () => adminRoute,
   path: 'sources',
@@ -220,6 +235,7 @@ const routeTree = rootRoute.addChildren([
   signUpRoute,
   acceptInviteRoute,
   indexRoute,
+  newWorkspaceRoute,
   workspaceRoute.addChildren([
     workspaceHomeRoute,
     spaceRoute,
@@ -229,7 +245,7 @@ const routeTree = rootRoute.addChildren([
     notificationsRoute,
     captureRoute,
     searchRoute,
-    adminRoute.addChildren([adminIndexRoute, membersRoute, groupsRoute, spacesRoute, sourcesRoute]),
+    adminRoute.addChildren([adminIndexRoute, membersRoute, groupsRoute, spacesRoute, sourcesRoute, workspaceSettingsRoute]),
   ]),
 ]);
 

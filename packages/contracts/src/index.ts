@@ -44,10 +44,12 @@ export type VersionReason = z.infer<typeof VersionReasonSchema>;
 
 export const AuditEventTypeSchema = z.enum([
   'tenant.created',
+  'tenant.deleted',
   'member.invited',
   'member.role_changed',
   'member.joined',
   'member.removed',
+  'member.left',
   'agent.created',
   'agent.token_issued',
   'agent.tool_called',
@@ -1548,3 +1550,15 @@ export const NotificationListSchema = z.object({ unread: z.number().int(), items
 export type NotificationList = z.infer<typeof NotificationListSchema>;
 /** Marks the given notifications read, or all of them when `ids` is left out. */
 export const MarkNotificationsReadRequestSchema = z.object({ ids: z.array(z.string().uuid()).max(200).optional() });
+
+/**
+ * The demo content in Settings: where adding or resetting it is, whether it can be added (an empty workspace) and
+ * whether it can be reset (a workspace it was added to).
+ */
+export const DemoSeedStatusSchema = z.object({
+  state: z.enum(['idle', 'running', 'done', 'failed']),
+  canSeed: z.boolean(),
+  canReset: z.boolean(),
+  error: z.string().optional(),
+});
+export type DemoSeedStatus = z.infer<typeof DemoSeedStatusSchema>;

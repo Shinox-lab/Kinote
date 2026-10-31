@@ -191,6 +191,45 @@ the e2e suite; Coolify routes only the web domain to container port 80. For a
 hard split, remove the `ports:` entries from `postgres`, `minio`, `api` and
 `collab`; the web does not need them.
 
+## Demo content
+
+For a customer try-out, create a workspace for it (**Workspace menu → New
+workspace**), then in **Settings → Spaces** click **Seed demo workspace**. That
+adds Northwind Studio: three spaces (Clients needs review), a roadmap, a
+handbook and two files. You stand in for Priya, the owner; Tomás, Mei and Jonah
+are created as members, with an `@demo.example` address and no password, so
+nobody can sign in as them. It runs in the background for a minute or two, while
+the worker indexes the pages. Only an owner or admin sees the card, and only a
+workspace with no spaces of its own (just the Inbox), no pages and no files can
+be seeded; the api refuses anything else (`workspace_not_empty`).
+
+Seeding marks the workspace as a demo (`tenants.plan = 'demo'`). From then on
+the same card offers **Reset demo content**: it deletes everything in the
+workspace (pages, files, comments, versions, collections, groups, audit, the
+Inbox's items) except its members and the Inbox itself, removes the three demo
+colleagues, closes live editing sessions, and seeds it again. Other members
+keep their membership and get a grant on each new space again (viewers as
+viewer; members as reviewer on Clients, editor elsewhere). Each customer
+seeds their own workspace, so a reset only ever touches the people they
+invited into it. A workspace that was never seeded can never be reset (`reset_demo_workspace`, migration `0036`,
+checks the mark and only acts in the caller's own workspace). Uploaded files'
+bytes from earlier runs stay in object storage (a few KB each).
+
+**Deleting a workspace.** An owner can delete the workspace from **Settings →
+Workspace**, after typing its name (`DELETE /api/v1/tenant`). A demo workspace
+is purged at once: every row of it, and its three demo colleagues, are deleted
+(`purge_demo_workspace`, migration `0036`). Any other workspace is only marked
+`deleted_at`: it disappears for every member (sign-in to it, the workspace
+list, invitations), its live editing sessions are closed, its slug becomes
+`deleted-<id>` so the name can be used again, and its data stays in the
+database (a `tenant.deleted` audit event records the old slug). Nothing purges
+those yet; undelete by hand by clearing `deleted_at` and restoring the slug.
+Members keep their accounts either way.
+
+The PDF and XLSX come from `packages/core/src/demo/fixtures/`; after changing
+`brandGuide` or `budget` in `packages/core/src/demo/content.ts`, run
+`pnpm seed:fixtures` and commit the result.
+
 ## Model providers
 
 The index is fixed at **2560 dimensions**. There is no `EMBEDDING_DIMENSIONS`

@@ -29,6 +29,7 @@ import {
   GrantListSchema,
   MemberSchema,
   MemberListSchema,
+  DemoSeedStatusSchema,
   GroupSchema,
   GroupListSchema,
   GroupMemberListSchema,
@@ -101,6 +102,8 @@ import {
   listMembers,
   changeMemberRole,
   removeMember,
+  leaveWorkspace,
+  deleteWorkspace,
   listGroups,
   listGroupMembers,
   createGroup,
@@ -195,6 +198,7 @@ import {
   updateField,
 } from './routes/collections.js';
 import { authRoutes, type AuthRateLimit } from './routes/auth.js';
+import { demoSeedRunning, demoSeedStatus, startDemoSeed } from './routes/demoSeed.js';
 import { requireSession, resolveActor, resolveSourceActor, type AuthSession, type SourceActor } from './auth/actor.js';
 import { registerErrorHandler } from './errors.js';
 import { parseReply } from './reply.js';
@@ -439,12 +443,42 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
     return reply.send(parseReply(MemberSchema, res));
   });
 
+  // The signed-in user leaves this workspace. Registered before `/members/:userId`; "me" is never a user id.
+  app.delete('/api/v1/members/me', async (req, reply) => {
+    const actor = actorOf(req);
+    await leaveWorkspace(actor);
+    await revokeLiveSessions(req, { tenantId: actor.tenantId, userId: actor.principalId.toLowerCase() });
+    return reply.status(204).send();
+  });
+
   app.delete('/api/v1/members/:userId', async (req, reply) => {
     const actor = actorOf(req);
     const userId = String((req.params as any).userId).toLowerCase();
     await removeMember(actor, userId);
     await revokeLiveSessions(req, { tenantId: actor.tenantId, userId });
     return reply.status(204).send();
+  });
+
+  // Deletes the workspace in x-tenant-id (Settings -> Workspace, owners only); a demo workspace is purged.
+  app.delete('/api/v1/tenant', async (req, reply) => {
+    const actor = actorOf(req);
+    if (demoSeedRunning(actor.tenantId)) throw new AppError('demo_seed_running');
+    await deleteWorkspace(actor);
+    await revokeLiveSessions(req, { tenantId: actor.tenantId });
+    return reply.status(204).send();
+  });
+
+  // The demo content (Settings -> Spaces): add it to an empty workspace, or reset a demo workspace back to it.
+  // Both answer at once and carry on in the background; poll the GET.
+  app.get('/api/v1/demo-seed', async (req, reply) => reply.send(parseReply(DemoSeedStatusSchema, await demoSeedStatus(actorOf(req)))));
+  app.post('/api/v1/demo-seed', async (req, reply) => {
+    await startDemoSeed(app, req, actorOf(req));
+    return reply.status(202).send(parseReply(DemoSeedStatusSchema, await demoSeedStatus(actorOf(req))));
+  });
+  app.post('/api/v1/demo-seed/reset', async (req, reply) => {
+    const actor = actorOf(req);
+    await startDemoSeed(app, req, actor, { reset: true, afterWipe: () => revokeLiveSessions(req, { tenantId: actor.tenantId }) });
+    return reply.status(202).send(parseReply(DemoSeedStatusSchema, await demoSeedStatus(actorOf(req))));
   });
 
   app.get('/api/v1/groups', async (req, reply) => {

@@ -7,6 +7,7 @@ import {
   groupMembers,
   agents,
   spaceGrants,
+  tenants,
   writeAuditEvent,
   type DbTransaction,
 } from '@kinote/db';
@@ -131,8 +132,49 @@ export async function changeMemberRole(
 
 export async function removeMember(actor: Actor, rawUserId: string): Promise<void> {
   requireTenantAdmin(actor);
-  const userId = principalUuid(rawUserId);
+  await dropMember(actor, principalUuid(rawUserId), 'member.removed');
+}
 
+/** The signed-in user leaves the workspace: the same cleanup as being removed, for anyone but its last owner. */
+export async function leaveWorkspace(actor: Actor): Promise<void> {
+  if (actor.principalType !== 'user') throw new AppError('forbidden', 'Only a person can leave a workspace.');
+  await dropMember(actor, principalUuid(actor.principalId), 'member.left');
+}
+
+/**
+ * Deletes the actor's workspace (owners only). A demo workspace (plan 'demo', the demo content went into it) is
+ * purged at once: every row of it goes (purge_demo_workspace, migration 0036). Any other is marked deleted_at, which
+ * hides it from everyone (sign-in to it, the workspace list, invitations) while its data stays, and its slug is
+ * freed for a new workspace. Its live editing sessions are closed by the route.
+ */
+export async function deleteWorkspace(actor: Actor): Promise<void> {
+  if (actor.principalType !== 'user' || actor.tenantRole !== 'owner') {
+    throw new AppError('forbidden', 'Only an owner can delete the workspace.');
+  }
+  await withTenantTx(actor.tenantId, async (tx) => {
+    const [tenant] = await tx.select().from(tenants).where(eq(tenants.id, actor.tenantId)).for('update');
+    if (!tenant) throw new AppError('tenant_not_found');
+    if (tenant.plan === 'demo') {
+      await tx.execute(sql`SELECT purge_demo_workspace(${actor.tenantId}::uuid)`);
+      return;
+    }
+    await tx
+      .update(tenants)
+      .set({ deletedAt: new Date(), slug: `deleted-${tenant.id}` })
+      .where(eq(tenants.id, actor.tenantId));
+    await writeAuditEvent(tx, {
+      tenantId: actor.tenantId,
+      type: 'tenant.deleted',
+      actorType: 'user',
+      actorId: actor.principalId,
+      subjectType: 'tenant',
+      subjectId: actor.tenantId,
+      payload: { slug: tenant.slug, name: tenant.name },
+    });
+  });
+}
+
+async function dropMember(actor: Actor, userId: string, event: 'member.removed' | 'member.left'): Promise<void> {
   await withTenantTx(actor.tenantId, async (tx) => {
     const ownerCount = await lockOwnerCount(tx, actor.tenantId);
     const target = await loadMember(tx, actor.tenantId, userId);
@@ -169,7 +211,7 @@ export async function removeMember(actor: Actor, rawUserId: string): Promise<voi
 
     await writeAuditEvent(tx, {
       tenantId: actor.tenantId,
-      type: 'member.removed',
+      type: event,
       actorType: 'user',
       actorId: actor.principalId,
       subjectType: 'user',

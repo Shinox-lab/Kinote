@@ -19,14 +19,17 @@ describe('role gating', () => {
     expect(canAdminister('viewer')).toBe(false);
   });
 
-  test('adminScreens lists members, groups, spaces and sources for admins and nothing for others', () => {
+  test('adminScreens lists members, groups, spaces and sources for admins, Workspace too for owners, and nothing for others', () => {
     expect(adminScreens('admin').map((s) => s.to)).toEqual([
       '/w/$tenantSlug/admin/members',
       '/w/$tenantSlug/admin/groups',
       '/w/$tenantSlug/admin/spaces',
       '/w/$tenantSlug/admin/sources',
     ]);
-    expect(adminScreens('owner')).toHaveLength(4);
+    expect(adminScreens('owner').map((s) => s.to)).toEqual([
+      ...adminScreens('admin').map((s) => s.to),
+      '/w/$tenantSlug/admin/workspace',
+    ]);
     expect(adminScreens('member')).toEqual([]);
     expect(adminScreens('viewer')).toEqual([]);
   });
