@@ -10,6 +10,27 @@ export interface ChatJsonOptions {
   /** `off` asks the model not to reason first (OpenRouter's `reasoning` field); unset sends nothing. */
   reasoning?: 'off';
   fetchImpl?: typeof fetch;
+  /** Called after every answer that came back, with what the provider reported (cost only where it reports one, e.g. OpenRouter). */
+  onUsage?: (usage: ChatUsage) => void;
+}
+
+export interface ChatUsage {
+  promptTokens: number;
+  completionTokens: number;
+  /** In the provider's billing currency (USD on OpenRouter); null when the answer carried none. */
+  cost: number | null;
+  ms: number;
+}
+
+function usageOf(body: unknown, ms: number): ChatUsage {
+  const u = (body as { usage?: Record<string, unknown> })?.usage ?? {};
+  const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+  return {
+    promptTokens: num(u.prompt_tokens) ?? 0,
+    completionTokens: num(u.completion_tokens) ?? 0,
+    cost: num(u.cost),
+    ms,
+  };
 }
 
 function unavailable(cause: string): AppError {
@@ -46,6 +67,7 @@ export async function chatJson<T>(
 
   for (let attempt = 0; attempt < 2; attempt++) {
     let response: Response;
+    const started = Date.now();
     try {
       response = await fetchImpl(`${baseUrl}/chat/completions`, {
         method: 'POST',
@@ -79,6 +101,7 @@ export async function chatJson<T>(
     } catch {
       throw unavailable('the routing model returned an unexpected answer');
     }
+    opts.onUsage?.(usageOf(body, Date.now() - started));
 
     // Cut off at max_tokens (a reasoning model can spend them all thinking): asking again pays for the same cut.
     if (firstChoice(body)?.finish_reason === 'length') {

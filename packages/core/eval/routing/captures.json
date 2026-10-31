@@ -9,7 +9,7 @@
   { "text": "Aisha Rahman started a hiring round.", "expect": [{ "fact": 0, "documentTitle": "Payments team", "op": "insert" }] },
   { "text": "Globex is renewing in March.", "expect": [{ "fact": 0, "documentTitle": "Globex account", "op": "insert" }] },
   { "text": "Lunch is at noon.", "expect": [{ "fact": 0, "documentTitle": null, "op": "needs_home" }] },
-  { "text": "Priya Shah moved to the London office.", "expect": [{ "fact": 0, "documentTitle": "Acme account", "op": "replace" }] },
+  { "text": "Priya Shah moved to the London office.", "expect": [{ "fact": 0, "documentTitle": "Acme account", "op": "insert" }] },
   { "text": "Search runs on Postgres full text search.", "expect": [{ "fact": 0, "documentTitle": "Search service", "op": "already_known" }] },
   { "text": "Rollbacks now need two approvals.", "expect": [{ "fact": 0, "documentTitle": "Deploy runbook", "op": "replace" }] },
   { "text": "Argo is pinned to version three.", "expect": [{ "fact": 0, "documentTitle": "Deploy runbook", "op": "insert" }] },
@@ -21,7 +21,7 @@
   {
     "text": "Stripe now handles refunds too. Acme's contact is Priya Shah.",
     "expect": [
-      { "fact": 0, "documentTitle": "Billing service", "op": "replace" },
+      { "fact": 0, "documentTitle": "Billing service", "op": ["insert", "replace"] },
       { "fact": 1, "documentTitle": "Acme account", "op": "already_known" }
     ]
   },

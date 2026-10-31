@@ -10,7 +10,11 @@ beforeAll(async () => {
 
 it('the deterministic model meets the bar on the fixture', async () => {
   const result = await runRoutingEval(new DeterministicPlacementModel(), new DeterministicEmbeddingProvider());
-  expect(result.misses).toEqual([]);
+  // The stand-in replaces on "moved"; the page says nothing about offices, so the label is an insert.
+  expect(result.misses.map((m) => [m.cause, m.capture])).toEqual([['model', 'Priya Shah moved to the London office.']]);
+  expect(result.causes.retrieval + result.causes.engine).toBe(0);
+  expect(result.extraFacts).toBe(0);
+  expect(result.removalsAsReplace).toBe(0);
   expect(result.facts).toBeGreaterThanOrEqual(20);
   expect(result.hitRate).toBeGreaterThanOrEqual(0.9);
   expect(result.wrongRemovals).toBe(0);

@@ -566,7 +566,15 @@ export class OpenAIPlacementModel implements RoutingModel {
         'set_field changes a field listed under a page; value is a plain value: text, a number, YYYY-MM-DD, ' +
         'a choice name from the list, a list of choice names, a person\'s name, true/false, or null to clear; never invent a choice. ' +
         'A create_page under a page that lists "New pages under it can set fields" may carry "fields": [{"fieldId","value"}]. ' +
-        'Prefer updating the block that already covers the subject; create a page only when no page fits. ' +
+        'Choose the op by comparing the fact with the blocks: ' +
+        'already_known only when a block already states the same fact, with nothing new in it; ' +
+        'replace when the fact makes what a block states out of date (a new value for the same thing), and the markdown is the block rewritten to be true; ' +
+        'remove when the fact says what a block states stopped being true and gives nothing in its place (never replace a block with its negation); ' +
+        'insert_after when the fact adds something no block states, including more about a thing a block mentions ("too", "also", a new detail). ' +
+        'The fact\'s kind is the splitter\'s guess; the blocks decide. ' +
+        'Edit only a page that is about the fact\'s subject. When none is, return {"edits": []} so a person files it: ' +
+        'never put a fact on a page just because it is the closest one shown, and never call a fact already known because a block shares a word with it. ' +
+        'Create a page only when no page fits and the fact clearly starts a topic of its own. ' +
         'Use only page and block ids shown. confidence is 0 to 1; reason is one short sentence.' +
         documentRule,
       user:
@@ -616,15 +624,18 @@ function treeLine(c: PlanCandidate): string {
 export const defaultPlacementModel: RoutingModel = new DeterministicPlacementModel();
 
 /** The placement model the settings ask for. */
-export function createPlacementModel(config: {
-  ROUTER_PROVIDER: 'deterministic' | 'openai';
-  ROUTER_BASE_URL?: string;
-  ROUTER_API_KEY?: string;
-  ROUTER_MODEL?: string;
-  ROUTER_TIMEOUT_MS: number;
-  ROUTER_MAX_TOKENS: number;
-  ROUTER_REASONING?: 'off';
-}): RoutingModel {
+export function createPlacementModel(
+  config: {
+    ROUTER_PROVIDER: 'deterministic' | 'openai';
+    ROUTER_BASE_URL?: string;
+    ROUTER_API_KEY?: string;
+    ROUTER_MODEL?: string;
+    ROUTER_TIMEOUT_MS: number;
+    ROUTER_MAX_TOKENS: number;
+    ROUTER_REASONING?: 'off';
+  },
+  hooks: Pick<ChatJsonOptions, 'onUsage'> = {}
+): RoutingModel {
   if (config.ROUTER_PROVIDER === 'deterministic') return new DeterministicPlacementModel();
   if (!config.ROUTER_BASE_URL || !config.ROUTER_MODEL) {
     throw new Error('ROUTER_BASE_URL and ROUTER_MODEL are required for the openai provider');
@@ -636,5 +647,6 @@ export function createPlacementModel(config: {
     timeoutMs: config.ROUTER_TIMEOUT_MS,
     maxTokens: config.ROUTER_MAX_TOKENS,
     reasoning: config.ROUTER_REASONING,
+    ...hooks,
   });
 }
