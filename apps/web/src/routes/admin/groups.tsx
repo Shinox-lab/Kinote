@@ -4,18 +4,23 @@ import type { Group } from '@kinote/contracts';
 import { api } from '../../lib/api.js';
 import { useGroups, useRefresh } from '../../lib/queries.js';
 import { GroupMembers } from '../../components/GroupMembers.js';
-import { Button, ErrorNote, Loading, TextField } from '../../components/ui.js';
+import { ChevronDownIcon, ChevronRightIcon } from '../../components/icons.js';
+import { Avatar, Button, EmptyState, ErrorNote, Loading, TextField } from '../../components/ui.js';
 
 function GroupRow({ group }: { group: Group }) {
   const [open, setOpen] = useState(false);
   return (
     <li className="border-b border-line py-3 last:border-0">
       <div className="flex items-center gap-3">
-        <p className="flex-1 text-sm font-medium text-fg">{group.name}</p>
-        <p className="text-xs text-muted">
-          {group.memberCount} {group.memberCount === 1 ? 'member' : 'members'}
-        </p>
-        <Button variant="secondary" aria-expanded={open} onClick={() => setOpen(!open)}>
+        <Avatar name={group.name} id={group.id} kind="group" />
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-medium text-fg">{group.name}</p>
+          <p className="text-xs text-muted">
+            {group.memberCount} {group.memberCount === 1 ? 'member' : 'members'}
+          </p>
+        </div>
+        <Button variant="secondary" aria-expanded={open} onClick={() => setOpen(!open)} className="inline-flex items-center gap-1">
+          {open ? <ChevronDownIcon /> : <ChevronRightIcon />}
           {open ? 'Close' : 'Manage members'}
         </Button>
       </div>
@@ -62,7 +67,9 @@ export function GroupsPage() {
             {groups?.length ?? 0} {groups?.length === 1 ? 'group' : 'groups'}
           </p>
           <ErrorNote error={error} />
-          {groups && groups.length === 0 && <p className="text-sm text-muted">No groups yet.</p>}
+          {groups && groups.length === 0 && (
+            <EmptyState title="No groups yet">Groups let you give a whole team access to a space at once.</EmptyState>
+          )}
           {groups && groups.length > 0 && (
             <ul aria-label="Groups" className="flex flex-col">
               {groups.map((group) => (

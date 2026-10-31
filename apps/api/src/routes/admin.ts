@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import {
   withTenantTx,
   users,
@@ -8,6 +8,7 @@ import {
   agents,
   spaceGrants,
   tenants,
+  invitations,
   writeAuditEvent,
   type DbTransaction,
 } from '@kinote/db';
@@ -17,6 +18,7 @@ import {
   AddGroupMemberRequestSchema,
   AppError,
   type Member,
+  type PendingInvitation,
   type Group,
   type GroupMember,
   type Grant,
@@ -86,6 +88,63 @@ export async function listMembers(actor: Actor): Promise<Member[]> {
       .where(eq(memberships.tenantId, actor.tenantId))
       .orderBy(asc(users.email))
   );
+}
+
+/**
+ * Invitations nobody has accepted yet, newest first. Expired ones are listed
+ * (flagged) so an admin can re-invite or revoke them; the token is never shown
+ * again (only its hash is stored), so re-inviting is how a new link is made.
+ */
+export async function listInvitations(actor: Actor): Promise<PendingInvitation[]> {
+  requireTenantAdmin(actor);
+  const rows = await withTenantTx(actor.tenantId, (tx) =>
+    tx
+      .select({
+        id: invitations.id,
+        email: invitations.email,
+        role: invitations.role,
+        invitedByName: users.name,
+        createdAt: invitations.createdAt,
+        expiresAt: invitations.expiresAt,
+      })
+      .from(invitations)
+      .leftJoin(users, eq(users.id, invitations.invitedBy))
+      .where(and(eq(invitations.tenantId, actor.tenantId), isNull(invitations.acceptedAt)))
+      .orderBy(desc(invitations.createdAt))
+  );
+  const now = Date.now();
+  return rows.map((r) => ({
+    id: r.id,
+    email: r.email,
+    role: r.role,
+    invitedByName: r.invitedByName ?? null,
+    createdAt: r.createdAt.toISOString(),
+    expiresAt: r.expiresAt.toISOString(),
+    expired: r.expiresAt.getTime() <= now,
+  }));
+}
+
+/** Deletes a pending invitation so its link stops working. An accepted one is history: 404 like an unknown id. */
+export async function revokeInvitation(actor: Actor, rawId: string): Promise<void> {
+  requireTenantAdmin(actor);
+  if (!UUID_REGEX.test(rawId)) throw new AppError('invitation_not_found');
+  const id = rawId.toLowerCase();
+  await withTenantTx(actor.tenantId, async (tx) => {
+    const [removed] = await tx
+      .delete(invitations)
+      .where(and(eq(invitations.tenantId, actor.tenantId), eq(invitations.id, id), isNull(invitations.acceptedAt)))
+      .returning({ id: invitations.id, email: invitations.email });
+    if (!removed) throw new AppError('invitation_not_found');
+    await writeAuditEvent(tx, {
+      tenantId: actor.tenantId,
+      type: 'member.invitation_revoked',
+      actorType: 'user',
+      actorId: actor.principalId,
+      subjectType: 'invitation',
+      subjectId: removed.id,
+      payload: { email: removed.email },
+    });
+  });
 }
 
 export async function changeMemberRole(

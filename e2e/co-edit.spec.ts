@@ -91,10 +91,11 @@ test('two editors and a reviewer: co-edit, hold until approval, index, cite v1',
     const docs = a.getByRole('region', { name: 'Settings for Docs' });
     await docs.getByRole('button', { name: 'Manage access' }).click();
     for (const [name, email, role] of [['Bea', emails.b, 'editor'], ['Rae', emails.r, 'reviewer']] as const) {
-      await docs.getByLabel('Person', { exact: true }).selectOption({ label: `${name} (${email})` });
+      await docs.getByRole('combobox', { name: 'Person or group' }).fill(name);
+      await docs.getByRole('option', { name: new RegExp(`^${name}`) }).click();
       await docs.getByLabel('Role', { exact: true }).selectOption(role);
       await docs.getByRole('button', { name: 'Grant access' }).click();
-      await expect(docs.getByRole('listitem').filter({ hasText: `${name} (user)` })).toBeVisible();
+      await expect(docs.getByRole('listitem').filter({ hasText: email })).toBeVisible();
     }
   });
 

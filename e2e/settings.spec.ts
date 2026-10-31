@@ -9,7 +9,7 @@ test('Settings: the tabs, members, a space pane and sources', async ({ browser, 
   await expect(page.getByRole('banner')).toContainText('Settings');
   await expect(page.getByRole('heading', { name: 'Settings', level: 1 })).toBeVisible();
   const tabs = page.getByRole('navigation', { name: 'Settings' });
-  await expect(tabs.getByRole('link')).toHaveText(['Members', 'Groups', 'Spaces', 'Sources']);
+  await expect(tabs.getByRole('link')).toHaveText(['Members', 'Groups', 'Spaces', 'Sources', 'Roles', 'Workspace']);
 
   await expect(page.getByText('1 person in this workspace')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Invite someone' })).toBeVisible();

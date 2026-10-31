@@ -1,5 +1,9 @@
 import { useId, type ComponentProps, type ReactNode } from 'react';
+import type { SpaceRole } from '@kinote/contracts';
 import { errorMessage } from '../lib/api.js';
+import { ROLE_LABEL } from '../lib/roles.js';
+import { initials } from '../lib/presence.js';
+import { authorColor } from '../lib/wiki.js';
 
 // Small shared pieces of the console: labelled fields, buttons and the one place
 // an error becomes text (always through errorMessage, never the raw error).
@@ -84,21 +88,31 @@ export function Checkbox(props: {
   checked: boolean;
   onChange: (checked: boolean) => void;
   disabled?: boolean;
+  /** A line of help under the label. */
+  hint?: string;
 }) {
   const id = useId();
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-start gap-2">
       <input
         id={id}
         type="checkbox"
-        className="size-4 rounded border-line accent-accent"
+        className="mt-0.5 size-4 rounded border-line accent-accent"
         checked={props.checked}
         disabled={props.disabled}
         onChange={(e) => props.onChange(e.target.checked)}
+        aria-describedby={props.hint ? `${id}-hint` : undefined}
       />
-      <label htmlFor={id} className="text-sm">
-        {props.label}
-      </label>
+      <div>
+        <label htmlFor={id} className="text-sm">
+          {props.label}
+        </label>
+        {props.hint && (
+          <p id={`${id}-hint`} className="text-xs text-muted">
+            {props.hint}
+          </p>
+        )}
+      </div>
     </div>
   );
 }
@@ -163,5 +177,55 @@ export function Loading({ what }: { what: string }) {
     <p role="status" className="text-sm text-muted">
       Loading {what}…
     </p>
+  );
+}
+
+const ROLE_TONE: Record<SpaceRole, string> = {
+  viewer: 'bg-hover text-muted',
+  editor: 'bg-ok-bg text-ok-text',
+  reviewer: 'bg-review-bg text-review-text',
+  admin: 'bg-warn-bg text-warn-text',
+};
+
+/** A space role as a small coloured pill; the label is always the word, never colour alone. */
+export function RoleBadge({ role }: { role: SpaceRole }) {
+  return (
+    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${ROLE_TONE[role]}`}>
+      {ROLE_LABEL[role]}
+    </span>
+  );
+}
+
+/** Initials on a tint derived from the id, for people; groups and agents get a neutral tile. */
+export function Avatar({ name, id, kind = 'user' }: { name: string; id: string; kind?: 'user' | 'group' | 'agent' }) {
+  if (kind !== 'user') {
+    return (
+      <span
+        aria-hidden="true"
+        className="flex size-8 shrink-0 items-center justify-center rounded-md bg-hover text-[11px] font-semibold text-muted"
+      >
+        {kind === 'group' ? 'G' : 'AI'}
+      </span>
+    );
+  }
+  const color = authorColor(id);
+  return (
+    <span
+      aria-hidden="true"
+      className="flex size-8 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold"
+      style={{ backgroundColor: color.tint, color: color.accent }}
+    >
+      {initials(name)}
+    </span>
+  );
+}
+
+/** A quiet "nothing here yet" block with an optional next step. */
+export function EmptyState({ title, children }: { title: string; children?: ReactNode }) {
+  return (
+    <div className="flex flex-col items-center gap-1 rounded-lg border border-dashed border-line px-4 py-8 text-center">
+      <p className="text-sm font-medium text-fg">{title}</p>
+      {children && <p className="max-w-sm text-sm text-muted">{children}</p>}
+    </div>
   );
 }

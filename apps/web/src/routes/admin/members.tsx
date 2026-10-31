@@ -1,22 +1,22 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { Link } from '@tanstack/react-router';
 import { useMutation } from '@tanstack/react-query';
 import type { Member, TenantRole } from '@kinote/contracts';
 import { api } from '../../lib/api.js';
-import { TENANT_ROLES, canChangeRole } from '../../lib/console.js';
+import { canChangeRole } from '../../lib/console.js';
 import { useMembers, useRefresh, useWorkspace } from '../../lib/queries.js';
-import { initials } from '../../lib/presence.js';
+import { TENANT_ROLE_INFO } from '../../lib/roles.js';
 import { loadSession } from '../../lib/session.js';
-import { authorColor } from '../../lib/wiki.js';
-import { MoreIcon } from '../../components/icons.js';
+import { MoreIcon, SearchIcon } from '../../components/icons.js';
 import { InviteForm } from '../../components/InviteForm.js';
-import { Button, ErrorNote, Loading } from '../../components/ui.js';
+import { PendingInvitations } from '../../components/PendingInvitations.js';
+import { Avatar, Button, EmptyState, ErrorNote, Loading } from '../../components/ui.js';
 
 function MemberRow({ member, actorRole, isSelf }: { member: Member; actorRole: TenantRole; isSelf: boolean }) {
   const refresh = useRefresh();
   const [confirming, setConfirming] = useState(false);
   const [menu, setMenu] = useState(false);
   const locked = isSelf || !canChangeRole(actorRole, member.role);
-  const color = authorColor(member.userId);
   const rowId = useId();
   const more = useRef<HTMLButtonElement>(null);
   const menuWrap = useRef<HTMLDivElement>(null);
@@ -53,23 +53,17 @@ function MemberRow({ member, actorRole, isSelf }: { member: Member; actorRole: T
   });
 
   return (
-    <li className="flex flex-wrap items-center gap-3 border-b border-line py-3 last:border-0">
-      <span
-        aria-hidden="true"
-        className="flex size-8 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold"
-        style={{ backgroundColor: color.tint, color: color.accent }}
-      >
-        {initials(member.name)}
-      </span>
-      <div className="min-w-44 flex-1">
-        <p className="text-sm font-medium text-fg">
+    <li className="flex flex-wrap items-center gap-3 border-b border-line px-1 py-3 last:border-0">
+      <Avatar name={member.name} id={member.userId} />
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-medium text-fg">
           {member.name}
-          {isSelf && <span className="ml-2 text-xs text-muted">you</span>}
+          {isSelf && <span className="ml-2 rounded-full bg-hover px-1.5 py-0.5 text-[10.5px] font-normal text-muted">You</span>}
         </p>
-        <p className="text-xs text-muted">{member.email}</p>
+        <p className="truncate text-xs text-muted">{member.email}</p>
       </div>
       {member.role === 'owner' ? (
-        <span className="inline-flex items-center gap-1 rounded-full border border-line px-2 py-0.5 text-xs text-muted">
+        <span className="inline-flex h-8 items-center gap-1 px-2 text-sm text-muted">
           <span aria-hidden="true">🔒</span> Owner
         </span>
       ) : (
@@ -78,11 +72,12 @@ function MemberRow({ member, actorRole, isSelf }: { member: Member; actorRole: T
           value={member.role}
           disabled={locked || changeRole.isPending}
           onChange={(event) => changeRole.mutate(event.target.value as TenantRole)}
-          className="h-7 rounded-full border border-line bg-page px-2 text-xs text-fg disabled:opacity-70 max-md:h-11"
+          title={locked ? (isSelf ? 'You can’t change your own role.' : 'Only an owner can change this.') : undefined}
+          className="h-8 rounded-md border border-transparent bg-transparent px-2 text-sm text-fg hover:border-line hover:bg-page focus:border-line focus:bg-page disabled:opacity-60 disabled:hover:border-transparent disabled:hover:bg-transparent max-md:h-11"
         >
-          {TENANT_ROLES.filter((role) => role !== 'owner').map((role) => (
-            <option key={role} value={role}>
-              {role}
+          {TENANT_ROLE_INFO.filter((info) => info.role !== 'owner').map((info) => (
+            <option key={info.role} value={info.role}>
+              {info.label}
             </option>
           ))}
         </select>
@@ -97,7 +92,7 @@ function MemberRow({ member, actorRole, isSelf }: { member: Member; actorRole: T
           aria-controls={rowId}
           disabled={locked}
           onClick={() => setMenu((value) => !value)}
-          className="flex size-7 items-center justify-center rounded text-muted hover:bg-hover disabled:opacity-40 max-md:size-11"
+          className="flex size-8 items-center justify-center rounded-md text-muted hover:bg-hover disabled:invisible max-md:size-11"
         >
           <MoreIcon />
         </button>
@@ -132,6 +127,8 @@ function MemberRow({ member, actorRole, isSelf }: { member: Member; actorRole: T
   );
 }
 
+const ROLE_ORDER: TenantRole[] = ['owner', 'admin', 'member', 'viewer'];
+
 /** `/w/$tenantSlug/admin/members`: who is in the workspace, their roles, and invitations. */
 export function MembersPage() {
   const { role, tenant } = useWorkspace();
@@ -139,28 +136,95 @@ export function MembersPage() {
   const { data: members, error, isPending } = useMembers();
   const selfId = loadSession()?.user.id;
   const [inviting, setInviting] = useState(false);
+  const [query, setQuery] = useState('');
+  const [filter, setFilter] = useState<TenantRole | 'all'>('all');
+
+  const counts = useMemo(() => {
+    const c: Record<TenantRole, number> = { owner: 0, admin: 0, member: 0, viewer: 0 };
+    for (const m of members ?? []) c[m.role] += 1;
+    return c;
+  }, [members]);
+
+  const shown = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return (members ?? [])
+      .filter((m) => filter === 'all' || m.role === filter)
+      .filter((m) => !q || m.name.toLowerCase().includes(q) || m.email.toLowerCase().includes(q))
+      .sort((a, b) => ROLE_ORDER.indexOf(a.role) - ROLE_ORDER.indexOf(b.role) || a.name.localeCompare(b.name));
+  }, [members, query, filter]);
+
+  const chips: Array<{ value: TenantRole | 'all'; label: string; count: number }> = [
+    { value: 'all', label: 'All', count: members?.length ?? 0 },
+    ...TENANT_ROLE_INFO.map((info) => ({ value: info.role, label: `${info.label}s`, count: counts[info.role] })).filter(
+      (c) => c.count > 0
+    ),
+  ];
 
   return (
-    <div className="flex flex-col gap-5">
+    <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-muted">
-          {members?.length ?? 0} {members?.length === 1 ? 'person' : 'people'} in this workspace
+          {members?.length ?? 0} {members?.length === 1 ? 'person' : 'people'} in this workspace ·{' '}
+          <Link
+            to="/w/$tenantSlug/admin/roles"
+            params={{ tenantSlug: tenant.slug }}
+            className="font-medium text-accent-text hover:underline"
+          >
+            What do roles mean?
+          </Link>
         </p>
-        {!inviting && (
-          <Button onClick={() => setInviting(true)}>Invite someone</Button>
-        )}
+        {!inviting && <Button onClick={() => setInviting(true)}>Invite someone</Button>}
       </div>
       {inviting && (
-        <InviteForm onInvited={() => void refresh('members')} />
+        <InviteForm onInvited={() => void refresh('invitations')} onClose={() => setInviting(false)} />
       )}
+      <PendingInvitations />
       {isPending && <Loading what="members" />}
       <ErrorNote error={error} />
       {members && (
-        <ul aria-label={`Members of ${tenant.name}`} className="flex flex-col">
-          {members.map((member) => (
-            <MemberRow key={member.userId} member={member} actorRole={role} isSelf={member.userId === selfId} />
-          ))}
-        </ul>
+        <>
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="relative min-w-48 flex-1">
+              <span className="sr-only">Search members</span>
+              <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted">
+                <SearchIcon />
+              </span>
+              <input
+                type="search"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search by name or email"
+                className="w-full rounded-md border border-line bg-page py-2 pl-8 pr-3 text-sm text-fg placeholder:text-muted"
+              />
+            </label>
+            <div role="group" aria-label="Filter by role" className="flex flex-wrap gap-1">
+              {chips.map((chip) => (
+                <button
+                  key={chip.value}
+                  type="button"
+                  aria-pressed={filter === chip.value}
+                  onClick={() => setFilter(chip.value)}
+                  className={`rounded-full border px-2.5 py-1 text-xs font-medium max-md:min-h-11 ${
+                    filter === chip.value
+                      ? 'border-accent bg-accent-soft text-accent-text'
+                      : 'border-line text-muted hover:bg-hover hover:text-fg'
+                  }`}
+                >
+                  {chip.label} <span className="opacity-70">{chip.count}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+          {shown.length === 0 ? (
+            <EmptyState title="No one matches">Try another name, or clear the role filter.</EmptyState>
+          ) : (
+            <ul aria-label={`Members of ${tenant.name}`} className="flex flex-col">
+              {shown.map((member) => (
+                <MemberRow key={member.userId} member={member} actorRole={role} isSelf={member.userId === selfId} />
+              ))}
+            </ul>
+          )}
+        </>
       )}
     </div>
   );

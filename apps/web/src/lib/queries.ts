@@ -28,6 +28,11 @@ export function useSpaces() {
 }
 
 /** The workspace's members; `enabled` false for roles the API would refuse (only admins list members). */
+/** Invitations nobody has accepted yet (workspace admins only). */
+export function useInvitations() {
+  return useQuery({ queryKey: useTenantKey('invitations'), queryFn: () => api.listInvitations() });
+}
+
 export function useMembers(enabled = true) {
   return useQuery({ queryKey: useTenantKey('members'), queryFn: () => api.listMembers(), enabled });
 }

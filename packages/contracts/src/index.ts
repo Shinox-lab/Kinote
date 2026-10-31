@@ -46,6 +46,7 @@ export const AuditEventTypeSchema = z.enum([
   'tenant.created',
   'tenant.deleted',
   'member.invited',
+  'member.invitation_revoked',
   'member.role_changed',
   'member.joined',
   'member.removed',
@@ -196,6 +197,19 @@ export const InviteMemberResponseSchema = z.object({
   acceptToken: z.string(),
 });
 export type InviteMemberResponse = z.infer<typeof InviteMemberResponseSchema>;
+
+/** An invitation nobody has accepted yet; `expired` ones stay listed until replaced or revoked. */
+export const PendingInvitationSchema = z.object({
+  id: z.string().uuid(),
+  email: z.string(),
+  role: z.enum(['admin', 'member', 'viewer']),
+  invitedByName: z.string().nullable(),
+  createdAt: z.string().datetime(),
+  expiresAt: z.string().datetime(),
+  expired: z.boolean(),
+});
+export type PendingInvitation = z.infer<typeof PendingInvitationSchema>;
+export const PendingInvitationListSchema = z.array(PendingInvitationSchema);
 
 export const AcceptInvitationResponseSchema = z.object({
   tenant: z.object({ id: z.string().uuid(), name: z.string(), slug: z.string() }),

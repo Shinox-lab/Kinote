@@ -17,13 +17,15 @@ test("Groups: see who is in a group, add someone who isn't, and remove someone f
   await expect(row.getByText('No one in this group yet.')).toBeVisible();
 
   for (const person of [mei, jonah]) {
-    await row.getByLabel('Person').selectOption({ label: `${person.user.name} (${person.user.email})` });
+    await row.getByRole('combobox', { name: 'Person' }).fill(person.user.email);
+    await row.getByRole('option', { name: new RegExp(`^${person.user.name}`) }).click();
     await row.getByRole('button', { name: 'Add to group' }).click();
     await expect(members.getByText(person.user.name)).toBeVisible();
   }
   await expect(row).toContainText('2 members');
   // Someone already in the group isn't offered again.
-  await expect(row.getByLabel('Person').locator('option', { hasText: 'Mei Lin' })).toHaveCount(0);
+  await row.getByRole('combobox', { name: 'Person' }).fill('Mei');
+  await expect(row.getByRole('option', { name: /^Mei Lin/ })).toHaveCount(0);
 
   await members.getByRole('button', { name: 'Remove Mei Lin from Design' }).click();
   await expect(members.getByText('Mei Lin')).toHaveCount(0);

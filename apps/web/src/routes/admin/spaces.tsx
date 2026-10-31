@@ -126,7 +126,7 @@ export function SpacesPage() {
       {isPending ? (
         <Loading what="spaces" />
       ) : (
-        <div className="grid gap-5 min-[1200px]:grid-cols-[minmax(0,1fr)_420px] min-[1200px]:items-start">
+        <div className="grid gap-5 min-[1200px]:grid-cols-[220px_minmax(0,1fr)] min-[1200px]:items-start">
           <ul aria-label="Spaces" className="flex flex-col">
             {spaces?.map((space) => {
               const active = space.id === selected;
@@ -147,19 +147,17 @@ export function SpacesPage() {
                       {space.kind === 'inbox' ? <InboxIcon /> : <BookIcon />}
                     </span>
                     <span className="min-w-0 flex-1">
-                      <span className="flex flex-wrap items-baseline gap-x-2">
-                        <span className="truncate text-sm font-medium text-fg">{space.name}</span>
-                        <span className="text-xs text-muted">/{space.slug}</span>
+                      <span className="block truncate text-sm font-medium text-fg">{space.name}</span>
+                      <span className="block truncate text-xs text-muted">
+                        /{space.slug}
+                        {space.kind === 'inbox' ? (
+                          ' · Personal'
+                        ) : space.reviewRequired ? (
+                          <span className="text-warn-text"> · Review required</span>
+                        ) : null}
+                        {space.archivedAt !== null && ' · Archived'}
                       </span>
                     </span>
-                    {space.kind === 'inbox' ? (
-                      <span className="rounded-full bg-hover px-2 py-0.5 text-[10.5px] text-fg">Personal</span>
-                    ) : space.reviewRequired ? (
-                      <span className="rounded-full bg-warn-bg px-2 py-0.5 text-[10.5px] text-warn-text">Review required</span>
-                    ) : null}
-                    {space.archivedAt !== null && (
-                      <span className="rounded-full bg-hover px-2 py-0.5 text-[10.5px] text-muted">Archived</span>
-                    )}
                   </button>
                 </li>
               );

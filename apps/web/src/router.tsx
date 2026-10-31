@@ -17,6 +17,7 @@ import { AcceptInvitePage } from './routes/accept-invite.js';
 import { AdminLayout } from './routes/admin/layout.js';
 import { GroupsPage } from './routes/admin/groups.js';
 import { MembersPage } from './routes/admin/members.js';
+import { RolesPage } from './routes/admin/roles.js';
 import { SpacesPage } from './routes/admin/spaces.js';
 import { WorkspaceSettingsPage } from './routes/admin/workspace.js';
 import { parseFileSearch } from './lib/documentLink.js';
@@ -218,6 +219,7 @@ const adminIndexRoute = createRoute({
 const membersRoute = createRoute({ getParentRoute: () => adminRoute, path: 'members', component: MembersPage });
 const groupsRoute = createRoute({ getParentRoute: () => adminRoute, path: 'groups', component: GroupsPage });
 const spacesRoute = createRoute({ getParentRoute: () => adminRoute, path: 'spaces', component: SpacesPage });
+const rolesRoute = createRoute({ getParentRoute: () => adminRoute, path: 'roles', component: RolesPage });
 const workspaceSettingsRoute = createRoute({
   getParentRoute: () => adminRoute,
   path: 'workspace',
@@ -245,7 +247,7 @@ const routeTree = rootRoute.addChildren([
     notificationsRoute,
     captureRoute,
     searchRoute,
-    adminRoute.addChildren([adminIndexRoute, membersRoute, groupsRoute, spacesRoute, sourcesRoute, workspaceSettingsRoute]),
+    adminRoute.addChildren([adminIndexRoute, membersRoute, groupsRoute, spacesRoute, sourcesRoute, rolesRoute, workspaceSettingsRoute]),
   ]),
 ]);
 

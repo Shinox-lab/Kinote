@@ -16,6 +16,7 @@ export interface AdminScreen {
     | '/w/$tenantSlug/admin/groups'
     | '/w/$tenantSlug/admin/spaces'
     | '/w/$tenantSlug/admin/sources'
+    | '/w/$tenantSlug/admin/roles'
     | '/w/$tenantSlug/admin/workspace';
   label: string;
 }
@@ -25,6 +26,7 @@ const ADMIN_SCREENS: AdminScreen[] = [
   { to: '/w/$tenantSlug/admin/groups', label: 'Groups' },
   { to: '/w/$tenantSlug/admin/spaces', label: 'Spaces' },
   { to: '/w/$tenantSlug/admin/sources', label: 'Sources' },
+  { to: '/w/$tenantSlug/admin/roles', label: 'Roles' },
 ];
 
 /** Deleting the workspace is for owners only. */
@@ -47,6 +49,17 @@ export const INVITE_ROLES = ['admin', 'member', 'viewer'] as const;
 /** Space roles a principal may be granted: agents never hold reviewer or admin. */
 export function grantRoleChoices(principalType: 'user' | 'group' | 'agent'): SpaceRole[] {
   return principalType === 'agent' ? ['viewer', 'editor'] : ['viewer', 'editor', 'reviewer', 'admin'];
+}
+
+/** "Expires in 6 days" / "Expires in 3 hours" / "Expired" for an invitation's expiry time. */
+export function expiryLabel(expiresAt: string, now = Date.now()): string {
+  const ms = new Date(expiresAt).getTime() - now;
+  if (Number.isNaN(ms) || ms <= 0) return 'Expired';
+  const hours = Math.floor(ms / 3_600_000);
+  if (hours < 1) return 'Expires in under an hour';
+  if (hours < 24) return `Expires in ${hours} ${hours === 1 ? 'hour' : 'hours'}`;
+  const days = Math.floor(hours / 24);
+  return `Expires in ${days} ${days === 1 ? 'day' : 'days'}`;
 }
 
 // --- Links and slugs ------------------------------------------------------------

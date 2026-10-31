@@ -308,6 +308,55 @@ describe('authenticated tenants and accept-by-token invitations', () => {
     assert.equal(rows.length, 1);
   });
 
+  test('admins list pending invitations (accepted ones drop off, expired ones are flagged) and can revoke one', async () => {
+    const { tenant, headers } = await bootstrapTenant(app, { name: 'Acme', slug: 'acme' });
+    const joiner = await signUp(app, 'joiner@example.test');
+    const joined = (await invite(headers, 'joiner@example.test', 'member')).json();
+    const pending = (await invite(headers, 'pending@example.test', 'viewer')).json();
+    const stale = (await invite(headers, 'stale@example.test', 'admin')).json();
+    assert.equal((await accept(joiner, joined.acceptToken)).statusCode, 200);
+    await withTenantTx(tenant.id, (tx) =>
+      tx.update(invitations).set({ expiresAt: new Date(Date.now() - 1000) }).where(eq(invitations.id, stale.invitation.id))
+    );
+
+    const list = await app.inject({ method: 'GET', url: '/api/v1/invitations', headers });
+    assert.equal(list.statusCode, 200, list.body);
+    const rows = list.json() as Array<{ id: string; email: string; role: string; expired: boolean; invitedByName: string | null }>;
+    assert.deepEqual(rows.map((r) => r.email).sort(), ['pending@example.test', 'stale@example.test']);
+    assert.equal(rows.find((r) => r.email === 'pending@example.test')?.expired, false);
+    assert.equal(rows.find((r) => r.email === 'stale@example.test')?.expired, true);
+    assert.ok(rows.every((r) => typeof r.invitedByName === 'string'));
+    assert.ok(!list.body.includes('token'), 'no token or hash is ever listed');
+
+    const revoked = await app.inject({ method: 'DELETE', url: `/api/v1/invitations/${pending.invitation.id}`, headers });
+    assert.equal(revoked.statusCode, 204, revoked.body);
+    const again = await app.inject({ method: 'DELETE', url: `/api/v1/invitations/${pending.invitation.id}`, headers });
+    assert.equal(again.statusCode, 404);
+    assert.equal(again.json().error, 'invitation_not_found');
+    // An accepted invitation is history, not revocable.
+    const acceptedRevoke = await app.inject({ method: 'DELETE', url: `/api/v1/invitations/${joined.invitation.id}`, headers });
+    assert.equal(acceptedRevoke.statusCode, 404);
+
+    // The revoked link no longer works for its invitee.
+    const invitee = await signUp(app, 'pending@example.test');
+    assert.equal((await accept(invitee, pending.acceptToken)).statusCode, 404);
+
+    const [audit] = await withTenantTx(tenant.id, (tx) =>
+      tx.select().from(auditEvents).where(and(eq(auditEvents.tenantId, tenant.id), eq(auditEvents.type, 'member.invitation_revoked')))
+    );
+    assert.equal(audit.subjectId, pending.invitation.id);
+  });
+
+  test('only workspace admins may list or revoke invitations', async () => {
+    const { tenant, headers } = await bootstrapTenant(app, { name: 'Acme', slug: 'acme' });
+    const sent = (await invite(headers, 'someone@example.test', 'member')).json();
+    const member = await signUpMember(app, tenant.id, 'member');
+    const list = await app.inject({ method: 'GET', url: '/api/v1/invitations', headers: member.headers });
+    assert.equal(list.statusCode, 403);
+    const del = await app.inject({ method: 'DELETE', url: `/api/v1/invitations/${sent.invitation.id}`, headers: member.headers });
+    assert.equal(del.statusCode, 403);
+  });
+
   test('inviting as owner (or any unknown role) answers 400 validation_failed', async () => {
     const { headers } = await bootstrapTenant(app, { name: 'Acme', slug: 'acme' });
     for (const role of ['owner', 'superuser']) {

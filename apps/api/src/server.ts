@@ -29,6 +29,7 @@ import {
   GrantListSchema,
   MemberSchema,
   MemberListSchema,
+  PendingInvitationListSchema,
   DemoSeedStatusSchema,
   GroupSchema,
   GroupListSchema,
@@ -100,6 +101,8 @@ import {
 } from './routes/foundations.js';
 import {
   listMembers,
+  listInvitations,
+  revokeInvitation,
   changeMemberRole,
   removeMember,
   leaveWorkspace,
@@ -366,6 +369,15 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
   app.post('/api/v1/invitations', async (req, reply) => {
     const res = await inviteMember(actorOf(req), req.body);
     return reply.status(201).send(parseReply(InviteMemberResponseSchema, res));
+  });
+
+  app.get('/api/v1/invitations', async (req, reply) => {
+    return reply.send(parseReply(PendingInvitationListSchema, await listInvitations(actorOf(req))));
+  });
+
+  app.delete('/api/v1/invitations/:id', async (req, reply) => {
+    await revokeInvitation(actorOf(req), (req.params as { id: string }).id);
+    return reply.status(204).send();
   });
 
   app.post('/api/v1/invitations/accept', { config: { auth: 'session' } }, async (req, reply) => {

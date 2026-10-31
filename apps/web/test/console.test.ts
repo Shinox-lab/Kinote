@@ -3,6 +3,7 @@ import {
   adminScreens,
   canAdminister,
   canChangeRole,
+  expiryLabel,
   grantRoleChoices,
   inviteLink,
   isUuid,
@@ -19,12 +20,13 @@ describe('role gating', () => {
     expect(canAdminister('viewer')).toBe(false);
   });
 
-  test('adminScreens lists members, groups, spaces and sources for admins, Workspace too for owners, and nothing for others', () => {
+  test('adminScreens lists members, groups, spaces, sources and roles for admins, Workspace too for owners, and nothing for others', () => {
     expect(adminScreens('admin').map((s) => s.to)).toEqual([
       '/w/$tenantSlug/admin/members',
       '/w/$tenantSlug/admin/groups',
       '/w/$tenantSlug/admin/spaces',
       '/w/$tenantSlug/admin/sources',
+      '/w/$tenantSlug/admin/roles',
     ]);
     expect(adminScreens('owner').map((s) => s.to)).toEqual([
       ...adminScreens('admin').map((s) => s.to),
@@ -111,5 +113,18 @@ describe('workspace helpers', () => {
     expect(isUuid('3f1c2b0e-6d2c-4a52-9c83-8f1f7c2b1a11')).toBe(true);
     expect(isUuid('not-a-uuid')).toBe(false);
     expect(isUuid('')).toBe(false);
+  });
+});
+
+describe('expiryLabel', () => {
+  const now = Date.parse('2026-10-31T12:00:00Z');
+  const at = (ms: number) => new Date(now + ms).toISOString();
+  test('counts down in days, then hours, then says expired', () => {
+    expect(expiryLabel(at(6.5 * 86_400_000), now)).toBe('Expires in 6 days');
+    expect(expiryLabel(at(1.2 * 86_400_000), now)).toBe('Expires in 1 day');
+    expect(expiryLabel(at(5 * 3_600_000), now)).toBe('Expires in 5 hours');
+    expect(expiryLabel(at(10 * 60_000), now)).toBe('Expires in under an hour');
+    expect(expiryLabel(at(-1000), now)).toBe('Expired');
+    expect(expiryLabel('not a date', now)).toBe('Expired');
   });
 });

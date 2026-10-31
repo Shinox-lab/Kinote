@@ -32,6 +32,7 @@ import {
   InviteMemberResponseSchema,
   MeResponseSchema,
   MemberListSchema,
+  PendingInvitationListSchema,
   DemoSeedStatusSchema,
   MemberSchema,
   PageDetailsSchema,
@@ -247,6 +248,8 @@ export const api = {
   me: () => request('/api/v1/me', MeResponseSchema),
   createTenant: (body: CreateTenantRequest) =>
     request('/api/v1/tenants', CreateTenantResponseSchema, send('POST', body)),
+  listInvitations: () => request('/api/v1/invitations', PendingInvitationListSchema),
+  revokeInvitation: (id: string) => request(`/api/v1/invitations/${e(id)}`, NO_CONTENT, del),
   invite: (body: InviteMemberRequest) =>
     request('/api/v1/invitations', InviteMemberResponseSchema, send('POST', body)),
   acceptInvitation: (body: AcceptInvitationRequest) =>
