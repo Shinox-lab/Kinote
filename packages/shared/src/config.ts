@@ -72,6 +72,8 @@ export const ConfigSchema = z.object({
   S3_ACCESS_KEY: z.string().min(1).optional(),
   S3_SECRET_KEY: z.string().min(1).optional(),
   S3_REGION: z.string().min(1).default('us-east-1'),
+  /** `true`/`false`; unset means path-style whenever S3_ENDPOINT is set. */
+  S3_FORCE_PATH_STYLE: z.enum(['true', 'false']).transform((v) => v === 'true').optional(),
   /** Largest file the api accepts, in bytes (default 50 MB; at most 500 MB). */
   MAX_UPLOAD_BYTES: z.coerce.number().int().positive().max(524_288_000).default(52_428_800),
   /** Most text, in characters, one file may yield; more fails the file (never truncated). */

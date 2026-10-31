@@ -3,7 +3,7 @@ import { MIME } from './mime.js';
 // Which viewer opens a file, and the limits every viewer works within. The choice follows the
 // MIME type the server stored (it read the bytes), never the file name.
 
-export type ViewerKind = 'markdown' | 'text' | 'csv' | 'image' | 'pdf' | 'xlsx' | 'docx' | 'pptx' | 'download';
+export type ViewerKind = 'markdown' | 'text' | 'code' | 'audio' | 'video' | 'csv' | 'image' | 'pdf' | 'xlsx' | 'docx' | 'pptx' | 'download';
 
 /** Above this size a file is offered for download instead of being opened in the browser. */
 export const PREVIEW_LIMIT_BYTES = 25 * 1024 * 1024;
@@ -15,6 +15,9 @@ export const TEXT_PREVIEW_CHARS = 1_000_000;
 const KIND: Record<string, ViewerKind> = {
   [MIME.md]: 'markdown',
   [MIME.txt]: 'text',
+  [MIME.json]: 'code',
+  [MIME.yaml]: 'code',
+  [MIME.html]: 'code',
   [MIME.csv]: 'csv',
   [MIME.png]: 'image',
   [MIME.jpeg]: 'image',
@@ -30,6 +33,10 @@ const KIND: Record<string, ViewerKind> = {
 export const tooBigToPreview = (sizeBytes: number): boolean => sizeBytes > PREVIEW_LIMIT_BYTES;
 
 export function viewerFor(mimeType: string, sizeBytes: number): ViewerKind {
+  // Audio and video are streamed in ranges by the player, so the size limit (which is about
+  // reading a whole file into the page) does not apply to them.
+  if (mimeType.startsWith('audio/')) return 'audio';
+  if (mimeType.startsWith('video/')) return 'video';
   if (tooBigToPreview(sizeBytes)) return 'download';
   return Object.hasOwn(KIND, mimeType) ? KIND[mimeType]! : 'download';
 }

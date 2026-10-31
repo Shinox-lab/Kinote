@@ -277,7 +277,7 @@ describe('PUT /api/v1/source/files/:externalId', () => {
   test('refusals behave as for people and store nothing', async () => {
     const { src } = await setup();
     const puts = storage.puts;
-    const unsupported = await putFile(app, src.token, 'u', { name: 'u.html', data: '<html><body>hi</body></html>' });
+    const unsupported = await putFile(app, src.token, 'u', { name: 'u.svg', data: '<svg xmlns="http://www.w3.org/2000/svg"/>' });
     assert.equal(unsupported.statusCode, 415);
     assert.equal(unsupported.json().error, 'unsupported_file_type');
     const empty = await putFile(app, src.token, 'e', { name: 'e.txt', data: '' });

@@ -425,13 +425,13 @@ test('several files at once: a refused one, a copy and a good one do not stop ea
   const good = textFile('Good.txt', 'text/plain', `A good file ${world.suffix}.`);
   await uploadThroughMenu(page, 'Docs', [
     good,
-    textFile('Page.html', 'text/html', '<html><body>nope</body></html>'),
+    textFile('Image.svg', 'image/svg+xml', '<svg xmlns="http://www.w3.org/2000/svg"/>'),
     textFile('Good copy.txt', 'text/plain', `A good file ${world.suffix}.`),
   ]);
   const panel = uploadPanel(page);
   const rowOf = (name: string) => panel.getByRole('listitem').filter({ hasText: name });
   await expect(rowOf('Good.txt')).toContainText('Indexed · v1');
-  await expect(rowOf('Page.html')).toContainText('This file type is not supported for security reasons.');
+  await expect(rowOf('Image.svg')).toContainText('This file type is not supported for security reasons.');
   await expect(rowOf('Good copy.txt')).toContainText('Already here');
   await expect(treeLink(page, 'Good.txt')).toBeVisible();
 
@@ -451,8 +451,8 @@ test('several files at once: a refused one, a copy and a good one do not stop ea
   // Moving around the console does not cancel what is queued.
   await rowOf('Later.txt').getByRole('button', { name: 'Dismiss Later.txt' }).click();
   await expect(rowOf('Later.txt')).toHaveCount(0);
-  await rowOf('Page.html').getByRole('button', { name: 'Dismiss Page.html' }).click();
-  await expect(rowOf('Page.html')).toHaveCount(0);
+  await rowOf('Image.svg').getByRole('button', { name: 'Dismiss Image.svg' }).click();
+  await expect(rowOf('Image.svg')).toHaveCount(0);
 });
 
 test('an upload keeps going while the person moves to another screen', async ({ browser, request }) => {
@@ -547,11 +547,11 @@ test('on a phone, where the sidebar is closed, uploads still show their progress
   await page.goto(`/w/${world.slug}/s/${world.spaceSlug}`);
   await page.getByLabel('Choose files to upload to Docs').setInputFiles([
     textFile('Phone.txt', 'text/plain', `From a phone ${world.suffix}.`),
-    textFile('Page.html', 'text/html', '<html><body>nope</body></html>'),
+    textFile('Image.svg', 'image/svg+xml', '<svg xmlns="http://www.w3.org/2000/svg"/>'),
   ]);
   const panel = uploadPanel(page);
   await expect(panel).toHaveCount(1);
   await expect(panel.getByRole('listitem').filter({ hasText: 'Phone.txt' })).toContainText('Indexed · v1');
-  await expect(panel.getByRole('listitem').filter({ hasText: 'Page.html' })).toContainText('not supported');
+  await expect(panel.getByRole('listitem').filter({ hasText: 'Image.svg' })).toContainText('not supported');
   await context.close();
 });

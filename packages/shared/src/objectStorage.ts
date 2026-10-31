@@ -3,9 +3,9 @@ import {
   DeleteObjectCommand,
   HeadBucketCommand,
   GetObjectCommand,
-  PutObjectCommand,
   S3Client,
 } from '@aws-sdk/client-s3';
+import { Upload } from '@aws-sdk/lib-storage';
 import { AppError } from '@kinote/contracts';
 
 export interface ObjectStorage {
@@ -16,6 +16,8 @@ export interface ObjectStorage {
     mimeType: string
   ): Promise<{ objectKey: string; sizeBytes: number }>;
   get(tenantId: string, objectKey: string): Promise<{ bytes: Uint8Array; mimeType: string }>;
+  /** The bytes `start..end` (inclusive, clamped to the object) without reading the rest; for HTTP Range. */
+  getRange(tenantId: string, objectKey: string, start: number, end: number): Promise<Uint8Array>;
   delete(tenantId: string, objectKey: string): Promise<void>;
 }
 
@@ -86,6 +88,13 @@ export class InMemoryObjectStorage implements ObjectStorage {
     return { bytes: new Uint8Array(entry.bytes), mimeType: entry.mimeType };
   }
 
+  async getRange(tenantId: string, objectKey: string, start: number, end: number) {
+    assertTenantKey(tenantId, objectKey);
+    const entry = this.objects.get(objectKey);
+    if (!entry) reject('Object not found.');
+    return entry.bytes.slice(start, end + 1);
+  }
+
   async delete(tenantId: string, objectKey: string) {
     assertTenantKey(tenantId, objectKey);
     this.objects.delete(objectKey);
@@ -98,7 +107,13 @@ export interface S3ObjectStorageOptions {
   accessKey: string;
   secretKey: string;
   region: string;
+  /** Path-style addressing (`endpoint/bucket/key`). Defaults to on when an endpoint is set (MinIO, R2, Ceph), off for AWS. */
+  forcePathStyle?: boolean;
 }
+
+/** Bodies above one part are sent as an S3 multipart upload (retried per part, parts in parallel). 8 MiB parts: 10 000 parts reach 80 GB. */
+const PART_SIZE_BYTES = 8 * 1024 * 1024;
+const PART_CONCURRENCY = 4;
 
 export class S3ObjectStorage implements ObjectStorage {
   private readonly client: S3Client;
@@ -109,7 +124,8 @@ export class S3ObjectStorage implements ObjectStorage {
     this.client = new S3Client({
       region: o.region,
       credentials: { accessKeyId: o.accessKey, secretAccessKey: o.secretKey },
-      ...(o.endpoint ? { endpoint: o.endpoint, forcePathStyle: true } : {}),
+      ...(o.endpoint ? { endpoint: o.endpoint } : {}),
+      forcePathStyle: o.forcePathStyle ?? Boolean(o.endpoint),
     });
   }
 
@@ -133,15 +149,15 @@ export class S3ObjectStorage implements ObjectStorage {
 
   async put(tenantId: string, relativePath: string, bytes: Uint8Array, mimeType: string) {
     const objectKey = buildKey(tenantId, relativePath);
-    await this.client.send(
-      new PutObjectCommand({
-        Bucket: this.bucket,
-        Key: objectKey,
-        Body: bytes,
-        ContentType: mimeType,
-        ContentLength: bytes.byteLength,
-      })
-    );
+    // Upload sends one PutObject for a small body and a multipart upload for a large one;
+    // a failed multipart upload is aborted so no orphaned parts are left (and billed).
+    await new Upload({
+      client: this.client,
+      params: { Bucket: this.bucket, Key: objectKey, Body: bytes, ContentType: mimeType },
+      partSize: PART_SIZE_BYTES,
+      queueSize: PART_CONCURRENCY,
+      leavePartsOnError: false,
+    }).done();
     return { objectKey, sizeBytes: bytes.byteLength };
   }
 
@@ -158,6 +174,22 @@ export class S3ObjectStorage implements ObjectStorage {
       if (err instanceof AppError) throw err;
       // Only a missing object is "not found". Any other 404 (NoSuchBucket: a
       // misconfigured deployment) or error surfaces as itself.
+      const name = (err as { name?: unknown }).name;
+      if (name === 'NoSuchKey' || name === 'NotFound') reject('Object not found.');
+      throw err;
+    }
+  }
+
+  async getRange(tenantId: string, objectKey: string, start: number, end: number) {
+    assertTenantKey(tenantId, objectKey);
+    try {
+      const res = await this.client.send(
+        new GetObjectCommand({ Bucket: this.bucket, Key: objectKey, Range: `bytes=${start}-${end}` })
+      );
+      if (!res.Body) reject('Object not found.');
+      return await res.Body.transformToByteArray();
+    } catch (err) {
+      if (err instanceof AppError) throw err;
       const name = (err as { name?: unknown }).name;
       if (name === 'NoSuchKey' || name === 'NotFound') reject('Object not found.');
       throw err;
@@ -181,6 +213,7 @@ export function createObjectStorage(config: {
   S3_ACCESS_KEY?: string;
   S3_SECRET_KEY?: string;
   S3_REGION?: string;
+  S3_FORCE_PATH_STYLE?: boolean;
 }): S3ObjectStorage {
   const missing = (['S3_BUCKET', 'S3_ACCESS_KEY', 'S3_SECRET_KEY'] as const).filter(
     (name) => !config[name]
@@ -194,5 +227,6 @@ export function createObjectStorage(config: {
     accessKey: config.S3_ACCESS_KEY!,
     secretKey: config.S3_SECRET_KEY!,
     region: config.S3_REGION ?? 'us-east-1',
+    forcePathStyle: config.S3_FORCE_PATH_STYLE,
   });
 }

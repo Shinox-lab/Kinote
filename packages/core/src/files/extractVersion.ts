@@ -13,7 +13,7 @@ import { AppError, ExtractedDocumentSchema, type ExtractedDocument } from '@kino
 import type { ObjectStorage } from '@kinote/shared';
 import { detectFileType } from './detect.js';
 import type { Extractor } from './extractor.js';
-import { readTextNative } from './textNative.js';
+import { readTextNative, type TextNativeType } from './textNative.js';
 import { fileObjectPath } from './versions.js';
 
 export type ExtractVersionResult =
@@ -39,7 +39,7 @@ async function readDocument(
   const { file } = detected;
   const document =
     file.handling === 'text'
-      ? readTextNative(file.type as 'txt' | 'md' | 'csv', bytes)
+      ? readTextNative(file.type as TextNativeType, bytes)
       : await deps.extractor.extract({ bytes, fileName, file });
   const chars = document.sections.reduce((n, s) => n + s.text.length, 0);
   if (chars > deps.maxChars) throw new AppError('file_text_too_large');

@@ -86,6 +86,24 @@ describe.each(implementations)('ObjectStorage contract: $name', ({ skip, make })
       expect(got.mimeType).toBe('application/pdf');
     });
 
+    it('stores a multi-part body (above one 8 MiB part) byte for byte', async () => {
+      const bytes = new Uint8Array(20 * 1024 * 1024 + 7);
+      for (let i = 0; i < bytes.length; i += 4099) bytes[i] = (i / 4099) % 251;
+      const stored = await storage.put(tenantA, `uploads/${randomUUID()}.mp4`, bytes, 'video/mp4');
+      expect(stored.sizeBytes).toBe(bytes.byteLength);
+      const got = await storage.get(tenantA, stored.objectKey);
+      expect(got.bytes.byteLength).toBe(bytes.byteLength);
+      expect(Buffer.compare(Buffer.from(got.bytes), Buffer.from(bytes))).toBe(0);
+    }, 60_000);
+
+    it('getRange returns just the requested bytes, clamped to the object', async () => {
+      const bytes = new Uint8Array(Array.from({ length: 100 }, (_, i) => i));
+      const stored = await storage.put(tenantA, `uploads/${randomUUID()}.mp3`, bytes, 'audio/mpeg');
+      expect(Array.from(await storage.getRange(tenantA, stored.objectKey, 10, 19))).toEqual(Array.from(bytes.slice(10, 20)));
+      expect(Array.from(await storage.getRange(tenantA, stored.objectKey, 95, 500))).toEqual(Array.from(bytes.slice(95)));
+      await expect(storage.getRange(tenantB, stored.objectKey, 0, 1)).rejects.toThrow();
+    });
+
     it('sizeBytes is the byte length, not the character count', async () => {
       const bytes = bytesOf('héllo wörld');
       const stored = await storage.put(tenantA, `uploads/${randomUUID()}.txt`, bytes, 'text/plain');

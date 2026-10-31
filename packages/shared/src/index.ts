@@ -8,6 +8,12 @@ export {
   getCollabTokenSecret,
   type CollabClaims,
 } from './collabToken.js';
+export {
+  MEDIA_TOKEN_TTL_SECONDS,
+  signMediaToken,
+  verifyMediaToken,
+  type MediaClaims,
+} from './mediaToken.js';
 export { ConfigSchema, DEFAULT_AUTH_RATE_LIMIT_MAX, loadConfig, routerProviderProblem, type Config } from './config.js';
 export {
   InMemoryObjectStorage,

@@ -79,6 +79,28 @@ describe('snapshots carry field values', () => {
     await expect(snap(w.tenant.id, w.owner.userId, w.george, true)).rejects.toMatchObject({ code: 'no_changes' });
   });
 
+  test('a live change with the same content clears "changed since", also when Index now says no_changes', async () => {
+    const w = await world();
+    const flag = async () =>
+      withTenantTx(w.tenant.id, async (tx) => {
+        const [r] = await tx.select().from(pages).where(and(eq(pages.tenantId, w.tenant.id), eq(pages.documentId, w.george)));
+        return r!.liveChangedSinceSnapshot;
+      });
+    await snap(w.tenant.id, w.owner.userId, w.george, true);
+    const raise = () => edit(w.tenant.id, w.george, () => {});
+
+    // Quiet snapshot: same content, no new version, flag cleared.
+    await raise();
+    expect(await flag()).toBe(true);
+    await snap(w.tenant.id, w.owner.userId, w.george, false);
+    expect(await flag()).toBe(false);
+
+    // Manual: still 409 no_changes, but the flag clear is committed.
+    await raise();
+    await expect(snap(w.tenant.id, w.owner.userId, w.george, true)).rejects.toMatchObject({ code: 'no_changes' });
+    expect(await flag()).toBe(false);
+  });
+
   test('a row with only fields is snapshotted; a plain empty page is not', async () => {
     const w = await world();
     const clear = (doc: Y.Doc) => {

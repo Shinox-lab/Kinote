@@ -66,6 +66,17 @@ image is no longer published on Docker Hub), pinned by tag and digest. It is
 the bundled default; in production set `S3_ENDPOINT` to a vetted external store
 if you prefer one.
 
+### External S3-compatible storage
+
+Set `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY` and `S3_REGION` in
+`.env` (examples for AWS S3, Cloudflare R2 and Backblaze B2 are in `.env.example`).
+The bucket is created on start if missing, so the key needs `CreateBucket` or the
+bucket must already exist. Files above 8 MiB are written as S3 multipart uploads and
+a failed upload is aborted, leaving no orphaned parts. `S3_FORCE_PATH_STYLE=false`
+selects virtual-hosted addressing for providers that need it. To store larger files
+raise `MAX_UPLOAD_BYTES` (at most 500 MB); the api still reads one upload fully into
+memory, so size its container accordingly.
+
 Secrets have no defaults. Copy `.env.example` to `.env` (untracked) and fill
 in `POSTGRES_PASSWORD`, `APP_DB_PASSWORD`, `COLLAB_TOKEN_SECRET`,
 `INTERNAL_SECRET`, `S3_ACCESS_KEY` and `S3_SECRET_KEY`, or export them.

@@ -36,9 +36,9 @@ describe('file contracts', () => {
     expect(ExtractedDocumentSchema.safeParse(bad).success).toBe(false);
   });
 
-  it('refuses svg and html as file types', () => {
+  it('refuses svg and xml as file types', () => {
     expect(FileTypeSchema.safeParse('svg').success).toBe(false);
-    expect(FileTypeSchema.safeParse('html').success).toBe(false);
+    expect(FileTypeSchema.safeParse('xml').success).toBe(false);
     expect(FileTypeSchema.safeParse('pdf').success).toBe(true);
   });
 

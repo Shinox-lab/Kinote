@@ -168,3 +168,19 @@ describe('createExtractor', () => {
     ).toBeInstanceOf(HttpExtractor);
   });
 });
+
+describe('html and code text', () => {
+  it('reads only the visible text of html', async () => {
+    const { readTextNative } = await import('../src/files/textNative.js');
+    const html = '<html><head><style>p{}</style><script>alert(1)</script></head><body><h1>Title</h1><p>A &amp; B</p><!-- x --></body></html>';
+    const doc = readTextNative('html', new TextEncoder().encode(html));
+    expect(doc.sections).toHaveLength(1);
+    expect(doc.sections[0]!.text).toBe('Title\n\nA & B');
+  });
+
+  it('keeps json, yaml and code verbatim', async () => {
+    const { readTextNative } = await import('../src/files/textNative.js');
+    const doc = readTextNative('yaml', new TextEncoder().encode('name: kinote\nitems:\n  - a\n'));
+    expect(doc.sections[0]!.text).toBe('name: kinote\nitems:\n  - a');
+  });
+});

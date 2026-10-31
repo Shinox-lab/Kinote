@@ -96,9 +96,8 @@ describe('detectFileType', () => {
     expect(detectFileType('a.txt', new Uint8Array())).toEqual({ ok: false, reason: 'empty' });
   });
 
-  it('refuses svg and html by name and by content, whatever the file is called', () => {
+  it('refuses svg by name and by content, and html content under any name but .html', () => {
     expect(detectFileType('a.svg', enc('<svg xmlns="x"/>'))).toEqual({ ok: false, reason: 'unsupported' });
-    expect(detectFileType('a.html', enc('<html></html>'))).toEqual({ ok: false, reason: 'unsupported' });
     expect(detectFileType('a.png', enc('<!DOCTYPE html><p>hi</p>'))).toEqual({ ok: false, reason: 'unsupported' });
     expect(detectFileType('a.txt', enc('﻿  \n<svg onload="x"/>'))).toEqual({ ok: false, reason: 'unsupported' });
     expect(detectFileType('a.md', enc('<?xml version="1.0"?><svg/>'))).toEqual({ ok: false, reason: 'unsupported' });
@@ -156,5 +155,25 @@ describe('cleanFileName', () => {
     expect(cleanFileName('   ')).toBe('file');
     expect(cleanFileName('\u0001\u0002')).toBe('file');
     expect(cleanFileName('  報告 書.pdf ')).toBe('報告 書.pdf');
+  });
+});
+
+describe('text, code and media formats', () => {
+  it('reads yaml, json, html and code as text with a canonical extension', () => {
+    expect(detectFileType('c.yml', enc('a: 1'))).toMatchObject({ ok: true, file: { type: 'yaml', extension: 'yaml', handling: 'text' } });
+    expect(detectFileType('c.json', enc('{"a":1}'))).toMatchObject({ ok: true, file: { type: 'json', mimeType: 'application/json' } });
+    expect(detectFileType('p.html', enc('<html><p>hi</p></html>'))).toMatchObject({ ok: true, file: { type: 'html', handling: 'text' } });
+    expect(detectFileType('main.py', enc('print(1)'))).toMatchObject({ ok: true, file: { type: 'code', handling: 'text' } });
+  });
+
+  it('refuses binary content under a text name', () => {
+    expect(detectFileType('c.yaml', bytes(0x61, 0x00, 0x62))).toEqual({ ok: false, reason: 'unsupported' });
+  });
+
+  it('stores flac, mkv and avi by their magic bytes', () => {
+    expect(detectFileType('a.flac', enc('fLaC....'))).toMatchObject({ ok: true, file: { type: 'audio', handling: 'stored' } });
+    expect(detectFileType('a.mkv', bytes(0x1a, 0x45, 0xdf, 0xa3, 0))).toMatchObject({ ok: true, file: { type: 'video' } });
+    expect(detectFileType('a.avi', enc('RIFF....AVI LIST'))).toMatchObject({ ok: true, file: { type: 'video' } });
+    expect(detectFileType('a.flac', enc('not flac'))).toEqual({ ok: false, reason: 'unsupported' });
   });
 });

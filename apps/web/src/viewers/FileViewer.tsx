@@ -25,9 +25,11 @@ const CsvViewer = lazy(() => import('./CsvViewer.js'));
 const XlsxViewer = lazy(() => import('./XlsxViewer.js'));
 const PdfViewer = lazy(() => import('./PdfViewer.js'));
 const PptxViewer = lazy(() => import('./PptxViewer.js'));
+const MediaViewer = lazy(() => import('./MediaViewer.js'));
 
 const VIEWERS: Partial<Record<ViewerKind, ComponentType<ViewerProps>>> = {
   text: ({ bytes }) => <TextViewer bytes={bytes} />,
+  code: ({ bytes }) => <TextViewer bytes={bytes} mono />,
   markdown: ({ bytes }) => <MarkdownViewer bytes={bytes} />,
   pdf: ({ bytes, page }) => <PdfViewer bytes={bytes} page={page} />,
   csv: ({ bytes, version }) => <CsvViewer bytes={bytes} name={version.fileName} />,
@@ -109,6 +111,8 @@ export function FileViewer({
       <Suspense fallback={<Loading what="preview" />}>
         {kind === 'pptx' ? (
           <PptxViewer versionId={version.id} page={page} />
+        ) : kind === 'audio' || kind === 'video' ? (
+          <MediaViewer version={version} kind={kind} />
         ) : (
           <Bytes
             version={version}

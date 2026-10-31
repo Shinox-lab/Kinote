@@ -1008,7 +1008,7 @@ export type CollabApplyBlockOpsRequest = z.infer<typeof CollabApplyBlockOpsReque
 // Files (Slice 2)
 // ---------------------------------------------------------------------------
 
-/** What a file is, decided by the server from its bytes. SVG and HTML are not types: they are refused. */
+/** What a file is, decided by the server from its bytes. SVG and XML are not types: they are refused. HTML is read as text and only ever served as plain text. */
 export const FILE_TYPES = [
   'pdf',
   'docx',
@@ -1017,6 +1017,10 @@ export const FILE_TYPES = [
   'csv',
   'txt',
   'md',
+  'json',
+  'yaml',
+  'html',
+  'code',
   'png',
   'jpeg',
   'webp',
@@ -1026,6 +1030,10 @@ export const FILE_TYPES = [
 ] as const;
 export const FileTypeSchema = z.enum(FILE_TYPES);
 export type FileType = z.infer<typeof FileTypeSchema>;
+
+/** A short-lived signed link for playing an audio or video version (a media element cannot send the bearer header). */
+export const MediaUrlSchema = z.object({ url: z.string(), expiresAt: z.string() });
+export type MediaUrl = z.infer<typeof MediaUrlSchema>;
 
 /** One run of extracted text: a section of prose or a whole table, with where it sits (page, sheet or slide). */
 export const ExtractedSectionSchema = z.object({

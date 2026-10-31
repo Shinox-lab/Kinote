@@ -24,10 +24,19 @@ describe('viewerFor', () => {
     expect(viewerFor(MIME.xlsx, 10)).toBe('xlsx');
     expect(viewerFor(MIME.docx, 10)).toBe('docx');
     expect(viewerFor(MIME.pptx, 10)).toBe('pptx');
+    expect(viewerFor(MIME.json, 10)).toBe('code');
+    expect(viewerFor(MIME.yaml, 10)).toBe('code');
+    expect(viewerFor(MIME.html, 10)).toBe('code');
   });
 
-  test('anything else, media included, is a download', () => {
-    for (const mime of ['audio/mpeg', 'video/mp4', 'image/svg+xml', 'text/html', 'application/zip', 'application/x-new', '']) {
+  test('audio and video play in the browser, however large (they stream in ranges)', () => {
+    expect(viewerFor('audio/mpeg', 10)).toBe('audio');
+    expect(viewerFor('video/mp4', 10)).toBe('video');
+    expect(viewerFor('video/mp4', 400 * 1024 * 1024)).toBe('video');
+  });
+
+  test('anything else is a download', () => {
+    for (const mime of ['image/svg+xml', 'application/zip', 'application/x-new', '']) {
       expect(viewerFor(mime, 10)).toBe('download');
     }
   });

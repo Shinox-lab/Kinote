@@ -66,6 +66,42 @@ const RULES: Record<string, Rule> = {
   txt: rule('txt', 'txt', 'text/plain', 'text', noNul),
   md: rule('md', 'md', 'text/markdown', 'text', noNul),
   markdown: rule('md', 'md', 'text/markdown', 'text', noNul),
+  json: rule('json', 'json', 'application/json', 'text', noNul),
+  yaml: rule('yaml', 'yaml', 'text/yaml', 'text', noNul),
+  yml: rule('yaml', 'yaml', 'text/yaml', 'text', noNul),
+  html: rule('html', 'html', 'text/html', 'text', noNul),
+  htm: rule('html', 'html', 'text/html', 'text', noNul),
+  js: rule('code', 'js', 'text/plain', 'text', noNul),
+  mjs: rule('code', 'mjs', 'text/plain', 'text', noNul),
+  cjs: rule('code', 'cjs', 'text/plain', 'text', noNul),
+  ts: rule('code', 'ts', 'text/plain', 'text', noNul),
+  jsx: rule('code', 'jsx', 'text/plain', 'text', noNul),
+  tsx: rule('code', 'tsx', 'text/plain', 'text', noNul),
+  py: rule('code', 'py', 'text/plain', 'text', noNul),
+  rb: rule('code', 'rb', 'text/plain', 'text', noNul),
+  go: rule('code', 'go', 'text/plain', 'text', noNul),
+  rs: rule('code', 'rs', 'text/plain', 'text', noNul),
+  java: rule('code', 'java', 'text/plain', 'text', noNul),
+  kt: rule('code', 'kt', 'text/plain', 'text', noNul),
+  swift: rule('code', 'swift', 'text/plain', 'text', noNul),
+  c: rule('code', 'c', 'text/plain', 'text', noNul),
+  h: rule('code', 'h', 'text/plain', 'text', noNul),
+  cpp: rule('code', 'cpp', 'text/plain', 'text', noNul),
+  hpp: rule('code', 'hpp', 'text/plain', 'text', noNul),
+  cs: rule('code', 'cs', 'text/plain', 'text', noNul),
+  php: rule('code', 'php', 'text/plain', 'text', noNul),
+  sh: rule('code', 'sh', 'text/plain', 'text', noNul),
+  sql: rule('code', 'sql', 'text/plain', 'text', noNul),
+  css: rule('code', 'css', 'text/plain', 'text', noNul),
+  scss: rule('code', 'scss', 'text/plain', 'text', noNul),
+  toml: rule('code', 'toml', 'text/plain', 'text', noNul),
+  ini: rule('code', 'ini', 'text/plain', 'text', noNul),
+  log: rule('txt', 'log', 'text/plain', 'text', noNul),
+  flac: rule('audio', 'flac', 'audio/flac', 'stored', (b) => hasAscii(b, 'fLaC', 0)),
+  aac: rule('audio', 'aac', 'audio/aac', 'stored', (b) => b[0] === 0xff && ((b[1] ?? 0) & 0xf6) === 0xf0),
+  mkv: rule('video', 'mkv', 'video/x-matroska', 'stored', (b) => startsWith(b, [0x1a, 0x45, 0xdf, 0xa3])),
+  m4v: rule('video', 'm4v', 'video/mp4', 'stored', ftyp),
+  avi: rule('video', 'avi', 'video/x-msvideo', 'stored', (b) => hasAscii(b, 'RIFF', 0) && hasAscii(b, 'AVI ', 8)),
   png: rule('png', 'png', 'image/png', 'extractor', (b) => startsWith(b, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])),
   jpg: rule('jpeg', 'jpeg', 'image/jpeg', 'extractor', (b) => startsWith(b, [0xff, 0xd8, 0xff])),
   jpeg: rule('jpeg', 'jpeg', 'image/jpeg', 'extractor', (b) => startsWith(b, [0xff, 0xd8, 0xff])),
@@ -80,28 +116,34 @@ const RULES: Record<string, Rule> = {
   webm: rule('video', 'webm', 'video/webm', 'stored', (b) => startsWith(b, [0x1a, 0x45, 0xdf, 0xa3])),
 };
 
-/** Looks like markup that a browser could run: refused whatever the file is called. */
-function looksLikeMarkup(bytes: Uint8Array): boolean {
-  let head = new TextDecoder('latin1').decode(bytes.subarray(0, 1024));
-  head = head.replace(/^(ï»¿|﻿)/, '').trimStart().toLowerCase();
-  return (
-    head.startsWith('<svg') ||
-    head.startsWith('<html') ||
-    head.startsWith('<!doctype html') ||
-    (head.startsWith('<?xml') && head.includes('<svg'))
-  );
+function markupHead(bytes: Uint8Array): string {
+  const head = new TextDecoder('latin1').decode(bytes.subarray(0, 1024));
+  return head.replace(/^(ï»¿|﻿)/, '').trimStart().toLowerCase();
+}
+
+/** SVG: refused whatever the file is called. */
+function looksLikeSvg(bytes: Uint8Array): boolean {
+  const head = markupHead(bytes);
+  return head.startsWith('<svg') || (head.startsWith('<?xml') && head.includes('<svg'));
+}
+
+/** HTML a browser could run: refused unless the file is declared HTML (then it is stored and served as plain text). */
+function looksLikeHtml(bytes: Uint8Array): boolean {
+  const head = markupHead(bytes);
+  return head.startsWith('<html') || head.startsWith('<!doctype html');
 }
 
 /**
  * Decides what an upload is from its bytes. The file name's extension must
- * agree with the bytes; SVG, HTML and XML are refused by name and by content.
+ * agree with the bytes; SVG and XML are refused by name and by content, and HTML
+ * content is refused under any name but .html/.htm.
  */
 export function detectFileType(fileName: string, bytes: Uint8Array): DetectResult {
   if (bytes.length === 0) return { ok: false, reason: 'empty' };
   const dot = fileName.lastIndexOf('.');
   const extension = dot >= 0 ? fileName.slice(dot + 1).toLowerCase() : '';
   const found = RULES[extension];
-  if (!found || looksLikeMarkup(bytes) || !found.check(bytes)) return { ok: false, reason: 'unsupported' };
+  if (!found || looksLikeSvg(bytes) || (found.type !== 'html' && looksLikeHtml(bytes)) || !found.check(bytes)) return { ok: false, reason: 'unsupported' };
   const { check: _check, ...file } = found;
   return { ok: true, file };
 }

@@ -5,6 +5,7 @@ import {
   CaptureListSchema,
   CaptureSummarySchema,
   FactStatusSchema,
+  MediaUrlSchema,
   MoveChangeResponseSchema,
   NeedsHomeListSchema,
   NeedsHomeDocumentListSchema,
@@ -398,6 +399,7 @@ export const api = {
   versionText: (id: string) => request(`/api/v1/versions/${e(id)}/text`, VersionTextSchema),
   versionChunks: (id: string) => request(`/api/v1/versions/${e(id)}/chunks`, ChunkInspectorSchema),
   versionFile: (id: string) => fetchBytes(`/api/v1/versions/${e(id)}/file`),
+  mediaUrl: (id: string) => request(`/api/v1/versions/${e(id)}/media-url`, MediaUrlSchema, send('POST')),
 
   // Sources (admin)
   listSources: () => request('/api/v1/sources', SourceListSchema),

@@ -97,6 +97,51 @@ describe('reading files', () => {
     assert.equal((await get(c.author.headers, '/api/v1/versions/not-a-uuid/file')).statusCode, 404);
   });
 
+  test('media: a signed link plays audio and video with Range, and nothing else', async () => {
+    const c = await setup();
+    const size = 5 * 1024 * 1024;
+    const data = new Uint8Array(size);
+    data.set([0, 0, 0, 0x18, 0x66, 0x74, 0x79, 0x70], 0); // "ftyp" at 4: an mp4
+    for (let i = 8; i < size; i++) data[i] = i % 251;
+    const up = await upload(c.author.headers, c.open.id, 'clip.mp4', data);
+    await settle(c.tenant.id);
+    const mint = await app.inject({ method: 'POST', url: `/api/v1/versions/${up.version.id}/media-url`, headers: c.author.headers });
+    assert.equal(mint.statusCode, 200, mint.body);
+    const { url } = mint.json() as { url: string };
+
+    // No Authorization header: the link is the credential.
+    const part = await app.inject({ method: 'GET', url, headers: { range: 'bytes=100-199' } });
+    assert.equal(part.statusCode, 206);
+    assert.equal(part.headers['content-range'], `bytes 100-199/${size}`);
+    assert.equal(part.headers['accept-ranges'], 'bytes');
+    assert.equal(part.headers['content-type'], 'video/mp4');
+    assert.equal(part.headers['x-content-type-options'], 'nosniff');
+    assert.deepEqual(new Uint8Array(part.rawPayload), data.slice(100, 200));
+
+    const open = await app.inject({ method: 'GET', url, headers: { range: 'bytes=0-' } });
+    assert.equal(open.statusCode, 206);
+    assert.equal(open.rawPayload.length, 4 * 1024 * 1024); // capped; the player asks for the rest
+    assert.equal(open.headers['content-range'], `bytes 0-${4 * 1024 * 1024 - 1}/${size}`);
+
+    const tail = await app.inject({ method: 'GET', url, headers: { range: 'bytes=-16' } });
+    assert.equal(tail.statusCode, 206);
+    assert.deepEqual(new Uint8Array(tail.rawPayload), data.slice(size - 16));
+
+    const past = await app.inject({ method: 'GET', url, headers: { range: `bytes=${size}-` } });
+    assert.equal(past.statusCode, 416);
+    assert.equal(past.headers['content-range'], `bytes */${size}`);
+
+    const forged = await app.inject({ method: 'GET', url: `${url}x`, headers: { range: 'bytes=0-1' } });
+    assert.equal(forged.statusCode, 404);
+
+    // Access is checked when the link is minted.
+    const outsider = await app.inject({ method: 'POST', url: `/api/v1/versions/${up.version.id}/media-url`, headers: c.outsider.headers });
+    assert.equal(outsider.statusCode, 404);
+    const text = await upload(c.author.headers, c.open.id, 'note.txt', 'not media');
+    const notMedia = await app.inject({ method: 'POST', url: `/api/v1/versions/${text.version.id}/media-url`, headers: c.author.headers });
+    assert.equal(notMedia.statusCode, 404);
+  });
+
   test('an Inbox file is the creator\'s and the admin\'s alone', async () => {
     const c = await setup();
     const up = await upload(c.author.headers, undefined, 'mine.txt', 'private notes');

@@ -153,6 +153,8 @@ import {
   dismissRemoval,
   getVersionText,
   downloadVersionFile,
+  createMediaUrl,
+  streamMedia,
   getFileDetails,
   getVersionChunks,
   listFileVersions,
@@ -198,7 +200,7 @@ import { registerErrorHandler } from './errors.js';
 import { parseReply } from './reply.js';
 
 import { answerPassages } from './search/ask.js';
-import type { CollabClient } from '@kinote/shared';
+import { getCollabTokenSecret, type CollabClient } from '@kinote/shared';
 import { collectionTables, searchWiki } from '@kinote/core';
 import { fastifyLogger, type ApiLoggerOptions } from './logger.js';
 
@@ -652,6 +654,22 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
       fileDeps()
     );
     return reply.headers(out.headers).send(Buffer.from(out.bytes));
+  });
+
+  app.post('/api/v1/versions/:id/media-url', async (req, reply) => {
+    const res = await createMediaUrl(actorOf(req), (req.params as any).id, getCollabTokenSecret());
+    return reply.send(res);
+  });
+
+  // The signed link is the credential: a media element cannot send the bearer header.
+  app.get('/api/v1/media/:token', { config: { auth: 'public' } }, async (req, reply) => {
+    const out = await streamMedia(
+      (req.params as any).token,
+      getCollabTokenSecret(),
+      req.headers.range,
+      fileDeps()
+    );
+    return reply.status(out.status).headers(out.headers).send(Buffer.from(out.bytes));
   });
 
   app.get('/api/v1/versions/:id/text', async (req, reply) => {

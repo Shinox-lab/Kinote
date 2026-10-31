@@ -86,7 +86,7 @@ export function CaptureBox({ preset }: { preset: { space?: string; page?: string
           id={`${id}-file`}
           type="file"
           className="sr-only"
-          accept=".pdf,.docx,.pptx,.xlsx,.csv,.txt,.md,.png,.jpg,.jpeg,.webp,.gif"
+          accept=".pdf,.docx,.pptx,.xlsx,.csv,.txt,.md,.json,.yaml,.yml,.html,.htm,.log,.js,.ts,.tsx,.jsx,.py,.go,.rs,.java,.sh,.sql,.css,.toml,.png,.jpg,.jpeg,.webp,.gif,.mp3,.wav,.m4a,.ogg,.flac,.aac,.mp4,.mov,.webm,.mkv,.m4v,.avi"
           onChange={(event) => {
             const picked = event.target.files?.[0] ?? null;
             const problem = picked ? captureFileProblem(picked) : null;

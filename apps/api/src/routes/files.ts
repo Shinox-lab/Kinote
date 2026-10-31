@@ -40,7 +40,7 @@ import {
   type VersionRow,
   relocateFile,
 } from '@kinote/core';
-import type { ObjectStorage } from '@kinote/shared';
+import { signMediaToken, verifyMediaToken, type ObjectStorage } from '@kinote/shared';
 import {
   requireVisibleParent,
   withdrawLiveVersions,
@@ -782,6 +782,95 @@ export async function downloadVersionFile(
       'cache-control': 'no-store',
       'content-disposition': `${inline ? 'inline' : 'attachment'}; filename*=UTF-8''${encodeHeaderName(ver.fileName ?? ver.title)}`,
     },
+  };
+}
+
+const isPlayable = (mime: string | null) => mime !== null && /^(audio|video)\//.test(mime);
+
+/** Most bytes one media response carries; the player simply asks for the next range. */
+const MEDIA_CHUNK_BYTES = 4 * 1024 * 1024;
+
+/**
+ * POST /api/v1/versions/:id/media-url (viewer): a short-lived signed link for playing an audio or
+ * video version, because a media element cannot send the bearer header. Access is checked here,
+ * once; the link then grants that one version until it expires.
+ */
+export async function createMediaUrl(
+  actor: Actor,
+  versionId: string,
+  secret: string
+): Promise<{ url: string; expiresAt: string }> {
+  const { ver } = await withTenantTx(actor.tenantId, (tx) => readableFileVersion(tx, actor, versionId, 'viewer'));
+  if (!isPlayable(ver.mimeType)) throw new AppError('version_not_found');
+  const { token, expiresAt } = signMediaToken({ tenantId: actor.tenantId, versionId: ver.id }, secret);
+  return { url: `/api/v1/media/${token}`, expiresAt: expiresAt.toISOString() };
+}
+
+/** `bytes=a-b`, `bytes=a-`, `bytes=-n` (only the first range of a list); null when absent or malformed. */
+function parseRange(header: string | undefined, size: number): { start: number; end: number } | 'unsatisfiable' | null {
+  const m = /^bytes=(\d*)-(\d*)(?:,.*)?$/.exec(header ?? '');
+  if (!m || (m[1] === '' && m[2] === '')) return null;
+  let start: number;
+  let end: number;
+  if (m[1] === '') {
+    const n = Number(m[2]);
+    if (n === 0) return 'unsatisfiable';
+    start = Math.max(0, size - n);
+    end = size - 1;
+  } else {
+    start = Number(m[1]);
+    end = m[2] === '' ? size - 1 : Math.min(Number(m[2]), size - 1);
+  }
+  if (start >= size || start > end) return 'unsatisfiable';
+  return { start, end };
+}
+
+/**
+ * GET /api/v1/media/:token (the signed link): the bytes of one audio or video version with HTTP Range
+ * support, so a player can seek. One response carries at most 4 MiB; a request for more gets a shorter
+ * 206 and the player asks for the rest. Same never-runnable headers as a download.
+ */
+export async function streamMedia(
+  token: string,
+  secret: string,
+  rangeHeader: string | undefined,
+  deps: Pick<FileDeps, 'storage'>
+): Promise<{ status: 200 | 206 | 416; bytes: Uint8Array; headers: Record<string, string> }> {
+  const claims = verifyMediaToken(token, secret);
+  if (!claims) throw new AppError('version_not_found');
+  const [ver] = await withTenantTx(claims.tenantId, (tx) =>
+    tx
+      .select()
+      .from(versions)
+      .where(and(eq(versions.tenantId, claims.tenantId), eq(versions.id, claims.versionId)))
+  );
+  if (!ver || ver.objectKey === null || ver.status === 'withdrawn' || !isPlayable(ver.mimeType)) {
+    throw new AppError('version_not_found');
+  }
+  const size = ver.sizeBytes ?? 0;
+  const base: Record<string, string> = {
+    'content-type': ver.mimeType!,
+    'accept-ranges': 'bytes',
+    'x-content-type-options': 'nosniff',
+    'content-security-policy': 'sandbox',
+    'cache-control': 'private, no-store',
+    'content-disposition': `inline; filename*=UTF-8''${encodeHeaderName(ver.fileName ?? ver.title)}`,
+  };
+  const range = parseRange(rangeHeader, size);
+  if (range === 'unsatisfiable') {
+    return { status: 416, bytes: new Uint8Array(), headers: { ...base, 'content-range': `bytes */${size}` } };
+  }
+  if (range === null) {
+    // No Range: the whole file, as any other download.
+    const bytes = await deps.storage.getRange(claims.tenantId, ver.objectKey, 0, Math.max(size - 1, 0));
+    return { status: 200, bytes, headers: { ...base, 'content-length': String(bytes.byteLength) } };
+  }
+  const end = Math.min(range.end, range.start + MEDIA_CHUNK_BYTES - 1);
+  const bytes = await deps.storage.getRange(claims.tenantId, ver.objectKey, range.start, end);
+  return {
+    status: 206,
+    bytes,
+    headers: { ...base, 'content-range': `bytes ${range.start}-${end}/${size}`, 'content-length': String(bytes.byteLength) },
   };
 }
 

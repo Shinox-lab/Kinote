@@ -62,6 +62,9 @@ export interface TakePageSnapshotHooks {
   afterRead?: (tx: DbTransaction) => Promise<void>;
 }
 
+/** Returned from the snapshot transaction so no_changes is thrown after it commits. */
+const NO_CHANGES = Symbol('no_changes');
+
 /**
  * Snapshots a page's live state as a new version. Takes the document lock
  * first (lock order everywhere: document row, then version rows), so the
@@ -84,7 +87,7 @@ export async function takePageSnapshot(
 ) {
   const { tenantId, pageId, reason, actorType, actorId, manual } = params;
 
-  return withTenantTx(tenantId, async (tx) => {
+  const result = await withTenantTx(tenantId, async (tx) => {
     let docRow: DocumentRow;
     try {
       docRow = await lockDocument(tx, tenantId, pageId);
@@ -175,10 +178,22 @@ export async function takePageSnapshot(
       latestVersion.contentHash === contentHash &&
       !(manual && latestVersion.status === 'withdrawn');
     if (latestVersion && sameAsLatest) {
-      if (manual) {
-        throw new AppError('no_changes', 'No changes since the latest snapshot.');
-      }
-      return latestVersion;
+      // The live bytes can change with no content change (opening a page, a
+      // capture round-trip), which raises the flag. The content matches the
+      // latest version, so the page is not "changed since": clear it, unless
+      // a live change landed after this read. A manual snapshot reports
+      // no_changes after the commit, because throwing here would roll this back.
+      await tx
+        .update(pages)
+        .set({ liveChangedSinceSnapshot: false })
+        .where(
+          and(
+            eq(pages.tenantId, tenantId),
+            eq(pages.documentId, pageId),
+            sql`${pages.liveUpdatedAt} = ${pageRow.liveUpdatedAt}::timestamptz`
+          )
+        );
+      return manual ? NO_CHANGES : latestVersion;
     }
 
     // Supersede any existing pending_review snapshot so reviewers always review
@@ -377,4 +392,8 @@ export async function takePageSnapshot(
 
     return newVersion;
   });
+  if (result === NO_CHANGES) {
+    throw new AppError('no_changes', 'No changes since the latest snapshot.');
+  }
+  return result;
 }
