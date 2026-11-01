@@ -8,6 +8,7 @@ import {
   redirect,
 } from '@tanstack/react-router';
 import { api, isUnauthenticated } from './lib/api.js';
+import { collabSocket, collabUrl } from './lib/collab.js';
 import { pickWorkspace, safeRedirect } from './lib/console.js';
 import { ME_KEY } from './lib/queries.js';
 import { endSession, queryClient, setUnauthenticatedHandler } from './lib/queryClient.js';
@@ -163,8 +164,9 @@ const pageRoute = createRoute({
   getParentRoute: () => workspaceRoute,
   path: 'p/$pageId',
   validateSearch: (search: Record<string, unknown>) => ({ ...parsePageCaptureSearch(search), ...parseCommentsSearch(search) }),
-  // Start the page's metadata on hover (or focus), so a click opens it at once.
+  // Start the page's metadata and the live socket on hover (or focus), so a click opens it at once.
   beforeLoad: ({ params, context }) => {
+    collabSocket(collabUrl(window.location, import.meta.env.VITE_COLLAB_URL));
     void queryClient.prefetchQuery({
       queryKey: ['t', context.tenant.id, 'page', params.pageId],
       queryFn: () => api.getPage(params.pageId),

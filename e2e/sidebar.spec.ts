@@ -83,6 +83,31 @@ test('the tree: open a space, open a page from it, see its status dot and the re
   await expect(side.getByRole('button', { name: 'Expand Docs' })).toBeVisible();
 });
 
+test('opening a second page reuses the live websocket', async ({ browser, request }) => {
+  const world = await seedWorld(request, { reviewRequired: false });
+  await makePage(request, world, world.owner, 'Socket A', 'socket-a');
+  await makePage(request, world, world.owner, 'Socket B', 'socket-b');
+
+  const page = await openAs(browser, world, world.owner);
+  const sockets: string[] = [];
+  page.on('websocket', (ws) => {
+    if (new URL(ws.url()).pathname === '/collab') sockets.push(ws.url());
+  });
+
+  await page.goto(`/w/${world.slug}`);
+  const side = sidebar(page);
+  await side.getByRole('button', { name: 'Expand Docs' }).click();
+  await side.getByRole('link', { name: /^Socket A/ }).click();
+  await expect(editorOf(page)).toContainText('Socket A text.');
+  await expectConnected(page);
+
+  await side.getByRole('link', { name: /^Socket B/ }).click();
+  await expect(editorOf(page)).toContainText('Socket B text.');
+  await expectConnected(page);
+
+  expect(sockets).toHaveLength(1);
+});
+
 test('adding a page from the sidebar opens it', async ({ browser, request }) => {
   const world = await seedWorld(request, { reviewRequired: false });
   const page = await openAs(browser, world, world.owner);

@@ -1,6 +1,21 @@
 // Where the browser opens its live-editing websocket.
 
+import { HocuspocusProviderWebsocket } from '@hocuspocus/provider';
+
 export const COLLAB_PATH = '/collab';
+
+/**
+ * The one websocket the app rides. A page's provider attaches to it (the server
+ * keeps each document's auth and read-only flag apart), so moving between pages
+ * does not pay a new TCP/TLS/upgrade handshake. The URL is fixed for the app's
+ * lifetime, so this is created once and kept open between pages.
+ */
+let shared: HocuspocusProviderWebsocket | null = null;
+
+export function collabSocket(url: string): HocuspocusProviderWebsocket {
+  if (!shared) shared = new HocuspocusProviderWebsocket({ url });
+  return shared;
+}
 
 /**
  * The collab websocket URL: `VITE_COLLAB_URL` when set, otherwise the page's own

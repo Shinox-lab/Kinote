@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import * as Y from 'yjs';
 import { HocuspocusProvider, WebSocketStatus } from '@hocuspocus/provider';
 import { api } from './api.js';
-import { collabDocumentName, collabUrl, connectionState, type ConnectionState } from './collab.js';
+import { collabDocumentName, collabSocket, collabUrl, connectionState, type ConnectionState } from './collab.js';
 import { useWorkspace } from './queries.js';
 import { loadSession } from './session.js';
 
@@ -67,79 +67,78 @@ export function useLivePage(pageId: string, onSynced: () => void): LivePage {
     const ydoc = new Y.Doc();
     setConn({ pageId, live: null, access: 'read', state: 'connecting', error: null });
 
-    (async () => {
-      let first;
-      try {
-        first = await api.collabToken(pageId);
-      } catch (err) {
-        if (!cancelled) setConn((c) => (c.pageId === pageId ? { ...c, error: err } : c));
-        return;
-      }
-      if (cancelled || !first) return;
-      setConn((c) => (c.pageId === pageId ? { ...c, access: first.access } : c));
+    const socket = collabSocket(collabUrl(window.location, import.meta.env.VITE_COLLAB_URL));
+    const status: { socket: 'connecting' | 'connected' | 'disconnected'; synced: boolean; authFailed: boolean } = {
+      socket: socket.status === WebSocketStatus.Connected ? 'connected' : 'connecting',
+      synced: false,
+      authFailed: false,
+    };
+    let failures = 0;
+    const publish = () =>
+      setConn((c) => (c.pageId === pageId ? { ...c, state: connectionState(status) } : c));
 
-      const status = { socket: 'connecting' as 'connecting' | 'connected' | 'disconnected', synced: false, authFailed: false };
-      let failures = 0;
-      const publish = () =>
-        setConn((c) => (c.pageId === pageId ? { ...c, state: connectionState(status) } : c));
-      // The token fetched above serves the first connect; every later connect fetches its own.
-      let primed: string | null = first.token;
+    // The first token and the socket handshake start together; the provider
+    // sends the token as soon as the socket is open. Every later connect
+    // fetches its own token.
+    let pending: ReturnType<typeof api.collabToken> | null = api.collabToken(pageId);
+    pending.catch((err) => {
+      if (!cancelled) setConn((c) => (c.pageId === pageId ? { ...c, error: err } : c));
+    });
 
-      const p = new HocuspocusProvider({
-        url: collabUrl(window.location, import.meta.env.VITE_COLLAB_URL),
-        name: collabDocumentName(tenant.id, pageId),
-        document: ydoc,
-        token: async () => {
-          if (primed !== null) {
-            const token = primed;
-            primed = null;
-            return token;
-          }
-          const fresh = await api.collabToken(pageId);
-          if (!cancelled) setConn((c) => (c.pageId === pageId ? { ...c, access: fresh.access } : c));
-          return fresh.token;
-        },
-        onStatus: ({ status: s }) => {
-          status.socket = s === WebSocketStatus.Connected ? 'connected' : s === WebSocketStatus.Connecting ? 'connecting' : 'disconnected';
-          if (status.socket !== 'connected') status.synced = false;
-          publish();
-        },
-        onAuthenticated: () => {
-          failures = 0;
-          status.authFailed = false;
-          publish();
-        },
-        onAuthenticationFailed: () => {
-          failures += 1;
-          if (failures > AUTH_RETRIES) {
-            status.authFailed = true;
-            publish();
-            return;
-          }
-          // Reconnecting asks the token function for a new token.
-          const socket = p.configuration.websocketProvider;
-          socket.disconnect();
-          timer = setTimeout(() => void socket.connect(), 1000 * failures);
-        },
-        onSynced: () => {
-          status.synced = true;
-          publish();
-          synced.current();
-        },
-      });
-      provider = p;
-      const user = loadSession()?.user;
-      if (user) p.awareness?.setLocalStateField('lwUser', { id: user.id, name: user.name });
-      reconnect.current = () => {
+    const p = new HocuspocusProvider({
+      websocketProvider: socket,
+      name: collabDocumentName(tenant.id, pageId),
+      document: ydoc,
+      token: async () => {
+        const first = pending;
+        pending = null;
+        const fresh = await (first ?? api.collabToken(pageId));
+        // A token that arrives after the page closed must not authenticate it again.
+        if (cancelled) throw new Error('page closed');
+        setConn((c) =>
+          c.pageId === pageId ? { ...c, access: fresh.access, live: c.live ?? { ydoc, provider: p } } : c
+        );
+        return fresh.token;
+      },
+      onStatus: ({ status: s }) => {
+        status.socket = s === WebSocketStatus.Connected ? 'connected' : s === WebSocketStatus.Connecting ? 'connecting' : 'disconnected';
+        if (status.socket !== 'connected') status.synced = false;
+        publish();
+      },
+      onAuthenticated: () => {
         failures = 0;
         status.authFailed = false;
+        setConn((c) => (c.pageId === pageId ? { ...c, error: null } : c));
         publish();
-        const socket = p.configuration.websocketProvider;
+      },
+      onAuthenticationFailed: () => {
+        failures += 1;
+        if (failures > AUTH_RETRIES) {
+          status.authFailed = true;
+          publish();
+          return;
+        }
+        // Reconnecting asks the token function for a new token.
         socket.disconnect();
-        void socket.connect();
-      };
-      setConn((c) => (c.pageId === pageId ? { ...c, live: { ydoc, provider: p } } : c));
-    })();
+        timer = setTimeout(() => void socket.connect(), 1000 * failures);
+      },
+      onSynced: () => {
+        status.synced = true;
+        publish();
+        synced.current();
+      },
+    });
+    p.attach();
+    provider = p;
+    const user = loadSession()?.user;
+    if (user) p.awareness?.setLocalStateField('lwUser', { id: user.id, name: user.name });
+    reconnect.current = () => {
+      failures = 0;
+      status.authFailed = false;
+      publish();
+      socket.disconnect();
+      void socket.connect();
+    };
 
     return () => {
       cancelled = true;
