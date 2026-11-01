@@ -163,6 +163,14 @@ const pageRoute = createRoute({
   getParentRoute: () => workspaceRoute,
   path: 'p/$pageId',
   validateSearch: (search: Record<string, unknown>) => ({ ...parsePageCaptureSearch(search), ...parseCommentsSearch(search) }),
+  // Start the page's metadata on hover (or focus), so a click opens it at once.
+  beforeLoad: ({ params, context }) => {
+    void queryClient.prefetchQuery({
+      queryKey: ['t', context.tenant.id, 'page', params.pageId],
+      queryFn: () => api.getPage(params.pageId),
+      staleTime: 15_000,
+    });
+  },
   // The editor and its dependencies are heavy: load them only when a page is opened.
   component: lazyRouteComponent(() => import('./routes/page.js'), 'PagePage'),
 });
@@ -253,6 +261,8 @@ const routeTree = rootRoute.addChildren([
 
 export const router = createRouter({
   routeTree,
+  // A hovered link preloads its route (and the page's metadata), before the click.
+  defaultPreload: 'intent',
   defaultNotFoundComponent: NotFound,
   defaultErrorComponent: ({ error, reset }) => <ErrorFallback error={error} onRetry={reset} />,
 });

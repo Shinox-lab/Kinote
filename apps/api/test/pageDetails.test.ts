@@ -84,4 +84,42 @@ describe('GET /api/v1/pages/:id version payload', () => {
     assert.equal(body.indexedVersion.status, 'indexed');
     assert.equal(typeof body.indexedVersion.indexedAt, 'string');
   });
+
+  test('?meta=1 leaves the live content and version list out', async () => {
+    const { headers } = await bootstrapTenant(app, { name: 'Meta Co', slug: 'meta-co' });
+    const spaceRes = await app.inject({
+      method: 'POST',
+      url: '/api/v1/spaces',
+      headers,
+      payload: { name: 'open', slug: 'open', review_required: false },
+    });
+    assert.equal(spaceRes.statusCode, 201, spaceRes.body);
+    const spaceId = spaceRes.json().id as string;
+
+    const pageRes = await app.inject({
+      method: 'POST',
+      url: '/api/v1/pages',
+      headers,
+      payload: { space_id: spaceId, title: 'Meta page', slug: 'meta-page', markdown: 'Live body.' },
+    });
+    assert.equal(pageRes.statusCode, 201, pageRes.body);
+    const pageId = pageRes.json().id as string;
+
+    const full = await app.inject({ method: 'GET', url: `/api/v1/pages/${pageId}`, headers });
+    assert.equal(full.statusCode, 200, full.body);
+    assert.ok(full.json().liveBlocks.length > 0);
+
+    const res = await app.inject({ method: 'GET', url: `/api/v1/pages/${pageId}?meta=1`, headers });
+    assert.equal(res.statusCode, 200, res.body);
+    const body = res.json();
+
+    assert.equal(body.title, 'Meta page');
+    assert.equal(body.liveMarkdown, '');
+    assert.deepEqual(body.liveBlocks, []);
+    assert.deepEqual(body.versions, []);
+    assert.deepEqual(body.blockActivity, []);
+    // The status chip still gets its versions.
+    assert.equal(body.latestVersion, null);
+    assert.equal(body.indexedVersion, null);
+  });
 });

@@ -554,7 +554,11 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
 
   app.get('/api/v1/pages/:id', async (req, reply) => {
     const actor = actorOf(req);
-    const res = await getPageDetails(actor, (req.params as any).id);
+    // `?meta=1`: the console's page chrome, without the live blocks and Markdown
+    // its editor receives over the collab socket anyway.
+    const res = await getPageDetails(actor, (req.params as any).id, {
+      meta: (req.query as { meta?: string } | undefined)?.meta === '1',
+    });
     return reply.send(parseReply(PageDetailsSchema, res));
   });
 

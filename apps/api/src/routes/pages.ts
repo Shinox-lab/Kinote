@@ -217,7 +217,11 @@ export async function createPage(actor: Actor, input: unknown): Promise<PageSumm
   });
 }
 
-export async function getPageDetails(actor: Actor, pageId: string): Promise<PageDetails> {
+export async function getPageDetails(
+  actor: Actor,
+  pageId: string,
+  opts: { meta?: boolean } = {}
+): Promise<PageDetails> {
   assertValidUuid(pageId, 'page_not_found');
 
   return withTenantTx(actor.tenantId, async (tx) => {
@@ -262,22 +266,32 @@ export async function getPageDetails(actor: Actor, pageId: string): Promise<Page
       indexedVersion: indexedVersion ? { number: indexedVersion.number } : null,
     });
 
-    const activity = await tx
-      .select()
-      .from(blockActivity)
-      .where(and(eq(blockActivity.tenantId, actor.tenantId), eq(blockActivity.pageId, pageId)));
+    const activity = opts.meta
+      ? []
+      : await tx
+          .select()
+          .from(blockActivity)
+          .where(and(eq(blockActivity.tenantId, actor.tenantId), eq(blockActivity.pageId, pageId)));
 
-    const ydoc = new Y.Doc();
-    Y.applyUpdate(ydoc, page.ydocState);
-    const liveBlocks = blockNote.yDocToBlocks(ydoc, 'document-store');
-    const liveMarkdown = await blockNote.blocksToMarkdownLossy(liveBlocks);
-    const liveTitle = ydoc.getMap('meta').get('title')?.toString() || doc.title;
+    // The console's page chrome only needs the metadata. Its editor gets the
+    // live content over the collab socket, so `?meta=1` skips converting the
+    // whole page to blocks and Markdown (a large page was hundreds of KB).
+    let title = doc.title;
+    let liveMarkdown = '';
+    let liveBlocks: ReturnType<typeof blockNote.yDocToBlocks> = [];
+    if (!opts.meta) {
+      const ydoc = new Y.Doc();
+      Y.applyUpdate(ydoc, page.ydocState);
+      liveBlocks = blockNote.yDocToBlocks(ydoc, 'document-store');
+      liveMarkdown = await blockNote.blocksToMarkdownLossy(liveBlocks);
+      title = ydoc.getMap('meta').get('title')?.toString() || doc.title;
+    }
 
     return {
       id: doc.id,
       spaceId: doc.spaceId,
       parentId: doc.parentId,
-      title: liveTitle,
+      title,
       slug: page.slug,
       icon: doc.icon,
       badge,
@@ -289,7 +303,7 @@ export async function getPageDetails(actor: Actor, pageId: string): Promise<Page
       archivedAt: doc.archivedAt?.toISOString() ?? null,
       latestVersion,
       indexedVersion,
-      versions: pageVersions,
+      versions: opts.meta ? [] : pageVersions,
       blockActivity: activity.map((a) => ({
         blockId: a.blockId,
         actorType: a.actorType,

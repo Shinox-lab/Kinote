@@ -292,7 +292,7 @@ export const api = {
 
   // Pages
   createPage: (body: CreatePageRequest) => request('/api/v1/pages', PageSummarySchema, send('POST', body)),
-  getPage: (id: string) => request(`/api/v1/pages/${e(id)}`, PageDetailsSchema),
+  getPage: (id: string) => request(`/api/v1/pages/${e(id)}?meta=1`, PageDetailsSchema),
 
   // Collections and their fields
   createCollection: (pageId: string) => request(`/api/v1/pages/${e(pageId)}/collection`, CollectionSchema, send('POST')),
