@@ -6,6 +6,9 @@ import { and, eq } from 'drizzle-orm';
 import { withTenantTx, memberships, agents } from '@kinote/db';
 import { createTestDb, type TestDb } from '@kinote/db/testing';
 import { buildApiServer, type ApiServerOptions } from '../../src/server.js';
+import { clearActorCache, invalidateActor } from '../../src/auth/actor.js';
+import { clearSessionCache } from '../../src/auth/sessions.js';
+import { clearTreeCache } from '../../src/treeCache.js';
 
 /**
  * Gives the enclosing describe (or file) its own in-memory database: created
@@ -20,6 +23,9 @@ export function useTestDb(): void {
   });
   beforeEach(async () => {
     await testDb!.reset();
+    clearSessionCache();
+    clearActorCache();
+    clearTreeCache();
   });
 }
 
@@ -157,4 +163,5 @@ export async function setMemberRole(
       .where(and(eq(memberships.tenantId, tenantId), eq(memberships.userId, userId)))
       .then(() => undefined)
   );
+  invalidateActor(tenantId, userId);
 }

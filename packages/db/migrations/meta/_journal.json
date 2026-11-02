@@ -260,6 +260,13 @@
       "when": 1793460506002,
       "tag": "0036_demo_workspace",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1793620297000,
+      "tag": "0037_latest_version_pointer",
+      "breakpoints": true
     }
   ]
 }

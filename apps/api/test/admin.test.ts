@@ -150,6 +150,19 @@ describe('members, groups and grants administration', () => {
       assert.equal(res.json().role, 'owner');
     });
 
+    test('a promoted member can use the new role immediately', async () => {
+      const w = await world();
+      // Resolve and cache the member actor before the change.
+      assert.equal((await call('GET', '/api/v1/spaces', w.member.headers)).statusCode, 200);
+      expectError(await call('GET', '/api/v1/members', w.member.headers), 403, 'forbidden');
+
+      const promote = await call('PATCH', `/api/v1/members/${w.member.userId}`, w.headers, {
+        role: 'admin',
+      });
+      assert.equal(promote.statusCode, 200, promote.body);
+      assert.equal((await call('GET', '/api/v1/members', w.member.headers)).statusCode, 200);
+    });
+
     test('an admin cannot promote anyone to owner and cannot touch an owner', async () => {
       const w = await world();
       expectError(

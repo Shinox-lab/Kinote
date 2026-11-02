@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useMemo, useRef } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouteContext } from '@tanstack/react-router';
 import { api } from './api.js';
@@ -7,6 +7,9 @@ import { loadSession } from './session.js';
 import { capturesBusy } from './capture.js';
 import { pagePoll } from './wiki.js';
 import { createTitleBatcher } from './links.js';
+import { treePollInterval } from './poll.js';
+
+export { TREE_POLL_MS } from './poll.js';
 
 // Query keys and hooks. Every key of a workspace starts with its tenant id, so
 // switching workspaces never shows another workspace's cached answers.
@@ -50,9 +53,6 @@ export function useGrants(spaceId: string) {
   return useQuery({ queryKey: useTenantKey('grants', spaceId), queryFn: () => api.listGrants(spaceId) });
 }
 
-/** How often the tree of the space being read asks again (its status dots move under the page). */
-export const TREE_POLL_MS = 30_000;
-
 /**
  * A space's live documents (the tree), newest server state each time the key is
  * invalidated. The sidebar passes `enabled` (only once a space is opened),
@@ -63,12 +63,14 @@ export function useSpaceTree(
   spaceId: string | undefined,
   opts: { enabled?: boolean; refetchOnFocus?: boolean; poll?: boolean } = {}
 ) {
+  // One jitter per mounted tab, so the poll does not move on every render.
+  const pollMs = useMemo(() => treePollInterval(), []);
   return useQuery({
     queryKey: useTenantKey('tree', spaceId),
     queryFn: () => api.spaceTree(spaceId!),
     enabled: spaceId !== undefined && (opts.enabled ?? true),
     refetchOnWindowFocus: opts.refetchOnFocus ?? false,
-    refetchInterval: opts.poll ? TREE_POLL_MS : false,
+    refetchInterval: opts.poll ? pollMs : false,
   });
 }
 

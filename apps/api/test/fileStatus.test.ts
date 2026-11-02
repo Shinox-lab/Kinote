@@ -6,6 +6,7 @@ import { InMemoryObjectStorage } from '@kinote/shared';
 import { FakeExtractor } from '@kinote/core';
 import { runPendingJobsForTenant } from '../../worker/src/runner.js';
 import { computeFileBadge, fileAttention, type FileBadgeInput } from '../src/pages/badge.js';
+import { clearTreeCache } from '../src/treeCache.js';
 import { buildTestApp, bootstrapTenant, signUpMember, useTestDb } from './support/testkit.js';
 import { uploadRequest } from './support/multipart.js';
 
@@ -100,6 +101,9 @@ describe('file status in the tree, the review queue and updates', () => {
     assert.equal((await nodeFor(c.author.headers, c.open.id, indexed.document.id)).attention, null);
 
     await withTenantTx(c.tenant.id, (tx) => tx.update(versions).set({ status: 'failed' }).where(eq(versions.id, indexed.version.id)));
+    // A worker writes this status in another process; the tree cache only sees
+    // it after its TTL, so clear it here to test the fresh read.
+    clearTreeCache();
     assert.equal((await nodeFor(c.author.headers, c.open.id, indexed.document.id)).attention, 'failed');
 
     const archived = await app.inject({ method: 'POST', url: `/api/v1/files/${indexed.document.id}/archive`, headers: c.ownerHeaders });

@@ -37,6 +37,7 @@ import {
 } from '@kinote/contracts';
 import { sha256Hex } from '@kinote/shared';
 import { fileAttention, pageAttention } from '../pages/badge.js';
+import { cacheTree, getCachedTree } from '../treeCache.js';
 import {
   requireSpaceRole,
   getReadableSpaceIds,
@@ -264,9 +265,20 @@ async function listTreeNodes(
       allowArchived: true,
     });
 
-    // One query for the whole space: each page's latest version (highest
-    // number, as the page badge reads it), its indexed version and its live
-    // columns come along, so no page costs a query of its own.
+    // Authorization runs before the cache: a revoked viewer never gets a
+    // cached tree. Non-admins see only their own documents in the Inbox, so
+    // that visibility is part of the key; every other tree is shared.
+    const visibility =
+      space.kind === 'inbox' && !isTenantAdmin(actor)
+        ? `${actor.principalType}:${actor.principalId}`
+        : '*';
+    const cacheKey = `${actor.tenantId}:${space.id}:${archived ? 'archived' : 'live'}:${visibility}`;
+    const cached = getCachedTree(cacheKey);
+    if (cached) return cached;
+
+    // One query for the whole space: each page's latest version (the pointer
+    // every snapshot updates), its indexed version and its live columns come
+    // along, so no page costs a query of its own.
     const latest = alias(versions, 'latest_version');
     const indexed = alias(versions, 'indexed_version');
     const rows = await tx
@@ -294,11 +306,7 @@ async function listTreeNodes(
         latest,
         and(
           eq(latest.tenantId, documents.tenantId),
-          eq(latest.documentId, documents.id),
-          sql`${latest.number} = (
-            select max(v.number) from ${versions} v
-            where v.tenant_id = ${documents.tenantId} and v.document_id = ${documents.id}
-          )`
+          eq(latest.id, documents.latestVersionId)
         )
       )
       .leftJoin(
@@ -328,7 +336,7 @@ async function listTreeNodes(
       );
 
     const now = new Date();
-    return {
+    const response: TreeResponse = {
       nodes: rows.map((r) => ({
         id: r.id,
         parentId: r.parentId,
@@ -365,6 +373,8 @@ async function listTreeNodes(
                 ),
       })),
     };
+    cacheTree(cacheKey, response);
+    return response;
   });
 }
 

@@ -202,9 +202,18 @@ import {
 } from './routes/collections.js';
 import { authRoutes, type AuthRateLimit } from './routes/auth.js';
 import { demoSeedRunning, demoSeedStatus, startDemoSeed } from './routes/demoSeed.js';
-import { requireSession, resolveActor, resolveSourceActor, type AuthSession, type SourceActor } from './auth/actor.js';
+import {
+  invalidateActor,
+  invalidateTenantActors,
+  requireSession,
+  resolveActor,
+  resolveSourceActor,
+  type AuthSession,
+  type SourceActor,
+} from './auth/actor.js';
 import { registerErrorHandler } from './errors.js';
 import { parseReply } from './reply.js';
+import { invalidateTreeCache } from './treeCache.js';
 
 import { answerPassages } from './search/ask.js';
 import { getCollabTokenSecret, type CollabClient } from '@kinote/shared';
@@ -406,6 +415,8 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
   app.patch('/api/v1/spaces/:id', async (req, reply) => {
     const actor = actorOf(req);
     const res = await updateSpaceSettings(actor, (req.params as any).id, req.body);
+    // Review/quiet settings feed the tree's attention dots.
+    invalidateTreeCache(actor.tenantId, res.id);
     return reply.send(parseReply(SpaceSchema, res));
   });
 
@@ -420,7 +431,9 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
   });
 
   app.post('/api/v1/spaces/:id/archive', async (req, reply) => {
-    const res = await archiveSpace(actorOf(req), (req.params as any).id);
+    const actor = actorOf(req);
+    const res = await archiveSpace(actor, (req.params as any).id);
+    invalidateTreeCache(actor.tenantId, res.id);
     return reply.send(parseReply(SpaceResponseSchema, res));
   });
 
@@ -451,6 +464,7 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
   app.patch('/api/v1/members/:userId', async (req, reply) => {
     const actor = actorOf(req);
     const res = await changeMemberRole(actor, (req.params as any).userId, req.body);
+    invalidateActor(actor.tenantId, res.userId);
     await revokeLiveSessions(req, { tenantId: actor.tenantId, userId: res.userId });
     return reply.send(parseReply(MemberSchema, res));
   });
@@ -459,6 +473,7 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
   app.delete('/api/v1/members/me', async (req, reply) => {
     const actor = actorOf(req);
     await leaveWorkspace(actor);
+    invalidateActor(actor.tenantId, actor.principalId);
     await revokeLiveSessions(req, { tenantId: actor.tenantId, userId: actor.principalId.toLowerCase() });
     return reply.status(204).send();
   });
@@ -467,6 +482,7 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
     const actor = actorOf(req);
     const userId = String((req.params as any).userId).toLowerCase();
     await removeMember(actor, userId);
+    invalidateActor(actor.tenantId, userId);
     await revokeLiveSessions(req, { tenantId: actor.tenantId, userId });
     return reply.status(204).send();
   });
@@ -476,6 +492,8 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
     const actor = actorOf(req);
     if (demoSeedRunning(actor.tenantId)) throw new AppError('demo_seed_running');
     await deleteWorkspace(actor);
+    invalidateTenantActors(actor.tenantId);
+    invalidateTreeCache(actor.tenantId);
     await revokeLiveSessions(req, { tenantId: actor.tenantId });
     return reply.status(204).send();
   });
@@ -489,7 +507,14 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
   });
   app.post('/api/v1/demo-seed/reset', async (req, reply) => {
     const actor = actorOf(req);
-    await startDemoSeed(app, req, actor, { reset: true, afterWipe: () => revokeLiveSessions(req, { tenantId: actor.tenantId }) });
+    await startDemoSeed(app, req, actor, {
+      reset: true,
+      afterWipe: () => {
+        invalidateTenantActors(actor.tenantId);
+        invalidateTreeCache(actor.tenantId);
+        return revokeLiveSessions(req, { tenantId: actor.tenantId });
+      },
+    });
     return reply.status(202).send(parseReply(DemoSeedStatusSchema, await demoSeedStatus(actorOf(req))));
   });
 
@@ -549,6 +574,7 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
   app.post('/api/v1/pages', async (req, reply) => {
     const actor = actorOf(req);
     const res = await createPage(actor, req.body);
+    invalidateTreeCache(actor.tenantId, res.spaceId);
     return reply.status(201).send(parseReply(PageSummarySchema, res));
   });
 
@@ -619,28 +645,35 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
   app.post('/api/v1/pages/:id/move', async (req, reply) => {
     const actor = actorOf(req);
     const res = await movePage(actor, (req.params as any).id, req.body);
+    invalidateTreeCache(actor.tenantId);
     return reply.send(parseReply(DocumentSummarySchema, res));
   });
 
   app.patch('/api/v1/pages/:id', async (req, reply) => {
-    const res = await renamePage(actorOf(req), (req.params as any).id, req.body, opts.collab);
+    const actor = actorOf(req);
+    const res = await renamePage(actor, (req.params as any).id, req.body, opts.collab);
+    invalidateTreeCache(actor.tenantId, res.spaceId);
     return reply.send(parseReply(DocumentSummarySchema, res));
   });
 
   app.post('/api/v1/pages/:id/archive', async (req, reply) => {
     const actor = actorOf(req);
     const res = await archivePage(actor, (req.params as any).id);
+    invalidateTreeCache(actor.tenantId, res.spaceId);
     return reply.send(parseReply(DocumentSummarySchema, res));
   });
 
   app.post('/api/v1/pages/:id/restore', async (req, reply) => {
-    const res = await restorePage(actorOf(req), (req.params as any).id);
+    const actor = actorOf(req);
+    const res = await restorePage(actor, (req.params as any).id);
+    invalidateTreeCache(actor.tenantId, res.spaceId);
     return reply.send(parseReply(DocumentSummarySchema, res));
   });
 
   app.post('/api/v1/pages/:id/withdraw', async (req, reply) => {
     const actor = actorOf(req);
     const res = await withdrawPage(actor, (req.params as any).id);
+    invalidateTreeCache(actor.tenantId, res.spaceId);
     return reply.send(parseReply(DocumentSummarySchema, res));
   });
 
@@ -649,6 +682,7 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
     const deps = fileDeps();
     const upload = await readMultipartUpload(req);
     const out = await uploadFile(actor, upload, deps);
+    invalidateTreeCache(actor.tenantId, out.response.document.spaceId);
     return reply
       .status(out.status === 'created' ? 201 : 200)
       .send(parseReply(UploadFileResponseSchema, out.response));
@@ -672,7 +706,9 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
   });
 
   app.post('/api/v1/files/:id/dismiss-removal', async (req, reply) => {
-    const res = await dismissRemoval(actorOf(req), (req.params as any).id);
+    const actor = actorOf(req);
+    const res = await dismissRemoval(actor, (req.params as any).id);
+    invalidateTreeCache(actor.tenantId, res.spaceId);
     return reply.send(parseReply(DocumentSummarySchema, res));
   });
 
@@ -681,6 +717,7 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
     const deps = fileDeps();
     const upload = await readMultipartUpload(req);
     const out = await replaceFile(actor, (req.params as any).id, upload.file, deps);
+    invalidateTreeCache(actor.tenantId, out.response.document.spaceId);
     return reply
       .status(out.status === 'created' ? 201 : 200)
       .send(parseReply(UploadFileResponseSchema, out.response));
@@ -733,27 +770,37 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
   });
 
   app.post('/api/v1/files/:id/move', async (req, reply) => {
-    const res = await moveFile(actorOf(req), (req.params as any).id, req.body);
+    const actor = actorOf(req);
+    const res = await moveFile(actor, (req.params as any).id, req.body);
+    invalidateTreeCache(actor.tenantId);
     return reply.send(parseReply(DocumentSummarySchema, res));
   });
 
   app.patch('/api/v1/files/:id', async (req, reply) => {
-    const res = await renameFile(actorOf(req), (req.params as any).id, req.body);
+    const actor = actorOf(req);
+    const res = await renameFile(actor, (req.params as any).id, req.body);
+    invalidateTreeCache(actor.tenantId, res.spaceId);
     return reply.send(parseReply(DocumentSummarySchema, res));
   });
 
   app.post('/api/v1/files/:id/archive', async (req, reply) => {
-    const res = await archiveFile(actorOf(req), (req.params as any).id);
+    const actor = actorOf(req);
+    const res = await archiveFile(actor, (req.params as any).id);
+    invalidateTreeCache(actor.tenantId, res.spaceId);
     return reply.send(parseReply(DocumentSummarySchema, res));
   });
 
   app.post('/api/v1/files/:id/restore', async (req, reply) => {
-    const res = await restoreFile(actorOf(req), (req.params as any).id);
+    const actor = actorOf(req);
+    const res = await restoreFile(actor, (req.params as any).id);
+    invalidateTreeCache(actor.tenantId, res.spaceId);
     return reply.send(parseReply(DocumentSummarySchema, res));
   });
 
   app.post('/api/v1/files/:id/withdraw', async (req, reply) => {
-    const res = await withdrawFile(actorOf(req), (req.params as any).id);
+    const actor = actorOf(req);
+    const res = await withdrawFile(actor, (req.params as any).id);
+    invalidateTreeCache(actor.tenantId, res.spaceId);
     return reply.send(parseReply(DocumentSummarySchema, res));
   });
 

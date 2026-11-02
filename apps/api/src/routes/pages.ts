@@ -217,6 +217,42 @@ export async function createPage(actor: Actor, input: unknown): Promise<PageSumm
   });
 }
 
+/**
+ * The versions the page chrome needs: the latest one and, when different, the
+ * indexed one. The full list is only for the version history panel.
+ */
+async function metaVersionSummaries(
+  tx: DbTransaction,
+  tenantId: string,
+  pageId: string,
+  indexedVersionId: string | null
+): Promise<VersionSummary[]> {
+  const [latest] = await tx
+    .select(versionSummaryColumns)
+    .from(versions)
+    .where(and(eq(versions.tenantId, tenantId), eq(versions.documentId, pageId)))
+    .orderBy(desc(versions.number))
+    .limit(1);
+  if (!latest) return [];
+
+  const summaries = [toVersionSummary(latest)];
+  if (indexedVersionId && indexedVersionId !== latest.id) {
+    const [indexed] = await tx
+      .select(versionSummaryColumns)
+      .from(versions)
+      .where(
+        and(
+          eq(versions.tenantId, tenantId),
+          eq(versions.documentId, pageId),
+          eq(versions.id, indexedVersionId)
+        )
+      )
+      .limit(1);
+    if (indexed) summaries.push(toVersionSummary(indexed));
+  }
+  return summaries;
+}
+
 export async function getPageDetails(
   actor: Actor,
   pageId: string,
@@ -243,13 +279,15 @@ export async function getPageDetails(
       .from(pages)
       .where(and(eq(pages.tenantId, actor.tenantId), eq(pages.documentId, pageId)));
 
-    const pageVersions = (
-      await tx
-        .select(versionSummaryColumns)
-        .from(versions)
-        .where(and(eq(versions.tenantId, actor.tenantId), eq(versions.documentId, pageId)))
-        .orderBy(desc(versions.number))
-    ).map(toVersionSummary);
+    const pageVersions = opts.meta
+      ? await metaVersionSummaries(tx, actor.tenantId, pageId, doc.indexedVersionId)
+      : (
+          await tx
+            .select(versionSummaryColumns)
+            .from(versions)
+            .where(and(eq(versions.tenantId, actor.tenantId), eq(versions.documentId, pageId)))
+            .orderBy(desc(versions.number))
+        ).map(toVersionSummary);
 
     const latestVersion = pageVersions[0] ?? null;
     const indexedVersion = doc.indexedVersionId

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import * as Y from 'yjs';
-import { and, asc, eq, ilike, isNull, sql } from 'drizzle-orm';
+import { and, asc, eq, ilike, inArray, isNull, sql } from 'drizzle-orm';
 import {
   collectionFields,
   collections,
@@ -86,16 +86,38 @@ async function collectionOf(tx: DbTransaction, tenantId: string, doc: DocumentRo
 
 /** A collection for page details: the page itself (when it is one) and the one it is a row of. */
 export async function pageCollectionInfo(tx: DbTransaction, tenantId: string, doc: DocumentRow) {
-  const collection = (await isCollection(tx, tenantId, doc.id)) ? await collectionOf(tx, tenantId, doc) : null;
-  const row = await rowCollectionOf(tx, tenantId, doc.id);
-  let rowOf: Collection | null = null;
-  if (row) {
-    const [parent] = await tx
-      .select({ title: documents.title })
-      .from(documents)
-      .where(and(eq(documents.tenantId, tenantId), eq(documents.id, row.collectionId)));
-    rowOf = { id: row.collectionId, title: parent?.title ?? '', fields: row.fields };
-  }
+  // One lookup covers both the page and its parent; a plain page does no more work.
+  const ids = doc.parentId ? [doc.id, doc.parentId] : [doc.id];
+  const live = new Map(
+    (
+      await tx
+        .select({ id: collections.documentId, title: documents.title })
+        .from(collections)
+        .innerJoin(
+          documents,
+          and(eq(documents.tenantId, collections.tenantId), eq(documents.id, collections.documentId))
+        )
+        .where(
+          and(
+            eq(collections.tenantId, tenantId),
+            inArray(collections.documentId, ids),
+            isNull(documents.archivedAt)
+          )
+        )
+    ).map((row) => [row.id, row.title])
+  );
+
+  const collection = live.has(doc.id)
+    ? { id: doc.id, title: doc.title, fields: await collectionFieldDefs(tx, tenantId, doc.id) }
+    : null;
+  const rowOf =
+    doc.parentId && live.has(doc.parentId)
+      ? {
+          id: doc.parentId,
+          title: live.get(doc.parentId)!,
+          fields: await collectionFieldDefs(tx, tenantId, doc.parentId),
+        }
+      : null;
   return { collection, rowOf };
 }
 

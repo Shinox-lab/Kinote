@@ -25,6 +25,10 @@ COPY packages/shared/package.json packages/shared/
 RUN pnpm install --frozen-lockfile
 
 COPY . .
+# Host checkouts can use a restrictive umask (0600/0700); the runtime user
+# must still be able to read the source.
+RUN chmod -R a+rX apps packages \
+ && chmod a+r package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc tsconfig*.json
 ENV NODE_ENV=production
 USER node
 

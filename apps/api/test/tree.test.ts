@@ -175,6 +175,20 @@ describe('tree, archived list, space archive, page restore', () => {
       assert.equal(list[0].slug, 'gone');
     });
 
+    test('creating and archiving a page invalidates a cached tree', async () => {
+      const keep = await createPage(ctx.editor.headers, ctx.docs.id, 'keep', 'Keep');
+      assert.deepEqual((await tree(ctx.viewer.headers, ctx.docs.id)).map((n) => n.id), [keep]);
+
+      const added = await createPage(ctx.editor.headers, ctx.docs.id, 'added', 'Added');
+      assert.deepEqual(
+        (await tree(ctx.viewer.headers, ctx.docs.id)).map((n) => n.id).sort(),
+        [keep, added].sort()
+      );
+
+      assert.equal((await archivePage(ctx.spaceAdmin.headers, keep)).statusCode, 200);
+      assert.deepEqual((await tree(ctx.viewer.headers, ctx.docs.id)).map((n) => n.id), [added]);
+    });
+
     test('the archived list is ordered by title', async () => {
       const b = await createPage(ctx.editor.headers, ctx.docs.id, 'b', 'Bravo');
       const a = await createPage(ctx.editor.headers, ctx.docs.id, 'a', 'Alpha');
@@ -201,20 +215,27 @@ describe('tree, archived list, space archive, page restore', () => {
 
     describe('attention', () => {
       async function addVersion(pageId: string, number: number, status: 'failed' | 'pending_review' | 'indexed') {
-        await withTenantTx(ctx.tenant.id, (tx) =>
-          tx.insert(versions).values({
-            tenantId: ctx.tenant.id,
-            documentId: pageId,
-            number,
-            title: 'T',
-            status,
-            contentHash: `hash-${pageId}-${number}`,
-            reason: 'quiet',
-            createdByType: 'user',
-            createdBy: ctx.editor.userId,
-            markdown: 'x',
-          })
-        );
+        await withTenantTx(ctx.tenant.id, async (tx) => {
+          const [version] = await tx
+            .insert(versions)
+            .values({
+              tenantId: ctx.tenant.id,
+              documentId: pageId,
+              number,
+              title: 'T',
+              status,
+              contentHash: `hash-${pageId}-${number}`,
+              reason: 'quiet',
+              createdByType: 'user',
+              createdBy: ctx.editor.userId,
+              markdown: 'x',
+            })
+            .returning({ id: versions.id });
+          await tx
+            .update(documents)
+            .set({ latestVersionId: version.id })
+            .where(and(eq(documents.tenantId, ctx.tenant.id), eq(documents.id, pageId)));
+        });
       }
 
       async function setLive(pageId: string, changed: boolean, updatedAt: Date) {

@@ -3,10 +3,36 @@ import { and, eq, isNull, lt, or } from 'drizzle-orm';
 import { withTenantTx, memberships, sources, sourceTokens, tenants } from '@kinote/db';
 import { AppError } from '@kinote/contracts';
 import type { Actor } from '@kinote/core';
+import { TtlCache } from '../cache.js';
 import { resolveSession } from './sessions.js';
 import { parseSourceToken } from './sourceTokens.js';
 
 export type AuthMode = 'public' | 'session' | 'tenant' | 'source';
+
+/**
+ * Positive membership lookups only. A role change invalidates this process's
+ * entry; another process may use the old role for at most this window.
+ */
+const ACTOR_CACHE_TTL_MS = 5_000;
+const actorCache = new TtlCache<NonNullable<Actor['tenantRole']>>({
+  ttlMs: ACTOR_CACHE_TTL_MS,
+  maxEntries: 10_000,
+});
+
+/** Drops one user's cached tenant role after a membership change. */
+export function invalidateActor(tenantId: string, userId: string): void {
+  actorCache.delete(`${tenantId}:${userId.toLowerCase()}`);
+}
+
+/** Drops every cached role for a tenant (workspace deletion or demo reset). */
+export function invalidateTenantActors(tenantId: string): void {
+  actorCache.deletePrefix(`${tenantId}:`);
+}
+
+/** Test isolation: a new database must not be served entries from the old one. */
+export function clearActorCache(): void {
+  actorCache.clear();
+}
 
 export interface AuthSession {
   userId: string;
@@ -71,6 +97,17 @@ export async function resolveActor(req: FastifyRequest): Promise<Actor> {
   }
   // Canonical form everywhere downstream (queries, audit rows, comparisons).
   const tenantId = rawTenantId.toLowerCase();
+  const cacheKey = `${tenantId}:${session.userId.toLowerCase()}`;
+  const cachedRole = actorCache.get(cacheKey);
+  if (cachedRole) {
+    return {
+      tenantId,
+      principalType: 'user',
+      principalId: session.userId,
+      tenantRole: cachedRole,
+    };
+  }
+
   const membership = await withTenantTx(tenantId, async (tx) => {
     const [row] = await tx
       .select({ role: memberships.role })
@@ -87,6 +124,7 @@ export async function resolveActor(req: FastifyRequest): Promise<Actor> {
     return row ?? null;
   });
   if (!membership) throw new AppError('tenant_not_found');
+  actorCache.set(cacheKey, membership.role);
   return {
     tenantId,
     principalType: 'user',

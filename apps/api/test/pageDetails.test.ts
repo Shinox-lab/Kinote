@@ -122,4 +122,46 @@ describe('GET /api/v1/pages/:id version payload', () => {
     assert.equal(body.latestVersion, null);
     assert.equal(body.indexedVersion, null);
   });
+
+  test('?meta=1 keeps the latest and indexed version badges but omits the list', async () => {
+    const { tenant, headers } = await bootstrapTenant(app, { name: 'Meta Versions Co', slug: 'meta-versions-co' });
+    const spaceRes = await app.inject({
+      method: 'POST',
+      url: '/api/v1/spaces',
+      headers,
+      payload: { name: 'open', slug: 'open', review_required: false },
+    });
+    assert.equal(spaceRes.statusCode, 201, spaceRes.body);
+    const spaceId = spaceRes.json().id as string;
+
+    const pageRes = await app.inject({
+      method: 'POST',
+      url: '/api/v1/pages',
+      headers,
+      payload: { space_id: spaceId, title: 'Meta versions', slug: 'meta-versions', markdown: 'Version one.' },
+    });
+    assert.equal(pageRes.statusCode, 201, pageRes.body);
+    const pageId = pageRes.json().id as string;
+
+    const s1 = await app.inject({ method: 'POST', url: `/api/v1/pages/${pageId}/snapshot`, headers });
+    assert.equal(s1.statusCode, 201, s1.body);
+    await runPendingJobsForTenant(tenant.id);
+
+    const state = await encodePageYDoc('Meta versions', 'Version two.');
+    await withTenantTx(tenant.id, (tx) =>
+      tx
+        .update(pages)
+        .set({ ydocState: state, liveChangedSinceSnapshot: true })
+        .where(and(eq(pages.tenantId, tenant.id), eq(pages.documentId, pageId)))
+    );
+    const s2 = await app.inject({ method: 'POST', url: `/api/v1/pages/${pageId}/snapshot`, headers });
+    assert.equal(s2.statusCode, 201, s2.body);
+
+    const res = await app.inject({ method: 'GET', url: `/api/v1/pages/${pageId}?meta=1`, headers });
+    assert.equal(res.statusCode, 200, res.body);
+    const body = res.json();
+    assert.deepEqual(body.versions, []);
+    assert.equal(body.latestVersion.number, 2);
+    assert.equal(body.indexedVersion.number, 1);
+  });
 });

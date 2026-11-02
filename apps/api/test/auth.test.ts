@@ -9,7 +9,7 @@ import {
   ERROR_SENTENCES,
 } from '@kinote/contracts';
 import { buildApiServer } from '../src/server.js';
-import { resolveSession } from '../src/auth/sessions.js';
+import { clearSessionCache, resolveSession } from '../src/auth/sessions.js';
 import {
   TEST_PASSWORD,
   addMember,
@@ -152,6 +152,7 @@ describe('sessions and the database-derived actor', () => {
       .update(sessions)
       .set({ expiresAt: new Date(Date.now() - 1000) })
       .where(eq(sessions.tokenHash, sha256Hex(other.token)));
+    clearSessionCache();
     const expired = await app.inject({ method: 'GET', url: '/api/v1/me', headers: asUser(other) });
     assert.equal(expired.statusCode, 401);
     assert.equal(expired.json().error, 'unauthenticated');

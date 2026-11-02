@@ -28,7 +28,8 @@
     "e2e:local": "E2E_MODE=local playwright test",
     "start:api": "tsx apps/api/src/main.ts",
     "start:collab": "tsx apps/collab/src/main.ts",
-    "start:worker": "tsx apps/worker/src/main.ts"
+    "start:worker": "tsx apps/worker/src/main.ts",
+    "load:collab": "tsx apps/collab/load/run.ts"
   },
   "engines": {
     "node": ">=22"

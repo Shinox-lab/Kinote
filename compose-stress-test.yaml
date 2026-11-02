@@ -1,0 +1,102 @@
+# Resource-limited stack for the live-editing load harness.
+#
+#   docker compose -p kinote-stress -f compose-stress-test.yaml up -d --build
+#
+# Defaults to 1 CPU and 256 MiB per container. Both are configurable:
+#
+#   STRESS_CPUS=2 STRESS_MEMORY=512M ...       # every service
+#   POSTGRES_MEMORY=512M API_MEMORY=1G ...     # one service
+#
+# These are per-container limits, not a total host budget. To reduce the total
+# footprint, run the lean stack (no worker or extractor):
+#
+#   docker compose -p kinote-stress -f compose-stress-test.yaml up -d --build \
+#     postgres minio migrate api collab gridcraft web
+#
+# Postgres at 256M is tight (shared_buffers alone is 128M); raise it with
+# POSTGRES_MEMORY=512M when the database is the component under test. The
+# Docling extractor needs roughly 2G; set EXTRACTOR_MEMORY=2G if you start it.
+name: kinote
+
+include:
+  - path: docker-compose.yml
+
+x-stress-limits: &stress-limits
+  deploy:
+    resources:
+      limits:
+        cpus: "${STRESS_CPUS:-1}"
+        memory: "${STRESS_MEMORY:-256M}"
+
+services:
+  postgres:
+    <<: *stress-limits
+    deploy:
+      resources:
+        limits:
+          cpus: "${POSTGRES_CPUS:-${STRESS_CPUS:-1}}"
+          memory: "${POSTGRES_MEMORY:-${STRESS_MEMORY:-256M}}"
+
+  minio:
+    <<: *stress-limits
+    deploy:
+      resources:
+        limits:
+          cpus: "${MINIO_CPUS:-${STRESS_CPUS:-1}}"
+          memory: "${MINIO_MEMORY:-${STRESS_MEMORY:-256M}}"
+
+  migrate:
+    <<: *stress-limits
+    deploy:
+      resources:
+        limits:
+          cpus: "${MIGRATE_CPUS:-${STRESS_CPUS:-1}}"
+          memory: "${MIGRATE_MEMORY:-${STRESS_MEMORY:-256M}}"
+
+  api:
+    <<: *stress-limits
+    deploy:
+      resources:
+        limits:
+          cpus: "${API_CPUS:-${STRESS_CPUS:-1}}"
+          memory: "${API_MEMORY:-${STRESS_MEMORY:-256M}}"
+
+  collab:
+    <<: *stress-limits
+    deploy:
+      resources:
+        limits:
+          cpus: "${COLLAB_CPUS:-${STRESS_CPUS:-1}}"
+          memory: "${COLLAB_MEMORY:-${STRESS_MEMORY:-256M}}"
+
+  worker:
+    <<: *stress-limits
+    deploy:
+      resources:
+        limits:
+          cpus: "${WORKER_CPUS:-${STRESS_CPUS:-1}}"
+          memory: "${WORKER_MEMORY:-${STRESS_MEMORY:-256M}}"
+
+  extractor:
+    <<: *stress-limits
+    deploy:
+      resources:
+        limits:
+          cpus: "${EXTRACTOR_CPUS:-${STRESS_CPUS:-1}}"
+          memory: "${EXTRACTOR_MEMORY:-${STRESS_MEMORY:-256M}}"
+
+  gridcraft:
+    <<: *stress-limits
+    deploy:
+      resources:
+        limits:
+          cpus: "${GRIDCRAFT_CPUS:-${STRESS_CPUS:-1}}"
+          memory: "${GRIDCRAFT_MEMORY:-${STRESS_MEMORY:-256M}}"
+
+  web:
+    <<: *stress-limits
+    deploy:
+      resources:
+        limits:
+          cpus: "${WEB_CPUS:-${STRESS_CPUS:-1}}"
+          memory: "${WEB_MEMORY:-${STRESS_MEMORY:-256M}}"
