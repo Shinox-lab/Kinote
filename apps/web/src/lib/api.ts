@@ -97,7 +97,13 @@ import {
   type UpdatePageRequest,
   type UpdateSpaceSettings,
   type UpsertSpaceGrant,
+  AuthConfigSchema,
+  InvitationPreviewSchema,
+  SignUpPendingSchema,
+  type ChangePasswordRequest,
+  type PasswordResetConfirm,
 } from '@kinote/contracts';
+import { z } from 'zod';
 import { loadSession } from './session.js';
 
 // Typed client for the Kinote API: every reply is checked against its
@@ -242,9 +248,22 @@ const del: RequestInit = { method: 'DELETE' };
 /** One thin wrapper per route the console uses. */
 export const api = {
   // Auth
-  signUp: (body: SignUpRequest) => request('/api/v1/auth/sign-up', AuthResponseSchema, send('POST', body)),
+  /** A session, or (when the server verifies email) `{ checkEmail: true }`. */
+  signUp: (body: SignUpRequest) =>
+    request('/api/v1/auth/sign-up', z.union([AuthResponseSchema, SignUpPendingSchema]), send('POST', body)),
+  verifyEmail: (token: string) => request('/api/v1/auth/verify', AuthResponseSchema, send('POST', { token })),
+  resendVerification: () => request('/api/v1/auth/verify/resend', NO_CONTENT, send('POST')),
+  requestPasswordReset: (email: string) =>
+    request('/api/v1/auth/password-reset/request', NO_CONTENT, send('POST', { email })),
+  confirmPasswordReset: (body: PasswordResetConfirm) =>
+    request('/api/v1/auth/password-reset/confirm', AuthResponseSchema, send('POST', body)),
+  changePassword: (body: ChangePasswordRequest) => request('/api/v1/auth/password', NO_CONTENT, send('POST', body)),
+  signOutAll: () => request('/api/v1/auth/sign-out-all', NO_CONTENT, send('POST')),
   signIn: (body: SignInRequest) => request('/api/v1/auth/sign-in', AuthResponseSchema, send('POST', body)),
   signOut: () => request('/api/v1/auth/sign-out', NO_CONTENT, send('POST')),
+  authConfig: () => request('/api/v1/auth/config', AuthConfigSchema),
+  previewInvitation: (token: string) =>
+    request('/api/v1/auth/invitation', InvitationPreviewSchema, send('POST', { token })),
   me: () => request('/api/v1/me', MeResponseSchema),
   createTenant: (body: CreateTenantRequest) =>
     request('/api/v1/tenants', CreateTenantResponseSchema, send('POST', body)),

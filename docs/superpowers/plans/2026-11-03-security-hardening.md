@@ -209,23 +209,23 @@ deliberate, because it also stops tracking pixels and #6. Mention it in the rele
 `apps/api/src/routes/foundations.ts:637-680` (`acceptInvitation`), `packages/contracts/src/index.ts` (sign-up
 schema), web sign-up and accept-invite pages in `apps/web/src`.
 
-- [ ] `SIGNUP_MODE: auto | open | invite | closed` (default `auto`):
+- [x] `SIGNUP_MODE: auto | open | invite | closed` (default `auto`):
   - `auto`: sign-up is open while `users` has no row other than demo users, then behaves as `invite`.
   - `invite`: sign-up needs `invitation_token`.
   - `closed`: no sign-up. Accounts only come from the operator CLI (T11).
-- [ ] `POST /auth/sign-up` takes an optional `invitation_token`. With it, in one transaction:
+- [x] `POST /auth/sign-up` takes an optional `invitation_token`. With it, in one transaction:
   - check the invitation is pending and unexpired
   - create the user **with the invitation's email**, ignoring any email the client sent
   - set `email_verified_at = now()` (having the link counts as proof) and accept the invitation
   - return the session
-- [ ] The web accept-invite page offers "Create account" (name and password only, email shown read-only) or
+- [x] *(The sign-up page reads the token from the accept-invite redirect, shows the invited email read-only, and lands in the workspace; co-edit e2e covers it.)* The web accept-invite page offers "Create account" (name and password only, email shown read-only) or
   "Sign in". The sign-up page reads the mode from a public `GET /api/v1/auth/config` and hides itself when it's not
   open.
-- [ ] Startup warning when the mode is `open` and SMTP is not configured: anyone can register any email.
-- [ ] Enumeration: in invite mode the email comes from the invite, so nothing leaks. In open mode with SMTP (T10),
+- [x] Startup warning when the mode is `open` and SMTP is not configured: anyone can register any email.
+- [x] *(As planned. Without SMTP, open mode still answers 409 for a taken email.)* Enumeration: in invite mode the email comes from the invite, so nothing leaks. In open mode with SMTP (T10),
   return 202 "check your email" for both new and existing addresses. In open mode without SMTP, keep 409 and document
   that trade-off.
-- [ ] Tests:
+- [x] Tests:
   - `auto` allows the first sign-up and refuses the second without a token
   - an invite token signs up with the invite's email even if another email is posted
   - an expired or used token is refused
@@ -240,24 +240,24 @@ behaviour, set `SIGNUP_MODE=open`. Put this at the top of the release notes.
 `packages/db/src/schema/foundations.ts`, `apps/api/src/routes/auth.ts`, `apps/api/src/routes/foundations.ts`, web pages
 for verify and reset.
 
-- [ ] Settings: `SMTP_URL` (e.g. `smtps://user:pass@host:465`) and `MAIL_FROM`. When `SMTP_URL` is unset, everything
+- [x] Settings: `SMTP_URL` (e.g. `smtps://user:pass@host:465`) and `MAIL_FROM`. When `SMTP_URL` is unset, everything
   below is off.
-- [ ] Use `nodemailer` (pin the exact version).
-- [ ] Migration:
+- [x] *(nodemailer 10.3.1. PUBLIC_URL is required too, for the links.)* Use `nodemailer` (pin the exact version).
+- [x] Migration:
   - `users.email_verified_at timestamptz null`; backfill `now()` for existing users so nobody is locked out.
   - new table `email_tokens (token_hash text pk, user_id uuid, purpose text check (purpose in ('verify','reset')), expires_at, used_at)`
   - it's global with no RLS; add the grants
-- [ ] Tokens are 32 random bytes and stored as SHA-256. Verify tokens last 24 hours, reset tokens 1 hour, and each
+- [x] Tokens are 32 random bytes and stored as SHA-256. Verify tokens last 24 hours, reset tokens 1 hour, and each
   works once.
-- [ ] With SMTP on:
+- [x] With SMTP on:
   - sign-up (open mode) sends a verify link, and the account can sign in but can't accept invitations until verified
   - `acceptInvitation` adds an `email_verified_at IS NOT NULL` check, so an account signed up with someone else's
     email can't take their invitation
   - new endpoints: `POST /auth/verify`, `POST /auth/password-reset/request` (always 202) and
     `POST /auth/password-reset/confirm` (sets the password, revokes all sessions)
-  - creating an invitation can also email the link, if the admin ticks "Send email"
-- [ ] Rate-limit the reset request and verify resend through T6, per email and per IP.
-- [ ] Tests (with a fake transport): the verify flow; an unverified account can't accept an invite; a reset revokes
+  - *(not done: invitations still hand the admin the link to send)* creating an invitation can also email the link, if the admin ticks "Send email"
+- [x] Rate-limit the reset request and verify resend through T6, per email and per IP.
+- [x] Tests (with a fake transport): the verify flow; an unverified account can't accept an invite; a reset revokes
   sessions; a reset request for an unknown email gets the same 202 and sends nothing.
 
 ### T11. Password change and operator reset (#3)
@@ -265,14 +265,14 @@ for verify and reset.
 **Files:** `apps/api/src/routes/auth.ts`, `apps/api/src/auth/sessions.ts`, new `scripts/reset-password.ts` (or a
 `pnpm kinote` command), web account settings page.
 
-- [ ] `POST /auth/password` with `{ current_password, new_password }`. It checks the current password, sets the new
+- [x] `POST /auth/password` with `{ current_password, new_password }`. It checks the current password, sets the new
   one, revokes every other session of that user and clears the session cache.
-- [ ] Operator reset is a **CLI, not an admin route**. A tenant admin must not be able to reset a user who also
+- [x] *(`apps/api/src/cli/resetPassword.ts`, `pnpm reset-password <email>`.)* Operator reset is a **CLI, not an admin route**. A tenant admin must not be able to reset a user who also
   belongs to other tenants. The CLI `pnpm --filter @kinote/api reset-password <email>` prints a one-time reset link
   (a T10 `reset` token, which works without SMTP) and revokes the user's sessions.
-- [ ] Password policy: keep the minimum of 10. Reject the 10,000 most common passwords from a bundled list (no network
+- [ ] *(Not done: no common-password list is bundled yet. The minimum of 10 stays.)* Password policy: keep the minimum of 10. Reject the 10,000 most common passwords from a bundled list (no network
   call).
-- [ ] Tests: a password change keeps the current session and kills the others; the CLI link works once; a common
+- [x] Tests: a password change keeps the current session and kills the others; the CLI link works once; a common
   password is refused.
 
 ### T12. Sessions, source tokens and media links (#11)
@@ -281,23 +281,23 @@ for verify and reset.
 `packages/shared/src/mediaToken.ts`, `apps/api/src/routes/files.ts` (media route), `apps/api/src/logger.ts`,
 `apps/web/nginx.conf`, admin member-removal UI.
 
-- [ ] Sessions:
+- [x] Sessions:
   - TTL becomes 14 days, sliding: `resolveSession` extends `expires_at` to now + 14 days when under 7 days are left,
     so there is at most one write per session per week
   - add an absolute cap of 90 days from `created_at`
   - add `POST /auth/sign-out-all`, which revokes every session of the user
-  - add a "Sign out everywhere" button in account settings
-- [ ] Source tokens:
+  - *(a new /account page: change password, sign out everywhere)* add a "Sign out everywhere" button in account settings
+- [x] Source tokens:
   - when `expires_in_days` is omitted, default to 90 days; the allowed range is 1–365
   - existing tokens with no expiry are left alone, and the admin page shows a "never expires" warning on them
-  - when a member is removed, the admin sees the source tokens that member created and can revoke them in one click
-- [ ] Media links:
-  - add the user id to the claims; when a link is used, check the user still belongs to the tenant (one indexed query,
+  - *(not done: an offboarding view of a removed member's tokens)* when a member is removed, the admin sees the source tokens that member created and can revoke them in one click
+- [x] Media links:
+  - *(done, and stronger: each request re-runs the full read check, so losing a space grant also stops the link)* add the user id to the claims; when a link is used, check the user still belongs to the tenant (one indexed query,
     cached for 5 seconds like the actor cache)
   - the TTL stays at 15 minutes
-- [ ] Logging: redact the token from `/api/v1/media/*` URLs in the pino request serializer (`logger.ts`), and in nginx
+- [x] Logging: redact the token from `/api/v1/media/*` URLs in the pino request serializer (`logger.ts`), and in nginx
   with a `map $request_uri $loggable_uri` and a custom `log_format`.
-- [ ] Tests:
+- [x] Tests:
   - renewal happens only past the halfway point
   - the 90-day cap holds
   - sign-out-all kills the other sessions

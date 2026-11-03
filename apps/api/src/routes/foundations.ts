@@ -25,6 +25,8 @@ import {
   UpsertSpaceGrantSchema,
   InviteMemberRequestSchema,
   AcceptInvitationRequestSchema,
+  InvitationPreviewRequestSchema,
+  type InvitationPreview,
   AppError,
   type Space,
   type SpaceResponse,
@@ -641,61 +643,154 @@ function parseAcceptToken(token: string): { tenantId: string; secret: string } |
  */
 export async function acceptInvitation(
   userId: string,
-  input: unknown
+  input: unknown,
+  o: { requireVerifiedEmail?: boolean } = {}
 ): Promise<AcceptInvitationResponse> {
   const { token } = AcceptInvitationRequestSchema.parse(input);
   const invalid = () => new AppError('invitation_invalid');
   const parsedToken = parseAcceptToken(token);
   if (!parsedToken) throw invalid();
   const { tenantId, secret } = parsedToken;
+  if (o.requireVerifiedEmail) {
+    // An unconfirmed account may carry someone else's address: it cannot take their invitation.
+    const [user] = await getDb().select({ verifiedAt: users.emailVerifiedAt }).from(users).where(eq(users.id, userId));
+    if (!user?.verifiedAt) throw new AppError('email_unverified');
+  }
 
-  return withTenantTx(tenantId, async (tx) => {
-    // Claim the invitation atomically before anything else: only one
-    // concurrent accept can flip accepted_at from NULL. A failure below (wrong
-    // email) throws and rolls this claim back with the transaction, so a wrong
-    // user never consumes the token.
-    const [invitation] = await tx
-      .update(invitations)
-      .set({ acceptedAt: new Date() })
-      .where(
-        and(
-          eq(invitations.tenantId, tenantId),
-          eq(invitations.tokenHash, sha256Hex(secret)),
-          isNull(invitations.acceptedAt),
-          gt(invitations.expiresAt, new Date())
-        )
+  return withTenantTx(tenantId, (tx) => claimInvitation(tx, tenantId, secret, userId));
+}
+
+/**
+ * Claims a pending, unexpired invitation for `userId` inside `tx` (the tenant's
+ * transaction) and makes them a member; `invitation_invalid` when the token is
+ * not a pending invitation of that tenant, the user's email is not the invited
+ * one, or the tenant is gone. Every failure throws, so the caller's transaction
+ * rolls the claim back.
+ */
+async function claimInvitation(
+  tx: DbTransaction,
+  tenantId: string,
+  secret: string,
+  userId: string
+): Promise<AcceptInvitationResponse> {
+  const invalid = () => new AppError('invitation_invalid');
+  // Claim the invitation atomically before anything else: only one
+  // concurrent accept can flip accepted_at from NULL. A failure below (wrong
+  // email) throws and rolls this claim back with the transaction, so a wrong
+  // user never consumes the token.
+  const [invitation] = await tx
+    .update(invitations)
+    .set({ acceptedAt: new Date() })
+    .where(
+      and(
+        eq(invitations.tenantId, tenantId),
+        eq(invitations.tokenHash, sha256Hex(secret)),
+        isNull(invitations.acceptedAt),
+        gt(invitations.expiresAt, new Date())
       )
-      .returning();
-    if (!invitation) throw invalid();
+    )
+    .returning();
+  if (!invitation) throw invalid();
 
-    const [user] = await tx.select({ email: users.email }).from(users).where(eq(users.id, userId));
-    if (!user || user.email.toLowerCase() !== invitation.email.toLowerCase()) throw invalid();
+  const [user] = await tx.select({ email: users.email }).from(users).where(eq(users.id, userId));
+  if (!user || user.email.toLowerCase() !== invitation.email.toLowerCase()) throw invalid();
 
+  const [tenant] = await tx
+    .select({ id: tenants.id, name: tenants.name, slug: tenants.slug })
+    .from(tenants)
+    .where(and(eq(tenants.id, tenantId), isNull(tenants.deletedAt)));
+  if (!tenant) throw invalid();
+
+  await tx
+    .insert(memberships)
+    .values({ tenantId, userId, role: invitation.role })
+    .onConflictDoNothing({ target: [memberships.tenantId, memberships.userId] });
+  const [membership] = await tx
+    .select({ role: memberships.role })
+    .from(memberships)
+    .where(and(eq(memberships.tenantId, tenantId), eq(memberships.userId, userId)));
+
+  await writeAuditEvent(tx, {
+    tenantId,
+    type: 'member.joined',
+    actorType: 'user',
+    actorId: userId,
+    subjectType: 'invitation',
+    subjectId: invitation.id,
+    payload: { role: membership.role },
+  });
+
+  return { tenant, role: membership.role };
+}
+
+/** A pending, unexpired invitation by its accept token, or null. Read inside the tenant's transaction. */
+async function pendingInvitation(tx: DbTransaction, tenantId: string, secret: string) {
+  const [invitation] = await tx
+    .select()
+    .from(invitations)
+    .where(
+      and(
+        eq(invitations.tenantId, tenantId),
+        eq(invitations.tokenHash, sha256Hex(secret)),
+        isNull(invitations.acceptedAt),
+        gt(invitations.expiresAt, new Date())
+      )
+    );
+  return invitation ?? null;
+}
+
+/**
+ * What an invitation link shows before its holder signs up or signs in: the
+ * invited email and the workspace's name. Holding the link is what an
+ * invitation asks for, so it shows nothing the holder could not use anyway.
+ */
+export async function previewInvitation(input: unknown): Promise<InvitationPreview> {
+  const { token } = InvitationPreviewRequestSchema.parse(input);
+  const parsedToken = parseAcceptToken(token);
+  if (!parsedToken) throw new AppError('invitation_invalid');
+  const { tenantId, secret } = parsedToken;
+  return withTenantTx(tenantId, async (tx) => {
+    const invitation = await pendingInvitation(tx, tenantId, secret);
     const [tenant] = await tx
-      .select({ id: tenants.id, name: tenants.name, slug: tenants.slug })
+      .select({ name: tenants.name })
       .from(tenants)
       .where(and(eq(tenants.id, tenantId), isNull(tenants.deletedAt)));
-    if (!tenant) throw invalid();
+    if (!invitation || !tenant) throw new AppError('invitation_invalid');
+    return { email: invitation.email, tenantName: tenant.name };
+  });
+}
 
-    await tx
-      .insert(memberships)
-      .values({ tenantId, userId, role: invitation.role })
-      .onConflictDoNothing({ target: [memberships.tenantId, memberships.userId] });
-    const [membership] = await tx
-      .select({ role: memberships.role })
-      .from(memberships)
-      .where(and(eq(memberships.tenantId, tenantId), eq(memberships.userId, userId)));
-
-    await writeAuditEvent(tx, {
-      tenantId,
-      type: 'member.joined',
-      actorType: 'user',
-      actorId: userId,
-      subjectType: 'invitation',
-      subjectId: invitation.id,
-      payload: { role: membership.role },
-    });
-
-    return { tenant, role: membership.role };
+/**
+ * Creates an account from an invitation and joins its workspace in one
+ * transaction: the account's email is the invitation's (having the link is
+ * the proof the invitation reached its person), never one the client chose.
+ * `invitation_invalid` for a token that is not a pending invitation;
+ * `email_taken` when the invited email already has an account (sign in and
+ * accept instead).
+ */
+export async function signUpWithInvitation(input: {
+  token: string;
+  name: string;
+  passwordHash: string;
+}): Promise<{ user: { id: string; email: string; name: string }; joined: AcceptInvitationResponse }> {
+  const parsedToken = parseAcceptToken(input.token);
+  if (!parsedToken) throw new AppError('invitation_invalid');
+  const { tenantId, secret } = parsedToken;
+  return withTenantTx(tenantId, async (tx) => {
+    const invitation = await pendingInvitation(tx, tenantId, secret);
+    if (!invitation) throw new AppError('invitation_invalid');
+    // users is global (no RLS); a duplicate email maps to 409 email_taken.
+    const [user] = await tx
+      .insert(users)
+      .values({
+        email: invitation.email.toLowerCase(),
+        name: input.name,
+        passwordHash: input.passwordHash,
+        // Having the invitation link is the proof the address is theirs.
+        emailVerifiedAt: new Date(),
+      })
+      .returning({ id: users.id, email: users.email, name: users.name });
+    const joined = await claimInvitation(tx, tenantId, secret, user!.id);
+    return { user: user!, joined };
   });
 }

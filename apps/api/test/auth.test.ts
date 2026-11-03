@@ -159,13 +159,36 @@ describe('sessions and the database-derived actor', () => {
     assert.equal(await resolveSession(other.token), null);
   });
 
-  test('resolveSession honours the 30-day TTL', async () => {
-    const s = await signUp(app);
+  test('a session lasts 14 days unused, is renewed while in use, and never past 90 days', async () => {
     const day = 86400 * 1000;
-    assert.deepEqual(await resolveSession(s.token, new Date(Date.now() + 29 * day)), {
-      userId: s.userId,
-    });
-    assert.equal(await resolveSession(s.token, new Date(Date.now() + 31 * day)), null);
+    const start = Date.now();
+    const at = (days: number) => new Date(start + days * day);
+    const expiry = async (token: string) =>
+      (await getDb().select().from(sessions).where(eq(sessions.tokenHash, sha256Hex(token))))[0]!.expiresAt.getTime();
+
+    // Unused after its first week, it ends 14 days after it began.
+    const idle = await signUp(app);
+    assert.deepEqual(await resolveSession(idle.token, at(6)), { userId: idle.userId });
+    clearSessionCache();
+    assert.equal(await resolveSession(idle.token, at(15)), null);
+
+    // Used in its first week, it is not renewed (no write); in its second week it is.
+    const used = await signUp(app);
+    const first = await expiry(used.token);
+    await resolveSession(used.token, at(3));
+    assert.equal(await expiry(used.token), first);
+    clearSessionCache();
+    await resolveSession(used.token, at(10));
+    assert.ok(Math.abs((await expiry(used.token)) - at(24).getTime()) < 60_000, 'renewed to 14 days from use');
+
+    // Used every 10 days it keeps going, but stops 90 days after it began.
+    for (let d = 20; d <= 80; d += 10) {
+      clearSessionCache();
+      assert.deepEqual(await resolveSession(used.token, at(d)), { userId: used.userId }, `day ${d}`);
+    }
+    assert.ok((await expiry(used.token)) <= at(90).getTime() + 60_000, 'capped at 90 days');
+    clearSessionCache();
+    assert.equal(await resolveSession(used.token, at(91)), null);
   });
 
   test('sign-up returns the camelCase user and session; only the token hash is stored', async () => {
@@ -180,7 +203,7 @@ describe('sessions and the database-derived actor', () => {
     assert.equal(body.user.email, 'alice@example.test');
     assert.match(body.session.token, /^lws_[A-Za-z0-9_-]{43}$/);
     const ttl = new Date(body.session.expiresAt).getTime() - Date.now();
-    assert.ok(Math.abs(ttl - 30 * 86400 * 1000) < 60_000, `ttl ${ttl}`);
+    assert.ok(Math.abs(ttl - 14 * 86400 * 1000) < 60_000, `ttl ${ttl}`);
 
     const rows = await getDb().select().from(sessions).where(eq(sessions.userId, body.user.id));
     assert.equal(rows.length, 1);

@@ -13,6 +13,24 @@ safe to run more than once.
 Read the release notes before you upgrade. Some upgrades rebuild the search index; while that runs, search may miss
 documents that haven't been re-indexed yet.
 
+### Sign-up by invitation
+
+**After this upgrade, only people with an invitation link can create an account** on a server that already has
+accounts. `SIGNUP_MODE` defaults to `auto`: open until the first account exists, then invitation only. To keep
+letting anyone sign up, set `SIGNUP_MODE=open`. Someone who signs up from an invitation link gets the invited email
+and joins the workspace in the same step.
+
+### Accounts
+
+- **Sessions last 14 days** from the last time they were used, and at most 90 days in all. People who use Kinote
+  every week stay signed in; after that, they sign in again.
+- **Everyone can change their password and sign out everywhere** from *Account and security* in the account menu.
+- **Source tokens now expire.** New ones last 90 days unless you choose 1 to 365. Existing tokens that never expire
+  are marked on the Sources page; replace them with ones that do.
+- **Media links stop working as soon as the person loses access**, instead of after 15 minutes.
+- **Email is optional.** See [Email](./configuration#email-optional) for verification and password reset by email,
+  and for the operator's reset command.
+
 ### Security headers and sign-in limits
 
 This upgrade changes a few things you may notice:

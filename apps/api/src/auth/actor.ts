@@ -96,16 +96,20 @@ export async function resolveActor(req: FastifyRequest): Promise<Actor> {
     throw new AppError('tenant_not_found');
   }
   // Canonical form everywhere downstream (queries, audit rows, comparisons).
-  const tenantId = rawTenantId.toLowerCase();
-  const cacheKey = `${tenantId}:${session.userId.toLowerCase()}`;
+  return actorForUser(rawTenantId.toLowerCase(), session.userId);
+}
+
+/**
+ * The member `userId` of `tenantId` as an actor, from their membership row
+ * (cached briefly); `tenant_not_found` when they are not a member or the
+ * tenant is deleted. Also used where no request carries a session, e.g. a
+ * media link, which names the user it was issued to.
+ */
+export async function actorForUser(tenantId: string, userId: string): Promise<Actor> {
+  const cacheKey = `${tenantId}:${userId.toLowerCase()}`;
   const cachedRole = actorCache.get(cacheKey);
   if (cachedRole) {
-    return {
-      tenantId,
-      principalType: 'user',
-      principalId: session.userId,
-      tenantRole: cachedRole,
-    };
+    return { tenantId, principalType: 'user', principalId: userId, tenantRole: cachedRole };
   }
 
   const membership = await withTenantTx(tenantId, async (tx) => {
@@ -116,7 +120,7 @@ export async function resolveActor(req: FastifyRequest): Promise<Actor> {
       .where(
         and(
           eq(memberships.tenantId, tenantId),
-          eq(memberships.userId, session.userId),
+          eq(memberships.userId, userId),
           eq(tenants.id, tenantId),
           isNull(tenants.deletedAt)
         )
@@ -125,12 +129,7 @@ export async function resolveActor(req: FastifyRequest): Promise<Actor> {
   });
   if (!membership) throw new AppError('tenant_not_found');
   actorCache.set(cacheKey, membership.role);
-  return {
-    tenantId,
-    principalType: 'user',
-    principalId: session.userId,
-    tenantRole: membership.role,
-  };
+  return { tenantId, principalType: 'user', principalId: userId, tenantRole: membership.role };
 }
 
 const LAST_USED_EVERY_MS = 60_000;

@@ -27,6 +27,7 @@
     "e2e": "bash infra/e2e.sh",
     "e2e:local": "E2E_MODE=local playwright test",
     "start:api": "tsx apps/api/src/main.ts",
+    "reset-password": "tsx apps/api/src/cli/resetPassword.ts",
     "start:collab": "tsx apps/collab/src/main.ts",
     "start:worker": "tsx apps/worker/src/main.ts",
     "load:collab": "tsx apps/collab/load/run.ts"

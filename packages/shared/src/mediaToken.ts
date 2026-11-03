@@ -6,6 +6,8 @@ export const MEDIA_TOKEN_TTL_SECONDS = 15 * 60;
 export interface MediaClaims {
   tenantId: string;
   versionId: string;
+  /** The person the link was issued to: each request re-checks they may still read the version. */
+  userId: string;
   /** Expiry as seconds since the Unix epoch. */
   exp: number;
 }
@@ -24,7 +26,9 @@ export function signMediaToken(
   now: Date = new Date()
 ): { token: string; expiresAt: Date } {
   const exp = Math.floor(now.getTime() / 1000) + MEDIA_TOKEN_TTL_SECONDS;
-  const payload = Buffer.from(JSON.stringify({ tenantId: c.tenantId, versionId: c.versionId, exp }), 'utf8').toString('base64url');
+  const payload = Buffer.from(JSON.stringify({ tenantId: c.tenantId, versionId: c.versionId, userId: c.userId, exp }), 'utf8').toString(
+    'base64url'
+  );
   return { token: `${payload}.${hmac(payload, secret)}`, expiresAt: new Date(exp * 1000) };
 }
 
@@ -46,6 +50,8 @@ export function verifyMediaToken(token: string, secret: string, now: Date = new 
   if (typeof raw !== 'object' || raw === null) return null;
   const c = raw as Record<string, unknown>;
   if (typeof c.tenantId !== 'string' || typeof c.versionId !== 'string' || typeof c.exp !== 'number') return null;
+  // Links from before userId was carried are refused (they lived 15 minutes at most).
+  if (typeof c.userId !== 'string') return null;
   if (c.exp <= Math.floor(now.getTime() / 1000)) return null;
-  return { tenantId: c.tenantId, versionId: c.versionId, exp: c.exp };
+  return { tenantId: c.tenantId, versionId: c.versionId, userId: c.userId, exp: c.exp };
 }

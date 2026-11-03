@@ -23,6 +23,8 @@ export CAPTURE_RATE_LIMIT_PER_MIN="${CAPTURE_RATE_LIMIT_PER_MIN:-100000}"
 export UPLOAD_RATE_LIMIT_PER_MIN="${UPLOAD_RATE_LIMIT_PER_MIN:-100000}"
 export MAX_TENANTS_PER_USER="${MAX_TENANTS_PER_USER:-10000}"
 export TENANT_DAILY_AI_ACTIONS="${TENANT_DAILY_AI_ACTIONS:-0}"
+# Every spec signs up accounts of its own, without invitations.
+export SIGNUP_MODE="${SIGNUP_MODE:-open}"
 # The compose e2e uses the fake extractor: its files carry a FAKE-EXTRACT line.
 export EXTRACTOR_MODE=fake
 

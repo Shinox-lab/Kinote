@@ -1,7 +1,8 @@
 import { describe, test, beforeEach } from 'vitest';
 import assert from 'node:assert/strict';
 import { and, eq } from 'drizzle-orm';
-import { chunks, versions, withTenantTx } from '@kinote/db';
+import { chunks, memberships, spaceGrants, versions, withTenantTx } from '@kinote/db';
+import { clearActorCache } from '../src/auth/actor.js';
 import { InMemoryObjectStorage } from '@kinote/shared';
 import { FakeExtractor } from '@kinote/core';
 import {
@@ -140,6 +141,39 @@ describe('reading files', () => {
     const text = await upload(c.author.headers, c.open.id, 'note.txt', 'not media');
     const notMedia = await app.inject({ method: 'POST', url: `/api/v1/versions/${text.version.id}/media-url`, headers: c.author.headers });
     assert.equal(notMedia.statusCode, 404);
+  });
+
+  test('media: a link stops working as soon as its viewer loses access', async () => {
+    const c = await setup();
+    const data = new Uint8Array(4096);
+    data.set([0, 0, 0, 0x18, 0x66, 0x74, 0x79, 0x70], 0);
+    const up = await upload(c.author.headers, c.open.id, 'talk.mp4', data);
+    await settle(c.tenant.id);
+    const mint = async (headers: Record<string, string>) => {
+      const res = await app.inject({ method: 'POST', url: `/api/v1/versions/${up.version.id}/media-url`, headers });
+      assert.equal(res.statusCode, 200, res.body);
+      return (res.json() as { url: string }).url;
+    };
+    const play = (url: string) => app.inject({ method: 'GET', url, headers: { range: 'bytes=0-9' } });
+
+    // The author's grant on the space is taken away: their link stops at once.
+    const before = await mint(c.author.headers);
+    assert.equal((await play(before)).statusCode, 206);
+    const [grant] = await withTenantTx(c.tenant.id, (tx) =>
+      tx.delete(spaceGrants).where(and(eq(spaceGrants.spaceId, c.open.id), eq(spaceGrants.principalId, c.author.userId))).returning()
+    );
+    assert.ok(grant, 'the author had a grant');
+    assert.equal((await play(before)).statusCode, 404);
+
+    // Given back, a new link plays; then the author leaves the workspace and it stops too.
+    await withTenantTx(c.tenant.id, (tx) => tx.insert(spaceGrants).values(grant!));
+    const authorUrl = await mint(c.author.headers);
+    assert.equal((await play(authorUrl)).statusCode, 206);
+    await withTenantTx(c.tenant.id, (tx) =>
+      tx.delete(memberships).where(and(eq(memberships.tenantId, c.tenant.id), eq(memberships.userId, c.author.userId)))
+    );
+    clearActorCache(); // as the admin route's invalidateActor does
+    assert.equal((await play(authorUrl)).statusCode, 404);
   });
 
   test('an Inbox file is the creator\'s and the admin\'s alone', async () => {

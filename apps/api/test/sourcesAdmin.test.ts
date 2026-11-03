@@ -146,10 +146,12 @@ describe('sources admin routes', () => {
     const s = await mkSource(c);
     const res = await issue(c.ownerHeaders, s.id, { name: 'nightly script' });
     assert.equal(res.statusCode, 201, res.body);
-    const { token, info } = res.json() as { token: string; info: { id: string; name: string; prefix: string; expiresAt: null } };
+    const { token, info } = res.json() as { token: string; info: { id: string; name: string; prefix: string; expiresAt: string } };
     assert.match(token, /^lwsrc_[0-9a-f]{32}\.[A-Za-z0-9_-]{43}$/);
     assert.equal(info.name, 'nightly script');
-    assert.equal(info.expiresAt, null);
+    // Left out, the token works for 90 days, never for ever.
+    const days = (Date.parse(info.expiresAt) - Date.now()) / 86_400_000;
+    assert.ok(days > 89.99 && days <= 90, String(days));
     assert.ok(token.split('.')[1]!.startsWith(info.prefix));
 
     const listed = await list(c.ownerHeaders);
@@ -172,6 +174,7 @@ describe('sources admin routes', () => {
     const days = (expires - Date.now()) / 86_400_000;
     assert.ok(days > 1.99 && days <= 2, String(days));
     assert.equal((await issue(c.ownerHeaders, s.id, { name: 'bad', expires_in_days: 0 })).statusCode, 400);
+    assert.equal((await issue(c.ownerHeaders, s.id, { name: 'too long', expires_in_days: 366 })).statusCode, 400);
   });
 
   test('revoking sets revokedAt, repeating it changes nothing, and a token of another source is 404', async () => {

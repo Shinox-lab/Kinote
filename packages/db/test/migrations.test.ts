@@ -123,8 +123,8 @@ describe('migration chain', () => {
       .filter((t) => !t.has_tenant_id)
       .map((t) => t.relname)
       .sort();
-    // rate_limit_counters is global by design (0038): its keys name whose count it is, and it holds no tenant data.
-    assert.deepEqual(withoutTenantId, ['rate_limit_counters', 'sessions', 'tenants', 'users']);
+    // rate_limit_counters (0038) and email_tokens (0039) are global by design: its keys name whose count it is, and it holds no tenant data.
+    assert.deepEqual(withoutTenantId, ['email_tokens', 'rate_limit_counters', 'sessions', 'tenants', 'users']);
 
     const tenants = tables.find((t) => t.relname === 'tenants')!;
     assert.equal(tenants.relrowsecurity, true, 'tenants: row level security not enabled');

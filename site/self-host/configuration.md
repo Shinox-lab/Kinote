@@ -34,6 +34,7 @@ them the same way. After a change, run `docker compose up -d` again to apply it.
 | `SEARCH_RATE_LIMIT_PER_MIN` | `60` | Searches one person may run per minute. |
 | `CAPTURE_RATE_LIMIT_PER_MIN` | `20` | Captures one person may send per minute. |
 | `UPLOAD_RATE_LIMIT_PER_MIN` | `30` | Files one person, or one source token, may upload per minute. |
+| `SIGNUP_MODE` | `auto` | Who may create an account. `auto`: anyone until the first account exists, then only someone with an invitation link. `open`: anyone. `invite`: only from an invitation link. `closed`: no new accounts. An account made from an invitation always uses the invited email. |
 | `MAX_TENANTS_PER_USER` | `5` | Workspaces one person may own. Creating workspaces is also limited to 5 an hour. |
 | `TENANT_DAILY_AI_ACTIONS` | `2000` | AI actions one workspace may use per UTC day: each Ask, and each capture routed or placed, page card or entity extraction. Search and indexing aren't counted. Past it, Ask and new captures are refused until midnight UTC and background AI work waits. `0` turns it off. |
 | `LOG_LEVEL` | `info` | How much the API logs: `fatal`, `error`, `warn`, `info`, `debug`, `trace` or `silent`. |
@@ -116,6 +117,29 @@ run the models yourself.
 | `S3_REGION` | `us-east-1` | The region. |
 
 See [Object storage](./storage).
+
+## Email (optional)
+
+Without email, Kinote sends none: new accounts can't confirm their address, and nobody can reset a forgotten
+password except through the operator's command below.
+
+| Setting | Default | What it does |
+|---|---|---|
+| `SMTP_URL` | *(unset)* | Your mail server, such as `smtps://user:password@smtp.example.com:465`. With it set, someone who signs up without an invitation confirms their address from an emailed link (until then they can't accept invitations), and "Forgot your password?" emails a reset link. |
+| `MAIL_FROM` | *(required with `SMTP_URL`)* | The From address, such as `Kinote <wiki@example.com>`. |
+| `PUBLIC_URL` | *(required with `SMTP_URL`)* | The address people open Kinote at, such as `https://wiki.example.com`. Links in emails start with it. |
+
+### Resetting a password without email
+
+As the operator, print a one-time link that sets a new password for an account. It also signs that account out
+everywhere:
+
+```sh
+docker compose exec api node_modules/.bin/tsx apps/api/src/cli/resetPassword.ts someone@example.com
+```
+
+The link works once, for an hour. Opening it also counts as confirming the email address, so give it only to the
+person who owns that inbox.
 
 ## Files
 

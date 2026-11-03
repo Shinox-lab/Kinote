@@ -102,6 +102,21 @@ export const ConfigSchema = z.object({
   CAPTURE_RATE_LIMIT_PER_MIN: perMinute(DEFAULT_USAGE_LIMITS.capturePerMinute),
   /** File uploads per person (or per source token) per minute. */
   UPLOAD_RATE_LIMIT_PER_MIN: perMinute(DEFAULT_USAGE_LIMITS.uploadPerMinute),
+  /**
+   * Who may create an account: `auto` (default) is open until the first real
+   * account exists, then invite-only; `open` lets anyone sign up; `invite` needs
+   * an invitation link; `closed` creates no accounts (the operator's CLI still can).
+   */
+  SIGNUP_MODE: z.enum(['auto', 'open', 'invite', 'closed']).default('auto'),
+  /**
+   * Outgoing mail (e.g. smtps://user:pass@smtp.example.com:465). Unset: no
+   * email at all, so no email verification or password reset by email.
+   */
+  SMTP_URL: z.string().url().optional(),
+  /** The From address of Kinote's emails; required with SMTP_URL. */
+  MAIL_FROM: z.string().min(3).optional(),
+  /** The console's public address (https://wiki.example.com), for links in emails; required with SMTP_URL. */
+  PUBLIC_URL: z.string().url().optional(),
   /** Workspaces one person may own. */
   MAX_TENANTS_PER_USER: z.coerce.number().int().positive().max(10_000).default(DEFAULT_USAGE_LIMITS.maxTenantsPerUser),
   /** AI actions per workspace per UTC day; 0 turns the allowance off. */
@@ -155,6 +170,13 @@ export const ConfigSchema = z.object({
    */
   EXTRACTOR_TIMEOUT_MS: z.coerce.number().int().positive().max(270_000).default(240_000),
 }).superRefine((value, ctx) => {
+  if (value.SMTP_URL) {
+    for (const key of ['MAIL_FROM', 'PUBLIC_URL'] as const) {
+      if (!value[key]) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: [key], message: 'is required when SMTP_URL is set' });
+      }
+    }
+  }
   if (value.EXTRACTOR_MODE === 'http' && !value.EXTRACTOR_URL) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,

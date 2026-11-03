@@ -173,3 +173,31 @@ describe('loadConfig: files and the extractor', () => {
     expect(() => loadConfig({ ...base, MAX_UPLOAD_BYTES: '0' })).toThrow(/MAX_UPLOAD_BYTES/);
   });
 });
+
+describe('loadConfig: security settings', () => {
+  it('defaults sign-up to auto, email off, and the usage limits', () => {
+    const config = loadConfig(base);
+    expect(config.SIGNUP_MODE).toBe('auto');
+    expect(config.SMTP_URL).toBeUndefined();
+    expect(config.TENANT_DAILY_AI_ACTIONS).toBe(2000);
+    expect(config.ASK_RATE_LIMIT_PER_MIN).toBe(10);
+    expect(config.COLLAB_MAX_MESSAGE_BYTES).toBe(8 * 1024 * 1024);
+    expect(config.TRUST_PROXY).toBe(false);
+  });
+
+  it('needs MAIL_FROM and PUBLIC_URL with SMTP_URL, and treats empty ones as unset', () => {
+    const smtp = { ...base, SMTP_URL: 'smtps://u:p@smtp.example.com:465' };
+    expect(() => loadConfig(smtp)).toThrow(/MAIL_FROM.*PUBLIC_URL|PUBLIC_URL.*MAIL_FROM/);
+    expect(() => loadConfig({ ...smtp, MAIL_FROM: 'wiki@example.com', PUBLIC_URL: '' })).toThrow(/PUBLIC_URL/);
+    const ok = loadConfig({ ...smtp, MAIL_FROM: 'wiki@example.com', PUBLIC_URL: 'https://wiki.example.com' });
+    expect(ok.PUBLIC_URL).toBe('https://wiki.example.com');
+    // Compose passes unset settings as empty strings.
+    expect(loadConfig({ ...base, SMTP_URL: '', MAIL_FROM: '', PUBLIC_URL: '' }).SMTP_URL).toBeUndefined();
+  });
+
+  it('refuses a sign-up mode it does not know, and a message limit out of range', () => {
+    expect(() => loadConfig({ ...base, SIGNUP_MODE: 'anyone' })).toThrow(/SIGNUP_MODE/);
+    expect(() => loadConfig({ ...base, COLLAB_MAX_MESSAGE_BYTES: '1000' })).toThrow(/COLLAB_MAX_MESSAGE_BYTES/);
+    expect(loadConfig({ ...base, TENANT_DAILY_AI_ACTIONS: '0' }).TENANT_DAILY_AI_ACTIONS).toBe(0);
+  });
+});

@@ -1,6 +1,6 @@
 import { useRouter, useParams } from '@tanstack/react-router';
 import { useMutation } from '@tanstack/react-query';
-import { api } from '../lib/api.js';
+import { ApiError, api } from '../lib/api.js';
 import { endSession, queryClient } from '../lib/queryClient.js';
 import { ME_KEY } from '../lib/queries.js';
 import { loadSession, saveSession } from '../lib/session.js';
@@ -21,6 +21,10 @@ export function AcceptInvitePage() {
     },
   });
 
+  // With email on, an unconfirmed account must open its emailed link first.
+  const unverified = accept.error instanceof ApiError && accept.error.code === 'email_unverified';
+  const resend = useMutation({ mutationFn: () => api.resendVerification() });
+
   const switchAccount = () => {
     endSession();
     router.history.push(`/sign-in?redirect=${encodeURIComponent(`/accept-invite/${encodeURIComponent(token)}`)}`);
@@ -34,6 +38,20 @@ export function AcceptInvitePage() {
       </p>
       <div className="flex flex-col gap-3">
         <ErrorNote error={accept.error} />
+        {unverified && (
+          <>
+            <ErrorNote error={resend.error} />
+            {resend.isSuccess ? (
+              <p role="status" className="text-sm text-fg">
+                Sent. Open the link in the email, then come back to this page.
+              </p>
+            ) : (
+              <Button variant="secondary" onClick={() => resend.mutate()} disabled={resend.isPending}>
+                Email me the link again
+              </Button>
+            )}
+          </>
+        )}
         <Button onClick={() => accept.mutate()} disabled={accept.isPending}>
           {accept.isPending ? 'Joining…' : 'Join the workspace'}
         </Button>

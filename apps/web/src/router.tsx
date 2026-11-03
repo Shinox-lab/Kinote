@@ -34,6 +34,8 @@ import { parseCaptureSearch, parsePageCaptureSearch } from './lib/capture.js';
 import { SearchPage } from './routes/search.js';
 import { SignInPage } from './routes/sign-in.js';
 import { SignUpPage } from './routes/sign-up.js';
+import { ForgotPasswordPage, ResetPasswordPage, VerifyEmailPage } from './routes/email-links.js';
+import { AccountPage } from './routes/account.js';
 import { SpacePage } from './routes/space.js';
 import { WorkspaceHomePage } from './routes/workspace-home.js';
 import { CreateWorkspacePage } from './routes/workspaces.js';
@@ -109,6 +111,24 @@ const acceptInviteRoute = createRoute({
     requireSession(location.href);
   },
   component: AcceptInvitePage,
+});
+
+// Reached from a link in an email; the link itself is the proof, so no session is needed.
+const verifyEmailRoute = createRoute({ getParentRoute: () => rootRoute, path: '/verify-email/$token', component: VerifyEmailPage });
+const resetPasswordRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/reset-password/$token',
+  component: ResetPasswordPage,
+});
+const forgotPasswordRoute = createRoute({ getParentRoute: () => rootRoute, path: '/forgot-password', component: ForgotPasswordPage });
+
+const accountRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/account',
+  beforeLoad: ({ location }) => {
+    requireSession(location.href);
+  },
+  component: AccountPage,
 });
 
 const indexRoute = createRoute({
@@ -246,6 +266,10 @@ const routeTree = rootRoute.addChildren([
   signInRoute,
   signUpRoute,
   acceptInviteRoute,
+  verifyEmailRoute,
+  resetPasswordRoute,
+  forgotPasswordRoute,
+  accountRoute,
   indexRoute,
   newWorkspaceRoute,
   workspaceRoute.addChildren([

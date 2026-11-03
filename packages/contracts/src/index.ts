@@ -126,11 +126,64 @@ const EmailSchema = z
   .email()
   .transform((email) => email.toLowerCase());
 
-export const SignUpRequestSchema = z.object({
-  email: EmailSchema,
-  name: z.string().trim().min(1).max(120),
+/**
+ * Sign-up. With `invitation_token` (an invitation's accept token) the account
+ * takes the invitation's email, whatever `email` says, and joins its workspace
+ * in the same step; without one, `email` is required and the server's sign-up
+ * mode must be open.
+ */
+export const SignUpRequestSchema = z
+  .object({
+    email: EmailSchema.optional(),
+    name: z.string().trim().min(1).max(120),
+    password: z.string().min(10).max(1024),
+    invitation_token: z.string().max(512).optional(),
+  })
+  .refine((v) => v.email !== undefined || v.invitation_token !== undefined, {
+    path: ['email'],
+    message: 'Required',
+  });
+
+/**
+ * Who may create an account here (SIGNUP_MODE, with `auto` resolved): anyone
+ * (`open`), only someone holding an invitation (`invite`), or nobody (`closed`).
+ */
+export const SignUpModeSchema = z.enum(['open', 'invite', 'closed']);
+export type SignUpMode = z.infer<typeof SignUpModeSchema>;
+export const AuthConfigSchema = z.object({
+  signUpMode: SignUpModeSchema,
+  /** Whether the server sends email (SMTP): verification links and "Forgot your password?". */
+  emailEnabled: z.boolean(),
+});
+export type AuthConfig = z.infer<typeof AuthConfigSchema>;
+
+/**
+ * Sign-up when the server sends email and no invitation was used: the answer is
+ * the same whether the address is new or already has an account (it never says
+ * which); the link to go on with arrives by email.
+ */
+export const SignUpPendingSchema = z.object({ checkEmail: z.literal(true) });
+export type SignUpPending = z.infer<typeof SignUpPendingSchema>;
+
+/** A one-time link from an email (verify the address, or reset the password). */
+export const EmailLinkRequestSchema = z.object({ token: z.string().max(512) });
+export const PasswordResetRequestSchema = z.object({ email: EmailSchema });
+export const PasswordResetConfirmSchema = z.object({
+  token: z.string().max(512),
   password: z.string().min(10).max(1024),
 });
+export const ChangePasswordRequestSchema = z.object({
+  current_password: z.string().min(1).max(1024),
+  new_password: z.string().min(10).max(1024),
+});
+export type PasswordResetRequest = z.input<typeof PasswordResetRequestSchema>;
+export type PasswordResetConfirm = z.input<typeof PasswordResetConfirmSchema>;
+export type ChangePasswordRequest = z.input<typeof ChangePasswordRequestSchema>;
+
+/** What an invitation link shows its holder before they sign up or sign in. */
+export const InvitationPreviewRequestSchema = z.object({ token: z.string().max(512) });
+export const InvitationPreviewSchema = z.object({ email: z.string(), tenantName: z.string() });
+export type InvitationPreview = z.infer<typeof InvitationPreviewSchema>;
 
 export const SignInRequestSchema = z.object({
   email: EmailSchema,
@@ -152,6 +205,13 @@ export const SessionTokenSchema = z.object({
 export const AuthResponseSchema = z.object({
   user: AuthUserSchema,
   session: SessionTokenSchema,
+  /** The workspace an invitation sign-up joined. */
+  joined: z
+    .object({
+      tenant: z.object({ id: z.string().uuid(), name: z.string(), slug: z.string() }),
+      role: TenantRoleSchema,
+    })
+    .optional(),
 });
 export type AuthResponse = z.infer<typeof AuthResponseSchema>;
 
@@ -1171,8 +1231,11 @@ export type UpdateSourceRequest = z.input<typeof UpdateSourceRequestSchema>;
 
 export const CreateSourceTokenRequestSchema = z.object({
   name: SourceNameSchema,
-  expires_in_days: z.number().int().min(1).max(3650).optional(),
+  /** Days the token works (1 to 365); 90 when left out. Tokens never live for ever. */
+  expires_in_days: z.number().int().min(1).max(365).optional(),
 });
+/** A source token's life when the request doesn't say. */
+export const DEFAULT_SOURCE_TOKEN_DAYS = 90;
 export type CreateSourceTokenRequest = z.input<typeof CreateSourceTokenRequestSchema>;
 
 /** A token as listed: never its secret or hash, only the first characters of the secret. */

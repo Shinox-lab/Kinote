@@ -54,6 +54,25 @@ export function serializeError(err: unknown, depth = 0): SerializedError {
   return out;
 }
 
+/** A media link carries its credential in the path: logged, it would work for anyone reading the log. */
+const SECRET_PATHS = /^(\/api\/v1\/media\/)[^/?#]+/;
+
+/** A request URL as logged, with any secret path segment replaced. */
+export function loggableUrl(url: string): string {
+  return url.replace(SECRET_PATHS, '$1[redacted]');
+}
+
+/** Fastify's request log fields (method, url, host, remote address), with the URL made loggable. */
+function serializeRequest(req: { method: string; url: string; host?: string; hostname?: string; ip?: string; socket?: { remotePort?: number } }) {
+  return {
+    method: req.method,
+    url: loggableUrl(req.url),
+    host: req.host ?? req.hostname,
+    remoteAddress: req.ip,
+    remotePort: req.socket?.remotePort,
+  };
+}
+
 /** Fastify's `logger` option for `opts` (false, i.e. silent, without options). */
 export function fastifyLogger(opts: ApiLoggerOptions | undefined): FastifyServerOptions['logger'] {
   if (!opts) return false;
@@ -61,6 +80,6 @@ export function fastifyLogger(opts: ApiLoggerOptions | undefined): FastifyServer
     level: opts.level,
     ...(opts.stream ? { stream: opts.stream } : {}),
     redact: { paths: REDACT_PATHS, censor: '[redacted]' },
-    serializers: { err: (err: Error) => serializeError(err) },
+    serializers: { err: (err: Error) => serializeError(err), req: serializeRequest },
   };
 }

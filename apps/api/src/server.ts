@@ -201,8 +201,9 @@ import {
   setPageFields,
   updateField,
 } from './routes/collections.js';
-import { authRoutes, type AuthRateLimit } from './routes/auth.js';
+import { authRoutes, type AuthRateLimit, type SignUpModeSetting } from './routes/auth.js';
 import { PgRateLimitStore } from './rateLimitStore.js';
+import type { Mailer } from './mail.js';
 import { aiActionsLeftOrUnknown, chargeAi, requestLimit } from './usageLimits.js';
 import { demoSeedRunning, demoSeedStatus, startDemoSeed } from './routes/demoSeed.js';
 import {
@@ -231,6 +232,16 @@ export interface ApiServerOptions {
    * every api process; 'memory' keeps them in this process (tests without a database).
    */
   rateLimitStore?: 'postgres' | 'memory';
+  /**
+   * Who may create an account (SIGNUP_MODE). Default 'open', as tests want it;
+   * main.ts passes the configured mode, whose own default is 'auto'.
+   */
+  signUpMode?: SignUpModeSetting;
+  /**
+   * Outgoing email (SMTP_URL). With it, sign-ups are verified by email and
+   * passwords can be reset by email; without it, neither.
+   */
+  mailer?: Mailer;
   /** Per-person request limits and the daily AI allowance (DEFAULT_USAGE_LIMITS; usageLimitsOf(config) in main.ts). */
   limits?: UsageLimits;
   /**
@@ -409,7 +420,11 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
     ...(opts.rateLimitStore === 'memory' ? {} : { store: PgRateLimitStore }),
     errorResponseBuilder: () => new AppError('rate_limited'),
   });
-  app.register(authRoutes, { authRateLimit: opts.authRateLimit ?? DEFAULT_AUTH_RATE_LIMIT });
+  app.register(authRoutes, {
+    authRateLimit: opts.authRateLimit ?? DEFAULT_AUTH_RATE_LIMIT,
+    signUpMode: opts.signUpMode ?? 'open',
+    ...(opts.mailer ? { mailer: opts.mailer } : {}),
+  });
   // One file part per request, never buffered past the limit (the parser stops at it).
   app.register(multipart, {
     limits: { fileSize: opts.maxUploadBytes ?? DEFAULT_MAX_UPLOAD_BYTES, files: 1, fields: 4, parts: 6 },
@@ -450,7 +465,8 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
   });
 
   app.post('/api/v1/invitations/accept', { config: { auth: 'session' } }, async (req, reply) => {
-    const res = await acceptInvitation(sessionOf(req).userId, req.body);
+    // With email on, only a confirmed address can take an invitation sent to it.
+    const res = await acceptInvitation(sessionOf(req).userId, req.body, { requireVerifiedEmail: opts.mailer !== undefined });
     return reply.status(200).send(parseReply(AcceptInvitationResponseSchema, res));
   });
 

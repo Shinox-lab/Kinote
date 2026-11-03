@@ -41,6 +41,7 @@ import {
   relocateFile,
 } from '@kinote/core';
 import { signMediaToken, verifyMediaToken, type ObjectStorage } from '@kinote/shared';
+import { actorForUser } from '../auth/actor.js';
 import {
   requireVisibleParent,
   withdrawLiveVersions,
@@ -802,7 +803,7 @@ export async function createMediaUrl(
 ): Promise<{ url: string; expiresAt: string }> {
   const { ver } = await withTenantTx(actor.tenantId, (tx) => readableFileVersion(tx, actor, versionId, 'viewer'));
   if (!isPlayable(ver.mimeType)) throw new AppError('version_not_found');
-  const { token, expiresAt } = signMediaToken({ tenantId: actor.tenantId, versionId: ver.id }, secret);
+  const { token, expiresAt } = signMediaToken({ tenantId: actor.tenantId, versionId: ver.id, userId: actor.principalId }, secret);
   return { url: `/api/v1/media/${token}`, expiresAt: expiresAt.toISOString() };
 }
 
@@ -838,12 +839,15 @@ export async function streamMedia(
 ): Promise<{ status: 200 | 206 | 416; bytes: Uint8Array; headers: Record<string, string> }> {
   const claims = verifyMediaToken(token, secret);
   if (!claims) throw new AppError('version_not_found');
-  const [ver] = await withTenantTx(claims.tenantId, (tx) =>
-    tx
-      .select()
-      .from(versions)
-      .where(and(eq(versions.tenantId, claims.tenantId), eq(versions.id, claims.versionId)))
-  );
+  // Every request re-checks the person the link was issued to: removed from the
+  // workspace or the space since, the link stops working at once.
+  let actor: Actor;
+  try {
+    actor = await actorForUser(claims.tenantId, claims.userId);
+  } catch {
+    throw new AppError('version_not_found');
+  }
+  const { ver } = await withTenantTx(claims.tenantId, (tx) => readableFileVersion(tx, actor, claims.versionId, 'viewer'));
   if (!ver || ver.objectKey === null || ver.status === 'withdrawn' || !isPlayable(ver.mimeType)) {
     throw new AppError('version_not_found');
   }

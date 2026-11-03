@@ -122,6 +122,17 @@ export function AccountRow() {
           <button
             type="button"
             role="menuitem"
+            className="w-full rounded-md px-2 py-1.5 text-left text-sm text-muted hover:bg-hover"
+            onClick={() => {
+              setOpen(false);
+              router.history.push('/account');
+            }}
+          >
+            Account and security
+          </button>
+          <button
+            type="button"
+            role="menuitem"
             className="w-full rounded-md px-2 py-1.5 text-left text-sm text-muted hover:bg-hover disabled:opacity-50"
             disabled={signOut.isPending}
             onClick={() => signOut.mutate()}
