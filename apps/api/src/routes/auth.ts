@@ -9,7 +9,7 @@ import {
   AuthResponseSchema,
   AuthConfigSchema,
   ChangePasswordRequestSchema,
-  EmailLinkRequestSchema,
+  VerifyEmailRequestSchema,
   InvitationPreviewSchema,
   PasswordResetConfirmSchema,
   PasswordResetRequestSchema,
@@ -22,7 +22,7 @@ import {
 } from '@kinote/contracts';
 import { getDummyHash, hashPassword, isUsableHash, verifyPassword } from '../auth/password.js';
 import { createSession, revokeAllSessions, revokeSession } from '../auth/sessions.js';
-import { consumeEmailToken, createEmailToken } from '../auth/emailTokens.js';
+import { consumeEmailToken, createEmailToken, peekEmailToken } from '../auth/emailTokens.js';
 import type { Mailer } from '../mail.js';
 import { assertSignInAllowed, recordFailedSignIn, recordSuccessfulSignIn } from '../auth/signInThrottle.js';
 import type { AuthSession } from '../auth/actor.js';
@@ -160,6 +160,14 @@ export async function authRoutes(
         throw new AppError('invalid_credentials');
       }
       await recordSuccessfulSignIn(parsed.email);
+      if (mailer && !user.emailVerifiedAt) {
+        // An unconfirmed account gets no session: otherwise whoever registered
+        // someone else's address first could stay signed in to it after the
+        // real owner confirms it. The right password earns a fresh link.
+        const { allowed } = await hitLimit(`verify-resend:${user.id}`, 3, 60 * 60 * 1000);
+        if (allowed) await sendVerification(req, mailer, user);
+        throw new AppError('email_unverified');
+      }
       return reply.status(200).send(await authResponse(toAuthUser(user)));
     }
   );
@@ -169,21 +177,39 @@ export async function authRoutes(
     return reply.status(204).send();
   });
 
-  /** Opens a verification link: the address is the person's, and they are signed in. */
+  /**
+   * Opens a verification link: the address is the person's, and they are
+   * signed in. It takes the account's password too, so the owner of an inbox
+   * can't activate (and then use) an account someone else registered with it
+   * and holds the password to; that person sets a new password instead.
+   */
   app.post('/api/v1/auth/verify', { config: { auth: 'public', rateLimit } }, async (req, reply) => {
-    const { token } = EmailLinkRequestSchema.parse(req.body);
-    const userId = await consumeEmailToken(token, 'verify');
+    const parsed = VerifyEmailRequestSchema.parse(req.body);
+    const userId = await peekEmailToken(parsed.token, 'verify');
     if (!userId) throw new AppError('link_invalid');
+    const [owner] = await getDb().select().from(users).where(eq(users.id, userId));
+    if (!owner || !isUsableHash(owner.passwordHash)) throw new AppError('link_invalid');
+    await assertSignInAllowed(owner.email, reply);
+    if (!(await verifyPassword(parsed.password, owner.passwordHash))) {
+      await recordFailedSignIn(owner.email);
+      throw new AppError('invalid_credentials');
+    }
+    if ((await consumeEmailToken(parsed.token, 'verify')) !== userId) throw new AppError('link_invalid');
     const [user] = await getDb()
       .update(users)
       .set({ emailVerifiedAt: sql`coalesce(${users.emailVerifiedAt}, now())` })
       .where(eq(users.id, userId))
       .returning();
     if (!user) throw new AppError('link_invalid');
+    await recordSuccessfulSignIn(user.email);
     return reply.send(await authResponse(toAuthUser(user)));
   });
 
-  /** Sends the signed-in person a new verification link (a few an hour). */
+  /**
+   * Sends the signed-in person a new verification link (a few an hour). With
+   * email on, an unconfirmed account can't sign in (sign-in sends the link);
+   * this serves sessions from before email was turned on.
+   */
   app.post('/api/v1/auth/verify/resend', { config: { auth: 'session' } }, async (req, reply) => {
     const { userId } = sessionOf(req);
     if (!mailer) return reply.status(204).send();
@@ -295,8 +321,9 @@ async function sendVerification(req: FastifyRequest, mailer: Mailer, user: { id:
     to: user.email,
     subject: 'Confirm your email for Kinote',
     text:
-      `Open this link within a day to confirm ${user.email} and sign in to Kinote:\n\n` +
+      `Open this link within a day to confirm ${user.email} and sign in to Kinote with the password you chose:\n\n` +
       `${mailer.publicUrl}/verify-email/${token}\n\n` +
-      `If you didn't create an account, you can ignore this email.`,
+      `If you didn't create an account, someone else may have used your address. You can ignore this email, ` +
+      `or take the account over by setting your own password at ${mailer.publicUrl}/forgot-password.`,
   });
 }

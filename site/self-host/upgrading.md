@@ -38,7 +38,8 @@ and joins the workspace in the same step.
   are marked on the Sources page; replace them with ones that do.
 - **Media links stop working as soon as the person loses access**, instead of after 15 minutes.
 - **Email is optional.** See [Email](./configuration#email-optional) for verification and password reset by email,
-  and for the operator's reset command.
+  and for the operator's reset command. Existing accounts count as confirmed. With email on, an account that
+  hasn't confirmed its address can't sign in until it opens its link (signing in emails a fresh one).
 
 ### Security headers and sign-in limits
 

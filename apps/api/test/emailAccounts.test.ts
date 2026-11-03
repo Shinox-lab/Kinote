@@ -46,40 +46,94 @@ describe('accounts with email', () => {
     expect(user?.emailVerifiedAt).toBeNull();
   });
 
-  test('the verification link confirms the address, signs in, and works once', async () => {
+  test('the verification link takes the password, confirms the address, signs in, and works once', async () => {
     const { app, mailer } = withMail();
     await post(app, '/api/v1/auth/sign-up', { email: 'v@example.test', name: 'V', password: TEST_PASSWORD });
     const token = tokenFrom(mailer, 'v@example.test');
     expect(mailer.lastLink('v@example.test')).toBe(`https://wiki.example/verify-email/${token}`);
 
-    const res = await post(app, '/api/v1/auth/verify', { token });
+    // A wrong password leaves the link unused.
+    const wrong = await post(app, '/api/v1/auth/verify', { token, password: 'not-the-password' });
+    expect(wrong.statusCode).toBe(401);
+    expect(wrong.json().error).toBe('invalid_credentials');
+    const [before] = await getDb().select().from(users).where(eq(users.email, 'v@example.test'));
+    expect(before?.emailVerifiedAt).toBeNull();
+
+    const res = await post(app, '/api/v1/auth/verify', { token, password: TEST_PASSWORD });
     expect(res.statusCode).toBe(200);
     expect(AuthResponseSchema.parse(res.json()).user.email).toBe('v@example.test');
     const [user] = await getDb().select().from(users).where(eq(users.email, 'v@example.test'));
     expect(user?.emailVerifiedAt).toBeInstanceOf(Date);
 
-    const again = await post(app, '/api/v1/auth/verify', { token });
+    const again = await post(app, '/api/v1/auth/verify', { token, password: TEST_PASSWORD });
     expect(again.statusCode).toBe(404);
     expect(again.json().error).toBe('link_invalid');
   });
 
-  test('an unconfirmed account cannot take an invitation sent to its address; once confirmed it can', async () => {
+  test('an unconfirmed account cannot sign in; the right password mails a fresh link', async () => {
+    const { app, mailer } = withMail();
+    await post(app, '/api/v1/auth/sign-up', { email: 'early@example.test', name: 'Early', password: TEST_PASSWORD });
+    const first = tokenFrom(mailer, 'early@example.test');
+
+    const wrong = await post(app, '/api/v1/auth/sign-in', { email: 'early@example.test', password: 'not-the-password' });
+    expect(wrong.json().error).toBe('invalid_credentials');
+    const sentBefore = mailer.sent.length;
+
+    const res = await post(app, '/api/v1/auth/sign-in', { email: 'early@example.test', password: TEST_PASSWORD });
+    expect(res.statusCode).toBe(403);
+    expect(res.json().error).toBe('email_unverified');
+    expect(res.json().session).toBeUndefined();
+    expect(mailer.sent.length).toBe(sentBefore + 1);
+    const fresh = tokenFrom(mailer, 'early@example.test');
+    expect(fresh).not.toBe(first);
+
+    expect((await post(app, '/api/v1/auth/verify', { token: fresh, password: TEST_PASSWORD })).statusCode).toBe(200);
+    expect((await post(app, '/api/v1/auth/sign-in', { email: 'early@example.test', password: TEST_PASSWORD })).statusCode).toBe(200);
+  });
+
+  test('someone who registers another person\'s address first never gets in, and the owner takes it over', async () => {
     const { app, mailer } = withMail();
     // The admin's account comes from a server without email (sign-up there signs in at once).
     const { headers } = await bootstrapTenant(buildTestApp(), { name: 'Mail Co', slug: 'mail-co' });
     const invite = await post(app, '/api/v1/invitations', { email: 'squat@example.test', role: 'admin' }, headers);
     const acceptToken = invite.json().acceptToken as string;
 
-    // Someone registers the invited address first, and signs in with the password they chose.
+    // The squatter registers the invited address with a password they know, and can't sign in.
     await post(app, '/api/v1/auth/sign-up', { email: 'squat@example.test', name: 'Squatter', password: TEST_PASSWORD });
-    const signIn = await post(app, '/api/v1/auth/sign-in', { email: 'squat@example.test', password: TEST_PASSWORD });
-    const session = AuthResponseSchema.parse(signIn.json()).session;
+    expect((await post(app, '/api/v1/auth/sign-in', { email: 'squat@example.test', password: TEST_PASSWORD })).statusCode).toBe(403);
+
+    // The real owner of the inbox can't confirm it without the squatter's password...
+    const link = tokenFrom(mailer, 'squat@example.test');
+    expect((await post(app, '/api/v1/auth/verify', { token: link, password: 'owner-guess-123' })).statusCode).toBe(401);
+
+    // ...so they set their own password instead, which confirms the address.
+    await post(app, '/api/v1/auth/password-reset/request', { email: 'squat@example.test' });
+    const reset = await post(app, '/api/v1/auth/password-reset/confirm', {
+      token: tokenFrom(mailer, 'squat@example.test'),
+      password: NEW_PASSWORD,
+    });
+    expect(reset.statusCode).toBe(200);
+    const owner = AuthResponseSchema.parse(reset.json()).session;
+
+    // The squatter's password and the old link are dead; the owner takes the invitation.
+    expect((await post(app, '/api/v1/auth/sign-in', { email: 'squat@example.test', password: TEST_PASSWORD })).statusCode).toBe(401);
+    expect((await post(app, '/api/v1/auth/verify', { token: link, password: TEST_PASSWORD })).statusCode).toBe(401);
+    expect((await post(app, '/api/v1/invitations/accept', { token: acceptToken }, asUser(owner))).statusCode).toBe(200);
+  });
+
+  test('a session from before email was turned on cannot take an invitation until the address is confirmed', async () => {
+    const { app, mailer } = withMail();
+    const { headers } = await bootstrapTenant(buildTestApp(), { name: 'Late Mail Co', slug: 'late-mail-co' });
+    const invite = await post(app, '/api/v1/invitations', { email: 'legacy@example.test', role: 'member' }, headers);
+    const acceptToken = invite.json().acceptToken as string;
+    const session = await signUpOpenWithoutMail('legacy@example.test');
+
     const accept = await post(app, '/api/v1/invitations/accept', { token: acceptToken }, asUser(session));
     expect(accept.statusCode).toBe(403);
     expect(accept.json().error).toBe('email_unverified');
 
-    // The real owner of the inbox confirms it (here, the verification link) and then can.
-    await post(app, '/api/v1/auth/verify', { token: tokenFrom(mailer, 'squat@example.test') });
+    expect((await post(app, '/api/v1/auth/verify/resend', {}, asUser(session))).statusCode).toBe(204);
+    await post(app, '/api/v1/auth/verify', { token: tokenFrom(mailer, 'legacy@example.test'), password: TEST_PASSWORD });
     expect((await post(app, '/api/v1/invitations/accept', { token: acceptToken }, asUser(session))).statusCode).toBe(200);
   });
 

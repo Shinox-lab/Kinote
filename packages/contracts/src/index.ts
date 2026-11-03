@@ -165,8 +165,12 @@ export type AuthConfig = z.infer<typeof AuthConfigSchema>;
 export const SignUpPendingSchema = z.object({ checkEmail: z.literal(true) });
 export type SignUpPending = z.infer<typeof SignUpPendingSchema>;
 
-/** A one-time link from an email (verify the address, or reset the password). */
-export const EmailLinkRequestSchema = z.object({ token: z.string().max(512) });
+/**
+ * Opening a verification link also takes the account's password, so the owner
+ * of an inbox can't activate an account someone else registered with it.
+ */
+export const VerifyEmailRequestSchema = z.object({ token: z.string().max(512), password: z.string().min(1).max(1024) });
+export type VerifyEmailRequest = z.input<typeof VerifyEmailRequestSchema>;
 export const PasswordResetRequestSchema = z.object({ email: EmailSchema });
 export const PasswordResetConfirmSchema = z.object({
   token: z.string().max(512),

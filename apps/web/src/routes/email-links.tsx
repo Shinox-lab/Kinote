@@ -1,48 +1,58 @@
 // Pages reached from a link in an email (or the operator's reset-password
 // command): confirm an email address, set a new password, and ask for a
 // password reset. None needs a session; the link itself is the proof.
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useState, type FormEvent } from 'react';
 import { Link, useParams, useRouter } from '@tanstack/react-router';
 import { useMutation } from '@tanstack/react-query';
 import { api } from '../lib/api.js';
 import { startSession } from '../lib/queryClient.js';
 import { AuthShell, Button, ErrorNote, TextField } from '../components/ui.js';
 
-/** /verify-email/$token: confirms the address and signs the person in. */
+/**
+ * /verify-email/$token: confirms the address and signs the person in. It asks
+ * for the account's password, so opening the link can't activate an account
+ * someone else registered with this address; that person resets it instead.
+ */
 export function VerifyEmailPage() {
   const { token } = useParams({ from: '/verify-email/$token' });
   const router = useRouter();
+  const [password, setPassword] = useState('');
   const verify = useMutation({
-    mutationFn: () => api.verifyEmail(token),
+    mutationFn: () => api.verifyEmail({ token, password }),
     onSuccess: (auth) => {
       startSession(auth);
       router.history.push('/');
     },
   });
-  // Once, even under StrictMode's double effect: the link works only once.
-  const started = useRef(false);
-  useEffect(() => {
-    if (started.current) return;
-    started.current = true;
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
     verify.mutate();
-  }, [verify]);
+  };
 
   return (
-    <AuthShell title="Confirming your email">
-      {verify.isError ? (
-        <>
-          <ErrorNote error={verify.error} />
-          <p className="mt-4 text-sm text-muted">
-            Sign in and ask for a new link from your account page, or{' '}
-            <Link to="/sign-in" search={{ redirect: undefined }} className="font-medium text-accent-text underline">
-              sign in
-            </Link>
-            .
-          </p>
-        </>
-      ) : (
-        <p className="text-sm text-muted">One moment…</p>
-      )}
+    <AuthShell title="Confirm your email">
+      <form onSubmit={submit} className="flex flex-col gap-4">
+        <TextField
+          label="Password"
+          type="password"
+          value={password}
+          onChange={setPassword}
+          autoComplete="current-password"
+          hint="The password you chose when you signed up."
+          required
+        />
+        <ErrorNote error={verify.error} />
+        <Button type="submit" disabled={verify.isPending}>
+          {verify.isPending ? 'Confirming…' : 'Confirm and sign in'}
+        </Button>
+      </form>
+      <p className="mt-4 text-sm text-muted">
+        Didn't sign up, or forgot the password?{' '}
+        <Link to="/forgot-password" className="font-medium text-accent-text underline">
+          Set a new password
+        </Link>
+        .
+      </p>
     </AuthShell>
   );
 }

@@ -125,7 +125,7 @@ password except through the operator's command below.
 
 | Setting | Default | What it does |
 |---|---|---|
-| `SMTP_URL` | *(unset)* | Your mail server, such as `smtps://user:password@smtp.example.com:465`. With it set, someone who signs up without an invitation confirms their address from an emailed link (until then they can't accept invitations), and "Forgot your password?" emails a reset link. |
+| `SMTP_URL` | *(unset)* | Your mail server, such as `smtps://user:password@smtp.example.com:465`. With it set, someone who signs up without an invitation confirms their address from an emailed link, entering their password on that page; until then they can't sign in or accept invitations, and signing in with the right password emails a fresh link. "Forgot your password?" emails a reset link, which also confirms the address, so the owner of an inbox can take over an account someone else registered with it. |
 | `MAIL_FROM` | *(required with `SMTP_URL`)* | The From address, such as `Kinote <wiki@example.com>`. |
 | `PUBLIC_URL` | *(required with `SMTP_URL`)* | The address people open Kinote at, such as `https://wiki.example.com`. Links in emails start with it. |
 

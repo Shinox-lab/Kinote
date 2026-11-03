@@ -28,6 +28,26 @@ export async function createEmailToken(userId: string, purpose: EmailTokenPurpos
 }
 
 /**
+ * The user a token belongs to, without using it up: null for a token that is
+ * unknown, of another purpose, expired or already used.
+ */
+export async function peekEmailToken(token: string, purpose: EmailTokenPurpose, now = new Date()): Promise<string | null> {
+  if (!token.startsWith(PREFIX)) return null;
+  const [row] = await getDb()
+    .select({ userId: emailTokens.userId })
+    .from(emailTokens)
+    .where(
+      and(
+        eq(emailTokens.tokenHash, sha256Hex(token)),
+        eq(emailTokens.purpose, purpose),
+        isNull(emailTokens.usedAt),
+        gt(emailTokens.expiresAt, now)
+      )
+    );
+  return row?.userId ?? null;
+}
+
+/**
  * Uses up a token: the user it belongs to, or null for a token that is unknown,
  * of another purpose, expired or already used. Atomic, so a token works once
  * even when two requests race with it.

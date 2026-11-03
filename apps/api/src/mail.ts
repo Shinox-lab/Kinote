@@ -35,9 +35,10 @@ export class MemoryMailer implements Mailer {
   async send(mail: Mail): Promise<void> {
     this.sent.push(mail);
   }
-  /** The last link in the last email to `to`. */
+  /** The link carrying a one-time token in the last email to `to` (else its first link). */
   lastLink(to: string): string | null {
     const mail = [...this.sent].reverse().find((m) => m.to === to);
-    return mail?.text.match(/https?:\/\/\S+/g)?.at(-1) ?? null;
+    const links = mail?.text.match(/https?:\/\/\S+/g) ?? [];
+    return links.find((l) => l.includes('/lwe_')) ?? links[0] ?? null;
   }
 }

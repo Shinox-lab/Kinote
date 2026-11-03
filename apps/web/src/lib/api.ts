@@ -102,6 +102,7 @@ import {
   SignUpPendingSchema,
   type ChangePasswordRequest,
   type PasswordResetConfirm,
+  type VerifyEmailRequest,
 } from '@kinote/contracts';
 import { z } from 'zod';
 import { loadSession } from './session.js';
@@ -251,7 +252,7 @@ export const api = {
   /** A session, or (when the server verifies email) `{ checkEmail: true }`. */
   signUp: (body: SignUpRequest) =>
     request('/api/v1/auth/sign-up', z.union([AuthResponseSchema, SignUpPendingSchema]), send('POST', body)),
-  verifyEmail: (token: string) => request('/api/v1/auth/verify', AuthResponseSchema, send('POST', { token })),
+  verifyEmail: (body: VerifyEmailRequest) => request('/api/v1/auth/verify', AuthResponseSchema, send('POST', body)),
   resendVerification: () => request('/api/v1/auth/verify/resend', NO_CONTENT, send('POST')),
   requestPasswordReset: (email: string) =>
     request('/api/v1/auth/password-reset/request', NO_CONTENT, send('POST', { email })),
