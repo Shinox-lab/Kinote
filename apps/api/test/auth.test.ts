@@ -333,6 +333,43 @@ describe('sessions and the database-derived actor', () => {
     }
   });
 
+  test('TRUST_PROXY settings that weaken the sign-in limit are logged once', async () => {
+    const logged = (server: { lines: string[] }) => server.lines.filter((l) => l.includes('TRUST_PROXY')).length;
+    const build = (trustProxy?: boolean | number) => {
+      const lines: string[] = [];
+      const app = buildApiServer({
+        trustProxy,
+        logger: { level: 'warn', stream: { write: (line: string) => void lines.push(line) } },
+      });
+      return { app, lines };
+    };
+    const hit = (app: ReturnType<typeof buildApiServer>, xff?: string) =>
+      app.inject({ method: 'GET', url: '/api/v1/me', headers: xff ? { 'x-forwarded-for': xff } : {} });
+
+    const direct = build(false);
+    const everyHop = build(true);
+    const oneHop = build(1);
+    try {
+      await direct.app.ready();
+      await hit(direct.app);
+      assert.equal(logged(direct), 0, 'no header, nothing to warn about');
+      await hit(direct.app, '198.51.100.7');
+      await hit(direct.app, '198.51.100.8');
+      assert.equal(logged(direct), 1, 'false behind a proxy warns once');
+
+      await everyHop.app.ready();
+      assert.equal(logged(everyHop), 1, 'true warns at start');
+
+      await oneHop.app.ready();
+      await hit(oneHop.app, '198.51.100.7');
+      assert.equal(logged(oneHop), 0, 'a hop count is the recommended form');
+    } finally {
+      await direct.app.close();
+      await everyHop.app.close();
+      await oneHop.app.close();
+    }
+  });
+
   test('GET /api/v1/me lists every tenant the user belongs to, with roles, via my_tenants', async () => {
     const a = await bootstrapTenant(app, { name: 'Tenant A', slug: 'tenant-a' });
     const b = await bootstrapTenant(app, { name: 'Tenant B', slug: 'tenant-b' });

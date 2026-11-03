@@ -4,6 +4,12 @@ import { z } from 'zod';
 export const DEFAULT_AUTH_RATE_LIMIT_MAX = 10;
 
 /**
+ * Largest live-editing WebSocket message when `COLLAB_MAX_MESSAGE_BYTES` is unset:
+ * room for a whole large page sent at once (a drawing alone is at most 1 MB).
+ */
+export const DEFAULT_COLLAB_MAX_MESSAGE_BYTES = 8 * 1024 * 1024;
+
+/**
  * Environment contract shared by the api, collab and worker services.
  * `DATABASE_URL` is the `kinote_app` role (no superuser, no BYPASSRLS);
  * `DATABASE_MIGRATE_URL` is the schema owner, used only by `pnpm db:migrate`.
@@ -16,6 +22,13 @@ export const ConfigSchema = z.object({
   COLLAB_INTERNAL_URL: z.string().min(1).default('http://127.0.0.1:1234'),
   API_PORT: z.coerce.number().int().min(0).max(65535).default(8787),
   COLLAB_PORT: z.coerce.number().int().min(0).max(65535).default(1234),
+  /** Largest message a live-editing client may send, in bytes (default 8 MiB, at most 64 MiB). */
+  COLLAB_MAX_MESSAGE_BYTES: z.coerce
+    .number()
+    .int()
+    .min(64 * 1024)
+    .max(64 * 1024 * 1024)
+    .default(DEFAULT_COLLAB_MAX_MESSAGE_BYTES),
   /**
    * Bind address of the api and collab servers. Loopback by default, so a
    * service run on the host is not reachable from the network by accident;
@@ -24,7 +37,8 @@ export const ConfigSchema = z.object({
   HOST: z.string().min(1).default('127.0.0.1'),
   /**
    * Whether the api trusts X-Forwarded-For (the client IP the auth rate limit
-   * keys on). `false` (default): no proxy in front, the header is ignored.
+   * keys on). `false` (default here, for an api run on its own): no proxy in
+   * front, the header is ignored. docker-compose.yml sets 1 (its web nginx).
    * A positive hop count N (recommended behind a proxy): the address N hops
    * from the right of the header is the client; anything a client put to the
    * left of it is ignored. `true` trusts every hop, so a client-supplied

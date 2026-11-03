@@ -27,7 +27,8 @@ them the same way. After a change, run `docker compose up -d` again to apply it.
 | `WEB_HOST_PORT` | `8081` | Where the app is published on your machine. |
 | `POSTGRES_HOST_PORT`, `MINIO_HOST_PORT`, `MINIO_CONSOLE_HOST_PORT` | `55543`, `59000`, `59001` | Ports for local tools. |
 | `API_HOST_PORT`, `COLLAB_HOST_PORT`, `GRIDCRAFT_HOST_PORT` | `8787`, `1234`, `8082` | Used by the test suites and UI development only. |
-| `TRUST_PROXY` | `false` | How many proxies sit in front of the app. See [Ports and reverse proxies](./proxy). |
+| `TRUST_PROXY` | `1` | How many proxies sit in front of the API, counting Kinote's own web service. Set `2` behind one more proxy, such as Coolify. See [Ports and reverse proxies](./proxy). |
+| `COLLAB_MAX_MESSAGE_BYTES` | `8388608` (8 MiB) | The largest single message a live-editing client may send, at most 64 MiB. A bigger one disconnects that client. |
 | `AUTH_RATE_LIMIT_MAX` | `10` | Sign-up and sign-in attempts allowed per minute from one address. |
 | `LOG_LEVEL` | `info` | How much the API logs: `fatal`, `error`, `warn`, `info`, `debug`, `trace` or `silent`. |
 

@@ -27,6 +27,7 @@ import { buildApiServer } from '../../apps/api/src/server.js';
 import { HttpCollabClient } from '@kinote/shared';
 import { collabSettle, createCollabServer } from '../../apps/collab/src/server.js';
 import { runWorkerLoop } from '../../apps/worker/src/runner.js';
+import { securityHeadersPlugin } from './securityHeaders.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const HOST = '127.0.0.1';
@@ -120,6 +121,8 @@ logger.error = (msg, options) => {
 };
 const web: PreviewServer = await preview({
   root: webRoot,
+  // The production nginx's CSP and other headers, so the specs fail on anything they block.
+  plugins: [securityHeadersPlugin(webRoot)],
   customLogger: logger,
   logLevel: 'warn',
   build: { outDir: webDist },

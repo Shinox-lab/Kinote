@@ -110,6 +110,9 @@ export default function DrawingCanvas({
       viewModeEnabled={!editable}
       isCollaborating
       theme={theme}
+      // No third-party embeds (YouTube, Figma, ...): the console's CSP allows
+      // frames from its own origin only (apps/web/security-headers.conf).
+      validateEmbeddable={false}
       UIOptions={{
         canvasActions: { loadScene: false, saveToActiveFile: false, export: { saveFileToDisk: true }, toggleTheme: null },
         tools: { image: false },

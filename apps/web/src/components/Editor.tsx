@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, type ClipboardEvent, type DragEvent } from 'react';
+import { useEffect, useMemo, useRef, type ClipboardEvent, type DragEvent, type MouseEvent as ReactMouseEvent } from 'react';
 import { CommentsExtension } from '@blocknote/core/comments';
 import { useCreateBlockNote } from '@blocknote/react';
 import { BlockNoteView } from '@blocknote/mantine';
@@ -16,6 +16,7 @@ import { useRefresh } from '../lib/queries.js';
 import { Button, ErrorNote, Loading } from './ui.js';
 import { blockSourcesExtension, setBlockSources, type BlockSource } from './editor/blockSources.js';
 import { linkTriggerExtension } from './editor/linkTrigger.js';
+import { editorLinkOf, openEditorLink } from './editor/externalLinks.js';
 import { dropTarget, filesOf, insertFiles } from './editor/filePaste.js';
 import { WikiMenus, type EditorPlace } from './editor/menus.js';
 import { EditorPlaceContext } from './editor/place.js';
@@ -54,6 +55,14 @@ function BoundEditor({
   const editor = useCreateBlockNote(
     {
       schema: wikiSchema,
+      // Replaces BlockNote's window.open(href, target), which leaves the opened
+      // site a handle on this tab (externalLinks.ts).
+      links: {
+        onClick: (event) => {
+          openEditorLink(editorLinkOf(event.target)?.getAttribute('href'));
+          return true;
+        },
+      },
       collaboration: {
         // BlockNote only reads the awareness (cursors); the provider types it as nullable.
         provider: { awareness: live.provider.awareness ?? undefined },
@@ -131,8 +140,20 @@ function BoundEditor({
     insertFiles(editor, files, at, place, refresh);
   };
 
+  // A read-only editor leaves link clicks to the browser, which would follow the
+  // link's stored target and rel (a collaborator can set rel="opener"). A plain
+  // click opens it the same safe way as in an editable page.
+  const onClickCapture = (e: ReactMouseEvent) => {
+    if (editable || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    const link = editorLinkOf(e.target);
+    if (!link) return;
+    e.preventDefault();
+    openEditorLink(link.getAttribute('href'));
+  };
+
   return (
     <div
+      onClickCapture={onClickCapture}
       onPasteCapture={onPasteCapture}
       onDropCapture={onDropCapture}
       onDragOverCapture={(e) => {

@@ -348,7 +348,7 @@ that header to believe:
 
 | `TRUST_PROXY` | Client IP | Use |
 | --- | --- | --- |
-| `false` (default) | the TCP peer; the header is ignored | no proxy in front. Behind a proxy every user shares the proxy's bucket. |
+| `false` (default outside compose) | the TCP peer; the header is ignored | no proxy in front, e.g. the api run directly on the host. Behind a proxy every user shares the proxy's bucket. |
 | `1`, `2`, ... (hop count) | the address that many hops from the right of the header | **recommended** behind a single proxy: the number of proxies in front of the api. The api must then be reachable only through them (a direct client would count as a proxy). |
 | `true` | the leftmost address | avoid: a client-supplied `X-Forwarded-For` is trusted, so a client can pick a fresh rate-limit bucket per request and evade the limit. |
 
@@ -357,9 +357,12 @@ The edge proxy must overwrite `X-Forwarded-For` or append the address it saw
 pass a client's header through unchanged as the last entry.
 
 Behind Coolify there are two proxies — Coolify's own proxy and the web nginx —
-so set `TRUST_PROXY=2` there. Locally the web is reached directly on 8080, so
-`false` is right unless another proxy is in front. Only count proxies that
-append to the header; the web nginx does.
+so set `TRUST_PROXY=2` there. Locally the web nginx is the only proxy, so
+docker-compose.yml defaults to `1`; add one for each further proxy in front.
+Only count proxies that append to the header; the web nginx does. `false`
+behind the web nginx would put every user in the nginx's bucket, so one
+client's failed sign-ins would lock everyone out; the api logs a warning when
+it sees `X-Forwarded-For` with `TRUST_PROXY=false`.
 
 The edge must also not expose the collab server's internal endpoints: block
 `/internal/*` on the public collab host (only the api calls them, over the

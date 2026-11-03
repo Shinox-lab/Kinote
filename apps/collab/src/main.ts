@@ -28,6 +28,7 @@ async function main(): Promise<void> {
     collabTokenSecret: config.COLLAB_TOKEN_SECRET,
     internalSecret: config.INTERNAL_SECRET,
     address: config.HOST,
+    maxMessageBytes: config.COLLAB_MAX_MESSAGE_BYTES,
   });
   await collab.server.listen(config.COLLAB_PORT);
   console.log(`collab listening on ${config.HOST}:${config.COLLAB_PORT}`);

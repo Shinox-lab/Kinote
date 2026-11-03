@@ -20,12 +20,15 @@ Kinote limits sign-up and sign-in attempts per client address. Behind a proxy, t
 
 | `TRUST_PROXY` | Client address | Use it when |
 |---|---|---|
-| `false` (default) | the direct connection; the header is ignored | nothing sits in front of Kinote's web service |
-| `1`, `2`, … | that many hops from the right of the header | **recommended** behind proxies: the number of proxies in front of the API |
+| `false` | the direct connection; the header is ignored | the API runs on its own with nothing in front of it |
+| `1`, `2`, … | that many hops from the right of the header | **recommended**: the number of proxies in front of the API. The Docker Compose setup defaults to `1`, its own web service |
 | `true` | the leftmost address | avoid: a client can send its own header and dodge the limit |
 
 Your edge proxy must overwrite `X-Forwarded-For` or append the address it saw (nginx's `proxy_add_x_forwarded_for`,
 Caddy and most load balancers do). Only count proxies that append to it.
+
+Don't set `false` with Docker Compose: every user would share the web service's address, so a few failed sign-ins
+from anyone would block sign-in for everyone.
 
 ## Coolify
 

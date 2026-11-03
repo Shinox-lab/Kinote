@@ -12,6 +12,12 @@ export interface CollabServerDeps {
   debounceMs?: number;
   /** Longest a busy document waits for a store; defaults to 5000 ms. */
   maxDebounceMs?: number;
+  /**
+   * Largest WebSocket message a client may send, in bytes (COLLAB_MAX_MESSAGE_BYTES;
+   * defaults to DEFAULT_COLLAB_MAX_MESSAGE_BYTES). A bigger frame closes the socket
+   * (1009) before it is buffered, instead of ws's own 100 MiB limit.
+   */
+  maxMessageBytes?: number;
   /** Test seams; never set in production. */
   testHooks?: {
     /** Runs before each authorship bookkeeping write (e.g. to delay it). */

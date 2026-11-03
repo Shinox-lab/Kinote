@@ -1,4 +1,4 @@
-import Fastify, { type FastifyRequest } from 'fastify';
+import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 import rateLimit from '@fastify/rate-limit';
 import multipart from '@fastify/multipart';
 import { withTenantTx } from '@kinote/db';
@@ -266,6 +266,30 @@ function trustProxyOption(setting: boolean | number | undefined): boolean | ((ad
   return (_addr, hop) => hop < setting;
 }
 
+/**
+ * Logs the two TRUST_PROXY settings that weaken the per-IP sign-in limit:
+ * `true` (a client picks its own bucket by sending X-Forwarded-For) at start,
+ * and `false` behind a proxy (every user shares the proxy's bucket) the first
+ * time a request arrives carrying X-Forwarded-For.
+ */
+function warnOnTrustProxyMismatch(app: FastifyInstance, setting: boolean | number | undefined): void {
+  if (setting === true) {
+    app.log.warn(
+      'TRUST_PROXY=true trusts every X-Forwarded-For hop, so a client can dodge the sign-in rate limit; set the number of proxies instead'
+    );
+    return;
+  }
+  if (setting) return;
+  let warned = false;
+  app.addHook('onRequest', async (req) => {
+    if (warned || req.headers['x-forwarded-for'] === undefined) return;
+    warned = true;
+    req.log.warn(
+      'request has X-Forwarded-For but TRUST_PROXY=false: every user behind the proxy shares one sign-in rate-limit bucket; set TRUST_PROXY to the number of proxies'
+    );
+  });
+}
+
 const DEFAULT_AUTH_RATE_LIMIT: AuthRateLimit = { max: DEFAULT_AUTH_RATE_LIMIT_MAX, timeWindow: '1 minute' };
 
 /** The tenant actor attached by the auth hook (routes default to `auth: 'tenant'`). */
@@ -295,6 +319,17 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
     routerOptions: { maxParamLength: 4096 },
   });
   registerErrorHandler(app);
+  warnOnTrustProxyMismatch(app, opts.trustProxy);
+  // Every api response is data, never a page: nothing in it may run, be framed
+  // or be sniffed into another type. File and media routes replace the CSP
+  // with their own `sandbox` (headers set later win).
+  app.addHook('onRequest', async (_req, reply) => {
+    reply.headers({
+      'x-content-type-options': 'nosniff',
+      'x-frame-options': 'DENY',
+      'content-security-policy': "default-src 'none'; frame-ancestors 'none'",
+    });
+  });
 
   // Fastify refuses an EMPTY body sent as application/json (400), which
   // browsers and fetch wrappers send on body-less POSTs (snapshot, archive,

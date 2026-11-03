@@ -14,7 +14,7 @@ export {
   verifyMediaToken,
   type MediaClaims,
 } from './mediaToken.js';
-export { ConfigSchema, DEFAULT_AUTH_RATE_LIMIT_MAX, loadConfig, routerProviderProblem, type Config } from './config.js';
+export { ConfigSchema, DEFAULT_AUTH_RATE_LIMIT_MAX, DEFAULT_COLLAB_MAX_MESSAGE_BYTES, loadConfig, routerProviderProblem, type Config } from './config.js';
 export {
   InMemoryObjectStorage,
   S3ObjectStorage,

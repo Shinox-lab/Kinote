@@ -21,11 +21,14 @@ x-app-env: &app-env
   COLLAB_INTERNAL_URL: http://collab:1234
   API_PORT: "8787"
   COLLAB_PORT: "1234"
+  # Largest live-editing message a client may send (default 8 MiB, at most 64 MiB).
+  COLLAB_MAX_MESSAGE_BYTES: ${COLLAB_MAX_MESSAGE_BYTES:-8388608}
   HOST: 0.0.0.0
-  # Coolify adds one proxy in front of the web nginx: set TRUST_PROXY=2 there.
-  # Locally (web on :8080 with no edge proxy) leave it false; the rate limit uses
-  # the nginx address. A single edge proxy in front is 1.
-  TRUST_PROXY: ${TRUST_PROXY:-false}
+  # The bundled web nginx is always one proxy in front of the api, so 1 by
+  # default: each client gets its own sign-in bucket. Coolify (or any other
+  # edge proxy) adds one more: set TRUST_PROXY=2 there. `false` would put every
+  # user behind the nginx address into one shared bucket.
+  TRUST_PROXY: ${TRUST_PROXY:-1}
   # `pnpm e2e` sets both (the suite signs up more accounts than 10 a minute).
   AUTH_RATE_LIMIT_MAX: ${AUTH_RATE_LIMIT_MAX:-10}
   LOG_LEVEL: ${LOG_LEVEL:-info}
