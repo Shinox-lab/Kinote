@@ -42,6 +42,7 @@ merged into local `main`; nothing has been pushed. Since 2026-10-30, work goes s
 | Phase C1c: the engine writes fields; Ask reads collections | Merged 2026-10-30 | same spec · `plans/2026-10-30-phase-c1c-engine-fields-and-ask.md` |
 | Phase C2: Excalidraw drawings | Merged 2026-10-30 | `specs/2026-10-30-phase-c-drawings-design.md` · `plans/2026-10-30-phase-c2-drawings.md` |
 | README, GitHub Pages site and feature clips | Merged 2026-10-30 | `specs/2026-10-30-readme-site-and-clips-design.md` · `plans/2026-10-30-readme-site-and-clips.md` |
+| Plans, usage and quotas (hosted Kinote sub-project 1) | Built on branch `plans-usage-quotas` (from `security-hardening`); not merged | `specs/2026-11-03-plans-usage-quotas-design.md` · `plans/2026-11-03-plans-usage-quotas.md` · `docs/control-plane-api.md` |
 | **Agents and MCP rework for external agents** | **Next**; needs its own spec | — |
 | WhatsApp, then Google Drive | Not started | slices 4–5 below |
 

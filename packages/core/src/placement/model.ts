@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { ENTITY_KINDS, EDGE_TYPES, normalizeEntityName } from '@kinote/db';
 import type { FieldType } from '@kinote/contracts';
 import { chatJson, type ChatJsonOptions } from '../llm/chatJson.js';
+import { estimateTokens, reportModelCall } from '../usage/meter.js';
 
 export type EntityKind = (typeof ENTITY_KINDS)[number];
 export type EdgeType = (typeof EDGE_TYPES)[number];
@@ -483,6 +484,25 @@ export class DeterministicPlacementModel implements RoutingModel {
 }
 
 // --- OpenAI-compatible model -------------------------------------------------
+
+// The deterministic model makes no network call, but it stands in for one: each
+// method reports estimated tokens (its input and answer as JSON) so metering is
+// exercised end to end in development and tests. Deterministic ids cost 0 unless
+// MODEL_CREDIT_RATES lists them.
+for (const name of ['summarizePage', 'extractEntities', 'sameEntity', 'splitCapture', 'placeDocument', 'planEdits'] as const) {
+  const proto = DeterministicPlacementModel.prototype as unknown as Record<string, (input: unknown) => Promise<unknown>>;
+  const inner = proto[name]!;
+  proto[name] = async function (this: DeterministicPlacementModel, input: unknown) {
+    const out = await inner.call(this, input);
+    reportModelCall({
+      model: this.model,
+      inputTokens: estimateTokens(JSON.stringify(input) ?? ''),
+      outputTokens: estimateTokens(JSON.stringify(out) ?? ''),
+      estimated: true,
+    });
+    return out;
+  };
+}
 
 export class OpenAIPlacementModel implements RoutingModel {
   readonly model: string;

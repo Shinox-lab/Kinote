@@ -354,3 +354,13 @@ export function useNotifications() {
     refetchOnWindowFocus: true,
   });
 }
+
+/** Where this workspace stands against its plan (credits, storage, seats). Refreshed every minute. */
+export function useUsage() {
+  return useQuery({
+    queryKey: useTenantKey('usage'),
+    queryFn: () => api.usage(),
+    refetchInterval: 60_000,
+    staleTime: 15_000,
+  });
+}

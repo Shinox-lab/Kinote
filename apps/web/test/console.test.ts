@@ -27,6 +27,7 @@ describe('role gating', () => {
       '/w/$tenantSlug/admin/spaces',
       '/w/$tenantSlug/admin/sources',
       '/w/$tenantSlug/admin/roles',
+      '/w/$tenantSlug/admin/usage',
     ]);
     expect(adminScreens('owner').map((s) => s.to)).toEqual([
       ...adminScreens('admin').map((s) => s.to),

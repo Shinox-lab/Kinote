@@ -49,6 +49,7 @@ import {
   wouldCreateCycle,
 } from '../documents/lifecycle.js';
 import { computeFileBadge } from '../pages/badge.js';
+import { indexingPausedIn } from '../usageLimits.js';
 import { resolveActorNames } from '../people.js';
 import { toDocumentSummary, toVersionSummary } from './pages.js';
 
@@ -698,6 +699,7 @@ export async function getFileDetails(actor: Actor, fileId: string): Promise<File
         indexedVersion: indexed ? { number: indexed.number } : null,
         sourceDeleted: doc.sourceDeletedAt !== null,
         placement: doc.placement,
+        indexingPaused: latest?.status === 'indexing' && (await indexingPausedIn(tx, actor.tenantId)),
       }),
       latestVersion: latest ? toFileVersion(latest) : null,
       indexedVersion: indexed ? toFileVersion(indexed) : null,

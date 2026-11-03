@@ -47,3 +47,16 @@ describe('notificationTarget', () => {
     expect(notificationTarget(n({ kind: 'capture_waiting', documentId: null, captureId: ID }), 'acme')).toEqual({ href: '/w/acme/capture' });
   });
 });
+
+describe('credit warnings', () => {
+  const warn = (excerpt: string) => n({ kind: 'credits_warning', actorName: 'Kinote', documentId: null, documentKind: null, documentTitle: null, blockId: null, excerpt });
+
+  test('say how much of the month is used', () => {
+    expect(notificationHeadline(warn('80'))).toBe("This workspace has used 80% of this month's AI credits");
+    expect(notificationHeadline(warn('100'))).toBe("This workspace has used all of this month's AI credits");
+  });
+
+  test('open the Usage page', () => {
+    expect(notificationTarget(warn('80'), 'acme')).toEqual({ href: '/w/acme/admin/usage' });
+  });
+});
