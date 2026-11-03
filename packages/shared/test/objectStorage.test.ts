@@ -104,6 +104,19 @@ describe.each(implementations)('ObjectStorage contract: $name', ({ skip, make })
       await expect(storage.getRange(tenantB, stored.objectKey, 0, 1)).rejects.toThrow();
     });
 
+    it('getStream streams the whole object with its size and type, and refuses another tenant', async () => {
+      const bytes = new Uint8Array(Array.from({ length: 300_000 }, (_, i) => i % 256));
+      const stored = await storage.put(tenantA, `uploads/${randomUUID()}.bin`, bytes, 'application/pdf');
+      const { stream, sizeBytes, mimeType } = await storage.getStream(tenantA, stored.objectKey);
+      const parts: Buffer[] = [];
+      for await (const chunk of stream) parts.push(Buffer.from(chunk as Uint8Array));
+      expect(Buffer.compare(Buffer.concat(parts), Buffer.from(bytes))).toBe(0);
+      expect(sizeBytes).toBe(bytes.byteLength);
+      expect(mimeType).toBe('application/pdf');
+      await expect(storage.getStream(tenantB, stored.objectKey)).rejects.toThrow();
+      await expect(storage.getStream(tenantA, `${tenantA}/uploads/missing.bin`)).rejects.toThrow();
+    });
+
     it('sizeBytes is the byte length, not the character count', async () => {
       const bytes = bytesOf('héllo wörld');
       const stored = await storage.put(tenantA, `uploads/${randomUUID()}.txt`, bytes, 'text/plain');

@@ -20,6 +20,15 @@ accounts. `SIGNUP_MODE` defaults to `auto`: open until the first account exists,
 letting anyone sign up, set `SIGNUP_MODE=open`. Someone who signs up from an invitation link gets the invited email
 and joins the workspace in the same step.
 
+### Files and pages
+
+- **Downloads are streamed,** so many people downloading large files at once no longer fills the API's memory.
+  Uploads are still read whole: at most `MAX_CONCURRENT_UPLOADS` (4) at a time per API, and the rest are asked to
+  retry a few seconds later.
+- **Images, video and audio from other sites in text written by AI or through the API** arrive as plain links,
+  not embedded media. The browser no longer loads them for every reader.
+- **Spreadsheet previews open only web and email links** from cells.
+
 ### Accounts
 
 - **Sessions last 14 days** from the last time they were used, and at most 90 days in all. People who use Kinote

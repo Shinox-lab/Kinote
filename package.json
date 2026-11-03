@@ -42,5 +42,10 @@
     "tsx": "^4.23.15",
     "typescript": "^5.9.3",
     "vitest": "^3.2.7"
+  },
+  "pnpm": {
+    "patchedDependencies": {
+      "@extend-ai/react-xlsx@0.18.1": "patches/@extend-ai__react-xlsx@0.18.1.patch"
+    }
   }
 }

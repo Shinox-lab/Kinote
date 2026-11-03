@@ -1,0 +1,23 @@
+diff --git a/dist/index.js b/dist/index.js
+index d4b9bb92a34febfa2d69b5c370dec17536d29148..a73b892345534a8b55e658d9b307e1840205c5be 100644
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -19975,8 +19975,16 @@ function XlsxGrid({
+       }
+     }
+     const externalTarget = target && !target.startsWith("#") ? target : null;
+-    if (externalTarget && typeof window !== "undefined") {
+-      window.open(externalTarget, "_blank", "noopener,noreferrer");
++    // Kinote patch: a workbook's hyperlink opens only as http, https or mailto (never javascript:, data:, file:...).
++    let safeTarget = null;
++    try {
++      const url = externalTarget ? new URL(externalTarget) : null;
++      if (url && (url.protocol === "http:" || url.protocol === "https:" || url.protocol === "mailto:")) safeTarget = url.href;
++    } catch {
++      safeTarget = null;
++    }
++    if (safeTarget && typeof window !== "undefined") {
++      window.open(safeTarget, "_blank", "noopener,noreferrer");
+     }
+   }, [activeSheetIndex, selectCell, setActiveSheetIndex, sheets]);
+   const startEditing = React4.useCallback(

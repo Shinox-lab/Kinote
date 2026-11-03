@@ -77,6 +77,8 @@ x-app-env: &app-env
   S3_REGION: ${S3_REGION:-us-east-1}
   S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-}
   MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-52428800}
+  # Uploads one api reads at once: its upload memory is about this times MAX_UPLOAD_BYTES.
+  MAX_CONCURRENT_UPLOADS: ${MAX_CONCURRENT_UPLOADS:-4}
   MAX_EXTRACTED_CHARS: ${MAX_EXTRACTED_CHARS:-2000000}
   # The extractor is part of the stack; http is the default. `off` is a
   # deliberate text/CSV-only run, `fake` is for tests.

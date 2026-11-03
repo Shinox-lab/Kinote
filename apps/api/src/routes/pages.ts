@@ -1,6 +1,6 @@
 import { isDeepStrictEqual } from 'node:util';
 import * as Y from 'yjs';
-import { createServerEditor, restorePageLinks } from '@kinote/shared';
+import { createServerEditor, restorePageLinks, stripRemoteMedia } from '@kinote/shared';
 import { and, desc, eq, inArray, isNull } from 'drizzle-orm';
 import {
   withTenantTx,
@@ -137,7 +137,8 @@ export function toDocumentSummary(row: DocumentRow): DocumentSummary {
 }
 
 export async function encodePageYDoc(title: string, markdown: string): Promise<Buffer> {
-  const blocks = restorePageLinks(await blockNote.tryParseMarkdownToBlocks(markdown));
+  // Media on other sites become links, as for engine-written Markdown (agents write through here too).
+  const blocks = stripRemoteMedia(restorePageLinks(await blockNote.tryParseMarkdownToBlocks(markdown)));
   const ydoc = blockNote.blocksToYDoc(blocks, 'document-store');
   ydoc.getMap('meta').set('title', title);
   return Buffer.from(Y.encodeStateAsUpdate(ydoc));

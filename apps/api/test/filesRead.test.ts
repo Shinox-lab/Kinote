@@ -132,6 +132,12 @@ describe('reading files', () => {
     assert.equal(past.statusCode, 416);
     assert.equal(past.headers['content-range'], `bytes */${size}`);
 
+    // No Range on a file over 4 MiB: the first chunk only, never the whole file in one response.
+    const noRange = await app.inject({ method: 'GET', url });
+    assert.equal(noRange.statusCode, 206);
+    assert.equal(noRange.rawPayload.length, 4 * 1024 * 1024);
+    assert.equal(noRange.headers['content-range'], `bytes 0-${4 * 1024 * 1024 - 1}/${size}`);
+
     const forged = await app.inject({ method: 'GET', url: `${url}x`, headers: { range: 'bytes=0-1' } });
     assert.equal(forged.statusCode, 404);
 

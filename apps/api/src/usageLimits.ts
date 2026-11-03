@@ -69,3 +69,32 @@ export async function aiActionsLeftOrUnknown(req: FastifyRequest, tenantId: stri
     return true;
   }
 }
+
+/**
+ * At most `max` uploads read at once in this process. An upload is held in
+ * memory while it is checked and stored (up to MAX_UPLOAD_BYTES), so this
+ * bounds the memory uploads can take to about `max` × MAX_UPLOAD_BYTES. A busy
+ * process answers rate_limited with a short Retry-After instead of queuing.
+ */
+export function uploadSlots(max: number) {
+  let inUse = 0;
+  return {
+    /** Takes a slot; call the returned function once to give it back. */
+    take(reply: FastifyReply): () => void {
+      if (inUse >= max) {
+        reply.header('retry-after', 5);
+        throw new AppError('rate_limited', 'Too many uploads are in progress; please try again in a few seconds.');
+      }
+      inUse++;
+      let given = false;
+      return () => {
+        if (given) return;
+        given = true;
+        inUse--;
+      };
+    },
+    get inUse() {
+      return inUse;
+    },
+  };
+}

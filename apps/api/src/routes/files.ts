@@ -1,3 +1,4 @@
+import type { Readable } from 'node:stream';
 import { createHash, randomUUID } from 'node:crypto';
 import type { FastifyRequest } from 'fastify';
 import { and, desc, eq, isNull, ne, sql } from 'drizzle-orm';
@@ -769,14 +770,16 @@ export async function downloadVersionFile(
   versionId: string,
   opts: { inline: boolean },
   deps: Pick<FileDeps, 'storage'>
-): Promise<{ bytes: Uint8Array; headers: Record<string, string> }> {
+): Promise<{ stream: Readable; headers: Record<string, string> }> {
   const { ver } = await withTenantTx(actor.tenantId, (tx) => readableFileVersion(tx, actor, versionId, 'viewer'));
   const mime = ver.mimeType ?? 'application/octet-stream';
-  const { bytes } = await deps.storage.get(actor.tenantId, ver.objectKey!);
+  // Streamed from storage, never held whole: many parallel downloads of a large file must not fill the api's memory.
+  const { stream, sizeBytes } = await deps.storage.getStream(actor.tenantId, ver.objectKey!);
   const inline = opts.inline && INLINE_MIME.has(mime);
   return {
-    bytes,
+    stream,
     headers: {
+      ...(sizeBytes > 0 ? { 'content-length': String(sizeBytes) } : {}),
       'content-type': mime.startsWith('text/') ? 'text/plain; charset=utf-8' : mime,
       'x-content-type-options': 'nosniff',
       'content-security-policy': 'sandbox',
@@ -864,17 +867,20 @@ export async function streamMedia(
   if (range === 'unsatisfiable') {
     return { status: 416, bytes: new Uint8Array(), headers: { ...base, 'content-range': `bytes */${size}` } };
   }
-  if (range === null) {
-    // No Range: the whole file, as any other download.
+  if (range === null && size <= MEDIA_CHUNK_BYTES) {
+    // No Range and small: the whole file.
     const bytes = await deps.storage.getRange(claims.tenantId, ver.objectKey, 0, Math.max(size - 1, 0));
     return { status: 200, bytes, headers: { ...base, 'content-length': String(bytes.byteLength) } };
   }
-  const end = Math.min(range.end, range.start + MEDIA_CHUNK_BYTES - 1);
-  const bytes = await deps.storage.getRange(claims.tenantId, ver.objectKey, range.start, end);
+  // No Range on a large file is answered like `bytes=0-`: the first chunk only, so
+  // a link holder can't make the api read a whole large file per request.
+  const { start, end: wanted } = range ?? { start: 0, end: size - 1 };
+  const end = Math.min(wanted, start + MEDIA_CHUNK_BYTES - 1);
+  const bytes = await deps.storage.getRange(claims.tenantId, ver.objectKey, start, end);
   return {
     status: 206,
     bytes,
-    headers: { ...base, 'content-range': `bytes ${range.start}-${end}/${size}`, 'content-length': String(bytes.byteLength) },
+    headers: { ...base, 'content-range': `bytes ${start}-${end}/${size}`, 'content-length': String(bytes.byteLength) },
   };
 }
 

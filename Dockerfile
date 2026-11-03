@@ -22,6 +22,8 @@ COPY packages/contracts/package.json packages/contracts/
 COPY packages/core/package.json packages/core/
 COPY packages/db/package.json packages/db/
 COPY packages/shared/package.json packages/shared/
+# pnpm applies these to dependencies at install time (package.json patchedDependencies).
+COPY patches/ patches/
 RUN pnpm install --frozen-lockfile
 
 COPY . .

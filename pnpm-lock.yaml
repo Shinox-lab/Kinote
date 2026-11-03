@@ -4,6 +4,11 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+patchedDependencies:
+  '@extend-ai/react-xlsx@0.18.1':
+    hash: ttaxc3gk4nis43mqgi65swcqcq
+    path: patches/@extend-ai__react-xlsx@0.18.1.patch
+
 importers:
 
   .:
@@ -132,7 +137,7 @@ importers:
         version: 0.18.1(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       '@extend-ai/react-xlsx':
         specifier: 0.18.1
-        version: 0.18.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+        version: 0.18.1(patch_hash=ttaxc3gk4nis43mqgi65swcqcq)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       '@hocuspocus/provider':
         specifier: ^4.7.1
         version: 4.7.1(y-protocols@1.0.7(yjs@13.6.33))(yjs@13.6.33)
@@ -6590,7 +6595,7 @@ snapshots:
 
   '@exodus/bytes@1.16.0': {}
 
-  '@extend-ai/react-xlsx@0.18.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1)':
+  '@extend-ai/react-xlsx@0.18.1(patch_hash=ttaxc3gk4nis43mqgi65swcqcq)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)':
     dependencies:
       '@dukelib/sheets-wasm': 0.1.23
       '@tanstack/react-virtual': 3.14.23(react-dom@19.3.1(react@19.3.1))(react@19.3.1)

@@ -204,7 +204,7 @@ import {
 import { authRoutes, type AuthRateLimit, type SignUpModeSetting } from './routes/auth.js';
 import { PgRateLimitStore } from './rateLimitStore.js';
 import type { Mailer } from './mail.js';
-import { aiActionsLeftOrUnknown, chargeAi, requestLimit } from './usageLimits.js';
+import { aiActionsLeftOrUnknown, chargeAi, requestLimit, uploadSlots } from './usageLimits.js';
 import { demoSeedRunning, demoSeedStatus, startDemoSeed } from './routes/demoSeed.js';
 import {
   invalidateActor,
@@ -244,6 +244,8 @@ export interface ApiServerOptions {
   mailer?: Mailer;
   /** Per-person request limits and the daily AI allowance (DEFAULT_USAGE_LIMITS; usageLimitsOf(config) in main.ts). */
   limits?: UsageLimits;
+  /** Uploads read at once in this process (MAX_CONCURRENT_UPLOADS; default 4). */
+  maxConcurrentUploads?: number;
   /**
    * Trust X-Forwarded-For from a reverse proxy, so `req.ip` (and the per-IP
    * auth rate limit) is the real client address. Default false: without a
@@ -311,6 +313,9 @@ function warnOnTrustProxyMismatch(app: FastifyInstance, setting: boolean | numbe
   });
 }
 
+/** Uploads read at once per process when MAX_CONCURRENT_UPLOADS is unset. */
+const DEFAULT_MAX_CONCURRENT_UPLOADS = 4;
+
 const DEFAULT_AUTH_RATE_LIMIT: AuthRateLimit = { max: DEFAULT_AUTH_RATE_LIMIT_MAX, timeWindow: '1 minute' };
 
 /** The tenant actor attached by the auth hook (routes default to `auth: 'tenant'`). */
@@ -336,6 +341,7 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
   const limits = opts.limits ?? DEFAULT_USAGE_LIMITS;
   const HOUR_MS = 60 * 60 * 1000;
   const uploadLimit = requestLimit('upload', limits.uploadPerMinute);
+  const uploads = uploadSlots(opts.maxConcurrentUploads ?? DEFAULT_MAX_CONCURRENT_UPLOADS);
   const app = Fastify({
     logger: fastifyLogger(opts.logger),
     trustProxy: trustProxyOption(opts.trustProxy),
@@ -758,8 +764,13 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
   app.post('/api/v1/files', { onRequest: uploadLimit }, async (req, reply) => {
     const actor = actorOf(req);
     const deps = fileDeps();
-    const upload = await readMultipartUpload(req);
-    const out = await uploadFile(actor, upload, deps);
+    const release = uploads.take(reply);
+    let out: Awaited<ReturnType<typeof uploadFile>>;
+    try {
+      out = await uploadFile(actor, await readMultipartUpload(req), deps);
+    } finally {
+      release();
+    }
     invalidateTreeCache(actor.tenantId, out.response.document.spaceId);
     return reply
       .status(out.status === 'created' ? 201 : 200)
@@ -773,8 +784,13 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
     const source = sourceOf(req);
     const deps = fileDeps();
     const externalId = ExternalIdSchema.parse((req.params as any)['*']);
-    const upload = await readMultipartUpload(req);
-    const out = await putSourceFile(source, externalId, upload.file, deps);
+    const release = uploads.take(reply);
+    let out: Awaited<ReturnType<typeof putSourceFile>>;
+    try {
+      out = await putSourceFile(source, externalId, (await readMultipartUpload(req)).file, deps);
+    } finally {
+      release();
+    }
     return reply.status(out.status).send(parseReply(SourcePutResponseSchema, out.response));
   });
 
@@ -793,8 +809,13 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
   app.post('/api/v1/files/:id/versions', { onRequest: uploadLimit }, async (req, reply) => {
     const actor = actorOf(req);
     const deps = fileDeps();
-    const upload = await readMultipartUpload(req);
-    const out = await replaceFile(actor, (req.params as any).id, upload.file, deps);
+    const release = uploads.take(reply);
+    let out: Awaited<ReturnType<typeof replaceFile>>;
+    try {
+      out = await replaceFile(actor, (req.params as any).id, (await readMultipartUpload(req)).file, deps);
+    } finally {
+      release();
+    }
     invalidateTreeCache(actor.tenantId, out.response.document.spaceId);
     return reply
       .status(out.status === 'created' ? 201 : 200)
@@ -818,7 +839,7 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
       { inline: (req.query as any)?.inline === '1' },
       fileDeps()
     );
-    return reply.headers(out.headers).send(Buffer.from(out.bytes));
+    return reply.headers(out.headers).send(out.stream);
   });
 
   app.post('/api/v1/versions/:id/media-url', async (req, reply) => {

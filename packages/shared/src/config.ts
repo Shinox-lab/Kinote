@@ -159,6 +159,8 @@ export const ConfigSchema = z.object({
   S3_FORCE_PATH_STYLE: z.enum(['true', 'false']).transform((v) => v === 'true').optional(),
   /** Largest file the api accepts, in bytes (default 50 MB; at most 500 MB). */
   MAX_UPLOAD_BYTES: z.coerce.number().int().positive().max(524_288_000).default(52_428_800),
+  /** Uploads one api process reads at once; its upload memory is about this times MAX_UPLOAD_BYTES. */
+  MAX_CONCURRENT_UPLOADS: z.coerce.number().int().positive().max(100).default(4),
   /** Most text, in characters, one file may yield; more fails the file (never truncated). */
   MAX_EXTRACTED_CHARS: z.coerce.number().int().positive().default(2_000_000),
   /** `off`: only text files can be read; `fake`: tests and local e2e; `http`: the Docling service. */
