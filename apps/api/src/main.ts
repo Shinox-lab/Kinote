@@ -1,6 +1,6 @@
 import { assertEmbeddingDimensions, closeDb, initDb } from '@kinote/db';
 import { createAnswerProvider, createEmbeddingProvider, EMBEDDING_DIMENSIONS } from '@kinote/core';
-import { createObjectStorage, loadConfig } from '@kinote/shared';
+import { createObjectStorage, loadConfig, usageLimitsOf } from '@kinote/shared';
 import { buildApiServer } from './server.js';
 import { HttpCollabClient } from '@kinote/shared';
 
@@ -22,6 +22,7 @@ async function main(): Promise<void> {
     logger: { level: config.LOG_LEVEL },
     trustProxy: config.TRUST_PROXY,
     authRateLimit: { max: config.AUTH_RATE_LIMIT_MAX, timeWindow: '1 minute' },
+    limits: usageLimitsOf(config),
     collab: new HttpCollabClient(config.COLLAB_INTERNAL_URL, config.INTERNAL_SECRET),
   });
   await app.listen({ port: config.API_PORT, host: config.HOST });

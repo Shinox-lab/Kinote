@@ -522,4 +522,39 @@ describe('worker runner', () => {
     expect(later).toEqual([{ id: second.id, queue: 'test.slow', status: 'completed' }]);
     expect((await load(tenantId, second.id)).status).toBe('completed');
   });
+
+  it('an AI job past the workspace’s daily allowance waits for the next UTC day without running', async () => {
+    const tenantId = await seedTenant();
+    const other = await seedTenant();
+    const runs: string[] = [];
+    const handlers: Record<string, JobHandler> = {
+      'test.ai': { usesAi: true, async run(job) { runs.push(job.id); } },
+      'test.plain': { async run(job) { runs.push(job.id); } },
+    };
+    const first = await enqueue(tenantId, 'test.ai', 'a');
+    await runPendingJobsForTenant(tenantId, { handlers, aiDailyLimit: 1 });
+    expect(runs).toEqual([first.id]);
+
+    const second = await enqueue(tenantId, 'test.ai', 'b');
+    const plain = await enqueue(tenantId, 'test.plain', 'c');
+    const processed = await runPendingJobsForTenant(tenantId, { handlers, aiDailyLimit: 1 });
+    // The plain job runs; the AI one is put back, not failed.
+    expect(runs).toEqual([first.id, plain.id]);
+    expect(processed.find((p) => p.id === second.id)?.status).toBe('queued');
+    const waiting = await load(tenantId, second.id);
+    expect(waiting.status).toBe('queued');
+    expect(waiting.attempts).toBe(0);
+    const now = new Date();
+    expect(waiting.runAt.toISOString()).toBe(
+      new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1)).toISOString()
+    );
+
+    // Another workspace still has its allowance; 0 means no allowance at all.
+    const elsewhere = await enqueue(other, 'test.ai', 'a');
+    await runPendingJobsForTenant(other, { handlers, aiDailyLimit: 1 });
+    expect(runs).toContain(elsewhere.id);
+    const unlimited = await enqueue(tenantId, 'test.ai', 'd');
+    await runPendingJobsForTenant(tenantId, { handlers, aiDailyLimit: 0 });
+    expect(runs).toContain(unlimited.id);
+  });
 });

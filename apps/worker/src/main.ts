@@ -43,6 +43,7 @@ async function main(): Promise<void> {
       maxExtractedChars: config.MAX_EXTRACTED_CHARS,
       placementModel: createPlacementModel(config),
       collab: new HttpCollabClient(config.COLLAB_INTERNAL_URL, config.INTERNAL_SECRET),
+      aiDailyLimit: config.TENANT_DAILY_AI_ACTIONS,
     });
   } finally {
     await closeDb();

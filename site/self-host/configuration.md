@@ -29,7 +29,13 @@ them the same way. After a change, run `docker compose up -d` again to apply it.
 | `API_HOST_PORT`, `COLLAB_HOST_PORT`, `GRIDCRAFT_HOST_PORT` | `8787`, `1234`, `8082` | Used by the test suites and UI development only. |
 | `TRUST_PROXY` | `1` | How many proxies sit in front of the API, counting Kinote's own web service. Set `2` behind one more proxy, such as Coolify. See [Ports and reverse proxies](./proxy). |
 | `COLLAB_MAX_MESSAGE_BYTES` | `8388608` (8 MiB) | The largest single message a live-editing client may send, at most 64 MiB. A bigger one disconnects that client. |
-| `AUTH_RATE_LIMIT_MAX` | `10` | Sign-up and sign-in attempts allowed per minute from one address. |
+| `AUTH_RATE_LIMIT_MAX` | `10` | Sign-up and sign-in attempts allowed per minute from one address. Separately, five failed sign-ins to one account within 15 minutes lock that account for a minute, then longer each time, up to 15 minutes. |
+| `ASK_RATE_LIMIT_PER_MIN` | `10` | Questions one person may Ask per minute. |
+| `SEARCH_RATE_LIMIT_PER_MIN` | `60` | Searches one person may run per minute. |
+| `CAPTURE_RATE_LIMIT_PER_MIN` | `20` | Captures one person may send per minute. |
+| `UPLOAD_RATE_LIMIT_PER_MIN` | `30` | Files one person, or one source token, may upload per minute. |
+| `MAX_TENANTS_PER_USER` | `5` | Workspaces one person may own. Creating workspaces is also limited to 5 an hour. |
+| `TENANT_DAILY_AI_ACTIONS` | `2000` | AI actions one workspace may use per UTC day: each Ask, and each capture routed or placed, page card or entity extraction. Search and indexing aren't counted. Past it, Ask and new captures are refused until midnight UTC and background AI work waits. `0` turns it off. |
 | `LOG_LEVEL` | `info` | How much the API logs: `fatal`, `error`, `warn`, `info`, `debug`, `trace` or `silent`. |
 
 Every host port is bound to `127.0.0.1` only.

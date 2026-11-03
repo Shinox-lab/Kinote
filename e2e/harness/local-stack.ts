@@ -86,6 +86,15 @@ const app = buildApiServer({
   maxUploadBytes: config.MAX_UPLOAD_BYTES,
   // Every spec signs accounts up from this one address.
   authRateLimit: { max: 10_000, timeWindow: '1 minute' },
+  // The specs ask, search and upload far faster than a person; no allowance either.
+  limits: {
+    askPerMinute: 100_000,
+    searchPerMinute: 100_000,
+    capturePerMinute: 100_000,
+    uploadPerMinute: 100_000,
+    maxTenantsPerUser: 10_000,
+    tenantDailyAiActions: 0,
+  },
   collab: new HttpCollabClient(`http://${HOST}:${collabPort}`, internalSecret),
 });
 await app.listen({ port: apiPort, host: HOST });

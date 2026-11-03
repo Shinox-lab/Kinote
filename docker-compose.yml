@@ -31,6 +31,14 @@ x-app-env: &app-env
   TRUST_PROXY: ${TRUST_PROXY:-1}
   # `pnpm e2e` sets both (the suite signs up more accounts than 10 a minute).
   AUTH_RATE_LIMIT_MAX: ${AUTH_RATE_LIMIT_MAX:-10}
+  # Per-person requests per minute, workspaces per person, and AI actions per
+  # workspace per UTC day (0: no allowance). See site/self-host/configuration.md.
+  ASK_RATE_LIMIT_PER_MIN: ${ASK_RATE_LIMIT_PER_MIN:-10}
+  SEARCH_RATE_LIMIT_PER_MIN: ${SEARCH_RATE_LIMIT_PER_MIN:-60}
+  CAPTURE_RATE_LIMIT_PER_MIN: ${CAPTURE_RATE_LIMIT_PER_MIN:-20}
+  UPLOAD_RATE_LIMIT_PER_MIN: ${UPLOAD_RATE_LIMIT_PER_MIN:-30}
+  MAX_TENANTS_PER_USER: ${MAX_TENANTS_PER_USER:-5}
+  TENANT_DAILY_AI_ACTIONS: ${TENANT_DAILY_AI_ACTIONS:-2000}
   LOG_LEVEL: ${LOG_LEVEL:-info}
   EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-deterministic}
   EMBEDDING_BASE_URL: ${EMBEDDING_BASE_URL:-}

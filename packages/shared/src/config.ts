@@ -10,6 +10,43 @@ export const DEFAULT_AUTH_RATE_LIMIT_MAX = 10;
 export const DEFAULT_COLLAB_MAX_MESSAGE_BYTES = 8 * 1024 * 1024;
 
 /**
+ * Per-person request limits and the per-workspace daily AI allowance
+ * (TENANT_DAILY_AI_ACTIONS: each Ask, and each background capture routing,
+ * placement, page card or entity extraction; 0 means no allowance check).
+ */
+export interface UsageLimits {
+  askPerMinute: number;
+  searchPerMinute: number;
+  capturePerMinute: number;
+  uploadPerMinute: number;
+  maxTenantsPerUser: number;
+  tenantDailyAiActions: number;
+}
+
+export const DEFAULT_USAGE_LIMITS: UsageLimits = {
+  askPerMinute: 10,
+  searchPerMinute: 60,
+  capturePerMinute: 20,
+  uploadPerMinute: 30,
+  maxTenantsPerUser: 5,
+  tenantDailyAiActions: 2000,
+};
+
+/** The usage limits a loaded config sets. */
+export function usageLimitsOf(config: Config): UsageLimits {
+  return {
+    askPerMinute: config.ASK_RATE_LIMIT_PER_MIN,
+    searchPerMinute: config.SEARCH_RATE_LIMIT_PER_MIN,
+    capturePerMinute: config.CAPTURE_RATE_LIMIT_PER_MIN,
+    uploadPerMinute: config.UPLOAD_RATE_LIMIT_PER_MIN,
+    maxTenantsPerUser: config.MAX_TENANTS_PER_USER,
+    tenantDailyAiActions: config.TENANT_DAILY_AI_ACTIONS,
+  };
+}
+
+const perMinute = (fallback: number) => z.coerce.number().int().positive().max(100_000).default(fallback);
+
+/**
  * Environment contract shared by the api, collab and worker services.
  * `DATABASE_URL` is the `kinote_app` role (no superuser, no BYPASSRLS);
  * `DATABASE_MIGRATE_URL` is the schema owner, used only by `pnpm db:migrate`.
@@ -57,6 +94,23 @@ export const ConfigSchema = z.object({
    * brute-force limit into no limit at all.
    */
   AUTH_RATE_LIMIT_MAX: z.coerce.number().int().positive().max(100_000).default(DEFAULT_AUTH_RATE_LIMIT_MAX),
+  /** Asks per person per minute. */
+  ASK_RATE_LIMIT_PER_MIN: perMinute(DEFAULT_USAGE_LIMITS.askPerMinute),
+  /** Searches per person per minute. */
+  SEARCH_RATE_LIMIT_PER_MIN: perMinute(DEFAULT_USAGE_LIMITS.searchPerMinute),
+  /** Captures per person per minute. */
+  CAPTURE_RATE_LIMIT_PER_MIN: perMinute(DEFAULT_USAGE_LIMITS.capturePerMinute),
+  /** File uploads per person (or per source token) per minute. */
+  UPLOAD_RATE_LIMIT_PER_MIN: perMinute(DEFAULT_USAGE_LIMITS.uploadPerMinute),
+  /** Workspaces one person may own. */
+  MAX_TENANTS_PER_USER: z.coerce.number().int().positive().max(10_000).default(DEFAULT_USAGE_LIMITS.maxTenantsPerUser),
+  /** AI actions per workspace per UTC day; 0 turns the allowance off. */
+  TENANT_DAILY_AI_ACTIONS: z.coerce
+    .number()
+    .int()
+    .min(0)
+    .max(100_000_000)
+    .default(DEFAULT_USAGE_LIMITS.tenantDailyAiActions),
   /** pino level of the api's log (stdout). Request headers and bodies are never logged. */
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
   EMBEDDING_PROVIDER: z.enum(['deterministic', 'openai']).default('deterministic'),

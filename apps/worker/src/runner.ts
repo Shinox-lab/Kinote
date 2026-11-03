@@ -5,6 +5,10 @@ import {
   failJob,
   releaseJobs,
   tenantsWithDueJobs,
+  deleteExpiredCounters,
+  chargeAiAction,
+  enqueueJob,
+  nextAiDay,
   NonRetryableError,
   type Job,
 } from '@kinote/db';
@@ -73,6 +77,11 @@ export interface RunnerOptions {
   handlers?: Record<string, JobHandler>;
   /** Stops between jobs and passes; claimed jobs not yet started are released. */
   signal?: AbortSignal;
+  /**
+   * AI actions per workspace per UTC day (TENANT_DAILY_AI_ACTIONS). A job whose
+   * handler `usesAi` beyond it waits for the next UTC day. Default 0: no allowance.
+   */
+  aiDailyLimit?: number;
 }
 
 type Processed = { id: string; queue: string; status: string };
@@ -153,13 +162,44 @@ export async function runPendingJobsForTenant(
         );
         status = 'skipped_expired';
       } else {
-        status = await runOne(tenantId, job, registry, clock, deps);
+        status = await runOne(tenantId, job, registry, clock, deps, o.aiDailyLimit ?? 0);
       }
       processed.push({ id: job.id, queue: job.queue, status });
     }
   }
 
   return processed;
+}
+
+/**
+ * Charges one AI action for `job`'s workspace. Past today's allowance the job
+ * is put back for the next UTC day (a rerun of the same job, as a busy capture
+ * is) and true is returned: the run is over without calling the handler. An
+ * unreadable counter lets the job run.
+ */
+async function deferredPastAllowance(job: Job, aiDailyLimit: number, now: Date): Promise<boolean> {
+  let allowed = true;
+  try {
+    ({ allowed } = await chargeAiAction(job.tenantId, aiDailyLimit, now));
+  } catch (err) {
+    console.error(`[worker] AI allowance unavailable for job ${job.id}; running it:`, errorMessage(err));
+    return false;
+  }
+  if (allowed) return false;
+  const runAt = nextAiDay(now);
+  await withTenantTx(job.tenantId, (tx) =>
+    enqueueJob(tx, {
+      tenantId: job.tenantId,
+      queue: job.queue,
+      idempotencyKey: job.idempotencyKey,
+      payload: job.payload as Record<string, unknown>,
+      runAt,
+    })
+  );
+  console.warn(
+    `[worker] job ${job.id} (${job.queue}): workspace ${job.tenantId} used today's AI allowance; waits until ${runAt.toISOString()}`
+  );
+  return true;
 }
 
 /** True when the claim's lease (`locked_at + LEASE_SECONDS`) is at or before `now`. */
@@ -202,14 +242,17 @@ async function runOne(
   job: Job,
   registry: Record<string, JobHandler>,
   clock: () => Date,
-  deps: RunDeps
+  deps: RunDeps,
+  aiDailyLimit: number
 ): Promise<string> {
   const handler = registry[job.queue];
   const lease = job.lockedAt ?? undefined;
   let failure: { err: unknown } | undefined;
   try {
     if (!handler) throw new NonRetryableError(`No handler registered for queue "${job.queue}"`);
-    await handler.run(job, { now: clock(), ...deps });
+    if (!(handler.usesAi && (await deferredPastAllowance(job, aiDailyLimit, clock())))) {
+      await handler.run(job, { now: clock(), ...deps });
+    }
   } catch (err) {
     failure = { err };
   }
@@ -269,6 +312,9 @@ function sleep(ms: number, signal: AbortSignal): Promise<void> {
   });
 }
 
+/** How often the loop deletes finished rate-limit windows. */
+const COUNTER_SWEEP_MS = 10 * 60 * 1000;
+
 /**
  * Polls for tenants with due jobs every `intervalMs` and runs each tenant's
  * jobs until `signal` aborts. A failing tenant run is logged and does not stop
@@ -284,8 +330,19 @@ export async function runWorkerLoop(o: {
   placementModel?: RoutingModel;
   collab?: CollabClient;
   handlers?: Record<string, JobHandler>;
+  aiDailyLimit?: number;
 }): Promise<void> {
+  let lastSweep = 0;
   while (!o.signal.aborted) {
+    // Finished rate-limit windows are only clutter; one worker pass every few minutes clears them.
+    if (Date.now() - lastSweep >= COUNTER_SWEEP_MS) {
+      lastSweep = Date.now();
+      try {
+        await deleteExpiredCounters();
+      } catch (err) {
+        console.error('[worker] clearing finished rate-limit windows failed:', errorMessage(err));
+      }
+    }
     let tenantIds: string[] = [];
     try {
       tenantIds = await tenantsWithDueJobs(new Date(), LEASE_SECONDS);
@@ -304,6 +361,7 @@ export async function runWorkerLoop(o: {
           collab: o.collab,
           handlers: o.handlers,
           signal: o.signal,
+          aiDailyLimit: o.aiDailyLimit,
         });
       } catch (err) {
         console.error(`[worker] running jobs for tenant ${tenantId} failed:`, errorMessage(err));

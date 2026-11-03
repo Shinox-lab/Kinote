@@ -6,6 +6,7 @@ import { and, eq } from 'drizzle-orm';
 import { withTenantTx, memberships, agents } from '@kinote/db';
 import { createTestDb, type TestDb } from '@kinote/db/testing';
 import { buildApiServer, type ApiServerOptions } from '../../src/server.js';
+import type { UsageLimits } from '@kinote/shared';
 import { clearActorCache, invalidateActor } from '../../src/auth/actor.js';
 import { clearSessionCache } from '../../src/auth/sessions.js';
 import { clearTreeCache } from '../../src/treeCache.js';
@@ -37,6 +38,16 @@ export interface TestSession {
   token: string;
 }
 
+/** Usage limits no test reaches by accident; tests of the limits pass their own. */
+export const TEST_LIMITS: UsageLimits = {
+  askPerMinute: 100_000,
+  searchPerMinute: 100_000,
+  capturePerMinute: 100_000,
+  uploadPerMinute: 100_000,
+  maxTenantsPerUser: 10_000,
+  tenantDailyAiActions: 0,
+};
+
 /**
  * The API server as tests use it: identical to production except for a
  * generous auth rate limit, so suites that sign up many users are not
@@ -44,7 +55,7 @@ export interface TestSession {
  * `opts` adds or overrides server options (e.g. a collab client).
  */
 export function buildTestApp(opts: ApiServerOptions = {}): FastifyInstance {
-  return buildApiServer({ authRateLimit: { max: 1000, timeWindow: '1 minute' }, ...opts });
+  return buildApiServer({ authRateLimit: { max: 1000, timeWindow: '1 minute' }, limits: TEST_LIMITS, ...opts });
 }
 
 /** Signs a new user up through the real sign-up route and returns its session. */

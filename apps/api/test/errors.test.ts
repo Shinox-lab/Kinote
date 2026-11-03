@@ -247,6 +247,8 @@ describe('error model', () => {
       file_text_too_large: 422,
       quota_exceeded: 429,
       rate_limited: 429,
+      ai_budget_exhausted: 429,
+      tenant_limit_reached: 403,
       embedding_unavailable: 503,
       search_unavailable: 503,
       llm_unavailable: 503,

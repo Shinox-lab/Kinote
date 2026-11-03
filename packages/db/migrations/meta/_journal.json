@@ -267,6 +267,13 @@
       "when": 1793620297000,
       "tag": "0037_latest_version_pointer",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1794200000000,
+      "tag": "0038_rate_limits",
+      "breakpoints": true
     }
   ]
 }

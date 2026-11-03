@@ -27,6 +27,20 @@ This upgrade changes a few things you may notice:
 - **Live editing has message and connection limits:** one message is at most `COLLAB_MAX_MESSAGE_BYTES` (8 MiB),
   and one client address can hold at most 100 live-editing connections.
 
+### Usage limits and the daily AI allowance
+
+- **Each person's requests are limited per minute:** Ask (10), Search (60), captures (20) and file uploads (30).
+  Creating workspaces is limited to 5 an hour, and one person may own at most 5.
+- **Each workspace has a daily AI allowance** of 2,000 AI actions (`TENANT_DAILY_AI_ACTIONS`): each Ask, and each
+  capture routed or placed, page card or entity extraction. Search and indexing aren't counted. Once it's used up, Ask
+  and new captures are refused until midnight UTC and background AI work waits until then. Set it to `0` to turn it
+  off, or higher for a busy workspace.
+- **Failed sign-ins are also counted per account.** After five in 15 minutes the account is locked briefly.
+- **The limits are shared by every API copy,** through a new database table (`rate_limit_counters`) that the
+  upgrade creates.
+
+Every limit is a setting; see [Configuration](./configuration).
+
 ## Where your data lives
 
 | What | Where |

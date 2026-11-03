@@ -14,6 +14,7 @@ import {
 } from '@kinote/contracts';
 import { getDummyHash, hashPassword, isUsableHash, verifyPassword } from '../auth/password.js';
 import { createSession, revokeSession } from '../auth/sessions.js';
+import { assertSignInAllowed, recordFailedSignIn, recordSuccessfulSignIn } from '../auth/signInThrottle.js';
 import type { AuthSession } from '../auth/actor.js';
 import { parseReply } from '../reply.js';
 
@@ -69,6 +70,7 @@ export async function authRoutes(
     { config: { auth: 'public', rateLimit } },
     async (req, reply) => {
       const parsed = SignInRequestSchema.parse(req.body);
+      await assertSignInAllowed(parsed.email, reply);
       const [user] = await getDb().select().from(users).where(eq(users.email, parsed.email));
       // Always run one argon2 verification so unknown emails, placeholder
       // accounts and wrong passwords cost the same and answer identically.
@@ -77,7 +79,11 @@ export async function authRoutes(
         parsed.password,
         usable ? user.passwordHash : await getDummyHash()
       );
-      if (!usable || !ok) throw new AppError('invalid_credentials');
+      if (!usable || !ok) {
+        await recordFailedSignIn(parsed.email);
+        throw new AppError('invalid_credentials');
+      }
+      await recordSuccessfulSignIn(parsed.email);
       return reply.status(200).send(await authResponse(toAuthUser(user)));
     }
   );

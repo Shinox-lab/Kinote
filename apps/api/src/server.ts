@@ -1,8 +1,9 @@
 import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 import rateLimit from '@fastify/rate-limit';
 import multipart from '@fastify/multipart';
-import { withTenantTx } from '@kinote/db';
-import { DEFAULT_AUTH_RATE_LIMIT_MAX, type ObjectStorage } from '@kinote/shared';
+import { getDb, rowsOf, withTenantTx } from '@kinote/db';
+import { sql } from 'drizzle-orm';
+import { DEFAULT_AUTH_RATE_LIMIT_MAX, DEFAULT_USAGE_LIMITS, type ObjectStorage, type UsageLimits } from '@kinote/shared';
 import {
   SearchRequestSchema,
   AskRequestSchema,
@@ -201,6 +202,8 @@ import {
   updateField,
 } from './routes/collections.js';
 import { authRoutes, type AuthRateLimit } from './routes/auth.js';
+import { PgRateLimitStore } from './rateLimitStore.js';
+import { aiActionsLeftOrUnknown, chargeAi, requestLimit } from './usageLimits.js';
 import { demoSeedRunning, demoSeedStatus, startDemoSeed } from './routes/demoSeed.js';
 import {
   invalidateActor,
@@ -223,6 +226,13 @@ import { fastifyLogger, type ApiLoggerOptions } from './logger.js';
 export interface ApiServerOptions {
   /** Per-IP limit for sign-up and sign-in (each route counted separately). */
   authRateLimit?: AuthRateLimit;
+  /**
+   * Where rate-limit counters live: 'postgres' (default) shares them between
+   * every api process; 'memory' keeps them in this process (tests without a database).
+   */
+  rateLimitStore?: 'postgres' | 'memory';
+  /** Per-person request limits and the daily AI allowance (DEFAULT_USAGE_LIMITS; usageLimitsOf(config) in main.ts). */
+  limits?: UsageLimits;
   /**
    * Trust X-Forwarded-For from a reverse proxy, so `req.ip` (and the per-IP
    * auth rate limit) is the real client address. Default false: without a
@@ -312,6 +322,9 @@ function sessionOf(req: FastifyRequest): AuthSession {
 export function buildApiServer(opts: ApiServerOptions = {}) {
   const embeddingProvider = opts.embeddingProvider ?? defaultEmbeddingProvider;
   const answerProvider = opts.answerProvider ?? defaultAnswerProvider;
+  const limits = opts.limits ?? DEFAULT_USAGE_LIMITS;
+  const HOUR_MS = 60 * 60 * 1000;
+  const uploadLimit = requestLimit('upload', limits.uploadPerMinute);
   const app = Fastify({
     logger: fastifyLogger(opts.logger),
     trustProxy: trustProxyOption(opts.trustProxy),
@@ -392,6 +405,8 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
   // routes are registered as a plugin after it.
   app.register(rateLimit, {
     global: false,
+    // Shared by every api process; 'memory' only for tests that run without a database.
+    ...(opts.rateLimitStore === 'memory' ? {} : { store: PgRateLimitStore }),
     errorResponseBuilder: () => new AppError('rate_limited'),
   });
   app.register(authRoutes, { authRateLimit: opts.authRateLimit ?? DEFAULT_AUTH_RATE_LIMIT });
@@ -405,10 +420,20 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
     return { storage: opts.storage };
   };
 
-  app.post('/api/v1/tenants', { config: { auth: 'session' } }, async (req, reply) => {
-    const res = await createTenantWithInbox(sessionOf(req).userId, req.body);
-    return reply.status(201).send(parseReply(CreateTenantResponseSchema, res));
-  });
+  app.post(
+    '/api/v1/tenants',
+    { config: { auth: 'session' }, onRequest: requestLimit('tenant-create', 5, { windowMs: HOUR_MS }) },
+    async (req, reply) => {
+      const userId = sessionOf(req).userId;
+      // my_tenants reads across tenants (SECURITY DEFINER); only workspaces this person owns count.
+      const owned = rowsOf<{ role: string }>(await getDb().execute(sql`SELECT role FROM my_tenants(${userId}::uuid)`));
+      if (owned.filter((t) => t.role === 'owner').length >= limits.maxTenantsPerUser) {
+        throw new AppError('tenant_limit_reached');
+      }
+      const res = await createTenantWithInbox(userId, req.body);
+      return reply.status(201).send(parseReply(CreateTenantResponseSchema, res));
+    }
+  );
 
   app.post('/api/v1/invitations', async (req, reply) => {
     const res = await inviteMember(actorOf(req), req.body);
@@ -536,11 +561,13 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
   // The demo content (Settings -> Spaces): add it to an empty workspace, or reset a demo workspace back to it.
   // Both answer at once and carry on in the background; poll the GET.
   app.get('/api/v1/demo-seed', async (req, reply) => reply.send(parseReply(DemoSeedStatusSchema, await demoSeedStatus(actorOf(req)))));
-  app.post('/api/v1/demo-seed', async (req, reply) => {
+  // Each seed or reset re-indexes and re-routes a whole demo: a few an hour per workspace.
+  const demoSeedLimit = requestLimit('demo-seed', 3, { windowMs: HOUR_MS, per: 'tenant' });
+  app.post('/api/v1/demo-seed', { onRequest: demoSeedLimit }, async (req, reply) => {
     await startDemoSeed(app, req, actorOf(req));
     return reply.status(202).send(parseReply(DemoSeedStatusSchema, await demoSeedStatus(actorOf(req))));
   });
-  app.post('/api/v1/demo-seed/reset', async (req, reply) => {
+  app.post('/api/v1/demo-seed/reset', { onRequest: demoSeedLimit }, async (req, reply) => {
     const actor = actorOf(req);
     await startDemoSeed(app, req, actor, {
       reset: true,
@@ -712,7 +739,7 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
     return reply.send(parseReply(DocumentSummarySchema, res));
   });
 
-  app.post('/api/v1/files', async (req, reply) => {
+  app.post('/api/v1/files', { onRequest: uploadLimit }, async (req, reply) => {
     const actor = actorOf(req);
     const deps = fileDeps();
     const upload = await readMultipartUpload(req);
@@ -726,7 +753,7 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
   // The upload API: a script acts as its source, with a source token and no session.
   // A wildcard, not a parameter: an id such as `reports/2026-q3` works with or without URL-encoding the
   // slash, instead of an unmatched path that answers a valid token with 401.
-  app.put('/api/v1/source/files/*', { config: { auth: 'source' } }, async (req, reply) => {
+  app.put('/api/v1/source/files/*', { config: { auth: 'source' }, onRequest: uploadLimit }, async (req, reply) => {
     const source = sourceOf(req);
     const deps = fileDeps();
     const externalId = ExternalIdSchema.parse((req.params as any)['*']);
@@ -747,7 +774,7 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
     return reply.send(parseReply(DocumentSummarySchema, res));
   });
 
-  app.post('/api/v1/files/:id/versions', async (req, reply) => {
+  app.post('/api/v1/files/:id/versions', { onRequest: uploadLimit }, async (req, reply) => {
     const actor = actorOf(req);
     const deps = fileDeps();
     const upload = await readMultipartUpload(req);
@@ -973,7 +1000,12 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
     return reply.send(parseReply(RecentResponseSchema, await listRecent(actorOf(req), req.query)));
   });
 
-  app.post('/api/v1/captures', async (req, reply) => {
+  app.post('/api/v1/captures', { onRequest: requestLimit('capture', limits.capturePerMinute) }, async (req, reply) => {
+    // Routing runs in the worker and is charged there; refuse up front once today's allowance is gone.
+    const actor = actorOf(req);
+    if (!(await aiActionsLeftOrUnknown(req, actor.tenantId, limits.tenantDailyAiActions))) {
+      throw new AppError('ai_budget_exhausted');
+    }
     return reply.status(201).send(parseReply(CaptureSummarySchema, await createCapture(actorOf(req), req.body)));
   });
 
@@ -1084,7 +1116,7 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
     return reply.send(parseReply(RetryVersionResponseSchema, res));
   });
 
-  app.post('/api/v1/search', async (req, reply) => {
+  app.post('/api/v1/search', { onRequest: requestLimit('search', limits.searchPerMinute) }, async (req, reply) => {
     const actor = actorOf(req);
     const parsed = SearchRequestSchema.parse(req.body);
     let queryEmbedding: number[];
@@ -1112,9 +1144,10 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
     return reply.send(parseReply(SearchResponseSchema, { passages: res }));
   });
 
-  app.post('/api/v1/ask', async (req, reply) => {
+  app.post('/api/v1/ask', { onRequest: requestLimit('ask', limits.askPerMinute) }, async (req, reply) => {
     const actor = actorOf(req);
     const parsed = AskRequestSchema.parse(req.body);
+    await chargeAi(req, reply, actor.tenantId, limits.tenantDailyAiActions);
     let queryEmbedding: number[];
     try {
       [queryEmbedding] = await embeddingProvider.embed([parsed.question], 'query');
