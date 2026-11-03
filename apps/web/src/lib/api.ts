@@ -53,6 +53,7 @@ import {
   AttentionListSchema,
   MentionableGroupListSchema,
   NotificationListSchema,
+  UsageSummarySchema,
   RetryVersionResponseSchema,
   ReviewListSchema,
   UpdatesResponseSchema,
@@ -126,8 +127,8 @@ export class ApiError extends Error {
   readonly code: string;
   readonly status: number;
 
-  constructor(code: string, status = 0) {
-    super(errorSentence(code));
+  constructor(code: string, status = 0, message?: string) {
+    super(message ?? errorSentence(code));
     this.name = 'ApiError';
     this.code = code;
     this.status = status;
@@ -150,6 +151,8 @@ export function errorSentence(code: string): string {
 
 /** What to show for any thrown value: the sentence of an ApiError's code, a generic sentence for anything else. */
 export function errorMessage(err: unknown): string {
+  // credits_exhausted carries the server's sentence (it names the renewal date).
+  if (err instanceof ApiError && err.code === 'credits_exhausted') return err.message;
   return errorSentence(err instanceof ApiError ? err.code : '');
 }
 
@@ -201,7 +204,13 @@ export async function request<T>(
       typeof body === 'object' && body !== null && typeof (body as { error?: unknown }).error === 'string'
         ? (body as { error: string }).error
         : 'internal_error';
-    throw new ApiError(code, res.status);
+    // credits_exhausted's sentence names the renewal date, which only the server knows.
+    const serverMessage = (body as { message?: unknown } | null)?.message;
+    throw new ApiError(
+      code,
+      res.status,
+      code === 'credits_exhausted' && typeof serverMessage === 'string' ? serverMessage : undefined
+    );
   }
 
   const data: unknown = res.status === 204 ? undefined : await res.json().catch(() => undefined);
@@ -399,6 +408,7 @@ export const api = {
   mentionableGroups: (pageId: string, q: string) =>
     request(`/api/v1/mentionable/groups?page_id=${e(pageId)}&q=${e(q)}`, MentionableGroupListSchema),
   notifications: () => request('/api/v1/notifications', NotificationListSchema),
+  usage: () => request('/api/v1/usage', UsageSummarySchema),
   markNotificationsRead: (ids?: string[]) =>
     request('/api/v1/notifications/read', NO_CONTENT, send('POST', ids ? { ids } : {})),
   approveVersion: (id: string, body: ApproveVersionRequest = {}) =>

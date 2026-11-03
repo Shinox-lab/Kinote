@@ -15,7 +15,7 @@ export function AdminLayout() {
         <AppTopBar crumbs={<span className="text-sm font-medium text-fg">Settings</span>} />
         <Card title="You don't have access">
           <p className="text-sm text-fg">
-            Only owners and admins of this workspace can manage members, groups, spaces and sources. Ask an owner or admin if you
+            Only owners and admins of this workspace can manage members, groups, spaces and sources, or see its usage. Ask an owner or admin if you
             need a change.
           </p>
         </Card>
@@ -29,7 +29,7 @@ export function AdminLayout() {
       <div className="mx-auto flex w-full max-w-[820px] flex-col gap-5">
         <header className="flex flex-col gap-1">
           <h1 className="text-[21px] font-semibold tracking-tight text-fg md:text-2xl">Settings</h1>
-          <p className="text-sm text-muted">People, access and sources for {tenant.name}.</p>
+          <p className="text-sm text-muted">People, access, sources and usage for {tenant.name}.</p>
         </header>
         <nav aria-label="Settings" className="flex gap-5 overflow-x-auto border-b border-line">
           {screens.map((screen) => (

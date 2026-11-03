@@ -1,13 +1,14 @@
 import { describe, test, beforeAll, afterEach, afterAll, expect } from 'vitest';
 import { eq, sql } from 'drizzle-orm';
-import { captures, getDb, periodOf, tenantLimits, tenantUsage, withTenantTx } from '@kinote/db';
+import { captures, getDb, periodOf, tenantLimits, tenantUsage, tenants, withTenantTx } from '@kinote/db';
+import { UsageSummarySchema } from '@kinote/contracts';
 import { DeterministicEmbeddingProvider, DeterministicPlacementModel } from '@kinote/core';
 import type { CreditRates } from '@kinote/shared';
 import { collabSettle, type CollabServer } from '../../collab/src/server.js';
 import { startCollabServer } from '../../collab/test/support/wsClient.js';
 import { runPendingJobsForTenant } from '../../worker/src/runner.js';
 import { InProcessCollabClient } from './support/inProcessCollab.js';
-import { bootstrapTenant, buildTestApp, useTestDb } from './support/testkit.js';
+import { bootstrapTenant, buildTestApp, signUpMember, useTestDb } from './support/testkit.js';
 
 type Headers = Record<string, string>;
 
@@ -152,5 +153,48 @@ describe('AI credit enforcement', () => {
       await db.execute(sql`ALTER TABLE tenant_usage_gone RENAME TO tenant_usage`);
       await db.execute(sql`SET ROLE kinote_app`);
     }
+  });
+});
+
+describe('GET /api/v1/usage', () => {
+  const app = buildTestApp({ billingUrl: 'https://billing.example/up' });
+  const plain = buildTestApp();
+  useTestDb();
+
+  test('gives members the state but no billing link; owners get the link', async () => {
+    const { tenant, headers } = await bootstrapTenant(app, { name: 'Use Co', slug: 'use-co' });
+    const member = await signUpMember(app, tenant.id, 'member');
+    await withTenantTx(tenant.id, async (tx) => {
+      await tx.insert(tenantLimits).values({ tenantId: tenant.id, creditsPerMonth: 100, seats: 3, storageBytes: 1000 });
+      await tx.insert(tenantUsage).values({ tenantId: tenant.id, period: periodOf(1, new Date()).key, creditsUsedMilli: 85_000 });
+    });
+    await withTenantTx(tenant.id, (tx) => tx.update(tenants).set({ plan: 'team' }).where(eq(tenants.id, tenant.id)));
+
+    const mine = await app.inject({ method: 'GET', url: '/api/v1/usage', headers: member.headers });
+    expect(mine.statusCode, mine.body).toBe(200);
+    const summary = UsageSummarySchema.parse(mine.json());
+    expect(summary).toMatchObject({
+      state: 'warn',
+      plan: 'team',
+      usedCredits: 85,
+      limitCredits: 100,
+      seats: 2,
+      seatLimit: 3,
+      storageLimitBytes: 1000,
+      billingUrl: null,
+      resetsAt: periodOf(1, new Date()).end.toISOString(),
+    });
+    expect(summary.graceLeftCredits).toBeCloseTo(25, 6);
+
+    const owner = UsageSummarySchema.parse((await app.inject({ method: 'GET', url: '/api/v1/usage', headers })).json());
+    expect(owner.billingUrl).toBe('https://billing.example/up');
+    const noBilling = UsageSummarySchema.parse((await plain.inject({ method: 'GET', url: '/api/v1/usage', headers })).json());
+    expect(noBilling.billingUrl).toBeNull();
+  });
+
+  test('a workspace without limits is unlimited', async () => {
+    const { headers } = await bootstrapTenant(app, { name: 'Open Co', slug: 'open-co' });
+    const summary = UsageSummarySchema.parse((await app.inject({ method: 'GET', url: '/api/v1/usage', headers })).json());
+    expect(summary).toMatchObject({ state: 'unlimited', limitCredits: null, seatLimit: null, indexHeld: false, plan: 'standard' });
   });
 });

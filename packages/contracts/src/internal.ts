@@ -99,3 +99,24 @@ export const UsageQuerySchema = PageQuerySchema.extend({
     .refine((v) => !Number.isNaN(Date.parse(`${v}T00:00:00Z`)), 'must be a real date')
     .optional(),
 });
+
+/** GET /api/v1/usage: where this workspace stands, for any member (the billing link for owners and admins only). */
+export const UsageSummarySchema = z.object({
+  state: CreditStateSchema,
+  plan: z.string(),
+  usedCredits: z.number(),
+  limitCredits: z.number().nullable(),
+  creditsTopup: z.number().int(),
+  graceLeftCredits: z.number().nullable(),
+  indexUsedCredits: z.number(),
+  indexLimitCredits: z.number().nullable(),
+  indexHeld: z.boolean(),
+  storageBytes: z.number().int(),
+  storageLimitBytes: z.number().int().nullable(),
+  seats: z.number().int(),
+  seatLimit: z.number().int().nullable(),
+  /** When this period's credits renew (ISO). */
+  resetsAt: z.string(),
+  billingUrl: z.string().nullable(),
+});
+export type UsageSummary = z.infer<typeof UsageSummarySchema>;

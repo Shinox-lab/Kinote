@@ -21,6 +21,7 @@ import { MembersPage } from './routes/admin/members.js';
 import { RolesPage } from './routes/admin/roles.js';
 import { SpacesPage } from './routes/admin/spaces.js';
 import { WorkspaceSettingsPage } from './routes/admin/workspace.js';
+import { UsagePage } from './routes/admin/usage.js';
 import { parseFileSearch } from './lib/documentLink.js';
 import { parseReviewSearch } from './lib/review.js';
 import { parseSearchSearch } from './lib/search.js';
@@ -250,6 +251,7 @@ const membersRoute = createRoute({ getParentRoute: () => adminRoute, path: 'memb
 const groupsRoute = createRoute({ getParentRoute: () => adminRoute, path: 'groups', component: GroupsPage });
 const spacesRoute = createRoute({ getParentRoute: () => adminRoute, path: 'spaces', component: SpacesPage });
 const rolesRoute = createRoute({ getParentRoute: () => adminRoute, path: 'roles', component: RolesPage });
+const usageRoute = createRoute({ getParentRoute: () => adminRoute, path: 'usage', component: UsagePage });
 const workspaceSettingsRoute = createRoute({
   getParentRoute: () => adminRoute,
   path: 'workspace',
@@ -281,7 +283,7 @@ const routeTree = rootRoute.addChildren([
     notificationsRoute,
     captureRoute,
     searchRoute,
-    adminRoute.addChildren([adminIndexRoute, membersRoute, groupsRoute, spacesRoute, sourcesRoute, rolesRoute, workspaceSettingsRoute]),
+    adminRoute.addChildren([adminIndexRoute, membersRoute, groupsRoute, spacesRoute, sourcesRoute, rolesRoute, usageRoute, workspaceSettingsRoute]),
   ]),
 ]);
 

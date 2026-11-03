@@ -1,8 +1,8 @@
 import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 import rateLimit from '@fastify/rate-limit';
 import multipart from '@fastify/multipart';
-import { getDb, rowsOf, withTenantTx } from '@kinote/db';
-import { sql } from 'drizzle-orm';
+import { getDb, readStanding, rowsOf, tenants, withTenantTx } from '@kinote/db';
+import { eq, sql } from 'drizzle-orm';
 import { DEFAULT_AUTH_RATE_LIMIT_MAX, DEFAULT_USAGE_LIMITS, type CreditRates, type ObjectStorage, type UsageLimits } from '@kinote/shared';
 import {
   SearchRequestSchema,
@@ -77,6 +77,7 @@ import {
   ChunkInspectorSchema,
   SearchResponseSchema,
   AskResponseSchema,
+  UsageSummarySchema,
   DrawingSceneSchema,
 } from '@kinote/contracts';
 import {
@@ -84,6 +85,9 @@ import {
   defaultAnswerProvider,
   defaultEmbeddingProvider,
   withUsageScope,
+  countSeats,
+  creditVerdict,
+  indexHeld,
   type Actor,
   type AnswerProvider,
   type EmbeddingProvider,
@@ -1169,6 +1173,35 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
   });
 
   registerInternalRoutes(app, opts.controlPlaneTokens ?? []);
+
+  app.get('/api/v1/usage', async (req, reply) => {
+    const actor = actorOf(req);
+    const now = new Date();
+    const summary = await withTenantTx(actor.tenantId, async (tx) => {
+      const standing = await readStanding(tx, actor.tenantId, now);
+      const verdict = creditVerdict(standing);
+      const [tenant] = await tx.select({ plan: tenants.plan }).from(tenants).where(eq(tenants.id, actor.tenantId));
+      const admin = actor.tenantRole === 'owner' || actor.tenantRole === 'admin';
+      return {
+        state: verdict.state,
+        plan: tenant?.plan ?? 'standard',
+        usedCredits: verdict.usedCredits,
+        limitCredits: verdict.limitCredits,
+        creditsTopup: standing.creditsTopup,
+        graceLeftCredits: verdict.graceLeftCredits,
+        indexUsedCredits: standing.indexCreditsUsedMilli / 1000,
+        indexLimitCredits: standing.limits?.indexCreditsPerMonth ?? null,
+        indexHeld: indexHeld(standing),
+        storageBytes: standing.storageBytes,
+        storageLimitBytes: standing.limits?.storageBytes ?? null,
+        seats: await countSeats(tx, actor.tenantId, now),
+        seatLimit: standing.limits?.seats ?? null,
+        resetsAt: verdict.resetsAt.toISOString(),
+        billingUrl: admin && opts.billingUrl ? opts.billingUrl : null,
+      };
+    });
+    return reply.send(parseReply(UsageSummarySchema, summary));
+  });
 
   app.post('/api/v1/search', { onRequest: requestLimit('search', limits.searchPerMinute) }, async (req, reply) =>
     metered('index', req, async () => {
