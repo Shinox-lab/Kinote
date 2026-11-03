@@ -281,6 +281,13 @@
       "when": 1794200100000,
       "tag": "0039_email_verification",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1794200200000,
+      "tag": "0040_plans_usage",
+      "breakpoints": true
     }
   ]
 }
