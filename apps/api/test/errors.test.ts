@@ -248,6 +248,7 @@ describe('error model', () => {
       quota_exceeded: 429,
       rate_limited: 429,
       ai_budget_exhausted: 429,
+      credits_exhausted: 429,
       tenant_limit_reached: 403,
       signup_invite_only: 403,
       signup_closed: 403,

@@ -205,7 +205,7 @@ import {
 import { authRoutes, type AuthRateLimit, type SignUpModeSetting } from './routes/auth.js';
 import { PgRateLimitStore } from './rateLimitStore.js';
 import type { Mailer } from './mail.js';
-import { aiActionsLeftOrUnknown, chargeAi, requestLimit, uploadSlots } from './usageLimits.js';
+import { aiActionsLeftOrUnknown, chargeAi, requestLimit, requireCredits, uploadSlots } from './usageLimits.js';
 import { demoSeedRunning, demoSeedStatus, startDemoSeed } from './routes/demoSeed.js';
 import {
   invalidateActor,
@@ -276,6 +276,8 @@ export interface ApiServerOptions {
   answerProvider?: AnswerProvider;
   /** MODEL_CREDIT_RATES, parsed. Null or unset: model calls are recorded at 0 credits. */
   creditRates?: CreditRates | null;
+  /** BILLING_URL: where Upgrade links point. */
+  billingUrl?: string;
 }
 
 const DEFAULT_MAX_UPLOAD_BYTES = 52_428_800;
@@ -343,6 +345,7 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
   const answerProvider = opts.answerProvider ?? defaultAnswerProvider;
   const limits = opts.limits ?? DEFAULT_USAGE_LIMITS;
   const creditRates = opts.creditRates ?? null;
+  const credits = requireCredits(opts.billingUrl);
   /** Runs a route's work in a usage scope: its model calls are charged to the caller's workspace as `kind`. */
   const metered = (kind: 'ask' | 'index', req: FastifyRequest, fn: () => Promise<unknown>) => {
     const actor = actorOf(req);
@@ -1046,7 +1049,7 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
     return reply.send(parseReply(RecentResponseSchema, await listRecent(actorOf(req), req.query)));
   });
 
-  app.post('/api/v1/captures', { onRequest: requestLimit('capture', limits.capturePerMinute) }, async (req, reply) => {
+  app.post('/api/v1/captures', { onRequest: [requestLimit('capture', limits.capturePerMinute), credits] }, async (req, reply) => {
     // Routing runs in the worker and is charged there; refuse up front once today's allowance is gone.
     const actor = actorOf(req);
     if (!(await aiActionsLeftOrUnknown(req, actor.tenantId, limits.tenantDailyAiActions))) {
@@ -1079,7 +1082,7 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
     return reply.send(parseReply(UndoChangesResponseSchema, await undoCaptureChange(actorOf(req), id, opts.collab)));
   });
 
-  app.post('/api/v1/capture-changes/:id/move', async (req, reply) => {
+  app.post('/api/v1/capture-changes/:id/move', { onRequest: credits }, async (req, reply) => {
     const { id } = req.params as { id: string };
     const res = await moveCaptureChange(actorOf(req), id, req.body, { collab: opts.collab, embedder: embeddingProvider });
     return reply.send(parseReply(MoveChangeResponseSchema, res));
@@ -1094,7 +1097,7 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
     return reply.send(parseReply(NeedsHomeListSchema, await listNeedsHome(actorOf(req))));
   });
 
-  app.post('/api/v1/capture-facts/:id/place', async (req, reply) => {
+  app.post('/api/v1/capture-facts/:id/place', { onRequest: credits }, async (req, reply) => {
     const { id } = req.params as { id: string };
     const res = await placeCaptureFact(actorOf(req), id, req.body, { embedder: embeddingProvider });
     return reply.send(parseReply(FactStatusSchema, res));
@@ -1104,18 +1107,18 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
     return reply.send(parseReply(NeedsHomeDocumentListSchema, await listNeedsHomeDocuments(actorOf(req))));
   });
 
-  app.post('/api/v1/captures/:id/document/place', async (req, reply) => {
+  app.post('/api/v1/captures/:id/document/place', { onRequest: credits }, async (req, reply) => {
     const { id } = req.params as { id: string };
     const res = await placeCaptureDocument(actorOf(req), id, req.body, { embedder: embeddingProvider });
     return reply.send(parseReply(CaptureSummarySchema, res));
   });
 
-  app.post('/api/v1/captures/:id/document/as-updates', async (req, reply) => {
+  app.post('/api/v1/captures/:id/document/as-updates', { onRequest: credits }, async (req, reply) => {
     const { id } = req.params as { id: string };
     return reply.send(parseReply(CaptureSummarySchema, await routeCaptureAsUpdates(actorOf(req), id)));
   });
 
-  app.post('/api/v1/captures/:id/document/move', async (req, reply) => {
+  app.post('/api/v1/captures/:id/document/move', { onRequest: credits }, async (req, reply) => {
     const { id } = req.params as { id: string };
     const res = await moveCaptureDocument(actorOf(req), id, req.body, { embedder: embeddingProvider });
     return reply.send(parseReply(CaptureSummarySchema, res));
@@ -1191,7 +1194,7 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
     return reply.send(parseReply(SearchResponseSchema, { passages: res }));
   }));
 
-  app.post('/api/v1/ask', { onRequest: requestLimit('ask', limits.askPerMinute) }, async (req, reply) =>
+  app.post('/api/v1/ask', { onRequest: [requestLimit('ask', limits.askPerMinute), credits] }, async (req, reply) =>
     metered('ask', req, async () => {
     const actor = actorOf(req);
     const parsed = AskRequestSchema.parse(req.body);
