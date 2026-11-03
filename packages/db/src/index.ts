@@ -17,3 +17,4 @@ export * from './locks.js';
 export * from './placementRebuild.js';
 export * from './routingLease.js';
 export * from './rateLimits.js';
+export * from './usage.js';
