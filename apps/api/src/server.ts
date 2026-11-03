@@ -3,7 +3,7 @@ import rateLimit from '@fastify/rate-limit';
 import multipart from '@fastify/multipart';
 import { getDb, rowsOf, withTenantTx } from '@kinote/db';
 import { sql } from 'drizzle-orm';
-import { DEFAULT_AUTH_RATE_LIMIT_MAX, DEFAULT_USAGE_LIMITS, type ObjectStorage, type UsageLimits } from '@kinote/shared';
+import { DEFAULT_AUTH_RATE_LIMIT_MAX, DEFAULT_USAGE_LIMITS, type CreditRates, type ObjectStorage, type UsageLimits } from '@kinote/shared';
 import {
   SearchRequestSchema,
   AskRequestSchema,
@@ -83,6 +83,7 @@ import {
   getReadableSpaceIds,
   defaultAnswerProvider,
   defaultEmbeddingProvider,
+  withUsageScope,
   type Actor,
   type AnswerProvider,
   type EmbeddingProvider,
@@ -273,6 +274,8 @@ export interface ApiServerOptions {
   embeddingProvider?: EmbeddingProvider;
   /** Answers for Ask. Default: the deterministic quoted-passage provider. */
   answerProvider?: AnswerProvider;
+  /** MODEL_CREDIT_RATES, parsed. Null or unset: model calls are recorded at 0 credits. */
+  creditRates?: CreditRates | null;
 }
 
 const DEFAULT_MAX_UPLOAD_BYTES = 52_428_800;
@@ -339,6 +342,12 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
   const embeddingProvider = opts.embeddingProvider ?? defaultEmbeddingProvider;
   const answerProvider = opts.answerProvider ?? defaultAnswerProvider;
   const limits = opts.limits ?? DEFAULT_USAGE_LIMITS;
+  const creditRates = opts.creditRates ?? null;
+  /** Runs a route's work in a usage scope: its model calls are charged to the caller's workspace as `kind`. */
+  const metered = (kind: 'ask' | 'index', req: FastifyRequest, fn: () => Promise<unknown>) => {
+    const actor = actorOf(req);
+    return withUsageScope({ tenantId: actor.tenantId, kind, principalId: actor.principalId }, creditRates, fn);
+  };
   const HOUR_MS = 60 * 60 * 1000;
   const uploadLimit = requestLimit('upload', limits.uploadPerMinute);
   const uploads = uploadSlots(opts.maxConcurrentUploads ?? DEFAULT_MAX_CONCURRENT_UPLOADS);
@@ -1153,7 +1162,8 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
     return reply.send(parseReply(RetryVersionResponseSchema, res));
   });
 
-  app.post('/api/v1/search', { onRequest: requestLimit('search', limits.searchPerMinute) }, async (req, reply) => {
+  app.post('/api/v1/search', { onRequest: requestLimit('search', limits.searchPerMinute) }, async (req, reply) =>
+    metered('index', req, async () => {
     const actor = actorOf(req);
     const parsed = SearchRequestSchema.parse(req.body);
     let queryEmbedding: number[];
@@ -1179,9 +1189,10 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
       );
     });
     return reply.send(parseReply(SearchResponseSchema, { passages: res }));
-  });
+  }));
 
-  app.post('/api/v1/ask', { onRequest: requestLimit('ask', limits.askPerMinute) }, async (req, reply) => {
+  app.post('/api/v1/ask', { onRequest: requestLimit('ask', limits.askPerMinute) }, async (req, reply) =>
+    metered('ask', req, async () => {
     const actor = actorOf(req);
     const parsed = AskRequestSchema.parse(req.body);
     await chargeAi(req, reply, actor.tenantId, limits.tenantDailyAiActions);
@@ -1211,7 +1222,7 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
     });
     const res = await answerPassages(parsed.question, passages, answerProvider, tables);
     return reply.send(parseReply(AskResponseSchema, res));
-  });
+  }));
 
   return app;
 }

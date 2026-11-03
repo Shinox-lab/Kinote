@@ -1,6 +1,6 @@
 import { assertEmbeddingDimensions, closeDb, initDb } from '@kinote/db';
 import { createAnswerProvider, createEmbeddingProvider, EMBEDDING_DIMENSIONS } from '@kinote/core';
-import { createObjectStorage, loadConfig, usageLimitsOf } from '@kinote/shared';
+import { createObjectStorage, loadConfig, parseCreditRates, usageLimitsOf } from '@kinote/shared';
 import { buildApiServer } from './server.js';
 import { createSmtpMailer } from './mail.js';
 import { HttpCollabClient } from '@kinote/shared';
@@ -26,6 +26,7 @@ async function main(): Promise<void> {
     storage,
     embeddingProvider,
     answerProvider,
+    creditRates: parseCreditRates(config.MODEL_CREDIT_RATES),
     maxUploadBytes: config.MAX_UPLOAD_BYTES,
     maxConcurrentUploads: config.MAX_CONCURRENT_UPLOADS,
     logger: { level: config.LOG_LEVEL },

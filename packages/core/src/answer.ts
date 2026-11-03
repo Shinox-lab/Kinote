@@ -1,5 +1,6 @@
 import { AppError, type SearchPassage } from '@kinote/contracts';
 import type { CollectionTable } from './search/collectionTable.js';
+import { estimateTokens, reportModelCall } from './usage/meter.js';
 
 export const NO_RELEVANT_ANSWER =
   'No relevant indexed information was found in your accessible spaces.';
@@ -14,7 +15,7 @@ export interface AnswerProvider {
 
 /** The local/test answer: the old quoted-passage summary, kept deterministic. */
 export class DeterministicAnswerProvider implements AnswerProvider {
-  async answer({ passages, tables = [] }: { question: string; passages: SearchPassage[]; tables?: CollectionTable[] }) {
+  async answer({ question, passages, tables = [] }: { question: string; passages: SearchPassage[]; tables?: CollectionTable[] }) {
     const top = passages[0]!;
     const lines = passages.map((p) => `${p.text} [${p.citeAs}]`);
     const tableLines = tables.map(
@@ -22,10 +23,14 @@ export class DeterministicAnswerProvider implements AnswerProvider {
         ` — Table ${t.title}: ` +
         t.rows.map((r) => `${r.title} (${Object.entries(r.values).map(([k, v]) => `${k}: ${v}`).join(', ')}) [${r.citeAs}]`).join('; ')
     );
-    return {
-      answer: `Based on indexed wiki sources (${top.citeAs}): ${lines.join(' — ')}${tableLines.join('')}`,
-      foundRelevant: true,
-    };
+    const answer = `Based on indexed wiki sources (${top.citeAs}): ${lines.join(' — ')}${tableLines.join('')}`;
+    reportModelCall({
+      model: 'deterministic-answer-v1',
+      inputTokens: estimateTokens(question + passages.map((p) => p.text).join('\n')),
+      outputTokens: estimateTokens(answer),
+      estimated: true,
+    });
+    return { answer, foundRelevant: true };
   }
 }
 
@@ -165,6 +170,16 @@ export class OpenAIAnswerProvider implements AnswerProvider {
     const choice = (body as { choices?: unknown })?.choices;
     const first = Array.isArray(choice) ? choice[0] : undefined;
     const content = textContent((first as { message?: { content?: unknown } })?.message?.content).trim();
+    const usage = (body as { usage?: { prompt_tokens?: unknown; completion_tokens?: unknown } })?.usage;
+    const tokens = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+    const promptTokens = tokens(usage?.prompt_tokens);
+    const completionTokens = tokens(usage?.completion_tokens);
+    reportModelCall({
+      model: this.model,
+      inputTokens: promptTokens ?? estimateTokens(messages.map((m) => m.content).join('\n')),
+      outputTokens: completionTokens ?? estimateTokens(content),
+      estimated: promptTokens === null || completionTokens === null,
+    });
     if (content === '') throw unavailable('the answer service returned an unexpected answer');
     if (content === NO_RELEVANT_ANSWER) {
       return { answer: NO_RELEVANT_ANSWER, foundRelevant: false };

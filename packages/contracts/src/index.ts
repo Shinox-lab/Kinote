@@ -1606,6 +1606,7 @@ export const NotificationKindSchema = z.enum([
   'review_approved',
   'review_rejected',
   'capture_waiting',
+  'credits_warning',
 ]);
 export const NotificationSchema = z.object({
   id: z.string().uuid(),
