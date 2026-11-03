@@ -9,7 +9,11 @@ export interface BadgeInput {
   indexedVersion: {
     number: number;
   } | null;
+  /** The workspace reached its indexing credit limit: index jobs wait for the period's end. */
+  indexingPaused?: boolean;
 }
+
+export const INDEXING_PAUSED_BADGE = 'Saved · not indexed (indexing limit reached)';
 
 /**
  * How recently (seconds) a page's live document must have changed for the
@@ -81,7 +85,7 @@ export function computePageBadge(input: BadgeInput): string {
     return 'Index failed';
   }
   if (isIndexing(input)) {
-    return 'Indexing…';
+    return input.indexingPaused ? INDEXING_PAUSED_BADGE : 'Indexing…';
   }
   if (isPendingReview(input)) {
     if (liveChangedSinceSnapshot) {
@@ -93,7 +97,8 @@ export function computePageBadge(input: BadgeInput): string {
     return `Not indexed · v${latestVersion!.number} rejected`;
   }
   if (isUnsavedText(input)) {
-    return needsReview(input) ? 'Saved · not indexed (awaiting approval)' : 'Saved · indexing soon';
+    if (needsReview(input)) return 'Saved · not indexed (awaiting approval)';
+    return input.indexingPaused ? INDEXING_PAUSED_BADGE : 'Saved · indexing soon';
   }
   return `Indexed · v${indexedVersion!.number}`;
 }

@@ -9,6 +9,8 @@ import {
   chargeAiAction,
   enqueueJob,
   nextAiDay,
+  readStanding,
+  INDEX_QUEUES,
   NonRetryableError,
   type Job,
 } from '@kinote/db';
@@ -18,6 +20,7 @@ import {
   defaultPlacementModel,
   UnavailableExtractor,
   withUsageScope,
+  indexHeld,
   type EmbeddingProvider,
   type Extractor,
   type RoutingModel,
@@ -205,6 +208,40 @@ async function deferredPastAllowance(job: Job, aiDailyLimit: number, now: Date):
   return true;
 }
 
+const HELD_QUEUES = new Set<string>(INDEX_QUEUES);
+
+/**
+ * Indexing work past the workspace's index credit limit (plus grace) is held,
+ * not failed: the job is put back for the period's end and true is returned
+ * without running it. Raising the limit (the control-plane API) releases it
+ * sooner. An unreadable standing lets the job run.
+ */
+async function heldAtIndexLimit(job: Job, now: Date): Promise<boolean> {
+  if (!HELD_QUEUES.has(job.queue)) return false;
+  let standing: Awaited<ReturnType<typeof readStanding>>;
+  try {
+    standing = await withTenantTx(job.tenantId, (tx) => readStanding(tx, job.tenantId, now));
+  } catch (err) {
+    console.error(`[worker] usage standing unavailable for job ${job.id}; running it:`, errorMessage(err));
+    return false;
+  }
+  if (!indexHeld(standing)) return false;
+  const runAt = standing.period.end;
+  await withTenantTx(job.tenantId, (tx) =>
+    enqueueJob(tx, {
+      tenantId: job.tenantId,
+      queue: job.queue,
+      idempotencyKey: job.idempotencyKey,
+      payload: job.payload as Record<string, unknown>,
+      runAt,
+    })
+  );
+  console.warn(
+    `[worker] job ${job.id} (${job.queue}): workspace ${job.tenantId} reached its indexing limit; waits until ${runAt.toISOString()}`
+  );
+  return true;
+}
+
 /** Capture routing and placement spend the Capture and Ask pool; every other job is indexing work. */
 const CAPTURE_QUEUES = new Set(['capture.route', 'capture.place']);
 
@@ -269,7 +306,10 @@ async function runOne(
   let failure: { err: unknown } | undefined;
   try {
     if (!handler) throw new NonRetryableError(`No handler registered for queue "${job.queue}"`);
-    if (!(handler.usesAi && (await deferredPastAllowance(job, aiDailyLimit, clock())))) {
+    if (
+      !(await heldAtIndexLimit(job, clock())) &&
+      !(handler.usesAi && (await deferredPastAllowance(job, aiDailyLimit, clock())))
+    ) {
       await withUsageScope(usageScopeOf(job, clock), creditRates, () => handler.run(job, { now: clock(), ...deps }));
     }
   } catch (err) {

@@ -1,7 +1,7 @@
 import { describe, test } from 'vitest';
 import assert from 'node:assert/strict';
 import { and, eq } from 'drizzle-orm';
-import { withTenantTx, pages } from '@kinote/db';
+import { withTenantTx, pages, periodOf, releaseHeldIndexJobs, tenantLimits, tenantUsage } from '@kinote/db';
 import { VersionSummarySchema } from '@kinote/contracts';
 import { runPendingJobsForTenant } from '../../worker/src/runner.js';
 import { encodePageYDoc } from '../src/routes/pages.js';
@@ -163,5 +163,35 @@ describe('GET /api/v1/pages/:id version payload', () => {
     assert.deepEqual(body.versions, []);
     assert.equal(body.latestVersion.number, 2);
     assert.equal(body.indexedVersion.number, 1);
+  });
+});
+
+describe('a page waiting at the indexing limit', () => {
+  const app = buildTestApp();
+  useTestDb();
+
+  test('says so in its badge, and indexes once the limit is raised', async () => {
+    const { tenant, headers } = await bootstrapTenant(app, { name: 'Held Co', slug: 'held-co' });
+    const space = (await app.inject({ method: 'POST', url: '/api/v1/spaces', headers, payload: { name: 'Eng', slug: 'eng' } })).json().id;
+    const pageId = (
+      await app.inject({ method: 'POST', url: '/api/v1/pages', headers, payload: { space_id: space, title: 'Held', slug: 'held', markdown: 'Text.' } })
+    ).json().id as string;
+    const period = periodOf(1, new Date()).key;
+    await withTenantTx(tenant.id, async (tx) => {
+      await tx.insert(tenantLimits).values({ tenantId: tenant.id, indexCreditsPerMonth: 1 });
+      await tx.insert(tenantUsage).values({ tenantId: tenant.id, period, indexCreditsUsedMilli: 2000 });
+    });
+    assert.equal((await app.inject({ method: 'POST', url: `/api/v1/pages/${pageId}/snapshot`, headers })).statusCode, 201);
+    await runPendingJobsForTenant(tenant.id);
+    const held = (await app.inject({ method: 'GET', url: `/api/v1/pages/${pageId}?meta=1`, headers })).json();
+    assert.equal(held.badge, 'Saved · not indexed (indexing limit reached)');
+
+    await withTenantTx(tenant.id, async (tx) => {
+      await tx.update(tenantLimits).set({ indexCreditsPerMonth: null }).where(eq(tenantLimits.tenantId, tenant.id));
+      await releaseHeldIndexJobs(tx, tenant.id, new Date());
+    });
+    await runPendingJobsForTenant(tenant.id);
+    const indexed = (await app.inject({ method: 'GET', url: `/api/v1/pages/${pageId}?meta=1`, headers })).json();
+    assert.match(indexed.badge, /^Indexed · v1/);
   });
 });

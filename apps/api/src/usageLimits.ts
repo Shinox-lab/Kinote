@@ -1,7 +1,7 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { AppError } from '@kinote/contracts';
-import { chargeAiAction, hasAiActionsLeft, hitLimit, readStanding, withTenantTx } from '@kinote/db';
-import { creditVerdict } from '@kinote/core';
+import { chargeAiAction, hasAiActionsLeft, hitLimit, readStanding, withTenantTx, type DbTransaction } from '@kinote/db';
+import { creditVerdict, indexHeld } from '@kinote/core';
 
 const MINUTE_MS = 60_000;
 
@@ -135,4 +135,18 @@ export function requireCredits(billingUrl?: string) {
       { resetsAt: verdict.resetsAt.toISOString(), ...(billingUrl ? { billingUrl } : {}) }
     );
   };
+}
+
+/**
+ * Whether the workspace's indexing is paused at its index credit limit, read
+ * inside `tx` behind a savepoint so an unreadable standing (false: fail open)
+ * cannot abort the caller's transaction.
+ */
+export async function indexingPausedIn(tx: DbTransaction, tenantId: string, now: Date = new Date()): Promise<boolean> {
+  try {
+    return await tx.transaction(async (sp) => indexHeld(await readStanding(sp, tenantId, now)));
+  } catch (err) {
+    console.error('[api] usage standing unavailable; indexing shown as running:', err instanceof Error ? err.message : err);
+    return false;
+  }
 }
