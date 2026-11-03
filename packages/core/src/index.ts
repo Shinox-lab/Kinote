@@ -179,3 +179,4 @@ export { readDemoFiles } from './demo/files.js';
 export { people as demoPeople, workspace as demoWorkspace, type PersonKey as DemoPersonKey } from './demo/content.js';
 export { estimateTokens, reportModelCall, withUsageScope, type ModelCall, type UsageScope } from './usage/meter.js';
 export { creditVerdict, indexHeld, type CreditState, type CreditVerdict } from './usage/standing.js';
+export { assertSeatFor, assertStorageFor, countSeats } from './usage/capacity.js';
