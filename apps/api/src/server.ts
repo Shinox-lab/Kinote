@@ -118,6 +118,7 @@ import {
   deleteSpaceGrant,
 } from './routes/admin.js';
 import { deleteSourceFile, putSourceFile } from './routes/sourceFiles.js';
+import { registerInternalRoutes } from './routes/internal.js';
 import { createSource, issueSourceToken, listSources, revokeSourceToken, updateSource } from './routes/sources.js';
 import {
   createPage,
@@ -278,6 +279,8 @@ export interface ApiServerOptions {
   creditRates?: CreditRates | null;
   /** BILLING_URL: where Upgrade links point. */
   billingUrl?: string;
+  /** CONTROL_PLANE_TOKENS: bearer tokens for /internal/v1/. None: that API does not exist (404). */
+  controlPlaneTokens?: string[];
 }
 
 const DEFAULT_MAX_UPLOAD_BYTES = 52_428_800;
@@ -1164,6 +1167,8 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
     const res = await retryVersion(actorOf(req), (req.params as any).id);
     return reply.send(parseReply(RetryVersionResponseSchema, res));
   });
+
+  registerInternalRoutes(app, opts.controlPlaneTokens ?? []);
 
   app.post('/api/v1/search', { onRequest: requestLimit('search', limits.searchPerMinute) }, async (req, reply) =>
     metered('index', req, async () => {

@@ -116,34 +116,6 @@ REVOKE ALL ON FUNCTION public.cp_list_tenants(uuid, int) FROM PUBLIC;
 --> statement-breakpoint
 GRANT EXECUTE ON FUNCTION public.cp_list_tenants(uuid, int) TO kinote_app;
 --> statement-breakpoint
--- Every tenant's totals for the period starting on p_period (tenants with no row get
--- zeros), plus stored bytes. Callers wanting each tenant's own current period read
--- per tenant instead.
-CREATE OR REPLACE FUNCTION public.cp_usage_totals(p_period date, p_after uuid, p_limit int)
-RETURNS TABLE (tenant_id uuid, period date, credits_used_milli bigint, index_credits_used_milli bigint, credits_topup int, storage_bytes bigint)
-LANGUAGE sql
-STABLE
-SECURITY DEFINER
-SET search_path = public, pg_temp
-AS $$
-  SELECT t.id, p_period,
-    coalesce(u.credits_used_milli, 0)::bigint,
-    coalesce(u.index_credits_used_milli, 0)::bigint,
-    coalesce(u.credits_topup, 0)::int,
-    coalesce(s.bytes, 0)::bigint
-  FROM public.tenants t
-  LEFT JOIN public.tenant_usage u ON u.tenant_id = t.id AND u.period = p_period
-  LEFT JOIN public.tenant_storage s ON s.tenant_id = t.id
-  WHERE p_after IS NULL
-     OR (t.created_at, t.id) > (SELECT a.created_at, a.id FROM public.tenants a WHERE a.id = p_after)
-  ORDER BY t.created_at, t.id
-  LIMIT p_limit;
-$$;
---> statement-breakpoint
-REVOKE ALL ON FUNCTION public.cp_usage_totals(date, uuid, int) FROM PUBLIC;
---> statement-breakpoint
-GRANT EXECUTE ON FUNCTION public.cp_usage_totals(date, uuid, int) TO kinote_app;
---> statement-breakpoint
 ALTER TABLE public.tenant_limits ENABLE ROW LEVEL SECURITY;
 --> statement-breakpoint
 ALTER TABLE public.tenant_limits FORCE ROW LEVEL SECURITY;

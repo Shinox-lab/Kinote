@@ -5,6 +5,7 @@ export * from './editor.js';
 export * from './collections.js';
 export * from './views.js';
 export * from './drawings.js';
+export * from './internal.js';
 import { CollectionSchema, FieldChangeSchema } from './collections.js';
 import { MAX_DRAWING_ELEMENTS, isDrawingElement, type DrawingElement } from './drawings.js';
 
@@ -45,6 +46,8 @@ export type VersionReason = z.infer<typeof VersionReasonSchema>;
 export const AuditEventTypeSchema = z.enum([
   'tenant.created',
   'tenant.deleted',
+  'limits.updated',
+  'credits.topup',
   'member.invited',
   'member.invitation_revoked',
   'member.role_changed',

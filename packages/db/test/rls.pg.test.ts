@@ -100,6 +100,24 @@ describe.skipIf(!APP_URL)('row-level security on real Postgres (app role)', () =
     await closeDb();
   });
 
+  it('cp_list_tenants answers across tenants as kinote_app, with no tenant set', async () => {
+    const rows = rowsOf<{ id: string; seats: number; owner_email: string | null }>(
+      await getDb().execute(sql`SELECT id, seats, owner_email FROM public.cp_list_tenants(NULL, 10000)`)
+    );
+    const ids = rows.map((r) => r.id);
+    expect(ids).toContain(tenantA);
+    expect(ids).toContain(tenantB);
+    // The admin membership is a seat; no owner was seeded.
+    expect(rows.find((r) => r.id === tenantA)).toMatchObject({ seats: 1, owner_email: null });
+  });
+
+  it('versions_storage_count is SECURITY DEFINER, so purges outside a tenant still uncount bytes', async () => {
+    const owned = await owner.query<{ prosecdef: boolean }>(
+      `SELECT prosecdef FROM pg_proc WHERE proname = 'versions_storage_count'`
+    );
+    expect(owned.rows[0]!.prosecdef).toBe(true);
+  });
+
   it('runs as kinote_app without superuser or BYPASSRLS', async () => {
     const res = await getDb().execute(
       sql`SELECT current_user AS name, rolsuper, rolbypassrls

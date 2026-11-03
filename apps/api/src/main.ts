@@ -28,6 +28,7 @@ async function main(): Promise<void> {
     answerProvider,
     creditRates: parseCreditRates(config.MODEL_CREDIT_RATES),
     billingUrl: config.BILLING_URL,
+    controlPlaneTokens: config.CONTROL_PLANE_TOKENS,
     maxUploadBytes: config.MAX_UPLOAD_BYTES,
     maxConcurrentUploads: config.MAX_CONCURRENT_UPLOADS,
     logger: { level: config.LOG_LEVEL },
