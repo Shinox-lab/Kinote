@@ -192,16 +192,25 @@ describe.each([
   });
 });
 
-describe('the pre-paint script in index.html', () => {
+describe('the pre-paint script (public/theme.js)', () => {
   const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+  const script = readFileSync(new URL('../public/theme.js', import.meta.url), 'utf8');
 
-  test('runs before the page renders and reads the same storage key as theme.ts', () => {
+  test('index.html loads it in the head, blocking (not a module, not async or deferred)', () => {
     const head = html.slice(0, html.indexOf('</head>'));
-    expect(head).toContain(`localStorage.getItem('${THEME_KEY}')`);
-    expect(head).toContain('document.documentElement.dataset.theme');
+    expect(head).toMatch(/<script src="\/theme\.js"><\/script>/);
+  });
+
+  test('index.html has no inline script (the Content-Security-Policy allows only files)', () => {
+    expect(html).not.toMatch(/<script(?![^>]*\bsrc=)[^>]*>/);
+  });
+
+  test('reads the same storage key as theme.ts and sets the theme', () => {
+    expect(script).toContain(`localStorage.getItem('${THEME_KEY}')`);
+    expect(script).toContain('document.documentElement.dataset.theme');
   });
 
   test('is wrapped so blocked storage cannot break the page', () => {
-    expect(html).toMatch(/try\s*{[^}]*localStorage[^}]*}\s*catch/);
+    expect(script).toMatch(/try\s*{[^}]*localStorage[^}]*}\s*catch/);
   });
 });

@@ -159,13 +159,36 @@ describe('sessions and the database-derived actor', () => {
     assert.equal(await resolveSession(other.token), null);
   });
 
-  test('resolveSession honours the 30-day TTL', async () => {
-    const s = await signUp(app);
+  test('a session lasts 14 days unused, is renewed while in use, and never past 90 days', async () => {
     const day = 86400 * 1000;
-    assert.deepEqual(await resolveSession(s.token, new Date(Date.now() + 29 * day)), {
-      userId: s.userId,
-    });
-    assert.equal(await resolveSession(s.token, new Date(Date.now() + 31 * day)), null);
+    const start = Date.now();
+    const at = (days: number) => new Date(start + days * day);
+    const expiry = async (token: string) =>
+      (await getDb().select().from(sessions).where(eq(sessions.tokenHash, sha256Hex(token))))[0]!.expiresAt.getTime();
+
+    // Unused after its first week, it ends 14 days after it began.
+    const idle = await signUp(app);
+    assert.deepEqual(await resolveSession(idle.token, at(6)), { userId: idle.userId });
+    clearSessionCache();
+    assert.equal(await resolveSession(idle.token, at(15)), null);
+
+    // Used in its first week, it is not renewed (no write); in its second week it is.
+    const used = await signUp(app);
+    const first = await expiry(used.token);
+    await resolveSession(used.token, at(3));
+    assert.equal(await expiry(used.token), first);
+    clearSessionCache();
+    await resolveSession(used.token, at(10));
+    assert.ok(Math.abs((await expiry(used.token)) - at(24).getTime()) < 60_000, 'renewed to 14 days from use');
+
+    // Used every 10 days it keeps going, but stops 90 days after it began.
+    for (let d = 20; d <= 80; d += 10) {
+      clearSessionCache();
+      assert.deepEqual(await resolveSession(used.token, at(d)), { userId: used.userId }, `day ${d}`);
+    }
+    assert.ok((await expiry(used.token)) <= at(90).getTime() + 60_000, 'capped at 90 days');
+    clearSessionCache();
+    assert.equal(await resolveSession(used.token, at(91)), null);
   });
 
   test('sign-up returns the camelCase user and session; only the token hash is stored', async () => {
@@ -180,7 +203,7 @@ describe('sessions and the database-derived actor', () => {
     assert.equal(body.user.email, 'alice@example.test');
     assert.match(body.session.token, /^lws_[A-Za-z0-9_-]{43}$/);
     const ttl = new Date(body.session.expiresAt).getTime() - Date.now();
-    assert.ok(Math.abs(ttl - 30 * 86400 * 1000) < 60_000, `ttl ${ttl}`);
+    assert.ok(Math.abs(ttl - 14 * 86400 * 1000) < 60_000, `ttl ${ttl}`);
 
     const rows = await getDb().select().from(sessions).where(eq(sessions.userId, body.user.id));
     assert.equal(rows.length, 1);
@@ -264,11 +287,13 @@ describe('sessions and the database-derived actor', () => {
   test('the 11th sign-in within a minute from one IP answers 429 rate_limited', async () => {
     const limited = buildApiServer();
     try {
+      // A different email each time: this is the per-IP limit, not the per-account one.
+      let n = 0;
       const attempt = () =>
         limited.inject({
           method: 'POST',
           url: '/api/v1/auth/sign-in',
-          payload: { email: 'nobody@example.test', password: 'not-the-password' },
+          payload: { email: `nobody-${++n}@example.test`, password: 'not-the-password' },
         });
       for (let i = 1; i <= 10; i++) {
         const res = await attempt();
@@ -330,6 +355,177 @@ describe('sessions and the database-derived actor', () => {
       assert.equal((await attempt('203.0.113.99, 198.51.100.7')).statusCode, 429);
     } finally {
       await oneHop.close();
+    }
+  });
+
+  test('two api processes count sign-ins against one shared limit', async () => {
+    const authRateLimit = { max: 2, timeWindow: '1 minute' };
+    const first = buildApiServer({ authRateLimit });
+    const second = buildApiServer({ authRateLimit });
+    const attempt = (server: ReturnType<typeof buildApiServer>) =>
+      server.inject({
+        method: 'POST',
+        url: '/api/v1/auth/sign-in',
+        payload: { email: 'nobody@example.test', password: 'not-the-password' },
+      });
+    try {
+      assert.equal((await attempt(first)).statusCode, 401);
+      assert.equal((await attempt(second)).statusCode, 401);
+      // The third attempt is over the limit whichever process takes it.
+      const third = await attempt(first);
+      assert.equal(third.statusCode, 429);
+      assert.ok(Number(third.headers['retry-after']) > 0, 'says how long to wait');
+      // Sign-up has a bucket of its own.
+      const signUpRes = await second.inject({
+        method: 'POST',
+        url: '/api/v1/auth/sign-up',
+        payload: { email: 'fresh@example.test', name: 'Fresh', password: TEST_PASSWORD },
+      });
+      assert.equal(signUpRes.statusCode, 201, signUpRes.body);
+    } finally {
+      await first.close();
+      await second.close();
+    }
+  });
+
+  test('sign-in refuses rather than skipping its limit when the counters cannot be read', async () => {
+    const server = buildApiServer();
+    try {
+      // As the owner (the app role may not alter tables), on the test database's one connection.
+      await getDb().execute(sql`RESET ROLE`);
+      await getDb().execute(sql`ALTER TABLE rate_limit_counters RENAME TO rate_limit_counters_away`);
+      await getDb().execute(sql`SET ROLE kinote_app`);
+      const res = await server.inject({
+        method: 'POST',
+        url: '/api/v1/auth/sign-in',
+        payload: { email: 'nobody@example.test', password: 'not-the-password' },
+      });
+      assert.equal(res.statusCode, 500);
+    } finally {
+      await getDb().execute(sql`RESET ROLE`);
+      await getDb().execute(sql`ALTER TABLE IF EXISTS rate_limit_counters_away RENAME TO rate_limit_counters`);
+      await getDb().execute(sql`SET ROLE kinote_app`);
+      await server.close();
+    }
+  });
+
+  describe('failed sign-ins per account', () => {
+    // One trusted proxy, so each attempt can come from its own client address.
+    const server = () => buildApiServer({ authRateLimit: { max: 1000, timeWindow: '1 minute' }, trustProxy: 1 });
+    let ip = 0;
+    const signIn = (app: ReturnType<typeof buildApiServer>, email: string, password: string) =>
+      app.inject({
+        method: 'POST',
+        url: '/api/v1/auth/sign-in',
+        headers: { 'x-forwarded-for': `198.51.100.${++ip % 250}` },
+        payload: { email, password },
+      });
+
+    test('five wrong passwords from five addresses lock the account, even against the right password', async () => {
+      const app = server();
+      try {
+        const user = await signUp(app, 'target@example.test');
+        assert.ok(user.token);
+        for (let i = 1; i <= 5; i++) {
+          assert.equal((await signIn(app, 'target@example.test', 'wrong-password')).statusCode, 401, `attempt ${i}`);
+        }
+        const locked = await signIn(app, 'target@example.test', TEST_PASSWORD);
+        assert.equal(locked.statusCode, 429);
+        assert.equal(locked.json().error, 'rate_limited');
+        const wait = Number(locked.headers['retry-after']);
+        assert.ok(wait > 0 && wait <= 60, `first lock is at most a minute, got ${wait}`);
+
+        // The lock ends by itself; then the right password works and the count starts over.
+        await getDb().execute(sql`UPDATE rate_limit_counters SET reset_at = now() - interval '1 second' WHERE key LIKE 'signin-lock:%'`);
+        assert.equal((await signIn(app, 'target@example.test', TEST_PASSWORD)).statusCode, 200);
+      } finally {
+        await app.close();
+      }
+    });
+
+    test('an unknown email is throttled exactly like a real one', async () => {
+      const app = server();
+      try {
+        for (let i = 1; i <= 5; i++) {
+          assert.equal((await signIn(app, 'ghost@example.test', 'wrong-password')).statusCode, 401);
+        }
+        assert.equal((await signIn(app, 'ghost@example.test', 'wrong-password')).statusCode, 429);
+        // The count is per email, whatever its case.
+        assert.equal((await signIn(app, 'GHOST@example.test', 'wrong-password')).statusCode, 429);
+        assert.equal((await signIn(app, 'someone-else@example.test', 'wrong-password')).statusCode, 401);
+      } finally {
+        await app.close();
+      }
+    });
+
+    test('a successful sign-in forgets earlier failures', async () => {
+      const app = server();
+      try {
+        await signUp(app, 'forgetful@example.test');
+        for (let i = 0; i < 4; i++) await signIn(app, 'forgetful@example.test', 'wrong-password');
+        assert.equal((await signIn(app, 'forgetful@example.test', TEST_PASSWORD)).statusCode, 200);
+        for (let i = 0; i < 4; i++) {
+          assert.equal((await signIn(app, 'forgetful@example.test', 'wrong-password')).statusCode, 401);
+        }
+      } finally {
+        await app.close();
+      }
+    });
+
+    test('each lock within a day is longer than the one before, up to 15 minutes', async () => {
+      const app = server();
+      try {
+        const waits: number[] = [];
+        for (let round = 0; round < 6; round++) {
+          for (let i = 0; i < 5; i++) await signIn(app, 'persistent@example.test', 'wrong-password');
+          const locked = await signIn(app, 'persistent@example.test', 'wrong-password');
+          assert.equal(locked.statusCode, 429);
+          waits.push(Number(locked.headers['retry-after']));
+          await getDb().execute(sql`UPDATE rate_limit_counters SET reset_at = now() - interval '1 second' WHERE key LIKE 'signin-lock:%'`);
+        }
+        for (let i = 1; i < waits.length; i++) assert.ok(waits[i]! >= waits[i - 1]!, `waits grow: ${waits}`);
+        assert.ok(waits[0]! <= 60 && waits[1]! > 60, `doubles: ${waits}`);
+        assert.ok(waits.at(-1)! <= 15 * 60, `capped: ${waits}`);
+      } finally {
+        await app.close();
+      }
+    });
+  });
+
+  test('TRUST_PROXY settings that weaken the sign-in limit are logged once', async () => {
+    const logged = (server: { lines: string[] }) => server.lines.filter((l) => l.includes('TRUST_PROXY')).length;
+    const build = (trustProxy?: boolean | number) => {
+      const lines: string[] = [];
+      const app = buildApiServer({
+        trustProxy,
+        logger: { level: 'warn', stream: { write: (line: string) => void lines.push(line) } },
+      });
+      return { app, lines };
+    };
+    const hit = (app: ReturnType<typeof buildApiServer>, xff?: string) =>
+      app.inject({ method: 'GET', url: '/api/v1/me', headers: xff ? { 'x-forwarded-for': xff } : {} });
+
+    const direct = build(false);
+    const everyHop = build(true);
+    const oneHop = build(1);
+    try {
+      await direct.app.ready();
+      await hit(direct.app);
+      assert.equal(logged(direct), 0, 'no header, nothing to warn about');
+      await hit(direct.app, '198.51.100.7');
+      await hit(direct.app, '198.51.100.8');
+      assert.equal(logged(direct), 1, 'false behind a proxy warns once');
+
+      await everyHop.app.ready();
+      assert.equal(logged(everyHop), 1, 'true warns at start');
+
+      await oneHop.app.ready();
+      await hit(oneHop.app, '198.51.100.7');
+      assert.equal(logged(oneHop), 0, 'a hop count is the recommended form');
+    } finally {
+      await direct.app.close();
+      await everyHop.app.close();
+      await oneHop.app.close();
     }
   });
 

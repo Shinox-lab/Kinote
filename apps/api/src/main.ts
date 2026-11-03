@@ -1,7 +1,8 @@
 import { assertEmbeddingDimensions, closeDb, initDb } from '@kinote/db';
 import { createAnswerProvider, createEmbeddingProvider, EMBEDDING_DIMENSIONS } from '@kinote/core';
-import { createObjectStorage, loadConfig } from '@kinote/shared';
+import { createObjectStorage, loadConfig, usageLimitsOf } from '@kinote/shared';
 import { buildApiServer } from './server.js';
+import { createSmtpMailer } from './mail.js';
 import { HttpCollabClient } from '@kinote/shared';
 
 async function main(): Promise<void> {
@@ -12,6 +13,13 @@ async function main(): Promise<void> {
   const storage = createObjectStorage(config);
   await storage.ensureBucket();
 
+  const mailer = config.SMTP_URL
+    ? createSmtpMailer({ smtpUrl: config.SMTP_URL, from: config.MAIL_FROM!, publicUrl: config.PUBLIC_URL! })
+    : undefined;
+  if (!mailer && config.SIGNUP_MODE === 'open') {
+    console.warn('api: SIGNUP_MODE=open without SMTP_URL: anyone can sign up with any email address, unverified');
+  }
+
   const embeddingProvider = createEmbeddingProvider(config);
   const answerProvider = createAnswerProvider(config);
   const app = buildApiServer({
@@ -19,9 +27,13 @@ async function main(): Promise<void> {
     embeddingProvider,
     answerProvider,
     maxUploadBytes: config.MAX_UPLOAD_BYTES,
+    maxConcurrentUploads: config.MAX_CONCURRENT_UPLOADS,
     logger: { level: config.LOG_LEVEL },
     trustProxy: config.TRUST_PROXY,
     authRateLimit: { max: config.AUTH_RATE_LIMIT_MAX, timeWindow: '1 minute' },
+    limits: usageLimitsOf(config),
+    signUpMode: config.SIGNUP_MODE,
+    ...(mailer ? { mailer } : {}),
     collab: new HttpCollabClient(config.COLLAB_INTERNAL_URL, config.INTERNAL_SECRET),
   });
   await app.listen({ port: config.API_PORT, host: config.HOST });

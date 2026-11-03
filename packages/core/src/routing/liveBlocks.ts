@@ -2,7 +2,7 @@ import * as Y from 'yjs';
 import { createServerEditor } from '@kinote/shared';
 import { and, eq } from 'drizzle-orm';
 import { pages, type DbTransaction } from '@kinote/db';
-import { flattenBlocks, restorePageLinks, type BlockLike } from '@kinote/shared';
+import { flattenBlocks, restorePageLinks, stripRemoteMedia, type BlockLike } from '@kinote/shared';
 import { FIELDS_MAP } from '@kinote/contracts';
 
 const editor = createServerEditor();
@@ -46,9 +46,13 @@ export async function blockMarkdown(block: BlockLike): Promise<string> {
   return (await editor.blocksToMarkdownLossy([{ ...block, children: [] } as any])).trim();
 }
 
-/** BlockNote blocks for engine-written Markdown. */
+/**
+ * BlockNote blocks for engine-written Markdown. Images and other media that
+ * point at another site become plain links (stripRemoteMedia): a model told by
+ * planted text to add one must not make every reader's browser fetch it.
+ */
 export async function markdownBlocks(markdown: string): Promise<BlockLike[]> {
-  return restorePageLinks((await editor.tryParseMarkdownToBlocks(markdown)) as BlockLike[]);
+  return stripRemoteMedia(restorePageLinks((await editor.tryParseMarkdownToBlocks(markdown)) as BlockLike[]));
 }
 
 /** A new page's stored Yjs state: `blocks` under `title`, with `fields` as its field values. */

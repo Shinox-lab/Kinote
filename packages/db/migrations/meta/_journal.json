@@ -267,6 +267,20 @@
       "when": 1793620297000,
       "tag": "0037_latest_version_pointer",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1794200000000,
+      "tag": "0038_rate_limits",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1794200100000,
+      "tag": "0039_email_verification",
+      "breakpoints": true
     }
   ]
 }

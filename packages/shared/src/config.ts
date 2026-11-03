@@ -4,6 +4,49 @@ import { z } from 'zod';
 export const DEFAULT_AUTH_RATE_LIMIT_MAX = 10;
 
 /**
+ * Largest live-editing WebSocket message when `COLLAB_MAX_MESSAGE_BYTES` is unset:
+ * room for a whole large page sent at once (a drawing alone is at most 1 MB).
+ */
+export const DEFAULT_COLLAB_MAX_MESSAGE_BYTES = 8 * 1024 * 1024;
+
+/**
+ * Per-person request limits and the per-workspace daily AI allowance
+ * (TENANT_DAILY_AI_ACTIONS: each Ask, and each background capture routing,
+ * placement, page card or entity extraction; 0 means no allowance check).
+ */
+export interface UsageLimits {
+  askPerMinute: number;
+  searchPerMinute: number;
+  capturePerMinute: number;
+  uploadPerMinute: number;
+  maxTenantsPerUser: number;
+  tenantDailyAiActions: number;
+}
+
+export const DEFAULT_USAGE_LIMITS: UsageLimits = {
+  askPerMinute: 10,
+  searchPerMinute: 60,
+  capturePerMinute: 20,
+  uploadPerMinute: 30,
+  maxTenantsPerUser: 5,
+  tenantDailyAiActions: 2000,
+};
+
+/** The usage limits a loaded config sets. */
+export function usageLimitsOf(config: Config): UsageLimits {
+  return {
+    askPerMinute: config.ASK_RATE_LIMIT_PER_MIN,
+    searchPerMinute: config.SEARCH_RATE_LIMIT_PER_MIN,
+    capturePerMinute: config.CAPTURE_RATE_LIMIT_PER_MIN,
+    uploadPerMinute: config.UPLOAD_RATE_LIMIT_PER_MIN,
+    maxTenantsPerUser: config.MAX_TENANTS_PER_USER,
+    tenantDailyAiActions: config.TENANT_DAILY_AI_ACTIONS,
+  };
+}
+
+const perMinute = (fallback: number) => z.coerce.number().int().positive().max(100_000).default(fallback);
+
+/**
  * Environment contract shared by the api, collab and worker services.
  * `DATABASE_URL` is the `kinote_app` role (no superuser, no BYPASSRLS);
  * `DATABASE_MIGRATE_URL` is the schema owner, used only by `pnpm db:migrate`.
@@ -16,6 +59,13 @@ export const ConfigSchema = z.object({
   COLLAB_INTERNAL_URL: z.string().min(1).default('http://127.0.0.1:1234'),
   API_PORT: z.coerce.number().int().min(0).max(65535).default(8787),
   COLLAB_PORT: z.coerce.number().int().min(0).max(65535).default(1234),
+  /** Largest message a live-editing client may send, in bytes (default 8 MiB, at most 64 MiB). */
+  COLLAB_MAX_MESSAGE_BYTES: z.coerce
+    .number()
+    .int()
+    .min(64 * 1024)
+    .max(64 * 1024 * 1024)
+    .default(DEFAULT_COLLAB_MAX_MESSAGE_BYTES),
   /**
    * Bind address of the api and collab servers. Loopback by default, so a
    * service run on the host is not reachable from the network by accident;
@@ -24,7 +74,8 @@ export const ConfigSchema = z.object({
   HOST: z.string().min(1).default('127.0.0.1'),
   /**
    * Whether the api trusts X-Forwarded-For (the client IP the auth rate limit
-   * keys on). `false` (default): no proxy in front, the header is ignored.
+   * keys on). `false` (default here, for an api run on its own): no proxy in
+   * front, the header is ignored. docker-compose.yml sets 1 (its web nginx).
    * A positive hop count N (recommended behind a proxy): the address N hops
    * from the right of the header is the client; anything a client put to the
    * left of it is ignored. `true` trusts every hop, so a client-supplied
@@ -43,6 +94,38 @@ export const ConfigSchema = z.object({
    * brute-force limit into no limit at all.
    */
   AUTH_RATE_LIMIT_MAX: z.coerce.number().int().positive().max(100_000).default(DEFAULT_AUTH_RATE_LIMIT_MAX),
+  /** Asks per person per minute. */
+  ASK_RATE_LIMIT_PER_MIN: perMinute(DEFAULT_USAGE_LIMITS.askPerMinute),
+  /** Searches per person per minute. */
+  SEARCH_RATE_LIMIT_PER_MIN: perMinute(DEFAULT_USAGE_LIMITS.searchPerMinute),
+  /** Captures per person per minute. */
+  CAPTURE_RATE_LIMIT_PER_MIN: perMinute(DEFAULT_USAGE_LIMITS.capturePerMinute),
+  /** File uploads per person (or per source token) per minute. */
+  UPLOAD_RATE_LIMIT_PER_MIN: perMinute(DEFAULT_USAGE_LIMITS.uploadPerMinute),
+  /**
+   * Who may create an account: `auto` (default) is open until the first real
+   * account exists, then invite-only; `open` lets anyone sign up; `invite` needs
+   * an invitation link; `closed` creates no accounts (the operator's CLI still can).
+   */
+  SIGNUP_MODE: z.enum(['auto', 'open', 'invite', 'closed']).default('auto'),
+  /**
+   * Outgoing mail (e.g. smtps://user:pass@smtp.example.com:465). Unset: no
+   * email at all, so no email verification or password reset by email.
+   */
+  SMTP_URL: z.string().url().optional(),
+  /** The From address of Kinote's emails; required with SMTP_URL. */
+  MAIL_FROM: z.string().min(3).optional(),
+  /** The console's public address (https://wiki.example.com), for links in emails; required with SMTP_URL. */
+  PUBLIC_URL: z.string().url().optional(),
+  /** Workspaces one person may own. */
+  MAX_TENANTS_PER_USER: z.coerce.number().int().positive().max(10_000).default(DEFAULT_USAGE_LIMITS.maxTenantsPerUser),
+  /** AI actions per workspace per UTC day; 0 turns the allowance off. */
+  TENANT_DAILY_AI_ACTIONS: z.coerce
+    .number()
+    .int()
+    .min(0)
+    .max(100_000_000)
+    .default(DEFAULT_USAGE_LIMITS.tenantDailyAiActions),
   /** pino level of the api's log (stdout). Request headers and bodies are never logged. */
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
   EMBEDDING_PROVIDER: z.enum(['deterministic', 'openai']).default('deterministic'),
@@ -76,6 +159,8 @@ export const ConfigSchema = z.object({
   S3_FORCE_PATH_STYLE: z.enum(['true', 'false']).transform((v) => v === 'true').optional(),
   /** Largest file the api accepts, in bytes (default 50 MB; at most 500 MB). */
   MAX_UPLOAD_BYTES: z.coerce.number().int().positive().max(524_288_000).default(52_428_800),
+  /** Uploads one api process reads at once; its upload memory is about this times MAX_UPLOAD_BYTES. */
+  MAX_CONCURRENT_UPLOADS: z.coerce.number().int().positive().max(100).default(4),
   /** Most text, in characters, one file may yield; more fails the file (never truncated). */
   MAX_EXTRACTED_CHARS: z.coerce.number().int().positive().default(2_000_000),
   /** `off`: only text files can be read; `fake`: tests and local e2e; `http`: the Docling service. */
@@ -87,6 +172,13 @@ export const ConfigSchema = z.object({
    */
   EXTRACTOR_TIMEOUT_MS: z.coerce.number().int().positive().max(270_000).default(240_000),
 }).superRefine((value, ctx) => {
+  if (value.SMTP_URL) {
+    for (const key of ['MAIL_FROM', 'PUBLIC_URL'] as const) {
+      if (!value[key]) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: [key], message: 'is required when SMTP_URL is set' });
+      }
+    }
+  }
   if (value.EXTRACTOR_MODE === 'http' && !value.EXTRACTOR_URL) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,

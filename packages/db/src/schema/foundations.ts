@@ -27,7 +27,26 @@ export const users = pgTable('users', {
   phoneE164: text('phone_e164'),
   passwordHash: text('password_hash').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  /** When the person proved the address is theirs (a link sent to it); null until then. */
+  emailVerifiedAt: timestamp('email_verified_at', { withTimezone: true }),
 });
+
+// Global (not tenant-scoped, no RLS), like sessions: one-time links sent by
+// email to verify the address or reset the password. Only the SHA-256 is stored.
+export const emailTokens = pgTable(
+  'email_tokens',
+  {
+    tokenHash: text('token_hash').primaryKey(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    purpose: text('purpose', { enum: ['verify', 'reset'] }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    usedAt: timestamp('used_at', { withTimezone: true }),
+  },
+  (t) => [index('email_tokens_user_idx').on(t.userId)]
+);
 
 // Global (not tenant-scoped, no RLS), like users. Only the SHA-256 of the
 // bearer token is stored; the token itself is shown to the client once.

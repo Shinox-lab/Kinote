@@ -27,6 +27,7 @@ import { buildApiServer } from '../../apps/api/src/server.js';
 import { HttpCollabClient } from '@kinote/shared';
 import { collabSettle, createCollabServer } from '../../apps/collab/src/server.js';
 import { runWorkerLoop } from '../../apps/worker/src/runner.js';
+import { securityHeadersPlugin } from './securityHeaders.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const HOST = '127.0.0.1';
@@ -85,6 +86,15 @@ const app = buildApiServer({
   maxUploadBytes: config.MAX_UPLOAD_BYTES,
   // Every spec signs accounts up from this one address.
   authRateLimit: { max: 10_000, timeWindow: '1 minute' },
+  // The specs ask, search and upload far faster than a person; no allowance either.
+  limits: {
+    askPerMinute: 100_000,
+    searchPerMinute: 100_000,
+    capturePerMinute: 100_000,
+    uploadPerMinute: 100_000,
+    maxTenantsPerUser: 10_000,
+    tenantDailyAiActions: 0,
+  },
   collab: new HttpCollabClient(`http://${HOST}:${collabPort}`, internalSecret),
 });
 await app.listen({ port: apiPort, host: HOST });
@@ -120,6 +130,8 @@ logger.error = (msg, options) => {
 };
 const web: PreviewServer = await preview({
   root: webRoot,
+  // The production nginx's CSP and other headers, so the specs fail on anything they block.
+  plugins: [securityHeadersPlugin(webRoot)],
   customLogger: logger,
   logLevel: 'warn',
   build: { outDir: webDist },

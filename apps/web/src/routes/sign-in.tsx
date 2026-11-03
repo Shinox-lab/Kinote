@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { Link, useRouter, useSearch } from '@tanstack/react-router';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { api } from '../lib/api.js';
 import { safeRedirect } from '../lib/console.js';
 import { startSession } from '../lib/queryClient.js';
@@ -11,6 +11,7 @@ export function SignInPage() {
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const config = useQuery({ queryKey: ['auth-config'], queryFn: () => api.authConfig() });
 
   const signIn = useMutation({
     mutationFn: () => api.signIn({ email, password }),
@@ -42,6 +43,13 @@ export function SignInPage() {
           {signIn.isPending ? 'Signing in…' : 'Sign in'}
         </Button>
       </form>
+      {config.data?.emailEnabled && (
+        <p className="mt-4 text-sm text-muted">
+          <Link to="/forgot-password" className="font-medium text-accent-text underline">
+            Forgot your password?
+          </Link>
+        </p>
+      )}
       <p className="mt-4 text-sm text-muted">
         New here?{' '}
         <Link to="/sign-up" search={{ redirect }} className="font-medium text-accent-text underline">

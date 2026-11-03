@@ -14,6 +14,7 @@ import { InMemoryObjectStorage } from '@kinote/shared';
 import { FakeExtractor } from '@kinote/core';
 import { runPendingJobsForTenant } from '../../worker/src/runner.js';
 import { buildApiServer } from '../src/server.js';
+import { TEST_LIMITS } from './support/testkit.js';
 import { uploadRequest } from './support/multipart.js';
 
 const APP_URL = process.env.TEST_DATABASE_URL;
@@ -28,7 +29,7 @@ const pdf = (text: string) =>
 
 describe.skipIf(!APP_URL)('sources on real Postgres', () => {
   const storage = new InMemoryObjectStorage();
-  const app = buildApiServer({ storage, authRateLimit: { max: 1000, timeWindow: '1 minute' } });
+  const app = buildApiServer({ storage, authRateLimit: { max: 1000, timeWindow: '1 minute' }, limits: TEST_LIMITS });
   const extractor = new FakeExtractor();
   let owner: pg.Pool;
   const emails: string[] = [];

@@ -72,7 +72,7 @@ function TokenRow({ source, token, now }: { source: Source; token: SourceToken; 
       <span className="font-mono text-xs text-muted">{token.prefix}…</span>
       <span className="text-muted">Created {relativeTime(token.createdAt, now)}</span>
       <span className="text-muted">{lastUsedLabel(token, now)}</span>
-      <span className="text-muted">{token.expiresAt ? `Expires ${whenLabel(token.expiresAt)}` : 'No expiry'}</span>
+      <span className="text-muted">{token.expiresAt ? `Expires ${whenLabel(token.expiresAt)}` : 'Never expires: revoke it and issue one that does'}</span>
       <span
         className={`rounded-full px-2 py-0.5 text-xs ${state === 'active' ? 'bg-success-bg text-success' : 'bg-hover text-muted'}`}
         aria-label={`Token ${token.name} is ${state}`}
@@ -134,7 +134,7 @@ function NewTokenForm({ source, onIssued }: { source: Source; onIssued: (token: 
         <TextField label="Token name" value={name} onChange={setName} required />
       </div>
       <div className="w-40">
-        <TextField label="Expires in days" value={days} onChange={setDays} pattern="[0-9]*" hint="Leave empty for no expiry." />
+        <TextField label="Expires in days" value={days} onChange={setDays} pattern="[0-9]*" hint="1 to 365. Leave empty for 90 days." />
       </div>
       <Button type="submit" disabled={busy || name.trim() === ''}>
         New token

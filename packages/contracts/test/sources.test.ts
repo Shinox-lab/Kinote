@@ -40,10 +40,10 @@ describe('source contracts', () => {
     expect(UpdateSourceRequestSchema.safeParse({ status: 'deleted' }).success).toBe(false);
   });
 
-  it('bounds a token expiry to 1 to 3650 days', () => {
+  it('bounds a token expiry to 1 to 365 days (90 when left out, set by the api)', () => {
     expect(CreateSourceTokenRequestSchema.safeParse({ name: 'ci', expires_in_days: 0 }).success).toBe(false);
-    expect(CreateSourceTokenRequestSchema.safeParse({ name: 'ci', expires_in_days: 3651 }).success).toBe(false);
-    expect(CreateSourceTokenRequestSchema.safeParse({ name: 'ci', expires_in_days: 3650 }).success).toBe(true);
+    expect(CreateSourceTokenRequestSchema.safeParse({ name: 'ci', expires_in_days: 366 }).success).toBe(false);
+    expect(CreateSourceTokenRequestSchema.safeParse({ name: 'ci', expires_in_days: 365 }).success).toBe(true);
     expect(CreateSourceTokenRequestSchema.safeParse({ name: 'ci' }).success).toBe(true);
   });
 

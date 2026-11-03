@@ -22,6 +22,8 @@ COPY packages/contracts/package.json packages/contracts/
 COPY packages/core/package.json packages/core/
 COPY packages/db/package.json packages/db/
 COPY packages/shared/package.json packages/shared/
+# pnpm applies these to dependencies at install time (package.json patchedDependencies).
+COPY patches/ patches/
 RUN pnpm install --frozen-lockfile
 
 COPY . .
@@ -55,6 +57,7 @@ RUN pnpm --filter @kinote/web build
 
 FROM nginx:1.27-alpine AS web-runtime
 COPY apps/web/nginx.conf /etc/nginx/conf.d/default.conf
+COPY apps/web/security-headers.conf /etc/nginx/snippets/security-headers.conf
 COPY --from=web /app/apps/web/dist /usr/share/nginx/html
 EXPOSE 80
 HEALTHCHECK --interval=5s --timeout=3s --retries=20 CMD wget -q -O /dev/null http://127.0.0.1/ || exit 1

@@ -106,15 +106,27 @@ test('editor opens and saves a new version', async ({ browser, request }) => {
   await expect(frame.locator('#opened')).toHaveText(`Opened Budget.xlsx (${original.buffer.length} bytes)`);
 
   // Another opaque-origin frame has origin 'null' too, but it is not the editor window.
-  await page.evaluate((base64) => {
+  // It is a page of its own (a srcdoc frame would inherit the console's CSP, which
+  // blocks its inline script, so the check below would pass without being tested).
+  let impostorRan = false;
+  await page.route(/\/impostor\.html$/, (route) => {
+    impostorRan = true;
+    return route.fulfill({
+      status: 200,
+      contentType: 'text/html',
+      body:
+        '<script>const b = Uint8Array.from(atob("' + edited.buffer.toString('base64') + '"), (c) => c.charCodeAt(0)).buffer;' +
+        'parent.postMessage({ type: "gridcraft:save", name: "Budget.xlsx", bytes: b }, "*");</scr' + 'ipt>',
+    });
+  });
+  await page.evaluate(() => {
     const impostor = document.createElement('iframe');
     impostor.setAttribute('sandbox', 'allow-scripts');
     impostor.hidden = true;
-    impostor.srcdoc =
-      '<script>const b = Uint8Array.from(atob("' + base64 + '"), (c) => c.charCodeAt(0)).buffer;' +
-      'parent.postMessage({ type: "gridcraft:save", name: "Budget.xlsx", bytes: b }, "*");</scr' + 'ipt>';
+    impostor.src = '/gridcraft/impostor.html';
     document.body.append(impostor);
-  }, edited.buffer.toString('base64'));
+  });
+  await expect.poll(() => impostorRan).toBe(true);
   await expect
     .poll(async () => (await versionsOf(request, world, world.owner, id)).length, { timeout: 1500 })
     .toBe(1);

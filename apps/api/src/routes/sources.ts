@@ -12,6 +12,7 @@ import {
   AppError,
   CreateSourceRequestSchema,
   CreateSourceTokenRequestSchema,
+  DEFAULT_SOURCE_TOKEN_DAYS,
   UpdateSourceRequestSchema,
   type CreateSourceTokenResponse,
   type Source,
@@ -200,7 +201,7 @@ export async function issueSourceToken(
         name: body.name,
         tokenHash: minted.hash,
         tokenPrefix: minted.prefix,
-        expiresAt: body.expires_in_days ? new Date(Date.now() + body.expires_in_days * DAY_MS) : null,
+        expiresAt: new Date(Date.now() + (body.expires_in_days ?? DEFAULT_SOURCE_TOKEN_DAYS) * DAY_MS),
         createdBy: actor.principalId,
       })
       .returning();

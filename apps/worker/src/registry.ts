@@ -129,6 +129,12 @@ function versionIdOf(job: Job): string {
  */
 export interface JobHandler {
   run(job: Job, ctx: JobContext): Promise<void>;
+  /**
+   * Calls a language model (routing, placement, page cards, entities): each run
+   * is one AI action against the workspace's daily allowance. Embedding-only
+   * work (indexing, search) is not counted.
+   */
+  usesAi?: boolean;
   onDeadLetter?(job: Job, error: string, thrown?: unknown): Promise<void>;
 }
 
@@ -139,6 +145,7 @@ export const handlers: Record<string, JobHandler> = {
    * CAPTURE_BUSY_RETRY_MS later (a rerun of the same job, not a failure).
    */
   'capture.route': {
+    usesAi: true,
     async run(job, ctx) {
       const captureId = captureIdOf(job);
       // A capture with a file routes once the file has been read (the upload's own job reads it).
@@ -157,6 +164,7 @@ export const handlers: Record<string, JobHandler> = {
   },
   /** Files one fact on the page a person chose; waits for the lease like `capture.route`. */
   'capture.place': {
+    usesAi: true,
     async run(job, ctx) {
       const payload = job.payload as { factId?: unknown; documentId?: unknown };
       if (typeof payload.factId !== 'string' || typeof payload.documentId !== 'string') {
@@ -175,6 +183,7 @@ export const handlers: Record<string, JobHandler> = {
    * to admins and a later index of the page rebuilds it.
    */
   'version.card': {
+    usesAi: true,
     async run(job, ctx) {
       const versionId = versionIdOf(job);
       const result = await buildPageCard({ tenantId: job.tenantId, versionId }, ctx.placementModel, ctx.embeddingProvider);
@@ -185,6 +194,7 @@ export const handlers: Record<string, JobHandler> = {
   },
   /** The entity graph of an indexed version; like `version.card`, never touches the version. */
   'version.entities': {
+    usesAi: true,
     async run(job, ctx) {
       const versionId = versionIdOf(job);
       const result = await extractVersionEntities(

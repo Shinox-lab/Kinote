@@ -6,6 +6,7 @@ import {
   S3Client,
 } from '@aws-sdk/client-s3';
 import { Upload } from '@aws-sdk/lib-storage';
+import { Readable } from 'node:stream';
 import { AppError } from '@kinote/contracts';
 
 export interface ObjectStorage {
@@ -18,6 +19,11 @@ export interface ObjectStorage {
   get(tenantId: string, objectKey: string): Promise<{ bytes: Uint8Array; mimeType: string }>;
   /** The bytes `start..end` (inclusive, clamped to the object) without reading the rest; for HTTP Range. */
   getRange(tenantId: string, objectKey: string, start: number, end: number): Promise<Uint8Array>;
+  /**
+   * The object as a stream, never held whole in memory: what a download sends.
+   * Errors before the first byte (missing object) reject; later ones end the stream with an error.
+   */
+  getStream(tenantId: string, objectKey: string): Promise<{ stream: Readable; mimeType: string; sizeBytes: number }>;
   delete(tenantId: string, objectKey: string): Promise<void>;
 }
 
@@ -93,6 +99,13 @@ export class InMemoryObjectStorage implements ObjectStorage {
     const entry = this.objects.get(objectKey);
     if (!entry) reject('Object not found.');
     return entry.bytes.slice(start, end + 1);
+  }
+
+  async getStream(tenantId: string, objectKey: string) {
+    assertTenantKey(tenantId, objectKey);
+    const entry = this.objects.get(objectKey);
+    if (!entry) reject('Object not found.');
+    return { stream: Readable.from([Buffer.from(entry.bytes)]), mimeType: entry.mimeType, sizeBytes: entry.bytes.byteLength };
   }
 
   async delete(tenantId: string, objectKey: string) {
@@ -188,6 +201,22 @@ export class S3ObjectStorage implements ObjectStorage {
       );
       if (!res.Body) reject('Object not found.');
       return await res.Body.transformToByteArray();
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      const name = (err as { name?: unknown }).name;
+      if (name === 'NoSuchKey' || name === 'NotFound') reject('Object not found.');
+      throw err;
+    }
+  }
+
+  async getStream(tenantId: string, objectKey: string) {
+    assertTenantKey(tenantId, objectKey);
+    try {
+      const res = await this.client.send(new GetObjectCommand({ Bucket: this.bucket, Key: objectKey }));
+      if (!res.Body) reject('Object not found.');
+      // In Node the SDK's body is an http.IncomingMessage, a Readable.
+      const stream = res.Body instanceof Readable ? res.Body : Readable.fromWeb(res.Body.transformToWebStream() as never);
+      return { stream, mimeType: res.ContentType ?? 'application/octet-stream', sizeBytes: res.ContentLength ?? 0 };
     } catch (err) {
       if (err instanceof AppError) throw err;
       const name = (err as { name?: unknown }).name;

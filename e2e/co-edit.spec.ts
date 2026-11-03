@@ -38,16 +38,16 @@ async function invite(admin: Page, slug: string, email: string): Promise<string>
   return link.inputValue();
 }
 
-/** The invitee opens the accept link signed out, signs up on the way and joins. */
+/** The invitee opens the accept link signed out, signs up from the invitation and lands in the workspace. */
 async function acceptInvite(page: Page, name: string, email: string, link: string, slug: string): Promise<void> {
   await page.goto(link);
   // Signed out, the link leads to sign-in; "Create an account" keeps the way back to the invitation.
   await page.getByRole('link', { name: 'Create an account' }).click();
+  // The account takes the invited email; it is shown, not typed.
+  await expect(page.getByLabel('Email')).toHaveValue(email);
   await page.getByLabel('Name').fill(name);
-  await page.getByLabel('Email').fill(email);
   await page.getByLabel('Password').fill(PASSWORD);
-  await page.getByRole('button', { name: 'Create account' }).click();
-  await page.getByRole('button', { name: 'Join the workspace' }).click();
+  await page.getByRole('button', { name: 'Create account and join' }).click();
   await page.waitForURL(`**/w/${slug}`);
 }
 
@@ -69,7 +69,8 @@ test('two editors and a reviewer: co-edit, hold until approval, index, cite v1',
     await a.waitForURL(`**/w/${slug}`);
 
     await a.goto(`/w/${slug}/admin/spaces`);
-    await a.getByRole('button', { name: 'New space' }).click();
+    // The settings page's button, not the sidebar's "+" (also named New space).
+    await a.getByRole('main').getByRole('button', { name: 'New space' }).click();
     const form = a.locator('form').filter({ has: a.getByRole('heading', { name: 'Create a space' }) });
     await form.getByLabel('Name').fill('Docs');
     await form.getByLabel('Changes need review').check();

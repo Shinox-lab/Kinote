@@ -189,6 +189,10 @@ describe('files pipeline', () => {
     const download = await app.inject({ method: 'GET', url: `/api/v1/versions/${up.version.id}/file`, headers: c.author.headers });
     assert.equal(download.statusCode, 200);
     assert.deepEqual(new Uint8Array(download.rawPayload), mp3);
+    // Streamed from storage with its length, and still never runnable.
+    assert.equal(download.headers['content-length'], String(mp3.byteLength));
+    assert.equal(download.headers['x-content-type-options'], 'nosniff');
+    assert.equal(download.headers['content-security-policy'], 'sandbox');
     const inspector = await app.inject({ method: 'GET', url: `/api/v1/versions/${up.version.id}/chunks`, headers: c.author.headers });
     assert.equal(inspector.json().ready, false);
   });

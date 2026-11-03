@@ -5,7 +5,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import * as Y from 'yjs';
 import { withTenantTx, pages, pageFieldValues } from '@kinote/db';
 import { FIELDS_MAP, storableFields } from '@kinote/contracts';
-import { parseDocumentName } from '@kinote/shared';
+import { DEFAULT_COLLAB_MAX_MESSAGE_BYTES, parseDocumentName } from '@kinote/shared';
 import { authenticateCollabConnection, type CollabContext } from './auth.js';
 import { handleInternalRequest } from './internal.js';
 import { recordPageTransactions } from './recorder.js';
@@ -170,6 +170,8 @@ export function createCollabServer(
     stopOnSignals: false,
     debounce: deps.debounceMs ?? DEFAULT_DEBOUNCE_MS,
     maxDebounce: deps.maxDebounceMs ?? DEFAULT_MAX_DEBOUNCE_MS,
+    // Checked by ws per frame, before authentication and before the frame is buffered.
+    websocketOptions: { maxPayload: deps.maxMessageBytes ?? DEFAULT_COLLAB_MAX_MESSAGE_BYTES },
     extensions: [core, pageStateStore(), ...(extraHooks ? [extraHooks as Extension] : [])],
   });
 

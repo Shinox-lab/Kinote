@@ -4,6 +4,11 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+patchedDependencies:
+  '@extend-ai/react-xlsx@0.18.1':
+    hash: ttaxc3gk4nis43mqgi65swcqcq
+    path: patches/@extend-ai__react-xlsx@0.18.1.patch
+
 importers:
 
   .:
@@ -62,12 +67,19 @@ importers:
       fastify:
         specifier: ^5.12.7
         version: 5.12.7
+      nodemailer:
+        specifier: 10.3.1
+        version: 10.3.1
       yjs:
         specifier: ^13.6.33
         version: 13.6.33
       zod:
         specifier: ^3.25.76
         version: 3.25.76
+    devDependencies:
+      '@types/nodemailer':
+        specifier: 8.0.2
+        version: 8.0.2
 
   apps/collab:
     dependencies:
@@ -125,7 +137,7 @@ importers:
         version: 0.18.1(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       '@extend-ai/react-xlsx':
         specifier: 0.18.1
-        version: 0.18.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+        version: 0.18.1(patch_hash=ttaxc3gk4nis43mqgi65swcqcq)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       '@hocuspocus/provider':
         specifier: ^4.7.1
         version: 4.7.1(y-protocols@1.0.7(yjs@13.6.33))(yjs@13.6.33)
@@ -2085,6 +2097,7 @@ packages:
   '@smithy/core@3.36.0':
     resolution: {integrity: sha512-3hJiwG1F5t1SoXqp/yOCmYXziyx7ZVqF63S5W6YU201e/qwVaHPex+E/3vvyY9a3ORq/b+BydeNZpP2saQ9X2g==}
     engines: {node: '>=18.0.0'}
+    deprecated: Deprecated due to a bug in custom logger data redaction. See https://github.com/aws/aws-sdk-js-v3/issues/8393.
 
   '@smithy/core@3.38.1':
     resolution: {integrity: sha512-U/mB2XiwTLaf+NSgLSWwJfptsMT/H8aBi0aTAA/E5e2/TagFeGCqAyhKGG0w0A9IWTkm4qYEmLoD/HB6aYfnRA==}
@@ -2475,6 +2488,9 @@ packages:
 
   '@types/node@24.19.2':
     resolution: {integrity: sha512-93d49wCWJkCyN87MxLpNN6KXPCwFw7bVUg79mGUV1OS40JGWwVCr8n61DXCSqz7CV6/VfPkb7xec7uP2M+QHWQ==}
+
+  '@types/nodemailer@8.0.2':
+    resolution: {integrity: sha512-c7M5ox8p0nEOfbJ2E9Qcmt8/QCu/VzsiAhzBiZbvky2PhKZDHpKB3sQHBM5MEZNkCfBOaS6S9//AGPRTNB7IaA==}
 
   '@types/pg@8.23.1':
     resolution: {integrity: sha512-fKVHpikPdg4GKks3JuLEhvwSyvwzF23hnabPy6DD8ljVbC7+6J5dQzdv4arV6jqq57djnMgs1HKBxX4P8aBI3A==}
@@ -4342,6 +4358,10 @@ packages:
   node-releases@2.0.59:
     resolution: {integrity: sha512-5qr2okC4ItAI0hG5SaV0HoYMpnM/Y6+Oqr7AmPYy/2uEoGvS+GbSKLeRxSS1uAdu59yz0ouzcuXievSgg///WA==}
     engines: {node: '>=18'}
+
+  nodemailer@10.3.1:
+    resolution: {integrity: sha512-uF0AFsJC07Y1vdW7p580DKAnh7rAO+4UPSSB3mDCPNDufoiaOebV6JmrzpxB14OjEEEiBsNdYoM2Y+fN8M7BBA==}
+    engines: {node: '>=20.0.0'}
 
   normalize-path@3.0.0:
     resolution: {integrity: sha512-6eZs5Ls3WtCisHWp9S2GUy8dqkpGi4BVSz3GaqiE6ezub0512ESztXUwUB6C6IKbQkY2Pnb/mD4WYojCRwcwLA==}
@@ -6575,7 +6595,7 @@ snapshots:
 
   '@exodus/bytes@1.16.0': {}
 
-  '@extend-ai/react-xlsx@0.18.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1)':
+  '@extend-ai/react-xlsx@0.18.1(patch_hash=ttaxc3gk4nis43mqgi65swcqcq)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)':
     dependencies:
       '@dukelib/sheets-wasm': 0.1.23
       '@tanstack/react-virtual': 3.14.23(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
@@ -7721,6 +7741,10 @@ snapshots:
   '@types/node@24.19.2':
     dependencies:
       undici-types: 7.24.6
+
+  '@types/nodemailer@8.0.2':
+    dependencies:
+      '@types/node': 24.19.2
 
   '@types/pg@8.23.1':
     dependencies:
@@ -10009,6 +10033,8 @@ snapshots:
   nanoid@4.0.2: {}
 
   node-releases@2.0.59: {}
+
+  nodemailer@10.3.1: {}
 
   normalize-path@3.0.0: {}
 
