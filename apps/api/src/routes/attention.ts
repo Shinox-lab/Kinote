@@ -94,6 +94,7 @@ export async function listAttention(actor: Actor): Promise<AttentionItem[]> {
           indexedVersion,
           sourceDeleted: r.sourceDeletedAt !== null,
           placement: r.placement,
+          indexingPaused,
         });
         if (latestVersion?.status === 'failed') reason = 'failed';
         else if (latestVersion?.status === 'pending_review') reason = 'review';

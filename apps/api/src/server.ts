@@ -354,7 +354,7 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
   const creditRates = opts.creditRates ?? null;
   const credits = requireCredits(opts.billingUrl);
   /** Runs a route's work in a usage scope: its model calls are charged to the caller's workspace as `kind`. */
-  const metered = (kind: 'ask' | 'index', req: FastifyRequest, fn: () => Promise<unknown>) => {
+  const metered = <T>(kind: 'capture' | 'ask' | 'index', req: FastifyRequest, fn: () => Promise<T>): Promise<T> => {
     const actor = actorOf(req);
     return withUsageScope({ tenantId: actor.tenantId, kind, principalId: actor.principalId }, creditRates, fn);
   };
@@ -1091,7 +1091,9 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
 
   app.post('/api/v1/capture-changes/:id/move', { onRequest: credits }, async (req, reply) => {
     const { id } = req.params as { id: string };
-    const res = await moveCaptureChange(actorOf(req), id, req.body, { collab: opts.collab, embedder: embeddingProvider });
+    const res = await metered('capture', req, () =>
+      moveCaptureChange(actorOf(req), id, req.body, { collab: opts.collab, embedder: embeddingProvider })
+    );
     return reply.send(parseReply(MoveChangeResponseSchema, res));
   });
 
@@ -1106,7 +1108,7 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
 
   app.post('/api/v1/capture-facts/:id/place', { onRequest: credits }, async (req, reply) => {
     const { id } = req.params as { id: string };
-    const res = await placeCaptureFact(actorOf(req), id, req.body, { embedder: embeddingProvider });
+    const res = await metered('capture', req, () => placeCaptureFact(actorOf(req), id, req.body, { embedder: embeddingProvider }));
     return reply.send(parseReply(FactStatusSchema, res));
   });
 
@@ -1116,7 +1118,7 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
 
   app.post('/api/v1/captures/:id/document/place', { onRequest: credits }, async (req, reply) => {
     const { id } = req.params as { id: string };
-    const res = await placeCaptureDocument(actorOf(req), id, req.body, { embedder: embeddingProvider });
+    const res = await metered('capture', req, () => placeCaptureDocument(actorOf(req), id, req.body, { embedder: embeddingProvider }));
     return reply.send(parseReply(CaptureSummarySchema, res));
   });
 
@@ -1127,7 +1129,7 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
 
   app.post('/api/v1/captures/:id/document/move', { onRequest: credits }, async (req, reply) => {
     const { id } = req.params as { id: string };
-    const res = await moveCaptureDocument(actorOf(req), id, req.body, { embedder: embeddingProvider });
+    const res = await metered('capture', req, () => moveCaptureDocument(actorOf(req), id, req.body, { embedder: embeddingProvider }));
     return reply.send(parseReply(CaptureSummarySchema, res));
   });
 

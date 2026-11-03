@@ -386,10 +386,18 @@ the settings below behaves as before. Usage is still metered and shown.
 | `CONTROL_PLANE_TOKENS` | unset (API off: `/internal/v1/` is 404) | Comma-separated bearer tokens, each at least 32 characters. List two while rotating. |
 | `BILLING_URL` | unset | Where Upgrade links point; shown only to owners and admins. |
 
+With Docker Compose (and Coolify) the three settings are passed through `docker-compose.yml`. Prefer inline JSON for
+`MODEL_CREDIT_RATES` there: a file path must be mounted into every service container (api, worker and collab all
+check it at startup and refuse to start when it cannot be read).
+
 `/internal/` must not be exposed through the public reverse proxy. The web
 nginx only forwards `/api/`, `/mcp` and `/collab`, so it is not; keep it that
 way on any other proxy in front of the api. The token is a second guard, not
 the only one.
+
+Storage counts every stored file version, old versions included. Archiving a file keeps its versions, and nothing
+purges version rows yet, so a workspace's storage only grows: at its storage limit it needs a higher limit to upload
+again.
 
 `TENANT_DAILY_AI_ACTIONS` stays as a safety net against runaway loops. It is
 not billing: plan limits are credits, set per workspace.

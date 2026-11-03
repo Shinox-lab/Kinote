@@ -1,6 +1,6 @@
 import { describe, test, beforeAll, afterEach, afterAll, expect } from 'vitest';
 import { eq } from 'drizzle-orm';
-import { usageEvents, withTenantTx } from '@kinote/db';
+import { captureChanges, usageEvents, withTenantTx } from '@kinote/db';
 import { DeterministicEmbeddingProvider, DeterministicPlacementModel } from '@kinote/core';
 import type { CreditRates } from '@kinote/shared';
 import { collabSettle, type CollabServer } from '../../collab/src/server.js';
@@ -80,6 +80,25 @@ describe('usage metering', () => {
     const searched = (await events(w.tenant.id)).slice(mid);
     expect(searched).toHaveLength(1);
     expect(searched[0]).toMatchObject({ kind: 'index', model: 'kinote-deterministic-2560-v1' });
+  });
+
+  test('moving a captured change to another page charges its model call to the person, as capture', async () => {
+    const w = await world('move-co');
+    const other = await post(w.headers, '/api/v1/pages', { space_id: w.space, title: 'runbook', slug: 'runbook', markdown: 'Page the on-call.' });
+    expect(other.statusCode, other.body).toBe(201);
+    await post(w.headers, `/api/v1/pages/${other.json().id}/snapshot`);
+    await run(w.tenant.id);
+    const res = await post(w.headers, '/api/v1/captures', { text: 'Billing has a new dashboard.', scope_page_id: w.pageId });
+    expect(res.statusCode, res.body).toBe(201);
+    await run(w.tenant.id);
+    const [change] = await withTenantTx(w.tenant.id, (tx) => tx.select().from(captureChanges).where(eq(captureChanges.captureId, res.json().id)));
+    expect(change).toBeDefined();
+    const before = (await events(w.tenant.id)).length;
+    const moved = await post(w.headers, `/api/v1/capture-changes/${change!.id}/move`, { target_page_id: other.json().id });
+    expect(moved.statusCode, moved.body).toBe(200);
+    const charged = (await events(w.tenant.id)).slice(before);
+    expect(charged.length).toBeGreaterThan(0);
+    expect(charged.every((e) => e.kind === 'capture' && e.principalId === w.owner.userId)).toBe(true);
   });
 
   test('a capture.route job records capture events; version.index records index events', async () => {

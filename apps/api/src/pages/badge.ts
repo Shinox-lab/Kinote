@@ -129,6 +129,8 @@ export interface FileBadgeInput {
   indexedVersion: { number: number } | null;
   sourceDeleted: boolean;
   placement: 'pinned' | 'synced';
+  /** The workspace reached its indexing credit limit: index jobs wait for the period's end. */
+  indexingPaused?: boolean;
 }
 
 /**
@@ -157,7 +159,9 @@ export function computeFileBadge(input: FileBadgeInput): string {
     case 'extracting':
       return newer('Reading text…', 'being read');
     case 'indexing':
-      return newer('Indexing…', 'indexing');
+      return input.indexingPaused
+        ? newer('Not indexed (indexing limit reached)', 'waiting (indexing limit reached)')
+        : newer('Indexing…', 'indexing');
     case 'pending_review':
       return newer('Not indexed (awaiting approval)', 'awaiting approval');
     case 'rejected':

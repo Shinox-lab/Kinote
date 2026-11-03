@@ -46,6 +46,12 @@ x-app-env: &app-env
   MAIL_FROM: ${MAIL_FROM:-}
   PUBLIC_URL: ${PUBLIC_URL:-}
   TENANT_DAILY_AI_ACTIONS: ${TENANT_DAILY_AI_ACTIONS:-2000}
+  # Plans and usage (docs/operations.md): all optional; empty means unset. A file-path
+  # MODEL_CREDIT_RATES must be mounted into every service (they all check it at startup);
+  # inline JSON needs no mount.
+  MODEL_CREDIT_RATES: ${MODEL_CREDIT_RATES:-}
+  CONTROL_PLANE_TOKENS: ${CONTROL_PLANE_TOKENS:-}
+  BILLING_URL: ${BILLING_URL:-}
   LOG_LEVEL: ${LOG_LEVEL:-info}
   EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-deterministic}
   EMBEDDING_BASE_URL: ${EMBEDDING_BASE_URL:-}

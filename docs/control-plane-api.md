@@ -43,7 +43,7 @@ A missing or wrong token answers `401 unauthenticated`. A console session is not
 | `creditsUsed` | Capture and Ask credits used this period. |
 | `indexCreditsUsed` | Indexing credits used this period. |
 | `creditsTopup` | Credits added to this period by top-ups. |
-| `storageBytes` | Stored file bytes now. |
+| `storageBytes` | Stored file bytes now: every stored file version. Archiving a file does not free its bytes (there is no purge yet), so this only grows. |
 | `seats` | Members plus pending invitations, both not viewers. Agents never count. |
 | `state` | `unlimited`, `ok`, `warn` (≥ 80% of limit + top-ups), `over` (≥ 100%), `exhausted` (≥ grace limit: Capture and Ask are refused). |
 | `indexHeld` | Indexing waits for the period's end (index credits at their limit + grace). |

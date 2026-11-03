@@ -178,7 +178,9 @@ export function registerInternalRoutes(app: FastifyInstance, tokens: string[]): 
 
   app.put('/internal/v1/tenants/:id/limits', opts, async (req) => {
     const id = tenantIdOf(req);
-    const body = PutLimitsRequestSchema.parse(req.body ?? null);
+    // A missing body is a mistake, not "remove every limit": that takes an explicit JSON null.
+    if (req.body === undefined) throw new AppError('validation_failed', 'The body must be the limits, or null to remove them.');
+    const body = PutLimitsRequestSchema.parse(req.body);
     return withTenantTx(id, async (tx) => {
       const tenant = await tenantRow(tx, id);
       if (!tenant || tenant.deletedAt) throw notFound();
@@ -201,7 +203,8 @@ export function registerInternalRoutes(app: FastifyInstance, tokens: string[]): 
           .values({ tenantId: id, ...values })
           .onConflictDoUpdate({ target: tenantLimits.tenantId, set: values });
       }
-      const plan = body?.plan ?? 'standard';
+      // The demo workspace keeps its 'demo' marker; limits still apply to it.
+      const plan = tenant.plan === 'demo' ? 'demo' : (body?.plan ?? 'standard');
       await tx.update(tenants).set({ plan }).where(and(eq(tenants.id, id), isNull(tenants.deletedAt)));
       // Raised or removed limits let held indexing run now; jobs still over the limit are held again.
       await releaseHeldIndexJobs(tx, id, now);

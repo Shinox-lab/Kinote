@@ -10,7 +10,12 @@ const limitNumber = z.number().int().min(0).nullable();
 
 export const LimitsInputSchema = z
   .object({
-    plan: z.string().min(1).max(40),
+    // 'demo' is Kinote's own marker for the demo workspace (it changes how deletion works): never a plan label.
+    plan: z
+      .string()
+      .min(1)
+      .max(40)
+      .refine((v) => v.trim().toLowerCase() !== 'demo', "'demo' is reserved"),
     seats: limitNumber,
     storageBytes: limitNumber,
     creditsPerMonth: limitNumber,

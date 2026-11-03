@@ -171,6 +171,35 @@ describe('control-plane API', () => {
     expect((await putLimits(w.tenant.id, limitsBody)).statusCode).toBe(404);
   });
 
+  test('a PUT with no body is refused and leaves the limits alone', async () => {
+    const w = await world('nobody-co');
+    await putLimits(w.tenant.id, limitsBody);
+    const res = await app.inject({ method: 'PUT', url: `/internal/v1/tenants/${w.tenant.id}/limits`, headers: cp() });
+    expect(res.statusCode).toBe(400);
+    const empty = await app.inject({
+      method: 'PUT',
+      url: `/internal/v1/tenants/${w.tenant.id}/limits`,
+      headers: { ...cp(), 'content-type': 'application/json' },
+      payload: '',
+    });
+    expect(empty.statusCode).toBe(400);
+    const detail = InternalTenantDetailSchema.parse((await get(`/internal/v1/tenants/${w.tenant.id}`)).json());
+    expect(detail.plan).toBe('team');
+    expect(detail.limits?.creditsPerMonth).toBe(100);
+  });
+
+  test('the control plane cannot make a workspace a demo one, nor relabel a demo workspace', async () => {
+    const w = await world('label-co');
+    expect((await putLimits(w.tenant.id, { ...limitsBody, plan: 'demo' })).statusCode).toBe(400);
+    expect((await putLimits(w.tenant.id, { ...limitsBody, plan: 'Demo' })).statusCode).toBe(400);
+    await withTenantTx(w.tenant.id, (tx) => tx.update(tenants).set({ plan: 'demo' }).where(eq(tenants.id, w.tenant.id)));
+    const res = await putLimits(w.tenant.id, limitsBody);
+    expect(res.statusCode, res.body).toBe(200);
+    expect(res.json().plan).toBe('demo');
+    expect(res.json().limits.creditsPerMonth).toBe(100);
+    expect((await putLimits(w.tenant.id, null)).json().plan).toBe('demo');
+  });
+
   test('bad bodies are 400', async () => {
     const w = await world('bad-co');
     expect((await putLimits(w.tenant.id, { ...limitsBody, seats: -1 })).statusCode).toBe(400);
