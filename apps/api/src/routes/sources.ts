@@ -1,9 +1,11 @@
-import { and, count, desc, eq, isNull } from 'drizzle-orm';
+import { and, count, desc, eq, inArray, isNull } from 'drizzle-orm';
 import {
+  memberships,
   sourceItems,
   sources,
   sourceTokens,
   spaces,
+  users,
   withTenantTx,
   writeAuditEvent,
   type DbTransaction,
@@ -13,8 +15,10 @@ import {
   CreateSourceRequestSchema,
   CreateSourceTokenRequestSchema,
   DEFAULT_SOURCE_TOKEN_DAYS,
+  RevokeSourceTokensRequestSchema,
   UpdateSourceRequestSchema,
   type CreateSourceTokenResponse,
+  type RevokeSourceTokensResponse,
   type Source,
   type SourceToken,
 } from '@kinote/contracts';
@@ -27,7 +31,23 @@ type TokenRow = typeof sourceTokens.$inferSelect;
 
 const DAY_MS = 86_400_000;
 
-const toToken = (r: TokenRow): SourceToken => ({
+type Creator = SourceToken['createdBy'];
+
+/** The makers of these tokens: their names, and their role here now (null when no longer a member). */
+async function creatorsOf(tx: DbTransaction, tenantId: string, rows: readonly TokenRow[]): Promise<Map<string, Creator>> {
+  const ids = [...new Set(rows.map((r) => r.createdBy))];
+  const out = new Map<string, Creator>();
+  if (ids.length === 0) return out;
+  const people = await tx
+    .select({ id: users.id, name: users.name, role: memberships.role })
+    .from(users)
+    .leftJoin(memberships, and(eq(memberships.tenantId, tenantId), eq(memberships.userId, users.id)))
+    .where(inArray(users.id, ids));
+  for (const p of people) out.set(p.id, { id: p.id, name: p.name, role: p.role ?? null });
+  return out;
+}
+
+const toToken = (r: TokenRow, creators: Map<string, Creator>): SourceToken => ({
   id: r.id,
   name: r.name,
   prefix: r.tokenPrefix,
@@ -35,6 +55,7 @@ const toToken = (r: TokenRow): SourceToken => ({
   lastUsedAt: r.lastUsedAt?.toISOString() ?? null,
   expiresAt: r.expiresAt?.toISOString() ?? null,
   revokedAt: r.revokedAt?.toISOString() ?? null,
+  createdBy: creators.get(r.createdBy) ?? { id: r.createdBy, name: 'Someone who left', role: null },
 });
 
 /**
@@ -89,8 +110,9 @@ async function viewSources(tx: DbTransaction, tenantId: string, only?: string): 
     .from(sourceTokens)
     .where(eq(sourceTokens.tenantId, tenantId))
     .orderBy(desc(sourceTokens.createdAt), desc(sourceTokens.id));
+  const creators = await creatorsOf(tx, tenantId, tokens);
   const byId = new Map<string, SourceToken[]>();
-  for (const t of tokens) byId.set(t.sourceId, [...(byId.get(t.sourceId) ?? []), toToken(t)]);
+  for (const t of tokens) byId.set(t.sourceId, [...(byId.get(t.sourceId) ?? []), toToken(t, creators)]);
 
   return rows.map(({ source: s, spaceName }) => ({
     id: s.id,
@@ -214,7 +236,7 @@ export async function issueSourceToken(
       subjectId: source.id,
       payload: { sourceId: source.id, tokenId: row!.id, name: row!.name },
     });
-    return { token: minted.token, info: toToken(row!) };
+    return { token: minted.token, info: toToken(row!, await creatorsOf(tx, actor.tenantId, [row!])) };
   });
 }
 
@@ -236,7 +258,7 @@ export async function revokeSourceToken(actor: Actor, sourceId: string, tokenId:
       )
       .for('update');
     if (!token) throw new AppError('source_not_found');
-    if (token.revokedAt) return toToken(token);
+    if (token.revokedAt) return toToken(token, await creatorsOf(tx, actor.tenantId, [token]));
     const [revoked] = await tx
       .update(sourceTokens)
       .set({ revokedAt: new Date() })
@@ -251,6 +273,41 @@ export async function revokeSourceToken(actor: Actor, sourceId: string, tokenId:
       subjectId: source.id,
       payload: { sourceId: source.id, tokenId: token.id, name: token.name },
     });
-    return toToken(revoked!);
+    return toToken(revoked!, await creatorsOf(tx, actor.tenantId, [revoked!]));
+  });
+}
+
+/**
+ * POST /api/v1/source-tokens/revoke (tenant admin): revokes every token one
+ * person made that isn't revoked yet, across all sources: what an admin does
+ * after that person leaves. Each one is audited like a single revoke.
+ */
+export async function revokeTokensMadeBy(actor: Actor, input: unknown): Promise<RevokeSourceTokensResponse> {
+  requireTenantAdmin(actor);
+  const { created_by: createdBy } = RevokeSourceTokensRequestSchema.parse(input);
+  return withTenantTx(actor.tenantId, async (tx) => {
+    const revoked = await tx
+      .update(sourceTokens)
+      .set({ revokedAt: new Date() })
+      .where(
+        and(
+          eq(sourceTokens.tenantId, actor.tenantId),
+          eq(sourceTokens.createdBy, createdBy),
+          isNull(sourceTokens.revokedAt)
+        )
+      )
+      .returning();
+    for (const token of revoked) {
+      await writeAuditEvent(tx, {
+        tenantId: actor.tenantId,
+        type: 'source.token_revoked',
+        actorType: actor.principalType,
+        actorId: actor.principalId,
+        subjectType: 'source',
+        subjectId: token.sourceId,
+        payload: { sourceId: token.sourceId, tokenId: token.id, name: token.name, createdBy },
+      });
+    }
+    return { revoked: revoked.length };
   });
 }

@@ -36,6 +36,8 @@ and joins the workspace in the same step.
 - **Everyone can change their password and sign out everywhere** from *Account and security* in the account menu.
 - **Source tokens now expire.** New ones last 90 days unless you choose 1 to 365. Existing tokens that never expire
   are marked on the Sources page; replace them with ones that do.
+- **Tokens of people who left are pointed out.** A source token keeps working after the admin who made it leaves or is
+  removed. Members and Sources now say when that's the case and revoke all of that person's tokens in one click.
 - **Media links stop working as soon as the person loses access**, instead of after 15 minutes.
 - **Email is optional.** See [Email](./configuration#email-optional) for verification and password reset by email,
   and for the operator's reset command. Existing accounts count as confirmed. With email on, an account that

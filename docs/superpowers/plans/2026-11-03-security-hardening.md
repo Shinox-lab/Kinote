@@ -290,7 +290,7 @@ for verify and reset.
 - [x] Source tokens:
   - when `expires_in_days` is omitted, default to 90 days; the allowed range is 1–365
   - existing tokens with no expiry are left alone, and the admin page shows a "never expires" warning on them
-  - *(not done: an offboarding view of a removed member's tokens)* when a member is removed, the admin sees the source tokens that member created and can revoke them in one click
+  - *(Done 2026-11-04: each token carries `createdBy` with the maker's role now (null once they left); `POST /api/v1/source-tokens/revoke {created_by}` revokes all of one person's unrevoked tokens. Members and Sources show a notice per person who left with working tokens, and a Revoke for them; it also catches people who left on their own and tokens from before this change.)* when a member is removed, the admin sees the source tokens that member created and can revoke them in one click
 - [x] Media links:
   - *(done, and stronger: each request re-runs the full read check, so losing a space grant also stops the link)* add the user id to the claims; when a link is used, check the user still belongs to the tenant (one indexed query,
     cached for 5 seconds like the actor cache)

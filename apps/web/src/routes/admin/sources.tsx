@@ -9,6 +9,7 @@ import { lastUsedLabel, sourceStatusLabel, tokenState } from '../../lib/sources.
 import { relativeTime } from '../../lib/updates.js';
 import { whenLabel } from '../../lib/history.js';
 import { SourceTokenModal } from '../../components/SourceTokenModal.js';
+import { LeftoverTokensNotice } from '../../components/LeftoverTokensNotice.js';
 import { Button, Checkbox, ErrorNote, Loading, SelectField, TextField } from '../../components/ui.js';
 
 const TRUSTED_HINT =
@@ -70,7 +71,10 @@ function TokenRow({ source, token, now }: { source: Source; token: SourceToken; 
     <li className="flex flex-wrap items-center gap-x-4 gap-y-1 py-2 text-sm">
       <span className="min-w-32 font-medium">{token.name}</span>
       <span className="font-mono text-xs text-muted">{token.prefix}…</span>
-      <span className="text-muted">Created {relativeTime(token.createdAt, now)}</span>
+      <span className="text-muted">
+        Created {relativeTime(token.createdAt, now)} by {token.createdBy.name}
+        {token.createdBy.role === null && <span className="text-warn-text"> (no longer in this workspace)</span>}
+      </span>
       <span className="text-muted">{lastUsedLabel(token, now)}</span>
       <span className="text-muted">{token.expiresAt ? `Expires ${whenLabel(token.expiresAt)}` : 'Never expires: revoke it and issue one that does'}</span>
       <span
@@ -276,6 +280,7 @@ export function SourcesPage() {
         A source is a script or tool that sends files into one space through the upload API. Each source has its own tokens.
       </p>
       <ErrorNote error={error} />
+      <LeftoverTokensNotice />
       {isPending ? (
         <Loading what="sources" />
       ) : (

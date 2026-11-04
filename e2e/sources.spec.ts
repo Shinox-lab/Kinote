@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test';
 import {
   addMember,
   approveAll,
+  call,
   deleteAsSource,
   expandSpace,
   fakePdf,
@@ -119,4 +120,44 @@ test('a member does not see Sources, and its address says so', async ({ browser,
   await expect(page.getByText("You don't have access")).toBeVisible();
   await expect(page.getByRole('link', { name: 'Sources' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Add source' })).toHaveCount(0);
+});
+
+test('removing an admin who made a token: Members points it out, and one click revokes it', async ({ browser, request }) => {
+  const world = await seedWorld(request, { reviewRequired: false });
+  const leaver = await addMember(request, world, 'Lee Leaver', 'editor');
+  await call(request, `/members/${leaver.user.id}`, { account: world.owner, tenantId: world.tenantId, method: 'PATCH', data: { role: 'admin' } });
+  const source = await call<{ id: string }>(request, '/sources', {
+    account: leaver,
+    tenantId: world.tenantId,
+    method: 'POST',
+    data: { name: 'Lee export', target_space_id: world.spaceId },
+  });
+  const { token } = await call<{ token: string }>(request, `/sources/${source.id}/tokens`, {
+    account: leaver,
+    tenantId: world.tenantId,
+    method: 'POST',
+    data: { name: 'nightly' },
+  });
+
+  const page = await openAs(browser, world, world.owner);
+  await page.goto(`/w/${world.slug}/admin/members`);
+  const notices = page.getByRole('region', { name: 'Source tokens of people who left' });
+  await expect(notices).toHaveCount(0);
+  await page.getByRole('button', { name: 'Actions for Lee Leaver' }).click();
+  await page.getByRole('button', { name: 'Remove…' }).click();
+  await page.getByRole('button', { name: 'Remove', exact: true }).click();
+
+  // Removed, but the token still works: the page says so.
+  await expect(notices).toContainText('Lee Leaver is no longer in this workspace, but 1 source token they made still works (Lee export).');
+  expect((await putAsSource(request, token, 'still-works', fakePdf('Still.pdf', world.suffix, 'x'))).status).toBe(201);
+
+  await notices.getByRole('button', { name: 'Revoke the tokens Lee Leaver made' }).click();
+  await notices.getByRole('button', { name: 'Confirm revoking the tokens Lee Leaver made' }).click();
+  await expect(notices).toHaveCount(0);
+  expect((await putAsSource(request, token, 'stopped', fakePdf('Stopped.pdf', world.suffix, 'y'))).status).toBe(401);
+
+  // Sources shows who made it.
+  await page.goto(`/w/${world.slug}/admin/sources`);
+  await page.getByRole('list', { name: 'Sources' }).getByRole('button', { name: /Lee export/ }).click();
+  await expect(page.getByRole('list', { name: 'Tokens of Lee export' })).toContainText('by Lee Leaver (no longer in this workspace)');
 });

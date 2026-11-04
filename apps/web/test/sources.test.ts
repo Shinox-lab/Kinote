@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import type { Source, SourceToken } from '@kinote/contracts';
-import { curlExamples, lastUsedLabel, sourceStatusLabel, tokenState } from '../src/lib/sources.js';
+import { curlExamples, lastUsedLabel, sourceStatusLabel, tokenState, tokensOfPeopleWhoLeft } from '../src/lib/sources.js';
 
 const NOW = new Date('2026-10-20T12:00:00.000Z');
 const token = (over: Partial<SourceToken> = {}): SourceToken => ({
@@ -11,6 +11,7 @@ const token = (over: Partial<SourceToken> = {}): SourceToken => ({
   lastUsedAt: null,
   expiresAt: null,
   revokedAt: null,
+  createdBy: { id: '1b0c2d3e-4f50-4a61-8b72-9c8d7e6f5a40', name: 'Ada', role: 'admin' },
   ...over,
 });
 
@@ -55,5 +56,48 @@ describe('sourceStatusLabel', () => {
   test('active or paused', () => {
     expect(sourceStatusLabel({ status: 'active' } as Pick<Source, 'status'>)).toBe('Active');
     expect(sourceStatusLabel({ status: 'paused' } as Pick<Source, 'status'>)).toBe('Paused');
+  });
+});
+
+describe('tokens of people who left', () => {
+  const left = (id: string, name: string) => ({ id, name, role: null });
+  const src = (name: string, tokens: SourceToken[]): Source => ({
+    id: `source-${name}`,
+    kind: 'upload_api',
+    name,
+    targetSpaceId: '5f0c1a2b-3c4d-4e5f-8a9b-0c1d2e3f4a5b',
+    targetSpaceName: 'Docs',
+    trusted: false,
+    status: 'active',
+    itemCount: 0,
+    lastSyncAt: null,
+    createdAt: '2026-10-01T00:00:00.000Z',
+    tokens,
+  });
+  const BO = '2b0c2d3e-4f50-4a61-8b72-9c8d7e6f5a41';
+  const CY = '3b0c2d3e-4f50-4a61-8b72-9c8d7e6f5a42';
+
+  test('groups the working tokens of each person who left, most first, and skips the rest', () => {
+    const groups = tokensOfPeopleWhoLeft(
+      [
+        src('Reports', [
+          token({ id: '00000000-0000-4000-8000-000000000001', createdBy: left(BO, 'Bo') }),
+          token({ id: '00000000-0000-4000-8000-000000000002', createdBy: left(CY, 'Cy') }),
+          token({ id: '00000000-0000-4000-8000-000000000003', createdBy: left(BO, 'Bo'), revokedAt: '2026-10-10T00:00:00.000Z' }),
+          token({ id: '00000000-0000-4000-8000-000000000004', createdBy: left(CY, 'Cy'), expiresAt: '2026-10-19T00:00:00.000Z' }),
+          token({ id: '00000000-0000-4000-8000-000000000005' }),
+        ]),
+        src('Exports', [token({ id: '00000000-0000-4000-8000-000000000006', createdBy: left(BO, 'Bo') })]),
+      ],
+      NOW
+    );
+    expect(groups.map((g) => [g.creator.name, g.tokens.map((t) => `${t.source.name}/${t.token.id.slice(-1)}`)])).toEqual([
+      ['Bo', ['Reports/1', 'Exports/6']],
+      ['Cy', ['Reports/2']],
+    ]);
+  });
+
+  test('nothing when everyone who made a working token is still here', () => {
+    expect(tokensOfPeopleWhoLeft([src('Reports', [token()])], NOW)).toEqual([]);
   });
 });

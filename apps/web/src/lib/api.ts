@@ -60,6 +60,7 @@ import {
   SourceListSchema,
   SourceSchema,
   SourceTokenSchema,
+  RevokeSourceTokensResponseSchema,
   UploadFileResponseSchema,
   VersionTextSchema,
   SpaceListSchema,
@@ -439,6 +440,8 @@ export const api = {
     request(`/api/v1/sources/${e(id)}/tokens`, CreateSourceTokenResponseSchema, send('POST', body)),
   revokeSourceToken: (id: string, tokenId: string) =>
     request(`/api/v1/sources/${e(id)}/tokens/${e(tokenId)}`, SourceTokenSchema, del),
+  revokeTokensMadeBy: (userId: string) =>
+    request('/api/v1/source-tokens/revoke', RevokeSourceTokensResponseSchema, send('POST', { created_by: userId })),
 
   // Captures (the routing engine)
   createCapture: (body: {

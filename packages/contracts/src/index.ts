@@ -1251,8 +1251,20 @@ export const SourceTokenSchema = z.object({
   lastUsedAt: z.string().datetime().nullable(),
   expiresAt: z.string().datetime().nullable(),
   revokedAt: z.string().datetime().nullable(),
+  /**
+   * Who made the token, and their role in the workspace now: null once they
+   * have left or been removed. A token keeps working after its maker goes,
+   * so the admin pages point those out.
+   */
+  createdBy: z.object({ id: z.string().uuid(), name: z.string(), role: TenantRoleSchema.nullable() }),
 });
 export type SourceToken = z.infer<typeof SourceTokenSchema>;
+
+/** POST /api/v1/source-tokens/revoke (tenant admin): revokes every unrevoked token one person made. */
+export const RevokeSourceTokensRequestSchema = z.object({ created_by: z.string().uuid() });
+export const RevokeSourceTokensResponseSchema = z.object({ revoked: z.number().int().nonnegative() });
+export type RevokeSourceTokensRequest = z.input<typeof RevokeSourceTokensRequestSchema>;
+export type RevokeSourceTokensResponse = z.infer<typeof RevokeSourceTokensResponseSchema>;
 
 export const SourceSchema = z.object({
   id: z.string().uuid(),

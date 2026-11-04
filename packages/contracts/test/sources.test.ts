@@ -56,7 +56,7 @@ describe('source contracts', () => {
 
   it('parses the reply shapes', () => {
     const id = '5f0c1a2b-3c4d-4e5f-8a9b-0c1d2e3f4a5b';
-    const info = { id, name: 'ci', prefix: 'abcd1234', createdAt: '2026-10-20T00:00:00.000Z', lastUsedAt: null, expiresAt: null, revokedAt: null };
+    const info = { id, name: 'ci', prefix: 'abcd1234', createdAt: '2026-10-20T00:00:00.000Z', lastUsedAt: null, expiresAt: null, revokedAt: null, createdBy: { id, name: 'Ada', role: null } };
     expect(CreateSourceTokenResponseSchema.parse({ token: 'lws_x', info }).info.prefix).toBe('abcd1234');
     expect(
       SourceListSchema.parse([
