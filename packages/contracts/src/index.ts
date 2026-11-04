@@ -245,6 +245,8 @@ export const CreateTenantRequestSchema = z.object({
 export const InviteMemberRequestSchema = z.object({
   email: EmailSchema,
   role: z.enum(['admin', 'member', 'viewer']),
+  /** Also email the link to the invitee (only when the server sends email). */
+  send_email: z.boolean().optional(),
 });
 
 export const AcceptInvitationRequestSchema = z.object({
@@ -259,6 +261,12 @@ export const InviteMemberResponseSchema = z.object({
     expiresAt: z.string().datetime(),
   }),
   acceptToken: z.string(),
+  /**
+   * Whether the link went out by email. False when it wasn't asked for, the
+   * server sends no email, the workspace hit its hourly cap, or sending failed:
+   * the admin sends the link themselves.
+   */
+  emailed: z.boolean(),
 });
 export type InviteMemberResponse = z.infer<typeof InviteMemberResponseSchema>;
 

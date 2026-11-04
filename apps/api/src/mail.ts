@@ -17,6 +17,24 @@ export interface Mailer {
   send(mail: Mail): Promise<void>;
 }
 
+/**
+ * Sends a mail and says whether it went. A failure is logged, never thrown,
+ * so an answer never depends on the mail server.
+ */
+export async function trySend(
+  mailer: Mailer,
+  mail: Mail,
+  log: { error: (obj: object, msg: string) => void }
+): Promise<boolean> {
+  try {
+    await mailer.send(mail);
+    return true;
+  } catch (err) {
+    log.error({ err }, 'sending mail failed');
+    return false;
+  }
+}
+
 /** A Mailer on an SMTP server (SMTP_URL, MAIL_FROM, PUBLIC_URL). */
 export function createSmtpMailer(o: { smtpUrl: string; from: string; publicUrl: string }): Mailer {
   const transport = nodemailer.createTransport(o.smtpUrl);
