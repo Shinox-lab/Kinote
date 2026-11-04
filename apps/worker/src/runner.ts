@@ -9,6 +9,8 @@ import {
   chargeAiAction,
   enqueueJob,
   nextAiDay,
+  readStanding,
+  INDEX_QUEUES,
   NonRetryableError,
   type Job,
 } from '@kinote/db';
@@ -17,11 +19,13 @@ import {
   defaultEmbeddingProvider,
   defaultPlacementModel,
   UnavailableExtractor,
+  withUsageScope,
+  indexHeld,
   type EmbeddingProvider,
   type Extractor,
   type RoutingModel,
 } from '@kinote/core';
-import { InMemoryObjectStorage, type CollabClient, type ObjectStorage } from '@kinote/shared';
+import { InMemoryObjectStorage, type CollabClient, type CreditRates, type ObjectStorage } from '@kinote/shared';
 import { handlers as defaultHandlers, type JobContext, type JobHandler } from './registry.js';
 
 /** The collab client when none is configured: every call fails, so a routing job retries. */
@@ -82,6 +86,8 @@ export interface RunnerOptions {
    * handler `usesAi` beyond it waits for the next UTC day. Default 0: no allowance.
    */
   aiDailyLimit?: number;
+  /** MODEL_CREDIT_RATES, parsed. Each job's model calls are metered; null charges 0 credits. */
+  creditRates?: CreditRates | null;
 }
 
 type Processed = { id: string; queue: string; status: string };
@@ -162,7 +168,7 @@ export async function runPendingJobsForTenant(
         );
         status = 'skipped_expired';
       } else {
-        status = await runOne(tenantId, job, registry, clock, deps, o.aiDailyLimit ?? 0);
+        status = await runOne(tenantId, job, registry, clock, deps, o.aiDailyLimit ?? 0, o.creditRates ?? null);
       }
       processed.push({ id: job.id, queue: job.queue, status });
     }
@@ -200,6 +206,55 @@ async function deferredPastAllowance(job: Job, aiDailyLimit: number, now: Date):
     `[worker] job ${job.id} (${job.queue}): workspace ${job.tenantId} used today's AI allowance; waits until ${runAt.toISOString()}`
   );
   return true;
+}
+
+const HELD_QUEUES = new Set<string>(INDEX_QUEUES);
+
+/**
+ * Indexing work past the workspace's index credit limit (plus grace) is held,
+ * not failed: the job is put back for the period's end and true is returned
+ * without running it. Raising the limit (the control-plane API) releases it
+ * sooner. An unreadable standing lets the job run.
+ */
+async function heldAtIndexLimit(job: Job, now: Date): Promise<boolean> {
+  if (!HELD_QUEUES.has(job.queue)) return false;
+  let standing: Awaited<ReturnType<typeof readStanding>>;
+  try {
+    standing = await withTenantTx(job.tenantId, (tx) => readStanding(tx, job.tenantId, now));
+  } catch (err) {
+    console.error(`[worker] usage standing unavailable for job ${job.id}; running it:`, errorMessage(err));
+    return false;
+  }
+  if (!indexHeld(standing)) return false;
+  const runAt = standing.period.end;
+  await withTenantTx(job.tenantId, (tx) =>
+    enqueueJob(tx, {
+      tenantId: job.tenantId,
+      queue: job.queue,
+      idempotencyKey: job.idempotencyKey,
+      payload: job.payload as Record<string, unknown>,
+      runAt,
+    })
+  );
+  console.warn(
+    `[worker] job ${job.id} (${job.queue}): workspace ${job.tenantId} reached its indexing limit; waits until ${runAt.toISOString()}`
+  );
+  return true;
+}
+
+/** Capture routing and placement spend the Capture and Ask pool; every other job is indexing work. */
+const CAPTURE_QUEUES = new Set(['capture.route', 'capture.place']);
+
+function usageScopeOf(job: Job, clock: () => Date) {
+  const payload = (job.payload ?? {}) as Record<string, unknown>;
+  const id = (v: unknown) => (typeof v === 'string' ? v : null);
+  return {
+    tenantId: job.tenantId,
+    kind: CAPTURE_QUEUES.has(job.queue) ? ('capture' as const) : ('index' as const),
+    principalId: id(payload.principalId),
+    documentId: id(payload.documentId),
+    clock,
+  };
 }
 
 /** True when the claim's lease (`locked_at + LEASE_SECONDS`) is at or before `now`. */
@@ -243,15 +298,19 @@ async function runOne(
   registry: Record<string, JobHandler>,
   clock: () => Date,
   deps: RunDeps,
-  aiDailyLimit: number
+  aiDailyLimit: number,
+  creditRates: CreditRates | null
 ): Promise<string> {
   const handler = registry[job.queue];
   const lease = job.lockedAt ?? undefined;
   let failure: { err: unknown } | undefined;
   try {
     if (!handler) throw new NonRetryableError(`No handler registered for queue "${job.queue}"`);
-    if (!(handler.usesAi && (await deferredPastAllowance(job, aiDailyLimit, clock())))) {
-      await handler.run(job, { now: clock(), ...deps });
+    if (
+      !(await heldAtIndexLimit(job, clock())) &&
+      !(handler.usesAi && (await deferredPastAllowance(job, aiDailyLimit, clock())))
+    ) {
+      await withUsageScope(usageScopeOf(job, clock), creditRates, () => handler.run(job, { now: clock(), ...deps }));
     }
   } catch (err) {
     failure = { err };
@@ -331,6 +390,7 @@ export async function runWorkerLoop(o: {
   collab?: CollabClient;
   handlers?: Record<string, JobHandler>;
   aiDailyLimit?: number;
+  creditRates?: CreditRates | null;
 }): Promise<void> {
   let lastSweep = 0;
   while (!o.signal.aborted) {
@@ -362,6 +422,7 @@ export async function runWorkerLoop(o: {
           handlers: o.handlers,
           signal: o.signal,
           aiDailyLimit: o.aiDailyLimit,
+          creditRates: o.creditRates,
         });
       } catch (err) {
         console.error(`[worker] running jobs for tenant ${tenantId} failed:`, errorMessage(err));

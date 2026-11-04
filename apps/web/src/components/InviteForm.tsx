@@ -1,13 +1,33 @@
 import { useState, type FormEvent } from 'react';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { api } from '../lib/api.js';
 import { INVITE_ROLES, inviteLink } from '../lib/console.js';
 import { TENANT_ROLE_INFO } from '../lib/roles.js';
 import { CloseIcon } from './icons.js';
-import { Button, ErrorNote, SelectField, TextField } from './ui.js';
+import { Button, Checkbox, ErrorNote, SelectField, TextField } from './ui.js';
 
-/** The accept link of a fresh invitation, with a copy button. It only lives in this component's state. */
-export function AcceptLink({ link, email, expiresAt }: { link: string; email: string; expiresAt: string }) {
+/** Whether this server sends email (SMTP set up), so an invitation can go out by email. */
+export function useEmailEnabled(): boolean {
+  const config = useQuery({ queryKey: ['auth-config'], queryFn: () => api.authConfig() });
+  return config.data?.emailEnabled === true;
+}
+
+/**
+ * The accept link of a fresh invitation, with a copy button. It only lives in
+ * this component's state. `emailed` says whether it already went out by email
+ * (undefined when email wasn't asked for).
+ */
+export function AcceptLink({
+  link,
+  email,
+  expiresAt,
+  emailed,
+}: {
+  link: string;
+  email: string;
+  expiresAt: string;
+  emailed?: boolean;
+}) {
   const [copied, setCopied] = useState(false);
 
   const copy = async () => {
@@ -22,9 +42,13 @@ export function AcceptLink({ link, email, expiresAt }: { link: string; email: st
 
   return (
     <div className="mt-4 flex flex-col gap-2 rounded-md bg-sidebar p-3">
-      <p className="text-sm">
-        Send this link to {email}. It works once, for the account with that email, until{' '}
-        {new Date(expiresAt).toLocaleDateString()}.
+      <p role="status" className="text-sm">
+        {emailed === true
+          ? `Emailed the invitation to ${email}. You can also send them this link yourself.`
+          : emailed === false
+            ? `We couldn't email ${email} just now. Send them this link yourself.`
+            : `Send this link to ${email}.`}{' '}
+        It works once, for the account with that email, until {new Date(expiresAt).toLocaleDateString()}.
       </p>
       <div className="flex items-end gap-2">
         <div className="flex-1">
@@ -41,9 +65,12 @@ export function AcceptLink({ link, email, expiresAt }: { link: string; email: st
 export function InviteForm({ onInvited, onClose }: { onInvited: () => void; onClose?: () => void }) {
   const [email, setEmail] = useState('');
   const [role, setRole] = useState<(typeof INVITE_ROLES)[number]>('member');
+  const emailEnabled = useEmailEnabled();
+  const [sendEmail, setSendEmail] = useState(true);
+  const emailing = emailEnabled && sendEmail;
 
   const invite = useMutation({
-    mutationFn: () => api.invite({ email, role }),
+    mutationFn: (withEmail: boolean) => api.invite({ email, role, ...(withEmail ? { send_email: true } : {}) }),
     onSuccess: () => {
       setEmail('');
       onInvited();
@@ -52,7 +79,7 @@ export function InviteForm({ onInvited, onClose }: { onInvited: () => void; onCl
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    invite.mutate();
+    invite.mutate(emailing);
   };
 
   const roleInfo = TENANT_ROLE_INFO.find((info) => info.role === role);
@@ -64,7 +91,10 @@ export function InviteForm({ onInvited, onClose }: { onInvited: () => void; onCl
           <h2 id="invite-title" className="text-base font-semibold text-fg">
             Invite someone
           </h2>
-          <p className="text-xs text-muted">Creates a one-time link for that email. It expires in 7 days — you send it yourself.</p>
+          <p className="text-xs text-muted">
+            Creates a one-time link for that email. It expires in 7 days
+            {emailing ? ' — we email it to them.' : ' — you send it yourself.'}
+          </p>
         </div>
         {onClose && (
           <button
@@ -90,9 +120,14 @@ export function InviteForm({ onInvited, onClose }: { onInvited: () => void; onCl
           />
         </div>
         <Button type="submit" disabled={invite.isPending}>
-          {invite.isPending ? 'Creating…' : 'Create link'}
+          {invite.isPending ? (emailing ? 'Sending…' : 'Creating…') : emailing ? 'Send invitation' : 'Create link'}
         </Button>
       </form>
+      {emailEnabled && (
+        <div className="mt-2">
+          <Checkbox label="Email the link to them" checked={sendEmail} onChange={setSendEmail} />
+        </div>
+      )}
       {roleInfo && (
         <p className="mt-2 text-xs text-muted">
           <span className="font-medium text-fg">{roleInfo.label}:</span> {roleInfo.summary}
@@ -106,6 +141,7 @@ export function InviteForm({ onInvited, onClose }: { onInvited: () => void; onCl
           link={inviteLink(window.location.origin, invite.data.acceptToken)}
           email={invite.data.invitation.email}
           expiresAt={invite.data.invitation.expiresAt}
+          {...(invite.variables ? { emailed: invite.data.emailed } : {})}
         />
       )}
     </section>

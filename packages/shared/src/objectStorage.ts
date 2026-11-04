@@ -6,14 +6,17 @@ import {
   S3Client,
 } from '@aws-sdk/client-s3';
 import { Upload } from '@aws-sdk/lib-storage';
-import { Readable } from 'node:stream';
+import { Readable, Transform } from 'node:stream';
 import { AppError } from '@kinote/contracts';
+
+/** What `put` stores: bytes in memory, or a stream (an upload waiting on disk) read through once. */
+export type ObjectBody = Uint8Array | Readable;
 
 export interface ObjectStorage {
   put(
     tenantId: string,
     relativePath: string,
-    bytes: Uint8Array,
+    body: ObjectBody,
     mimeType: string
   ): Promise<{ objectKey: string; sizeBytes: number }>;
   get(tenantId: string, objectKey: string): Promise<{ bytes: Uint8Array; mimeType: string }>;
@@ -78,12 +81,19 @@ function buildKey(tenantId: string, relativePath: string): string {
   return objectKey;
 }
 
+async function readAll(stream: Readable): Promise<Uint8Array> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of stream) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as Uint8Array));
+  return new Uint8Array(Buffer.concat(chunks));
+}
+
 export class InMemoryObjectStorage implements ObjectStorage {
   private objects = new Map<string, { bytes: Uint8Array; mimeType: string }>();
 
-  async put(tenantId: string, relativePath: string, bytes: Uint8Array, mimeType: string) {
+  async put(tenantId: string, relativePath: string, body: ObjectBody, mimeType: string) {
     const objectKey = buildKey(tenantId, relativePath);
-    this.objects.set(objectKey, { bytes: new Uint8Array(bytes), mimeType });
+    const bytes = body instanceof Uint8Array ? new Uint8Array(body) : await readAll(body);
+    this.objects.set(objectKey, { bytes, mimeType });
     return { objectKey, sizeBytes: bytes.byteLength };
   }
 
@@ -160,18 +170,33 @@ export class S3ObjectStorage implements ObjectStorage {
     }
   }
 
-  async put(tenantId: string, relativePath: string, bytes: Uint8Array, mimeType: string) {
+  async put(tenantId: string, relativePath: string, body: ObjectBody, mimeType: string) {
     const objectKey = buildKey(tenantId, relativePath);
+    // A stream is counted on its way through, and sent part by part (at most
+    // PART_CONCURRENCY parts in memory), never held whole.
+    let sizeBytes = body instanceof Uint8Array ? body.byteLength : 0;
+    const sent =
+      body instanceof Uint8Array
+        ? body
+        : body.pipe(
+            new Transform({
+              transform(chunk: Buffer, _enc, done) {
+                sizeBytes += chunk.byteLength;
+                done(null, chunk);
+              },
+            })
+          );
+    if (!(body instanceof Uint8Array)) body.once('error', (err) => (sent as Transform).destroy(err));
     // Upload sends one PutObject for a small body and a multipart upload for a large one;
     // a failed multipart upload is aborted so no orphaned parts are left (and billed).
     await new Upload({
       client: this.client,
-      params: { Bucket: this.bucket, Key: objectKey, Body: bytes, ContentType: mimeType },
+      params: { Bucket: this.bucket, Key: objectKey, Body: sent, ContentType: mimeType },
       partSize: PART_SIZE_BYTES,
       queueSize: PART_CONCURRENCY,
       leavePartsOnError: false,
     }).done();
-    return { objectKey, sizeBytes: bytes.byteLength };
+    return { objectKey, sizeBytes };
   }
 
   async get(tenantId: string, objectKey: string) {

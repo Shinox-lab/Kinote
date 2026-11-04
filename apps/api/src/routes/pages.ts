@@ -76,6 +76,7 @@ import {
   returnToReview,
 } from '../documents/lifecycle.js';
 import { computePageBadge } from '../pages/badge.js';
+import { indexingPausedIn } from '../usageLimits.js';
 import { pageCollectionInfo } from './collections.js';
 import { diffBlocks, withDrawingDiffs, withFieldLines, type DrawingSide } from '../pages/diff.js';
 import { resolveActorNames } from '../people.js';
@@ -303,6 +304,7 @@ export async function getPageDetails(
         ? { number: latestVersion.number, status: latestVersion.status }
         : null,
       indexedVersion: indexedVersion ? { number: indexedVersion.number } : null,
+      indexingPaused: await indexingPausedIn(tx, actor.tenantId),
     });
 
     const activity = opts.meta

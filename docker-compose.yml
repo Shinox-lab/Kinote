@@ -46,6 +46,12 @@ x-app-env: &app-env
   MAIL_FROM: ${MAIL_FROM:-}
   PUBLIC_URL: ${PUBLIC_URL:-}
   TENANT_DAILY_AI_ACTIONS: ${TENANT_DAILY_AI_ACTIONS:-2000}
+  # Plans and usage (docs/operations.md): all optional; empty means unset. A file-path
+  # MODEL_CREDIT_RATES must be mounted into every service (they all check it at startup);
+  # inline JSON needs no mount.
+  MODEL_CREDIT_RATES: ${MODEL_CREDIT_RATES:-}
+  CONTROL_PLANE_TOKENS: ${CONTROL_PLANE_TOKENS:-}
+  BILLING_URL: ${BILLING_URL:-}
   LOG_LEVEL: ${LOG_LEVEL:-info}
   EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-deterministic}
   EMBEDDING_BASE_URL: ${EMBEDDING_BASE_URL:-}
@@ -77,8 +83,9 @@ x-app-env: &app-env
   S3_REGION: ${S3_REGION:-us-east-1}
   S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-}
   MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-52428800}
-  # Uploads one api reads at once: its upload memory is about this times MAX_UPLOAD_BYTES.
+  # Uploads one api takes at once: they wait on disk, about this times MAX_UPLOAD_BYTES at most.
   MAX_CONCURRENT_UPLOADS: ${MAX_CONCURRENT_UPLOADS:-4}
+  UPLOAD_TMP_DIR: ${UPLOAD_TMP_DIR:-}
   MAX_EXTRACTED_CHARS: ${MAX_EXTRACTED_CHARS:-2000000}
   # The extractor is part of the stack; http is the default. `off` is a
   # deliberate text/CSV-only run, `fake` is for tests.

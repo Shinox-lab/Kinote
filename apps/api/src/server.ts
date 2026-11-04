@@ -1,9 +1,9 @@
 import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 import rateLimit from '@fastify/rate-limit';
 import multipart from '@fastify/multipart';
-import { getDb, rowsOf, withTenantTx } from '@kinote/db';
-import { sql } from 'drizzle-orm';
-import { DEFAULT_AUTH_RATE_LIMIT_MAX, DEFAULT_USAGE_LIMITS, type ObjectStorage, type UsageLimits } from '@kinote/shared';
+import { getDb, readStanding, rowsOf, tenants, withTenantTx } from '@kinote/db';
+import { eq, sql } from 'drizzle-orm';
+import { DEFAULT_AUTH_RATE_LIMIT_MAX, DEFAULT_USAGE_LIMITS, type CreditRates, type ObjectStorage, type UsageLimits } from '@kinote/shared';
 import {
   SearchRequestSchema,
   AskRequestSchema,
@@ -78,12 +78,17 @@ import {
   ChunkInspectorSchema,
   SearchResponseSchema,
   AskResponseSchema,
+  UsageSummarySchema,
   DrawingSceneSchema,
 } from '@kinote/contracts';
 import {
   getReadableSpaceIds,
   defaultAnswerProvider,
   defaultEmbeddingProvider,
+  withUsageScope,
+  countSeats,
+  creditVerdict,
+  indexHeld,
   type Actor,
   type AnswerProvider,
   type EmbeddingProvider,
@@ -118,6 +123,7 @@ import {
   deleteSpaceGrant,
 } from './routes/admin.js';
 import { deleteSourceFile, putSourceFile } from './routes/sourceFiles.js';
+import { registerInternalRoutes } from './routes/internal.js';
 import { createSource, issueSourceToken, listSources, revokeSourceToken, revokeTokensMadeBy, updateSource } from './routes/sources.js';
 import {
   createPage,
@@ -168,7 +174,7 @@ import {
   listFileVersions,
   moveFile,
   renameFile,
-  readMultipartUpload,
+  withMultipartUpload,
   replaceFile,
   restoreFile,
   uploadFile,
@@ -190,6 +196,7 @@ import {
   updateComment,
 } from './routes/talk.js';
 import { listNotifications, markNotificationsRead } from './routes/notifications.js';
+import { emailInvitation } from './invitationMail.js';
 import {
   addField,
   collectionRows,
@@ -205,7 +212,7 @@ import {
 import { authRoutes, type AuthRateLimit, type SignUpModeSetting } from './routes/auth.js';
 import { PgRateLimitStore } from './rateLimitStore.js';
 import type { Mailer } from './mail.js';
-import { aiActionsLeftOrUnknown, chargeAi, requestLimit, uploadSlots } from './usageLimits.js';
+import { aiActionsLeftOrUnknown, chargeAi, requestLimit, requireCredits, uploadSlots } from './usageLimits.js';
 import { demoSeedRunning, demoSeedStatus, startDemoSeed } from './routes/demoSeed.js';
 import {
   invalidateActor,
@@ -270,10 +277,18 @@ export interface ApiServerOptions {
   storage?: ObjectStorage;
   /** Largest upload in bytes (default 50 MB; MAX_UPLOAD_BYTES in config). */
   maxUploadBytes?: number;
+  /** Where uploads wait on disk while they are checked and stored (UPLOAD_TMP_DIR; default the OS temp dir). */
+  uploadTmpDir?: string;
   /** Embeddings for search and Ask queries. Default: the deterministic test provider. */
   embeddingProvider?: EmbeddingProvider;
   /** Answers for Ask. Default: the deterministic quoted-passage provider. */
   answerProvider?: AnswerProvider;
+  /** MODEL_CREDIT_RATES, parsed. Null or unset: model calls are recorded at 0 credits. */
+  creditRates?: CreditRates | null;
+  /** BILLING_URL: where Upgrade links point. */
+  billingUrl?: string;
+  /** CONTROL_PLANE_TOKENS: bearer tokens for /internal/v1/. None: that API does not exist (404). */
+  controlPlaneTokens?: string[];
 }
 
 const DEFAULT_MAX_UPLOAD_BYTES = 52_428_800;
@@ -340,6 +355,13 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
   const embeddingProvider = opts.embeddingProvider ?? defaultEmbeddingProvider;
   const answerProvider = opts.answerProvider ?? defaultAnswerProvider;
   const limits = opts.limits ?? DEFAULT_USAGE_LIMITS;
+  const creditRates = opts.creditRates ?? null;
+  const credits = requireCredits(opts.billingUrl);
+  /** Runs a route's work in a usage scope: its model calls are charged to the caller's workspace as `kind`. */
+  const metered = <T>(kind: 'capture' | 'ask' | 'index', req: FastifyRequest, fn: () => Promise<T>): Promise<T> => {
+    const actor = actorOf(req);
+    return withUsageScope({ tenantId: actor.tenantId, kind, principalId: actor.principalId }, creditRates, fn);
+  };
   const HOUR_MS = 60 * 60 * 1000;
   const uploadLimit = requestLimit('upload', limits.uploadPerMinute);
   const uploads = uploadSlots(opts.maxConcurrentUploads ?? DEFAULT_MAX_CONCURRENT_UPLOADS);
@@ -458,8 +480,12 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
   );
 
   app.post('/api/v1/invitations', async (req, reply) => {
-    const res = await inviteMember(actorOf(req), req.body);
-    return reply.status(201).send(parseReply(InviteMemberResponseSchema, res));
+    const actor = actorOf(req);
+    const res = await inviteMember(actor, req.body);
+    // inviteMember checked the role and the body; the link goes out by email only when asked and possible.
+    const wantsEmail = (req.body as { send_email?: unknown }).send_email === true;
+    const emailed = wantsEmail && opts.mailer ? await emailInvitation(opts.mailer, actor, res, req.log) : false;
+    return reply.status(201).send(parseReply(InviteMemberResponseSchema, { ...res, emailed }));
   });
 
   app.get('/api/v1/invitations', async (req, reply) => {
@@ -773,7 +799,7 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
     const release = uploads.take(reply);
     let out: Awaited<ReturnType<typeof uploadFile>>;
     try {
-      out = await uploadFile(actor, await readMultipartUpload(req), deps);
+      out = await withMultipartUpload(req, opts.uploadTmpDir, (upload) => uploadFile(actor, upload, deps));
     } finally {
       release();
     }
@@ -793,7 +819,7 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
     const release = uploads.take(reply);
     let out: Awaited<ReturnType<typeof putSourceFile>>;
     try {
-      out = await putSourceFile(source, externalId, (await readMultipartUpload(req)).file, deps);
+      out = await withMultipartUpload(req, opts.uploadTmpDir, ({ file }) => putSourceFile(source, externalId, file, deps));
     } finally {
       release();
     }
@@ -818,7 +844,7 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
     const release = uploads.take(reply);
     let out: Awaited<ReturnType<typeof replaceFile>>;
     try {
-      out = await replaceFile(actor, (req.params as any).id, (await readMultipartUpload(req)).file, deps);
+      out = await withMultipartUpload(req, opts.uploadTmpDir, ({ file }) => replaceFile(actor, (req.params as any).id, file, deps));
     } finally {
       release();
     }
@@ -1043,7 +1069,7 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
     return reply.send(parseReply(RecentResponseSchema, await listRecent(actorOf(req), req.query)));
   });
 
-  app.post('/api/v1/captures', { onRequest: requestLimit('capture', limits.capturePerMinute) }, async (req, reply) => {
+  app.post('/api/v1/captures', { onRequest: [requestLimit('capture', limits.capturePerMinute), credits] }, async (req, reply) => {
     // Routing runs in the worker and is charged there; refuse up front once today's allowance is gone.
     const actor = actorOf(req);
     if (!(await aiActionsLeftOrUnknown(req, actor.tenantId, limits.tenantDailyAiActions))) {
@@ -1076,9 +1102,11 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
     return reply.send(parseReply(UndoChangesResponseSchema, await undoCaptureChange(actorOf(req), id, opts.collab)));
   });
 
-  app.post('/api/v1/capture-changes/:id/move', async (req, reply) => {
+  app.post('/api/v1/capture-changes/:id/move', { onRequest: credits }, async (req, reply) => {
     const { id } = req.params as { id: string };
-    const res = await moveCaptureChange(actorOf(req), id, req.body, { collab: opts.collab, embedder: embeddingProvider });
+    const res = await metered('capture', req, () =>
+      moveCaptureChange(actorOf(req), id, req.body, { collab: opts.collab, embedder: embeddingProvider })
+    );
     return reply.send(parseReply(MoveChangeResponseSchema, res));
   });
 
@@ -1091,9 +1119,9 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
     return reply.send(parseReply(NeedsHomeListSchema, await listNeedsHome(actorOf(req))));
   });
 
-  app.post('/api/v1/capture-facts/:id/place', async (req, reply) => {
+  app.post('/api/v1/capture-facts/:id/place', { onRequest: credits }, async (req, reply) => {
     const { id } = req.params as { id: string };
-    const res = await placeCaptureFact(actorOf(req), id, req.body, { embedder: embeddingProvider });
+    const res = await metered('capture', req, () => placeCaptureFact(actorOf(req), id, req.body, { embedder: embeddingProvider }));
     return reply.send(parseReply(FactStatusSchema, res));
   });
 
@@ -1101,20 +1129,20 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
     return reply.send(parseReply(NeedsHomeDocumentListSchema, await listNeedsHomeDocuments(actorOf(req))));
   });
 
-  app.post('/api/v1/captures/:id/document/place', async (req, reply) => {
+  app.post('/api/v1/captures/:id/document/place', { onRequest: credits }, async (req, reply) => {
     const { id } = req.params as { id: string };
-    const res = await placeCaptureDocument(actorOf(req), id, req.body, { embedder: embeddingProvider });
+    const res = await metered('capture', req, () => placeCaptureDocument(actorOf(req), id, req.body, { embedder: embeddingProvider }));
     return reply.send(parseReply(CaptureSummarySchema, res));
   });
 
-  app.post('/api/v1/captures/:id/document/as-updates', async (req, reply) => {
+  app.post('/api/v1/captures/:id/document/as-updates', { onRequest: credits }, async (req, reply) => {
     const { id } = req.params as { id: string };
     return reply.send(parseReply(CaptureSummarySchema, await routeCaptureAsUpdates(actorOf(req), id)));
   });
 
-  app.post('/api/v1/captures/:id/document/move', async (req, reply) => {
+  app.post('/api/v1/captures/:id/document/move', { onRequest: credits }, async (req, reply) => {
     const { id } = req.params as { id: string };
-    const res = await moveCaptureDocument(actorOf(req), id, req.body, { embedder: embeddingProvider });
+    const res = await metered('capture', req, () => moveCaptureDocument(actorOf(req), id, req.body, { embedder: embeddingProvider }));
     return reply.send(parseReply(CaptureSummarySchema, res));
   });
 
@@ -1159,7 +1187,39 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
     return reply.send(parseReply(RetryVersionResponseSchema, res));
   });
 
-  app.post('/api/v1/search', { onRequest: requestLimit('search', limits.searchPerMinute) }, async (req, reply) => {
+  registerInternalRoutes(app, opts.controlPlaneTokens ?? []);
+
+  app.get('/api/v1/usage', async (req, reply) => {
+    const actor = actorOf(req);
+    const now = new Date();
+    const summary = await withTenantTx(actor.tenantId, async (tx) => {
+      const standing = await readStanding(tx, actor.tenantId, now);
+      const verdict = creditVerdict(standing);
+      const [tenant] = await tx.select({ plan: tenants.plan }).from(tenants).where(eq(tenants.id, actor.tenantId));
+      const admin = actor.tenantRole === 'owner' || actor.tenantRole === 'admin';
+      return {
+        state: verdict.state,
+        plan: tenant?.plan ?? 'standard',
+        usedCredits: verdict.usedCredits,
+        limitCredits: verdict.limitCredits,
+        creditsTopup: standing.creditsTopup,
+        graceLeftCredits: verdict.graceLeftCredits,
+        indexUsedCredits: standing.indexCreditsUsedMilli / 1000,
+        indexLimitCredits: standing.limits?.indexCreditsPerMonth ?? null,
+        indexHeld: indexHeld(standing),
+        storageBytes: standing.storageBytes,
+        storageLimitBytes: standing.limits?.storageBytes ?? null,
+        seats: await countSeats(tx, actor.tenantId, now),
+        seatLimit: standing.limits?.seats ?? null,
+        resetsAt: verdict.resetsAt.toISOString(),
+        billingUrl: admin && opts.billingUrl ? opts.billingUrl : null,
+      };
+    });
+    return reply.send(parseReply(UsageSummarySchema, summary));
+  });
+
+  app.post('/api/v1/search', { onRequest: requestLimit('search', limits.searchPerMinute) }, async (req, reply) =>
+    metered('index', req, async () => {
     const actor = actorOf(req);
     const parsed = SearchRequestSchema.parse(req.body);
     let queryEmbedding: number[];
@@ -1185,9 +1245,10 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
       );
     });
     return reply.send(parseReply(SearchResponseSchema, { passages: res }));
-  });
+  }));
 
-  app.post('/api/v1/ask', { onRequest: requestLimit('ask', limits.askPerMinute) }, async (req, reply) => {
+  app.post('/api/v1/ask', { onRequest: [requestLimit('ask', limits.askPerMinute), credits] }, async (req, reply) =>
+    metered('ask', req, async () => {
     const actor = actorOf(req);
     const parsed = AskRequestSchema.parse(req.body);
     await chargeAi(req, reply, actor.tenantId, limits.tenantDailyAiActions);
@@ -1217,7 +1278,7 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
     });
     const res = await answerPassages(parsed.question, passages, answerProvider, tables);
     return reply.send(parseReply(AskResponseSchema, res));
-  });
+  }));
 
   return app;
 }

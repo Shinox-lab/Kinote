@@ -80,7 +80,7 @@ function InvitedSignUp({ token }: { token: string }) {
           onChange={setPassword}
           autoComplete="new-password"
           minLength={10}
-          hint="At least 10 characters."
+          hint="At least 10 characters, and not a common password."
           required
         />
         <ErrorNote error={signUp.error} />
@@ -166,7 +166,7 @@ function OpenSignUp({ redirect }: { redirect: string | undefined }) {
           onChange={setPassword}
           autoComplete="new-password"
           minLength={10}
-          hint="At least 10 characters."
+          hint="At least 10 characters, and not a common password."
           required
         />
         <ErrorNote error={signUp.error} />

@@ -6,7 +6,7 @@ import { mapDbError } from '@kinote/db';
 export function registerErrorHandler(app: FastifyInstance): void {
   app.setErrorHandler((err, req, reply) => {
     if (err instanceof AppError) {
-      return reply.status(err.statusCode).send({ error: err.code, message: err.message });
+      return reply.status(err.statusCode).send({ ...err.details, error: err.code, message: err.message });
     }
     if (err instanceof ZodError) {
       return reply.status(400).send({

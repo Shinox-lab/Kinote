@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cleanFileName, detectFileType, listZipEntries } from '../src/files/detect.js';
+import { cleanFileName, DETECT_HEAD_BYTES, detectFileType, detectFileTypeOf, listZipEntries, listZipEntriesFrom } from '../src/files/detect.js';
 
 const enc = (s: string) => new TextEncoder().encode(s);
 const bytes = (...n: number[]) => new Uint8Array(n);
@@ -175,5 +175,41 @@ describe('text, code and media formats', () => {
     expect(detectFileType('a.mkv', bytes(0x1a, 0x45, 0xdf, 0xa3, 0))).toMatchObject({ ok: true, file: { type: 'video' } });
     expect(detectFileType('a.avi', enc('RIFF....AVI LIST'))).toMatchObject({ ok: true, file: { type: 'video' } });
     expect(detectFileType('a.flac', enc('not flac'))).toEqual({ ok: false, reason: 'unsupported' });
+  });
+});
+
+describe('detection without reading the whole file', () => {
+  /** A zip whose central directory sits `gap` bytes past its entries, so far from both ends of a big file. */
+  function spreadZip(names: string[], gap: number): Uint8Array {
+    const zip = makeZip(names);
+    const view = new DataView(zip.buffer);
+    const cdStart = view.getUint32(zip.length - 22 + 16, true);
+    const out = cat(zip.subarray(0, cdStart), new Uint8Array(gap), zip.subarray(cdStart));
+    new DataView(out.buffer).setUint32(out.length - 22 + 16, cdStart + gap, true);
+    return out;
+  }
+
+  it('listZipEntriesFrom reads only the tail and the central directory', () => {
+    const zip = spreadZip(['[Content_Types].xml', 'word/document.xml'], 500_000);
+    let bytesRead = 0;
+    const names = listZipEntriesFrom((offset, length) => {
+      bytesRead += length;
+      return zip.subarray(offset, offset + length);
+    }, zip.length);
+    expect(names).toEqual(['[Content_Types].xml', 'word/document.xml']);
+    expect(names).toEqual(listZipEntries(zip));
+    expect(bytesRead).toBeLessThan(70_000);
+  });
+
+  it('detectFileTypeOf decides from the head and the zip directory alone', () => {
+    const docx = spreadZip(['[Content_Types].xml', 'word/document.xml'], 200_000);
+    const input = { sizeBytes: docx.length, head: docx.subarray(0, DETECT_HEAD_BYTES), zipEntries: () => listZipEntries(docx) };
+    const result = detectFileTypeOf('report.docx', input);
+    expect(result.ok && result.file.type).toBe('docx');
+    expect(detectFileTypeOf('report.docx', { ...input, zipEntries: () => ['other.xml'] }).ok).toBe(false);
+    // Text with a NUL byte past the head is still text: only the head is looked at, as before (8 KiB).
+    const text = cat(enc('a'.repeat(DETECT_HEAD_BYTES)), bytes(0));
+    expect(detectFileType('notes.txt', text)).toEqual(detectFileTypeOf('notes.txt', { sizeBytes: text.length, head: text.subarray(0, DETECT_HEAD_BYTES), zipEntries: () => null }));
+    expect(detectFileTypeOf('empty.txt', { sizeBytes: 0, head: new Uint8Array(), zipEntries: () => null })).toEqual({ ok: false, reason: 'empty' });
   });
 });

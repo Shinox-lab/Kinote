@@ -34,6 +34,8 @@ and joins the workspace in the same step.
 - **Sessions last 14 days** from the last time they were used, and at most 90 days in all. People who use Kinote
   every week stay signed in; after that, they sign in again.
 - **Everyone can change their password and sign out everywhere** from *Account and security* in the account menu.
+- **New passwords can't be one of the most common ones** (about 2,300 well-known passwords of 10 or more characters,
+  bundled, no network lookup) or the account's own email address. Existing passwords keep working.
 - **Source tokens now expire.** New ones last 90 days unless you choose 1 to 365. Existing tokens that never expire
   are marked on the Sources page; replace them with ones that do.
 - **Tokens of people who left are pointed out.** A source token keeps working after the admin who made it leaves or is

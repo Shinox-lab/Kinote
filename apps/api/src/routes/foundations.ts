@@ -41,6 +41,7 @@ import { sha256Hex } from '@kinote/shared';
 import { fileAttention, pageAttention } from '../pages/badge.js';
 import { cacheTree, getCachedTree } from '../treeCache.js';
 import {
+  assertSeatFor,
   requireSpaceRole,
   getReadableSpaceIds,
   isTenantAdmin,
@@ -564,7 +565,7 @@ const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
  * stored. A pending invitation for the same email is replaced (its old token
  * stops working).
  */
-export async function inviteMember(actor: Actor, input: unknown): Promise<InviteMemberResponse> {
+export async function inviteMember(actor: Actor, input: unknown): Promise<Omit<InviteMemberResponse, 'emailed'>> {
   // Authorization first: a non-admin gets 403 whatever the body looks like.
   if (
     actor.principalType !== 'user' ||
@@ -575,6 +576,8 @@ export async function inviteMember(actor: Actor, input: unknown): Promise<Invite
   const parsed = InviteMemberRequestSchema.parse(input);
 
   return withTenantTx(actor.tenantId, async (tx) => {
+    // A re-invite replaces the person's pending invitation, so it is not a new seat.
+    await assertSeatFor(tx, actor.tenantId, parsed.role, new Date(), { excludeEmail: parsed.email });
     const secret = randomBytes(32).toString('base64url');
     const expiresAt = new Date(Date.now() + INVITATION_TTL_MS);
 
@@ -700,6 +703,14 @@ async function claimInvitation(
     .from(tenants)
     .where(and(eq(tenants.id, tenantId), isNull(tenants.deletedAt)));
   if (!tenant) throw invalid();
+
+  // The invitation was just claimed, so it no longer counts: the seat it held
+  // passes to the new member. An existing membership keeps its role (no new seat).
+  const [existing] = await tx
+    .select({ role: memberships.role })
+    .from(memberships)
+    .where(and(eq(memberships.tenantId, tenantId), eq(memberships.userId, userId)));
+  if (!existing) await assertSeatFor(tx, tenantId, invitation.role, new Date());
 
   await tx
     .insert(memberships)

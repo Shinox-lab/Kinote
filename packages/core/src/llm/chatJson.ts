@@ -1,5 +1,6 @@
 import type { z } from 'zod';
 import { AppError } from '@kinote/contracts';
+import { estimateTokens, reportModelCall } from '../usage/meter.js';
 
 export interface ChatJsonOptions {
   baseUrl: string;
@@ -101,7 +102,15 @@ export async function chatJson<T>(
     } catch {
       throw unavailable('the routing model returned an unexpected answer');
     }
-    opts.onUsage?.(usageOf(body, Date.now() - started));
+    const usage = usageOf(body, Date.now() - started);
+    opts.onUsage?.(usage);
+    const reported = (body as { usage?: unknown })?.usage !== undefined;
+    reportModelCall({
+      model: opts.model,
+      inputTokens: reported ? usage.promptTokens : estimateTokens(req.system + user),
+      outputTokens: reported ? usage.completionTokens : estimateTokens(contentOf(body)),
+      estimated: !reported,
+    });
 
     // Cut off at max_tokens (a reasoning model can spend them all thinking): asking again pays for the same cut.
     if (firstChoice(body)?.finish_reason === 'length') {

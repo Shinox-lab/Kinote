@@ -37,7 +37,7 @@ them the same way. After a change, run `docker compose up -d` again to apply it.
 | `SIGNUP_MODE` | `auto` | Who may create an account. `auto`: anyone until the first account exists, then only someone with an invitation link. `open`: anyone. `invite`: only from an invitation link. `closed`: no new accounts. An account made from an invitation always uses the invited email. |
 | `MAX_TENANTS_PER_USER` | `5` | Workspaces one person may own. Creating workspaces is also limited to 5 an hour. |
 | `TENANT_DAILY_AI_ACTIONS` | `2000` | AI actions one workspace may use per UTC day: each Ask, and each capture routed or placed, page card or entity extraction. Search and indexing aren't counted. Past it, Ask and new captures are refused until midnight UTC and background AI work waits. `0` turns it off. |
-| `LOG_LEVEL` | `info` | How much the API logs: `fatal`, `error`, `warn`, `info`, `debug`, `trace` or `silent`. |
+| `LOG_LEVEL` | `info` | How much the API logs: `fatal`, `error`, `warn`, `info`, `debug`, `trace` or `silent`. At `debug` or `trace`, collab also logs each live-editing connection. |
 
 Every host port is bound to `127.0.0.1` only.
 
@@ -120,12 +120,12 @@ See [Object storage](./storage).
 
 ## Email (optional)
 
-Without email, Kinote sends none: new accounts can't confirm their address, and nobody can reset a forgotten
-password except through the operator's command below.
+Without email, Kinote sends none: new accounts can't confirm their address, admins send invitation links themselves,
+and nobody can reset a forgotten password except through the operator's command below.
 
 | Setting | Default | What it does |
 |---|---|---|
-| `SMTP_URL` | *(unset)* | Your mail server, such as `smtps://user:password@smtp.example.com:465`. With it set, someone who signs up without an invitation confirms their address from an emailed link, entering their password on that page; until then they can't sign in or accept invitations, and signing in with the right password emails a fresh link. "Forgot your password?" emails a reset link, which also confirms the address, so the owner of an inbox can take over an account someone else registered with it. |
+| `SMTP_URL` | *(unset)* | Your mail server, such as `smtps://user:password@smtp.example.com:465`. With it set, someone who signs up without an invitation confirms their address from an emailed link, entering their password on that page; until then they can't sign in or accept invitations, and signing in with the right password emails a fresh link. Admins can email an invitation's link straight to the invitee (up to 20 invitation emails per workspace an hour; past that, or if sending fails, they copy the link as before). "Forgot your password?" emails a reset link, which also confirms the address, so the owner of an inbox can take over an account someone else registered with it. |
 | `MAIL_FROM` | *(required with `SMTP_URL`)* | The From address, such as `Kinote <wiki@example.com>`. |
 | `PUBLIC_URL` | *(required with `SMTP_URL`)* | The address people open Kinote at, such as `https://wiki.example.com`. Links in emails start with it. |
 
@@ -146,7 +146,8 @@ person who owns that inbox.
 | Setting | Default | What it does |
 |---|---|---|
 | `MAX_UPLOAD_BYTES` | `52428800` (50 MB) | The largest upload, at most 500 MB. |
-| `MAX_CONCURRENT_UPLOADS` | `4` | Uploads the API reads at once; others are asked to retry a few seconds later. Give the API container about this many times `MAX_UPLOAD_BYTES` of memory for uploads. |
+| `MAX_CONCURRENT_UPLOADS` | `4` | Uploads the API takes at once; others are asked to retry a few seconds later. Each waits on disk while it's checked and stored, so `UPLOAD_TMP_DIR` needs about this many times `MAX_UPLOAD_BYTES` free. |
+| `UPLOAD_TMP_DIR` | *(the OS temp dir)* | Where uploads wait on disk. Point it at a volume if the container's own disk is small. |
 | `MAX_EXTRACTED_CHARS` | `2000000` | The most text one file may produce. A file with more fails; it's never cut short. |
 | `EXTRACTOR_MODE` | `http` | `http` uses the bundled file reader. `off` reads only text, Markdown and CSV files. `fake` is for tests. |
 | `EXTRACTOR_URL` | `http://extractor:8000` | Where the file reader is. |

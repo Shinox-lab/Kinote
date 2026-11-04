@@ -14,7 +14,21 @@ export interface DetectedFile {
 
 export type DetectResult = { ok: true; file: DetectedFile } | { ok: false; reason: 'empty' | 'unsupported' };
 
-type Check = (bytes: Uint8Array) => boolean;
+/**
+ * What detection reads from a file: its first {@link DETECT_HEAD_BYTES} bytes,
+ * and, only for zip-based formats, the entry names of its zip directory. So a
+ * file waiting on disk is never read whole to be recognised.
+ */
+export interface DetectInput {
+  sizeBytes: number;
+  head: Uint8Array;
+  zipEntries: () => string[] | null;
+}
+
+/** How many leading bytes detection looks at (the text checks scan 8 KiB). */
+export const DETECT_HEAD_BYTES = 8192;
+
+type Check = (head: Uint8Array, file: DetectInput) => boolean;
 
 const startsWith = (bytes: Uint8Array, prefix: number[], at = 0) =>
   bytes.length >= at + prefix.length && prefix.every((b, i) => bytes[at + i] === b);
@@ -36,8 +50,8 @@ function includesAscii(bytes: Uint8Array, s: string, limit: number): boolean {
 
 const zipHas =
   (entry: string): Check =>
-  (b) =>
-    listZipEntries(b)?.includes(entry) ?? false;
+  (_head, file) =>
+    file.zipEntries()?.includes(entry) ?? false;
 
 interface Rule {
   type: FileType;
@@ -139,11 +153,21 @@ function looksLikeHtml(bytes: Uint8Array): boolean {
  * content is refused under any name but .html/.htm.
  */
 export function detectFileType(fileName: string, bytes: Uint8Array): DetectResult {
-  if (bytes.length === 0) return { ok: false, reason: 'empty' };
+  return detectFileTypeOf(fileName, {
+    sizeBytes: bytes.length,
+    head: bytes.subarray(0, DETECT_HEAD_BYTES),
+    zipEntries: () => listZipEntries(bytes),
+  });
+}
+
+/** {@link detectFileType} from a file's head and zip directory instead of all its bytes. */
+export function detectFileTypeOf(fileName: string, input: DetectInput): DetectResult {
+  if (input.sizeBytes === 0) return { ok: false, reason: 'empty' };
+  const bytes = input.head;
   const dot = fileName.lastIndexOf('.');
   const extension = dot >= 0 ? fileName.slice(dot + 1).toLowerCase() : '';
   const found = RULES[extension];
-  if (!found || looksLikeSvg(bytes) || (found.type !== 'html' && looksLikeHtml(bytes)) || !found.check(bytes)) return { ok: false, reason: 'unsupported' };
+  if (!found || looksLikeSvg(bytes) || (found.type !== 'html' && looksLikeHtml(bytes)) || !found.check(bytes, input)) return { ok: false, reason: 'unsupported' };
   const { check: _check, ...file } = found;
   return { ok: true, file };
 }
@@ -158,30 +182,44 @@ const MAX_ZIP_ENTRIES = 10_000;
  * well-formed zip, use zip64, or hold more than 10 000 entries.
  */
 export function listZipEntries(bytes: Uint8Array): string[] | null {
-  if (bytes.length < 22) return null;
-  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  return listZipEntriesFrom((offset, length) => bytes.subarray(offset, offset + length), bytes.length);
+}
+
+/**
+ * {@link listZipEntries} for a zip of `size` bytes read piecewise through
+ * `read(offset, length)` (say, from a file on disk): it reads the last 64 KiB
+ * and the central directory, never the whole zip.
+ */
+export function listZipEntriesFrom(read: (offset: number, length: number) => Uint8Array, size: number): string[] | null {
+  if (size < 22) return null;
+  const tailStart = Math.max(0, size - 22 - 65_535);
+  const tail = read(tailStart, size - tailStart);
+  const tailView = new DataView(tail.buffer, tail.byteOffset, tail.byteLength);
   let end = -1;
-  for (let i = bytes.length - 22; i >= Math.max(0, bytes.length - 22 - 65_535); i--) {
-    if (view.getUint32(i, true) === ZIP_END) {
+  for (let i = tail.length - 22; i >= 0; i--) {
+    if (tailView.getUint32(i, true) === ZIP_END) {
       end = i;
       break;
     }
   }
   if (end < 0) return null;
-  const total = view.getUint16(end + 10, true);
-  const size = view.getUint32(end + 12, true);
-  let at = view.getUint32(end + 16, true);
-  if (total === 0xffff || size === 0xffffffff || at === 0xffffffff || total > MAX_ZIP_ENTRIES) return null;
-  if (at + size > bytes.length) return null;
+  const total = tailView.getUint16(end + 10, true);
+  const size_ = tailView.getUint32(end + 12, true);
+  const start = tailView.getUint32(end + 16, true);
+  if (total === 0xffff || size_ === 0xffffffff || start === 0xffffffff || total > MAX_ZIP_ENTRIES) return null;
+  if (start + size_ > size) return null;
+  const dir = read(start, size_);
+  const view = new DataView(dir.buffer, dir.byteOffset, dir.byteLength);
   const names: string[] = [];
   const decoder = new TextDecoder('utf-8');
+  let at = 0;
   for (let n = 0; n < total; n++) {
-    if (at + 46 > bytes.length || view.getUint32(at, true) !== ZIP_ENTRY) return null;
+    if (at + 46 > dir.length || view.getUint32(at, true) !== ZIP_ENTRY) return null;
     const nameLength = view.getUint16(at + 28, true);
     const extraLength = view.getUint16(at + 30, true);
     const commentLength = view.getUint16(at + 32, true);
-    if (at + 46 + nameLength > bytes.length) return null;
-    names.push(decoder.decode(bytes.subarray(at + 46, at + 46 + nameLength)));
+    if (at + 46 + nameLength > dir.length) return null;
+    names.push(decoder.decode(dir.subarray(at + 46, at + 46 + nameLength)));
     at += 46 + nameLength + extraLength + commentLength;
   }
   return names;

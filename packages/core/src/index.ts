@@ -41,8 +41,12 @@ export {
 } from './answer.js';
 export {
   detectFileType,
+  detectFileTypeOf,
   listZipEntries,
+  listZipEntriesFrom,
   cleanFileName,
+  DETECT_HEAD_BYTES,
+  type DetectInput,
   type DetectedFile,
   type DetectResult,
   type FileHandling,
@@ -177,3 +181,6 @@ export {
 export { seedDemo, uploadDemoFiles, signUpAccount, uniqueSuffix, DEMO_PASSWORD, type Demo, type DemoAccount, type DemoFile, type DemoHttp, type SeedInto, type SeedOptions } from './demo/seed.js';
 export { readDemoFiles } from './demo/files.js';
 export { people as demoPeople, workspace as demoWorkspace, type PersonKey as DemoPersonKey } from './demo/content.js';
+export { estimateTokens, reportModelCall, withUsageScope, type ModelCall, type UsageScope } from './usage/meter.js';
+export { creditVerdict, indexHeld, type CreditState, type CreditVerdict } from './usage/standing.js';
+export { assertSeatFor, assertStorageFor, countSeats } from './usage/capacity.js';

@@ -5,7 +5,7 @@ import {
   createPlacementModel,
   EMBEDDING_DIMENSIONS,
 } from '@kinote/core';
-import { HttpCollabClient, createObjectStorage, loadConfig, routerProviderProblem } from '@kinote/shared';
+import { HttpCollabClient, createObjectStorage, loadConfig, parseCreditRates, routerProviderProblem } from '@kinote/shared';
 import { runWorkerLoop } from './runner.js';
 
 const POLL_INTERVAL_MS = 1000;
@@ -44,6 +44,7 @@ async function main(): Promise<void> {
       placementModel: createPlacementModel(config),
       collab: new HttpCollabClient(config.COLLAB_INTERNAL_URL, config.INTERNAL_SECRET),
       aiDailyLimit: config.TENANT_DAILY_AI_ACTIONS,
+      creditRates: parseCreditRates(config.MODEL_CREDIT_RATES),
     });
   } finally {
     await closeDb();

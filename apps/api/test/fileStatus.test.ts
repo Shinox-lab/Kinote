@@ -1,7 +1,7 @@
 import { describe, test, beforeEach } from 'vitest';
 import assert from 'node:assert/strict';
 import { eq } from 'drizzle-orm';
-import { versions, withTenantTx } from '@kinote/db';
+import { periodOf, tenantLimits, tenantUsage, versions, withTenantTx } from '@kinote/db';
 import { InMemoryObjectStorage } from '@kinote/shared';
 import { FakeExtractor } from '@kinote/core';
 import { runPendingJobsForTenant } from '../../worker/src/runner.js';
@@ -88,6 +88,19 @@ describe('file status in the tree, the review queue and updates', () => {
     assert.equal(res.statusCode, 200, res.body);
     return res.json().nodes.find((n: { id: string }) => n.id === id);
   };
+
+  test('a file held at the indexing limit says so, not "Indexing…"', async () => {
+    const c = await setup();
+    await withTenantTx(c.tenant.id, async (tx) => {
+      await tx.insert(tenantLimits).values({ tenantId: c.tenant.id, indexCreditsPerMonth: 1 });
+      await tx.insert(tenantUsage).values({ tenantId: c.tenant.id, period: periodOf(1, new Date()).key, indexCreditsUsedMilli: 5000 });
+    });
+    const held = await upload(c.author.headers, c.open.id, 'held.txt', 'text that waits for credits');
+    await settle(c.tenant.id);
+    const res = await app.inject({ method: 'GET', url: `/api/v1/files/${held.document.id}`, headers: c.author.headers });
+    assert.equal(res.statusCode, 200, res.body);
+    assert.equal(res.json().badge, 'Not indexed (indexing limit reached)');
+  });
 
   test('tree dots: review while it waits, failed when it fails, none when indexed or archived', async () => {
     const c = await setup();

@@ -16,7 +16,7 @@ import { AppError, ExternalIdSchema, type SourceDeleteResponse, type SourcePutRe
 import { cleanFileName, insertFileVersion, type VersionRow } from '@kinote/core';
 import { withdrawLiveVersions } from '../documents/lifecycle.js';
 import type { SourceActor } from '../auth/actor.js';
-import { detect, fileArchived, sha256, toFileVersion, withStoredBytes, type FileDeps, type UploadedFile } from './files.js';
+import { detect, fileArchived, toFileVersion, withStoredBytes, type FileDeps, type UploadedFile } from './files.js';
 import { toDocumentSummary } from './pages.js';
 
 export interface SourcePutOutcome {
@@ -153,7 +153,7 @@ export async function putSourceFile(
   const externalId = ExternalIdSchema.parse(rawExternalId);
   const detected = detect(file);
   const name = cleanFileName(file.name);
-  const contentHash = sha256(file.bytes);
+  const { contentHash } = file;
   const { tenantId } = source;
 
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
@@ -220,7 +220,7 @@ export async function putSourceFile(
             actorId: source.sourceId,
             subjectType: 'file',
             subjectId: documentId,
-            payload: { spaceId: source.targetSpaceId, fileName: name, sizeBytes: file.bytes.byteLength, externalId },
+            payload: { spaceId: source.targetSpaceId, fileName: name, sizeBytes: file.sizeBytes, externalId },
           });
         }
         const version = await insertFileVersion(tx, {
@@ -230,7 +230,7 @@ export async function putSourceFile(
           file: {
             name,
             mimeType: detected.mimeType,
-            sizeBytes: file.bytes.byteLength,
+            sizeBytes: file.sizeBytes,
             contentHash,
             objectKey,
             handling: detected.handling,

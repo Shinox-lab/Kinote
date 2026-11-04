@@ -5,6 +5,7 @@ export * from './editor.js';
 export * from './collections.js';
 export * from './views.js';
 export * from './drawings.js';
+export * from './internal.js';
 import { CollectionSchema, FieldChangeSchema } from './collections.js';
 import { MAX_DRAWING_ELEMENTS, isDrawingElement, type DrawingElement } from './drawings.js';
 
@@ -45,6 +46,8 @@ export type VersionReason = z.infer<typeof VersionReasonSchema>;
 export const AuditEventTypeSchema = z.enum([
   'tenant.created',
   'tenant.deleted',
+  'limits.updated',
+  'credits.topup',
   'member.invited',
   'member.invitation_revoked',
   'member.role_changed',
@@ -245,6 +248,8 @@ export const CreateTenantRequestSchema = z.object({
 export const InviteMemberRequestSchema = z.object({
   email: EmailSchema,
   role: z.enum(['admin', 'member', 'viewer']),
+  /** Also email the link to the invitee (only when the server sends email). */
+  send_email: z.boolean().optional(),
 });
 
 export const AcceptInvitationRequestSchema = z.object({
@@ -259,6 +264,12 @@ export const InviteMemberResponseSchema = z.object({
     expiresAt: z.string().datetime(),
   }),
   acceptToken: z.string(),
+  /**
+   * Whether the link went out by email. False when it wasn't asked for, the
+   * server sends no email, the workspace hit its hourly cap, or sending failed:
+   * the admin sends the link themselves.
+   */
+  emailed: z.boolean(),
 });
 export type InviteMemberResponse = z.infer<typeof InviteMemberResponseSchema>;
 
@@ -1622,6 +1633,7 @@ export const NotificationKindSchema = z.enum([
   'review_approved',
   'review_rejected',
   'capture_waiting',
+  'credits_warning',
 ]);
 export const NotificationSchema = z.object({
   id: z.string().uuid(),

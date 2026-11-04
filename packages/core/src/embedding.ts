@@ -2,6 +2,7 @@
 export const EMBEDDING_DIMENSIONS = 2560;
 
 import { AppError } from '@kinote/contracts';
+import { estimateTokens, reportModelCall } from './usage/meter.js';
 
 export type EmbeddingKind = 'document' | 'query';
 
@@ -23,6 +24,12 @@ export class DeterministicEmbeddingProvider implements EmbeddingProvider {
 
   async embed(texts: string[]): Promise<number[][]> {
     this.callCount += 1;
+    reportModelCall({
+      model: this.model,
+      inputTokens: texts.reduce((n, t) => n + estimateTokens(t), 0),
+      outputTokens: 0,
+      estimated: true,
+    });
     return texts.map((text) => {
       const vec = new Array<number>(this.dimensions).fill(0);
       const tokens = text
@@ -138,6 +145,14 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
     } catch {
       throw unavailable('the embedding service returned an unexpected answer');
     }
+    const promptTokens = (body as { usage?: { prompt_tokens?: unknown } })?.usage?.prompt_tokens;
+    const counted = typeof promptTokens === 'number' && Number.isFinite(promptTokens);
+    reportModelCall({
+      model: this.model,
+      inputTokens: counted ? promptTokens : input.reduce((n, t) => n + estimateTokens(t), 0),
+      outputTokens: 0,
+      estimated: !counted,
+    });
     const rows = (body as { data?: unknown })?.data;
     if (!Array.isArray(rows) || rows.length !== texts.length) {
       throw unavailable('the embedding service returned an unexpected answer');

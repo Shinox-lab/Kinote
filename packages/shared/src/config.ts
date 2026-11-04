@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { parseCreditRates } from './creditRates.js';
 
 /** Per-IP sign-up and sign-in attempts per minute when `AUTH_RATE_LIMIT_MAX` is unset. */
 export const DEFAULT_AUTH_RATE_LIMIT_MAX = 10;
@@ -159,8 +160,10 @@ export const ConfigSchema = z.object({
   S3_FORCE_PATH_STYLE: z.enum(['true', 'false']).transform((v) => v === 'true').optional(),
   /** Largest file the api accepts, in bytes (default 50 MB; at most 500 MB). */
   MAX_UPLOAD_BYTES: z.coerce.number().int().positive().max(524_288_000).default(52_428_800),
-  /** Uploads one api process reads at once; its upload memory is about this times MAX_UPLOAD_BYTES. */
+  /** Uploads one api process takes at once; each waits on disk (up to MAX_UPLOAD_BYTES) while it is checked and stored. */
   MAX_CONCURRENT_UPLOADS: z.coerce.number().int().positive().max(100).default(4),
+  /** Where uploads wait on disk; unset means the OS temp dir. */
+  UPLOAD_TMP_DIR: z.string().min(1).optional(),
   /** Most text, in characters, one file may yield; more fails the file (never truncated). */
   MAX_EXTRACTED_CHARS: z.coerce.number().int().positive().default(2_000_000),
   /** `off`: only text files can be read; `fake`: tests and local e2e; `http`: the Docling service. */
@@ -171,7 +174,35 @@ export const ConfigSchema = z.object({
    * lease (300 s), so a slow file is not claimed and run a second time.
    */
   EXTRACTOR_TIMEOUT_MS: z.coerce.number().int().positive().max(270_000).default(240_000),
+  /**
+   * Model id → credits per 1,000 input and output tokens, plus a `default`
+   * (inline JSON, or a path to a JSON file). Unset: every model call costs 0
+   * credits (tokens are still recorded). Checked at startup.
+   */
+  MODEL_CREDIT_RATES: z.string().min(1).optional(),
+  /**
+   * Bearer tokens for the control-plane API under /internal/v1/ (comma-separated,
+   * so a token can be rotated; each at least 32 characters). Unset: that API does not exist.
+   */
+  CONTROL_PLANE_TOKENS: z
+    .string()
+    .transform((v) => v.split(',').map((t) => t.trim()).filter((t) => t.length > 0))
+    .pipe(z.array(z.string().min(32, 'each token must be at least 32 characters')).min(1))
+    .optional(),
+  /** Where Upgrade links point (shown to owners and admins). Unset: no Upgrade links. */
+  BILLING_URL: z.string().url().optional(),
 }).superRefine((value, ctx) => {
+  if (value.MODEL_CREDIT_RATES !== undefined) {
+    try {
+      parseCreditRates(value.MODEL_CREDIT_RATES);
+    } catch (err) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['MODEL_CREDIT_RATES'],
+        message: (err as Error).message.replace(/^MODEL_CREDIT_RATES: /, ''),
+      });
+    }
+  }
   if (value.SMTP_URL) {
     for (const key of ['MAIL_FROM', 'PUBLIC_URL'] as const) {
       if (!value[key]) {

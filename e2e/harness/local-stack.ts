@@ -22,7 +22,7 @@ import { build, createLogger, preview, type PreviewServer } from 'vite';
 import { assertEmbeddingDimensions, closeDb } from '@kinote/db';
 import { createTestDb } from '@kinote/db/testing';
 import { EMBEDDING_DIMENSIONS, FakeExtractor, defaultEmbeddingProvider } from '@kinote/core';
-import { InMemoryObjectStorage, loadConfig } from '@kinote/shared';
+import { InMemoryObjectStorage, loadConfig, parseCreditRates } from '@kinote/shared';
 import { buildApiServer } from '../../apps/api/src/server.js';
 import { HttpCollabClient } from '@kinote/shared';
 import { collabSettle, createCollabServer } from '../../apps/collab/src/server.js';
@@ -48,6 +48,9 @@ const apiPort = port('E2E_API_PORT', 18787);
 const collabPort = port('E2E_COLLAB_PORT', 11234);
 const webPort = port('E2E_WEB_PORT', 15173);
 
+/** The control-plane token e2e/usage.spec.ts uses (CONTROL_PLANE_TOKENS overrides it). */
+const E2E_CONTROL_PLANE_TOKEN = 'e2e-control-plane-token-0123456789abcdef';
+
 // The secrets only live as long as this process.
 process.env.COLLAB_TOKEN_SECRET ??= 'e2e-collab-token-secret-0123456789abcdef';
 const internalSecret = process.env.INTERNAL_SECRET ?? 'e2e-internal-secret-0123456789abcdef0123456789';
@@ -57,6 +60,21 @@ const config = loadConfig({
   DATABASE_URL: 'pglite',
   INTERNAL_SECRET: internalSecret,
   EMBEDDING_PROVIDER: process.env.EMBEDDING_PROVIDER ?? 'deterministic',
+  // Plans and usage (e2e/usage.spec.ts): the control-plane API on, and the deterministic models
+  // charged 1 credit per token, so a single capture spends whole credits. No workspace has limits
+  // unless a spec sets them, so every other spec runs unlimited.
+  CONTROL_PLANE_TOKENS: process.env.CONTROL_PLANE_TOKENS ?? E2E_CONTROL_PLANE_TOKEN,
+  MODEL_CREDIT_RATES:
+    process.env.MODEL_CREDIT_RATES ??
+    JSON.stringify({
+      default: { input: 0, output: 0 },
+      models: Object.fromEntries(
+        ['kinote-deterministic-2560-v1', 'deterministic-placement-v1', 'deterministic-answer-v1'].map((m) => [
+          m,
+          { input: 1000, output: 1000 },
+        ])
+      ),
+    }),
 });
 if (defaultEmbeddingProvider.dimensions !== EMBEDDING_DIMENSIONS) {
   throw new Error(
@@ -96,6 +114,9 @@ const app = buildApiServer({
     tenantDailyAiActions: 0,
   },
   collab: new HttpCollabClient(`http://${HOST}:${collabPort}`, internalSecret),
+  creditRates: parseCreditRates(config.MODEL_CREDIT_RATES),
+  controlPlaneTokens: config.CONTROL_PLANE_TOKENS,
+  billingUrl: config.BILLING_URL ?? 'https://billing.example.test/upgrade',
 });
 await app.listen({ port: apiPort, host: HOST });
 
@@ -109,6 +130,7 @@ const worker = runWorkerLoop({
   maxExtractedChars: config.MAX_EXTRACTED_CHARS,
   // Routed captures change live pages through collab, as the api's restore does.
   collab: new HttpCollabClient(`http://${HOST}:${collabPort}`, internalSecret),
+  creditRates: parseCreditRates(config.MODEL_CREDIT_RATES),
 });
 
 // The console, built fresh so the specs run against the production bundle; vite.config.ts

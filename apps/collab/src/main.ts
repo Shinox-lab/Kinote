@@ -1,6 +1,7 @@
 import { closeDb, initDb } from '@kinote/db';
 import { loadConfig } from '@kinote/shared';
 import { collabSettle, createCollabServer } from './server.js';
+import { logsConnections } from './serverState.js';
 
 /** Longest shutdown waits for in-flight change bookkeeping before the pool closes. */
 const SETTLE_TIMEOUT_MS = 5_000;
@@ -29,6 +30,7 @@ async function main(): Promise<void> {
     internalSecret: config.INTERNAL_SECRET,
     address: config.HOST,
     maxMessageBytes: config.COLLAB_MAX_MESSAGE_BYTES,
+    logConnections: logsConnections(config.LOG_LEVEL),
   });
   await collab.server.listen(config.COLLAB_PORT);
   console.log(`collab listening on ${config.HOST}:${config.COLLAB_PORT}`);
