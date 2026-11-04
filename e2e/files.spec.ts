@@ -320,6 +320,61 @@ test('a CSV opens as a table of text, and a workbook as tabs; the page number pi
   expect(dialogs).toEqual([]);
 });
 
+test("a workbook's links open only as http, https or mailto, in a new tab without opener", async ({ browser, request }) => {
+  const world = await seedWorld(request, { reviewRequired: false });
+  const book = await uploadViaApi(
+    request,
+    world,
+    world.owner,
+    xlsx('Links.xlsx', world.suffix, [
+      {
+        name: 'Links',
+        rows: [['Name', 'Where'], ['Script link', 'click me'], ['Data link', 'or me'], ['Web link', 'docs'], ['Mail link', 'write']],
+        links: [
+          { cell: 'B2', target: 'javascript:alert(document.domain)' },
+          { cell: 'B3', target: 'data:text/html,<script>alert(1)</script>' },
+          { cell: 'B4', target: 'https://example.com/docs' },
+          { cell: 'B5', target: 'mailto:team@example.com' },
+        ],
+      },
+    ])
+  );
+  await waitForFileBadge(request, world, world.owner, book, /^Indexed/);
+
+  const page = await openAs(browser, world, world.owner);
+  // Record what the viewer asks the browser to open, instead of opening it.
+  await page.addInitScript(() => {
+    const opened: unknown[][] = [];
+    (window as unknown as { __opened: unknown[][] }).__opened = opened;
+    window.open = (...args: unknown[]) => {
+      opened.push(args);
+      return null;
+    };
+  });
+  const dialogs: string[] = [];
+  page.on('dialog', (d) => {
+    dialogs.push(d.message());
+    void d.dismiss();
+  });
+  const opened = () => page.evaluate(() => (window as unknown as { __opened: unknown[][] }).__opened);
+
+  await page.goto(`/w/${world.slug}/f/${book}`);
+  const preview = page.getByRole('region', { name: 'Preview' });
+  await expect(preview.getByRole('cell', { name: 'click me' })).toBeVisible();
+
+  await preview.getByRole('cell', { name: 'click me' }).click();
+  await preview.getByRole('cell', { name: 'or me' }).click();
+  expect(await opened()).toEqual([]);
+
+  await preview.getByRole('cell', { name: 'docs' }).click();
+  await preview.getByRole('cell', { name: 'write' }).click();
+  expect(await opened()).toEqual([
+    ['https://example.com/docs', '_blank', 'noopener,noreferrer'],
+    ['mailto:team@example.com', '_blank', 'noopener,noreferrer'],
+  ]);
+  expect(dialogs).toEqual([]);
+});
+
 test('a workbook that cannot be read falls back to a download', async ({ browser, request }) => {
   const world = await seedWorld(request, { reviewRequired: false });
   const book = await uploadViaApi(

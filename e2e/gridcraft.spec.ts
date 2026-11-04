@@ -27,6 +27,9 @@ function fakeGridCraft(bytes: Buffer): string {
 <button id="clean">clean</button>
 <button id="save">save</button>
 <button id="save-pdf">save pdf</button>
+<button id="read">read</button>
+<p id="pasted"></p>
+<p id="read-result"></p>
 <script>
   const source = Uint8Array.from(atob('${bytes.toString('base64')}'), (c) => c.charCodeAt(0)).buffer;
   const opened = document.getElementById('opened');
@@ -47,6 +50,14 @@ function fakeGridCraft(bytes: Buffer): string {
   document.getElementById('clean').onclick = () => parent.postMessage({ type: 'gridcraft:dirty', dirty: false }, '*');
   document.getElementById('save').onclick = () => send('Budget.xlsx');
   document.getElementById('save-pdf').onclick = () => send('Budget.pdf');
+  // As GridCraft takes a paste: from the paste event, which needs no clipboard permission.
+  addEventListener('paste', (e) => (document.getElementById('pasted').textContent = 'Pasted ' + e.clipboardData.getData('text/plain')));
+  // What clipboard-read would allow: reading the clipboard without a paste. The frame must not be able to.
+  document.getElementById('read').onclick = () =>
+    navigator.clipboard.readText().then(
+      (t) => (document.getElementById('read-result').textContent = 'Read ' + t),
+      () => (document.getElementById('read-result').textContent = 'Read refused')
+    );
   parent.postMessage({ type: 'gridcraft:ready' }, '*');
 </script>
 </body></html>`;
@@ -96,6 +107,7 @@ test('editor opens and saves a new version', async ({ browser, request }) => {
 
   const iframe = page.locator('iframe[title="Budget.xlsx spreadsheet editor"]');
   await expect(iframe).toHaveAttribute('sandbox', 'allow-scripts');
+  await expect(iframe).toHaveAttribute('allow', 'clipboard-write');
   const src = await iframe.getAttribute('src');
   expect(src).toContain('host=parent');
   expect(src).toContain('webgl');
@@ -319,4 +331,22 @@ test('full screen covers the page without reloading the editor', async ({ browse
   await expect(dialog).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Full screen' })).toBeVisible();
   expect(await editor.evaluate(() => (window as unknown as { marker?: number }).marker)).toBe(1);
+});
+
+test('paste reaches the editor without clipboard-read, and the editor cannot read the clipboard by itself', async ({ browser, request }) => {
+  const world = await seedWorld(request, { reviewRequired: false });
+  const file = BOOK(world.suffix);
+  const id = await uploadViaApi(request, world, world.owner, file);
+  await waitForFileBadge(request, world, world.owner, id, /^Indexed/);
+  const page = await openAs(browser, world, world.owner);
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+  const frame = await openFakeEditor(page, world, id, file);
+
+  await page.evaluate(() => navigator.clipboard.writeText('Sales\t1500'));
+  await frame.locator('#opened').click();
+  await page.keyboard.press('ControlOrMeta+V');
+  await expect(frame.locator('#pasted')).toHaveText('Pasted Sales\t1500');
+
+  await frame.locator('#read').click();
+  await expect(frame.locator('#read-result')).toHaveText('Read refused');
 });

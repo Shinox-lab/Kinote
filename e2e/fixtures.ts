@@ -84,15 +84,19 @@ export const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsh
  * The fake-extractor marker is appended after the ZIP end, not stored as a member: Extend treats an
  * extra member as an invalid workbook, while the raw-byte fake extractor still finds the text.
  */
-export function xlsx(name: string, label: string, sheets: { name: string; rows: (string | number)[][] }[]): TestFile {
+export function xlsx(
+  name: string,
+  label: string,
+  sheets: { name: string; rows: (string | number)[][]; links?: { cell: string; target: string }[] }[]
+): TestFile {
   const strings: string[] = [];
   const index = (s: string) => {
     const i = strings.indexOf(s);
     return i >= 0 ? i : strings.push(s) - 1;
   };
   const colName = (c: number) => String.fromCharCode(65 + c);
-  const sheetXml = (rows: (string | number)[][]) =>
-    `<?xml version="1.0" encoding="UTF-8"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>${rows
+  const sheetXml = (rows: (string | number)[][], links: { cell: string; target: string }[] = []) =>
+    `<?xml version="1.0" encoding="UTF-8"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheetData>${rows
       .map(
         (row, r) =>
           `<row r="${r + 1}">${row
@@ -103,8 +107,12 @@ export function xlsx(name: string, label: string, sheets: { name: string; rows: 
             )
             .join('')}</row>`
       )
-      .join('')}</sheetData></worksheet>`;
-  const sheetFiles = sheets.map((s) => sheetXml(s.rows));
+      .join('')}</sheetData>${
+      links.length
+        ? `<hyperlinks>${links.map((l, i) => `<hyperlink ref="${l.cell}" r:id="rIdL${i + 1}"/>`).join('')}</hyperlinks>`
+        : ''
+    }</worksheet>`;
+  const sheetFiles = sheets.map((s) => sheetXml(s.rows, s.links));
   const entries: Record<string, string> = {
     '[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>${sheets
       .map((_, i) => `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`)
@@ -119,6 +127,17 @@ export function xlsx(name: string, label: string, sheets: { name: string; rows: 
       .join('')}<Relationship Id="rId${sheets.length + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" Target="sharedStrings.xml"/></Relationships>`,
   };
   sheetFiles.forEach((xml, i) => (entries[`xl/worksheets/sheet${i + 1}.xml`] = xml));
+  // A cell's external hyperlink is a relationship of its sheet.
+  sheets.forEach((s, i) => {
+    if (!s.links?.length) return;
+    entries[`xl/worksheets/_rels/sheet${i + 1}.xml.rels`] =
+      `<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${s.links
+        .map(
+          (l, j) =>
+            `<Relationship Id="rIdL${j + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="${escapeXml(l.target)}" TargetMode="External"/>`
+        )
+        .join('')}</Relationships>`;
+  });
   entries['xl/sharedStrings.xml'] = `<?xml version="1.0" encoding="UTF-8"?><sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="${strings.length}" uniqueCount="${strings.length}">${strings
     .map((s) => `<si><t xml:space="preserve">${escapeXml(s)}</t></si>`)
     .join('')}</sst>`;

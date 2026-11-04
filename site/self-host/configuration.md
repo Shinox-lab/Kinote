@@ -37,7 +37,7 @@ them the same way. After a change, run `docker compose up -d` again to apply it.
 | `SIGNUP_MODE` | `auto` | Who may create an account. `auto`: anyone until the first account exists, then only someone with an invitation link. `open`: anyone. `invite`: only from an invitation link. `closed`: no new accounts. An account made from an invitation always uses the invited email. |
 | `MAX_TENANTS_PER_USER` | `5` | Workspaces one person may own. Creating workspaces is also limited to 5 an hour. |
 | `TENANT_DAILY_AI_ACTIONS` | `2000` | AI actions one workspace may use per UTC day: each Ask, and each capture routed or placed, page card or entity extraction. Search and indexing aren't counted. Past it, Ask and new captures are refused until midnight UTC and background AI work waits. `0` turns it off. |
-| `LOG_LEVEL` | `info` | How much the API logs: `fatal`, `error`, `warn`, `info`, `debug`, `trace` or `silent`. |
+| `LOG_LEVEL` | `info` | How much the API logs: `fatal`, `error`, `warn`, `info`, `debug`, `trace` or `silent`. At `debug` or `trace`, collab also logs each live-editing connection. |
 
 Every host port is bound to `127.0.0.1` only.
 
