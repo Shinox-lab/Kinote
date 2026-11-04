@@ -83,7 +83,7 @@ export function ResetPasswordPage() {
           onChange={setPassword}
           autoComplete="new-password"
           minLength={10}
-          hint="At least 10 characters. Setting it signs you out everywhere else."
+          hint="At least 10 characters, and not a common password. Setting it signs you out everywhere else."
           required
         />
         <ErrorNote error={reset.error} />

@@ -20,7 +20,7 @@ import {
   type AuthUser,
   type MeResponse,
 } from '@kinote/contracts';
-import { getDummyHash, hashPassword, isUsableHash, verifyPassword } from '../auth/password.js';
+import { assertPasswordAllowed, getDummyHash, hashPassword, isUsableHash, verifyPassword } from '../auth/password.js';
 import { createSession, revokeAllSessions, revokeSession } from '../auth/sessions.js';
 import { consumeEmailToken, createEmailToken, peekEmailToken } from '../auth/emailTokens.js';
 import type { Mailer } from '../mail.js';
@@ -100,6 +100,9 @@ export async function authRoutes(
 
       if (parsed.invitation_token !== undefined) {
         // An invitation decides the email and the workspace; allowed in open and invite mode.
+        // Checked before the invitation is used, so a refused password leaves it working.
+        const { email: invited } = await previewInvitation({ token: parsed.invitation_token });
+        assertPasswordAllowed(parsed.password, invited);
         const passwordHash = await hashPassword(parsed.password);
         const { user, joined } = await signUpWithInvitation({
           token: parsed.invitation_token,
@@ -111,6 +114,7 @@ export async function authRoutes(
 
       if (mode === 'invite') throw new AppError('signup_invite_only');
       const email = parsed.email!;
+      assertPasswordAllowed(parsed.password, email);
       const passwordHash = await hashPassword(parsed.password);
 
       if (mailer) {
@@ -252,6 +256,11 @@ export async function authRoutes(
    */
   app.post('/api/v1/auth/password-reset/confirm', { config: { auth: 'public', rateLimit } }, async (req, reply) => {
     const parsed = PasswordResetConfirmSchema.parse(req.body);
+    // Checked before the link is used, so a refused password leaves it working.
+    const owner = await peekEmailToken(parsed.token, 'reset');
+    if (!owner) throw new AppError('link_invalid');
+    const [account] = await getDb().select({ email: users.email }).from(users).where(eq(users.id, owner));
+    assertPasswordAllowed(parsed.password, account?.email);
     const passwordHash = await hashPassword(parsed.password);
     const userId = await consumeEmailToken(parsed.token, 'reset');
     if (!userId) throw new AppError('link_invalid');
@@ -274,6 +283,7 @@ export async function authRoutes(
     if (!user || !isUsableHash(user.passwordHash) || !(await verifyPassword(parsed.current_password, user.passwordHash))) {
       throw new AppError('invalid_credentials');
     }
+    assertPasswordAllowed(parsed.new_password, user.email);
     await getDb()
       .update(users)
       .set({ passwordHash: await hashPassword(parsed.new_password) })
