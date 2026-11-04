@@ -167,7 +167,7 @@ import {
   listFileVersions,
   moveFile,
   renameFile,
-  readMultipartUpload,
+  withMultipartUpload,
   replaceFile,
   restoreFile,
   uploadFile,
@@ -269,6 +269,8 @@ export interface ApiServerOptions {
   storage?: ObjectStorage;
   /** Largest upload in bytes (default 50 MB; MAX_UPLOAD_BYTES in config). */
   maxUploadBytes?: number;
+  /** Where uploads wait on disk while they are checked and stored (UPLOAD_TMP_DIR; default the OS temp dir). */
+  uploadTmpDir?: string;
   /** Embeddings for search and Ask queries. Default: the deterministic test provider. */
   embeddingProvider?: EmbeddingProvider;
   /** Answers for Ask. Default: the deterministic quoted-passage provider. */
@@ -767,7 +769,7 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
     const release = uploads.take(reply);
     let out: Awaited<ReturnType<typeof uploadFile>>;
     try {
-      out = await uploadFile(actor, await readMultipartUpload(req), deps);
+      out = await withMultipartUpload(req, opts.uploadTmpDir, (upload) => uploadFile(actor, upload, deps));
     } finally {
       release();
     }
@@ -787,7 +789,7 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
     const release = uploads.take(reply);
     let out: Awaited<ReturnType<typeof putSourceFile>>;
     try {
-      out = await putSourceFile(source, externalId, (await readMultipartUpload(req)).file, deps);
+      out = await withMultipartUpload(req, opts.uploadTmpDir, ({ file }) => putSourceFile(source, externalId, file, deps));
     } finally {
       release();
     }
@@ -812,7 +814,7 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
     const release = uploads.take(reply);
     let out: Awaited<ReturnType<typeof replaceFile>>;
     try {
-      out = await replaceFile(actor, (req.params as any).id, (await readMultipartUpload(req)).file, deps);
+      out = await withMultipartUpload(req, opts.uploadTmpDir, ({ file }) => replaceFile(actor, (req.params as any).id, file, deps));
     } finally {
       release();
     }

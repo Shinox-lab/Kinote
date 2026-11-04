@@ -345,7 +345,7 @@ in-memory or test storage implementations.
   today.
 - [x] *(Only for files over 4 MiB; smaller ones still answer 200 whole.)* Media without a `Range` header (`files.ts:862`): treat it as `bytes=0-` capped at the existing 4 MiB and send 206
   with `Content-Range`. Browsers' media players handle this.
-- [ ] *(Not done; see the note above.)* Uploads (`files.ts:388`):
+- [x] *(Done 2026-11-04, differently: each upload is written to a private temp file as it arrives (`apps/api/src/uploadedFile.ts`), hashed and counted on the way, so the duplicate check still runs before storing; it is then streamed to storage. Detection reads the first 8 KiB plus, for Office files, only the zip's tail and central directory. `UPLOAD_TMP_DIR` picks the disk. A 400 MB upload raised memory by about 50 MB, against about 800 MB buffered.)* Uploads (`files.ts:388`):
   - replace `part.toBuffer()` with `part.file` streamed into `@aws-sdk/lib-storage` `Upload`
   - read the first 4 KiB for `detectFileType` through a peek stream
   - if the code hashes the bytes or passes them to extraction, hash on the fly and have extraction read from storage

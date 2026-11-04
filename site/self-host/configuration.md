@@ -146,7 +146,8 @@ person who owns that inbox.
 | Setting | Default | What it does |
 |---|---|---|
 | `MAX_UPLOAD_BYTES` | `52428800` (50 MB) | The largest upload, at most 500 MB. |
-| `MAX_CONCURRENT_UPLOADS` | `4` | Uploads the API reads at once; others are asked to retry a few seconds later. Give the API container about this many times `MAX_UPLOAD_BYTES` of memory for uploads. |
+| `MAX_CONCURRENT_UPLOADS` | `4` | Uploads the API takes at once; others are asked to retry a few seconds later. Each waits on disk while it's checked and stored, so `UPLOAD_TMP_DIR` needs about this many times `MAX_UPLOAD_BYTES` free. |
+| `UPLOAD_TMP_DIR` | *(the OS temp dir)* | Where uploads wait on disk. Point it at a volume if the container's own disk is small. |
 | `MAX_EXTRACTED_CHARS` | `2000000` | The most text one file may produce. A file with more fails; it's never cut short. |
 | `EXTRACTOR_MODE` | `http` | `http` uses the bundled file reader. `off` reads only text, Markdown and CSV files. `fake` is for tests. |
 | `EXTRACTOR_URL` | `http://extractor:8000` | Where the file reader is. |

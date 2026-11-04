@@ -7,6 +7,7 @@ import { ERROR_SENTENCES } from '@kinote/contracts';
 import { buildTestApp, bootstrapTenant, signUpMember, signUp, asUser, useTestDb } from './support/testkit.js';
 import { uploadRequest } from './support/multipart.js';
 import { replaceFile, uploadFile } from '../src/routes/files.js';
+import { bytesFile } from '../src/uploadedFile.js';
 
 /** Counts how often bytes are stored, so a refused or repeated upload can be shown to write nothing. */
 class CountingStorage extends InMemoryObjectStorage {
@@ -124,7 +125,7 @@ describe('uploading and replacing files', () => {
     assert.equal(res.json().document.title, 'x y.txt');
     // Called directly (a script, not a browser), the name still never keeps a separator.
     const actor = { tenantId: tenant.id, principalType: 'user' as const, principalId: editor.userId, tenantRole: 'member' as const };
-    const direct = await uploadFile(actor, { fields: { space_id: space.id }, file: { name: '..\\..\\y\u0000.txt', bytes: new TextEncoder().encode('direct') } }, { storage });
+    const direct = await uploadFile(actor, { fields: { space_id: space.id }, file: bytesFile('..\\..\\y\u0000.txt', new TextEncoder().encode('direct')) }, { storage });
     assert.equal(direct.response.document.title, '.._.._y.txt');
   });
 
@@ -319,7 +320,7 @@ describe('uploading and replacing files', () => {
     await assert.rejects(
       uploadFile(
         actor,
-        { fields: { space_id: space.id }, file: { name: 'a.txt', bytes: new TextEncoder().encode('doomed') } },
+        { fields: { space_id: space.id }, file: bytesFile('a.txt', new TextEncoder().encode('doomed')) },
         {
           storage,
           afterStore: async () => {
@@ -336,7 +337,7 @@ describe('uploading and replacing files', () => {
     const file = await upload(editor.headers, { name: 'ok.txt', data: 'fine' }, { space_id: space.id });
     const before = storage.puts.length;
     await assert.rejects(
-      replaceFile(actor, file.json().document.id, { name: 'ok2.txt', bytes: new TextEncoder().encode('doomed again') }, {
+      replaceFile(actor, file.json().document.id, bytesFile('ok2.txt', new TextEncoder().encode('doomed again')), {
         storage,
         afterStore: async () => {
           throw new Error('boom');

@@ -71,9 +71,9 @@ export async function aiActionsLeftOrUnknown(req: FastifyRequest, tenantId: stri
 }
 
 /**
- * At most `max` uploads read at once in this process. An upload is held in
- * memory while it is checked and stored (up to MAX_UPLOAD_BYTES), so this
- * bounds the memory uploads can take to about `max` × MAX_UPLOAD_BYTES. A busy
+ * At most `max` uploads taken at once in this process. An upload waits on disk
+ * while it is checked and stored (up to MAX_UPLOAD_BYTES), so this bounds the
+ * temporary disk uploads can take to about `max` × MAX_UPLOAD_BYTES. A busy
  * process answers rate_limited with a short Retry-After instead of queuing.
  */
 export function uploadSlots(max: number) {

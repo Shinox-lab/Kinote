@@ -1,5 +1,5 @@
 import type { Readable } from 'node:stream';
-import { createHash, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import type { FastifyRequest } from 'fastify';
 import { and, desc, eq, isNull, ne, sql } from 'drizzle-orm';
 import {
@@ -31,7 +31,7 @@ import {
   requireDocumentRole,
   assertValidUuid,
   cleanFileName,
-  detectFileType,
+  detectFileTypeOf,
   isTenantAdmin,
   fileObjectPath,
   insertFileVersion,
@@ -59,10 +59,8 @@ export interface FileDeps {
   afterStore?: () => Promise<void>;
 }
 
-export interface UploadedFile {
-  name: string;
-  bytes: Uint8Array;
-}
+import { spoolUpload, type UploadedFile } from '../uploadedFile.js';
+export type { UploadedFile };
 
 export interface UploadOutcome {
   /** `unchanged`: the same bytes were already there, nothing was written. */
@@ -83,14 +81,12 @@ export function toFileVersion(row: VersionRow): FileVersion {
 }
 
 export function detect(file: UploadedFile): DetectedFile {
-  const result = detectFileType(file.name, file.bytes);
+  const result = detectFileTypeOf(file.name, { sizeBytes: file.sizeBytes, head: file.head, zipEntries: () => file.zipEntries() });
   if (!result.ok) {
     throw new AppError(result.reason === 'empty' ? 'empty_file' : 'unsupported_file_type');
   }
   return result.file;
 }
-
-export const sha256 = (bytes: Uint8Array): string => createHash('sha256').update(bytes).digest('hex');
 
 function unchanged(doc: DocumentRow, ver: VersionRow): UploadOutcome {
   return {
@@ -174,7 +170,7 @@ export async function withStoredBytes<T>(
   const { objectKey } = await deps.storage.put(
     tenantId,
     fileObjectPath(documentId, versionId, 'original'),
-    file.bytes,
+    file.open(),
     detected.mimeType
   );
   try {
@@ -204,7 +200,7 @@ export async function uploadFile(
   const fields = UploadFileFieldsSchema.parse(input.fields);
   const detected = detect(input.file);
   const name = cleanFileName(input.file.name);
-  const contentHash = sha256(input.file.bytes);
+  const { contentHash } = input.file;
 
   const gate = await withTenantTx(actor.tenantId, async (tx) => {
     const space = await targetSpace(tx, actor, fields.space_id);
@@ -247,7 +243,7 @@ export async function uploadFile(
         file: {
           name,
           mimeType: detected.mimeType,
-          sizeBytes: input.file.bytes.byteLength,
+          sizeBytes: input.file.sizeBytes,
           contentHash,
           objectKey,
           handling: detected.handling,
@@ -262,7 +258,7 @@ export async function uploadFile(
         actorId: actor.principalId,
         subjectType: 'file',
         subjectId: doc!.id,
-        payload: { spaceId: space.id, fileName: name, sizeBytes: input.file.bytes.byteLength },
+        payload: { spaceId: space.id, fileName: name, sizeBytes: input.file.sizeBytes },
       });
       return {
         result: {
@@ -326,7 +322,7 @@ export async function replaceFile(
   assertValidUuid(fileId, 'document_not_found');
   const detected = detect(file);
   const name = cleanFileName(file.name);
-  const contentHash = sha256(file.bytes);
+  const { contentHash } = file;
 
   const gate = await withTenantTx(actor.tenantId, (tx) => loadReplaceable(tx, actor, fileId, false));
   if (gate.latest && sameAsLatest(gate.latest, contentHash)) return unchanged(gate.doc, gate.latest);
@@ -352,7 +348,7 @@ export async function replaceFile(
         file: {
           name,
           mimeType: detected.mimeType,
-          sizeBytes: file.bytes.byteLength,
+          sizeBytes: file.sizeBytes,
           contentHash,
           objectKey,
           handling: detected.handling,
@@ -373,12 +369,15 @@ export async function replaceFile(
 
 /**
  * Reads a multipart upload: exactly one file part and optional text fields
- * (an empty text field counts as absent, as browsers send them). A file over
- * the server limit is 413 `file_too_large`; a request that is not multipart,
- * has no file or has more than one is 400 `validation_failed`.
+ * (an empty text field counts as absent, as browsers send them). The file is
+ * written to a temporary file as it arrives (see spoolUpload), and the caller
+ * disposes of it. A file over the server limit is 413 `file_too_large`; a
+ * request that is not multipart, has no file or has more than one is 400
+ * `validation_failed`.
  */
 export async function readMultipartUpload(
-  req: FastifyRequest
+  req: FastifyRequest,
+  tmpDir?: string
 ): Promise<{ fields: Record<string, string>; file: UploadedFile }> {
   if (!req.isMultipart()) throw new AppError('validation_failed');
   const fields: Record<string, string> = {};
@@ -387,12 +386,15 @@ export async function readMultipartUpload(
     for await (const part of req.parts()) {
       if (part.type === 'file') {
         if (file) throw new AppError('validation_failed');
-        file = { name: part.filename, bytes: await part.toBuffer() };
+        file = await spoolUpload(part.filename, part.file, tmpDir);
+        // Past the size limit the stream just ends early, marked truncated.
+        if (part.file.truncated) throw new AppError('file_too_large');
       } else if (typeof part.value === 'string' && part.value !== '') {
         fields[part.fieldname] = part.value;
       }
     }
   } catch (err) {
+    await file?.dispose();
     if (err instanceof AppError) throw err;
     const code = (err as { code?: unknown }).code;
     if (code === 'FST_REQ_FILE_TOO_LARGE') throw new AppError('file_too_large');
@@ -401,6 +403,20 @@ export async function readMultipartUpload(
   }
   if (!file) throw new AppError('validation_failed');
   return { fields, file };
+}
+
+/** Reads a multipart upload, runs `run` with it, and removes its temporary file whatever happens. */
+export async function withMultipartUpload<T>(
+  req: FastifyRequest,
+  tmpDir: string | undefined,
+  run: (upload: { fields: Record<string, string>; file: UploadedFile }) => Promise<T>
+): Promise<T> {
+  const upload = await readMultipartUpload(req, tmpDir);
+  try {
+    return await run(upload);
+  } finally {
+    await upload.file.dispose();
+  }
 }
 
 export const fileArchived = () =>

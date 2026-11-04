@@ -20,6 +20,7 @@ export {
   S3ObjectStorage,
   createObjectStorage,
   assertTenantKey,
+  type ObjectBody,
   type ObjectStorage,
   type S3ObjectStorageOptions,
 } from './objectStorage.js';

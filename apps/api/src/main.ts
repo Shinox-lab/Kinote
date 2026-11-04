@@ -28,6 +28,7 @@ async function main(): Promise<void> {
     answerProvider,
     maxUploadBytes: config.MAX_UPLOAD_BYTES,
     maxConcurrentUploads: config.MAX_CONCURRENT_UPLOADS,
+    ...(config.UPLOAD_TMP_DIR ? { uploadTmpDir: config.UPLOAD_TMP_DIR } : {}),
     logger: { level: config.LOG_LEVEL },
     trustProxy: config.TRUST_PROXY,
     authRateLimit: { max: config.AUTH_RATE_LIMIT_MAX, timeWindow: '1 minute' },
