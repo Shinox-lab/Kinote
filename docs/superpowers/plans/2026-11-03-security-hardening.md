@@ -108,7 +108,7 @@ deliberate, because it also stops tracking pixels and #6. Mention it in the rele
   the first sync.
 - [x] nginx: add `limit_conn_zone $binary_remote_addr zone=collab_conn:10m;` and `limit_conn collab_conn 20;` on
   `/collab` and `/collab/`. Behind Coolify, use the real-IP module with `set_real_ip_from` the edge proxy.
-- [ ] *(Not done: the collab server has no log levels yet.)* Move the connect and disconnect logs (`server.ts:129-133`) to `debug`.
+- [x] *(Done 2026-11-04: collab logs them only when LOG_LEVEL is debug or trace, through `console.debug`; `apps/collab/test/connectionLogs.test.ts`.)* Move the connect and disconnect logs (`server.ts:129-133`) to `debug`.
 - [x] Test: a collab test sends a frame one byte over the limit and expects the socket to close with code 1009.
 
 ### T4. Stop editor links handing over the Kinote tab (#10)
@@ -133,7 +133,7 @@ deliberate, because it also stops tracking pixels and #6. Mention it in the rele
   `frame-ancestors 'none'` would block the embed.
 - [x] Check that the editor still loads its own module assets under an opaque origin. Module scripts need CORS, and
   `apps/gridcraft/nginx.conf` already sends `ACAO: *`.
-- [ ] *(Kept: GridCraft paste can't be tested against the e2e fake.)* Remove `allow="clipboard-read"` from the iframe unless GridCraft paste breaks without it. Test paste.
+- [x] *(Done 2026-11-04: GridCraft 0.13's JS binds only `clipboard.write`/`writeText` and takes paste from the paste event, so `clipboard-read` went. The e2e fake shows paste still arrives and the frame can no longer read the clipboard by itself; with `clipboard-read` back, it reads it.)* Remove `allow="clipboard-read"` from the iframe unless GridCraft paste breaks without it. Test paste.
 - [x] Test: the T2 e2e header spec covers `/gridcraft/`. An existing GridCraft e2e must still pass.
 
 ---
@@ -369,7 +369,7 @@ in-memory or test storage implementations.
   mailto, and open with `noopener,noreferrer`.
 - [x] *(No hook exists: patched with `pnpm patch` (ESM build only; the browser uses it). Not yet reported upstream. `apps/web/test/xlsxHyperlinks.test.ts` fails if an upgrade drops the patch.)* If it doesn't, apply `pnpm patch` to the call at `dist/index.js:19976-19980` with a scheme check, and file an
   upstream issue. Link the issue in a comment next to the patch entry in `package.json`.
-- [ ] *(Not done as an e2e: the guard test above instead.)* Test: render a workbook with a `javascript:` and an `https:` hyperlink. Clicking the first does nothing; the
+- [x] *(Done 2026-11-04: `e2e/files.spec.ts`, javascript:, data:, https: and mailto: links; it fails with the patch undone. Upstream report drafted, not filed yet.)* Test: render a workbook with a `javascript:` and an `https:` hyperlink. Clicking the first does nothing; the
   second opens with `noopener`.
 
 ---

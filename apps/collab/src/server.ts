@@ -127,10 +127,10 @@ export function createCollabServer(
     // transaction recorder before anything else can touch the loaded document.
     priority: 1000,
     async onConnect({ documentName, socketId }) {
-      console.log(`[collab] ws connect ${documentName} (${socketId})`);
+      if (deps.logConnections) console.debug(`[collab] ws connect ${documentName} (${socketId})`);
     },
     async onDisconnect({ documentName, socketId }) {
-      console.log(`[collab] ws disconnect ${documentName} (${socketId})`);
+      if (deps.logConnections) console.debug(`[collab] ws disconnect ${documentName} (${socketId})`);
     },
     async onAuthenticate({ token, documentName, connectionConfig }) {
       // Throws (refusing the connection) for a bad, expired, or mismatched token.

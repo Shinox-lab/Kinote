@@ -1,6 +1,9 @@
 import type { Document, Hocuspocus, onStoreDocumentPayload } from '@hocuspocus/server';
 import { AppError } from '@kinote/contracts';
 
+/** Whether LOG_LEVEL asks for the per-connection lines. */
+export const logsConnections = (level: string): boolean => level === 'debug' || level === 'trace';
+
 export interface CollabServerDeps {
   /** Verifies the signed collab tokens clients and direct sessions present. */
   collabTokenSecret: string;
@@ -18,6 +21,11 @@ export interface CollabServerDeps {
    * (1009) before it is buffered, instead of ws's own 100 MiB limit.
    */
   maxMessageBytes?: number;
+  /**
+   * Log every WebSocket connect and disconnect (document and socket ids). Off
+   * unless LOG_LEVEL is debug or trace: on a busy server they are most of the log.
+   */
+  logConnections?: boolean;
   /** Test seams; never set in production. */
   testHooks?: {
     /** Runs before each authorship bookkeeping write (e.g. to delay it). */
