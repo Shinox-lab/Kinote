@@ -7,6 +7,7 @@ export * from './schema/talk.js';
 export * from './schema/collections.js';
 export * from './schema/rateLimits.js';
 export * from './schema/usage.js';
+export * from './schema/billing.js';
 export * from './client.js';
 export * from './context.js';
 export * from './audit.js';

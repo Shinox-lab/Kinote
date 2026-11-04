@@ -21,6 +21,7 @@ const standing = (usedCredits: number, over: Partial<UsageStanding> = {}): Usage
   storageBytes: 0,
   warned80At: null,
   warned100At: null,
+  suspended: false,
   ...over,
 });
 
@@ -65,5 +66,12 @@ describe('indexHeld', () => {
     expect(indexHeld(standing(0, { indexCreditsUsedMilli: 11_000, creditsTopup: 1000 }))).toBe(true);
     expect(indexHeld(standing(0, { limits: null, indexCreditsUsedMilli: 1e9 }))).toBe(false);
     expect(indexHeld(standing(0, { limits: limits({ indexCreditsPerMonth: null }), indexCreditsUsedMilli: 1e9 }))).toBe(false);
+  });
+});
+
+describe('indexHeld when suspended', () => {
+  it('holds indexing for a suspended workspace, even without index limits', () => {
+    expect(indexHeld(standing(0, { limits: null, suspended: true }))).toBe(true);
+    expect(indexHeld(standing(0, { limits: null }))).toBe(false);
   });
 });

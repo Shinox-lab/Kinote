@@ -2,6 +2,7 @@ import { and, eq, gt, inArray, sql } from 'drizzle-orm';
 import type { DbTransaction } from './client.js';
 import { jobs } from './schema/foundations.js';
 import { creditTopups, tenantLimits, tenantStorage, tenantUsage, usageEvents } from './schema/usage.js';
+import { tenantBilling, type BillingState } from './schema/billing.js';
 
 // Plans, usage and quotas: periods, the usage ledger, running totals and top-ups.
 // Every function takes a tenant transaction (RLS applies).
@@ -47,6 +48,8 @@ export interface UsageStanding {
   storageBytes: number;
   warned80At: Date | null;
   warned100At: Date | null;
+  /** Suspended for billing by the control plane: read-only, indexing held. */
+  suspended: boolean;
 }
 
 async function readLimits(tx: DbTransaction, tenantId: string): Promise<TenantLimits | null> {
@@ -60,6 +63,12 @@ async function readLimits(tx: DbTransaction, tenantId: string): Promise<TenantLi
     gracePercent: row.gracePercent,
     periodAnchorDay: row.periodAnchorDay,
   };
+}
+
+/** The billing state the control plane set; no row is `ok`. */
+export async function readBillingState(tx: DbTransaction, tenantId: string): Promise<{ state: BillingState; manageUrl: string | null }> {
+  const [row] = await tx.select().from(tenantBilling).where(eq(tenantBilling.tenantId, tenantId));
+  return row ? { state: row.state, manageUrl: row.manageUrl } : { state: 'ok', manageUrl: null };
 }
 
 /** A workspace's limits and its usage in the period containing `now`. No limits row: anchor day 1. */
@@ -80,6 +89,7 @@ export async function readStanding(tx: DbTransaction, tenantId: string, now: Dat
     storageBytes: Number(storage?.bytes ?? 0),
     warned80At: usage?.warned80At ?? null,
     warned100At: usage?.warned100At ?? null,
+    suspended: (await readBillingState(tx, tenantId)).state === 'suspended',
   };
 }
 
