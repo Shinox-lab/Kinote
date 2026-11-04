@@ -1,9 +1,37 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { AppError } from '@kinote/contracts';
-import { chargeAiAction, hasAiActionsLeft, hitLimit, readStanding, withTenantTx, type DbTransaction } from '@kinote/db';
+import { chargeAiAction, hasAiActionsLeft, hitLimit, readBillingState, readStanding, withTenantTx, type DbTransaction } from '@kinote/db';
 import { creditVerdict, indexHeld } from '@kinote/core';
 
 const MINUTE_MS = 60_000;
+
+const READ_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+
+/**
+ * An `onRequest` hook (after the auth hook): while the control plane has the
+ * workspace suspended for billing, every write answers `workspace_suspended`
+ * (423), with `manageUrl` for owners and admins. Reads, and routes marked
+ * `whenSuspended: 'allow'`, go through. If the state can't be read the
+ * request goes through: billing must never take the product down.
+ */
+export function refuseWhenSuspended() {
+  return async (req: FastifyRequest): Promise<void> => {
+    if (READ_METHODS.has(req.method)) return;
+    if (req.routeOptions.config?.whenSuspended === 'allow') return;
+    const tenantId = req.actor?.tenantId ?? req.sourceActor?.tenantId;
+    if (!tenantId) return;
+    let billing: Awaited<ReturnType<typeof readBillingState>>;
+    try {
+      billing = await withTenantTx(tenantId, (tx) => readBillingState(tx, tenantId));
+    } catch (err) {
+      req.log.error({ err }, 'billing state unavailable; request allowed');
+      return;
+    }
+    if (billing.state !== 'suspended') return;
+    const admin = req.actor?.tenantRole === 'owner' || req.actor?.tenantRole === 'admin';
+    throw new AppError('workspace_suspended', undefined, admin && billing.manageUrl ? { manageUrl: billing.manageUrl } : undefined);
+  };
+}
 
 /** Who a per-person limit counts: the member in this workspace, the source token, or the session user. */
 function whoOf(req: FastifyRequest, per: 'person' | 'tenant'): string {
