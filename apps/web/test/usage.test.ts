@@ -18,10 +18,18 @@ const u = (over: Partial<UsageSummary>): UsageSummary => ({
   seatLimit: null,
   resetsAt: '2026-12-01T00:00:00.000Z',
   billingUrl: null,
+  billingState: 'ok',
+  manageUrl: null,
   ...over,
 });
 
 describe('bannerText', () => {
+  test('a billing problem comes before credits', () => {
+    expect(bannerText(u({ billingState: 'suspended' }))).toBe('This workspace is suspended');
+    expect(bannerText(u({ billingState: 'past_due' }))).toBe('Payment failed — update billing');
+    expect(bannerText(u({ billingState: 'past_due', state: 'exhausted' }))).toBe('Payment failed — update billing');
+  });
+
   test('says nothing while ok or unlimited', () => {
     expect(bannerText(u({ state: 'ok' }))).toBeNull();
     expect(bannerText(u({ state: 'unlimited', limitCredits: null }))).toBeNull();

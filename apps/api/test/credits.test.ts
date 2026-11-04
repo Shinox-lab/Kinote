@@ -1,6 +1,6 @@
 import { describe, test, beforeAll, afterEach, afterAll, expect } from 'vitest';
 import { eq, sql } from 'drizzle-orm';
-import { captures, getDb, periodOf, tenantLimits, tenantUsage, tenants, withTenantTx } from '@kinote/db';
+import { captures, getDb, periodOf, tenantLimits, tenantUsage, tenants, withTenantTx, tenantBilling } from '@kinote/db';
 import { UsageSummarySchema } from '@kinote/contracts';
 import { DeterministicEmbeddingProvider, DeterministicPlacementModel } from '@kinote/core';
 import type { CreditRates } from '@kinote/shared';
@@ -190,6 +190,20 @@ describe('GET /api/v1/usage', () => {
     expect(owner.billingUrl).toBe('https://billing.example/up');
     const noBilling = UsageSummarySchema.parse((await plain.inject({ method: 'GET', url: '/api/v1/usage', headers })).json());
     expect(noBilling.billingUrl).toBeNull();
+  });
+
+  test('carries the billing state; the manage link only for owners and admins', async () => {
+    const { tenant, headers } = await bootstrapTenant(app, { name: 'Bill Co', slug: 'bill-co' });
+    const member = await signUpMember(app, tenant.id, 'member');
+    const fresh = UsageSummarySchema.parse((await app.inject({ method: 'GET', url: '/api/v1/usage', headers })).json());
+    expect(fresh).toMatchObject({ billingState: 'ok', manageUrl: null });
+    await withTenantTx(tenant.id, (tx) =>
+      tx.insert(tenantBilling).values({ tenantId: tenant.id, state: 'past_due', manageUrl: 'https://cp.test/portal' })
+    );
+    const owner = UsageSummarySchema.parse((await app.inject({ method: 'GET', url: '/api/v1/usage', headers })).json());
+    expect(owner).toMatchObject({ billingState: 'past_due', manageUrl: 'https://cp.test/portal' });
+    const mine = UsageSummarySchema.parse((await app.inject({ method: 'GET', url: '/api/v1/usage', headers: member.headers })).json());
+    expect(mine).toMatchObject({ billingState: 'past_due', manageUrl: null });
   });
 
   test('a workspace without limits is unlimited', async () => {

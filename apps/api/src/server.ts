@@ -1,7 +1,7 @@
 import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 import rateLimit from '@fastify/rate-limit';
 import multipart from '@fastify/multipart';
-import { getDb, readStanding, rowsOf, tenants, withTenantTx } from '@kinote/db';
+import { getDb, readBillingState, readStanding, rowsOf, tenants, withTenantTx } from '@kinote/db';
 import { eq, sql } from 'drizzle-orm';
 import { DEFAULT_AUTH_RATE_LIMIT_MAX, DEFAULT_USAGE_LIMITS, type CreditRates, type ObjectStorage, type UsageLimits } from '@kinote/shared';
 import {
@@ -1188,6 +1188,7 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
       const verdict = creditVerdict(standing);
       const [tenant] = await tx.select({ plan: tenants.plan }).from(tenants).where(eq(tenants.id, actor.tenantId));
       const admin = actor.tenantRole === 'owner' || actor.tenantRole === 'admin';
+      const billing = await readBillingState(tx, actor.tenantId);
       return {
         state: verdict.state,
         plan: tenant?.plan ?? 'standard',
@@ -1204,6 +1205,8 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
         seatLimit: standing.limits?.seats ?? null,
         resetsAt: verdict.resetsAt.toISOString(),
         billingUrl: admin && opts.billingUrl ? opts.billingUrl : null,
+        billingState: billing.state,
+        manageUrl: admin && billing.state !== 'ok' ? billing.manageUrl : null,
       };
     });
     return reply.send(parseReply(UsageSummarySchema, summary));

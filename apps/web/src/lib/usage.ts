@@ -10,8 +10,11 @@ export function renewsOn(iso: string): string {
   return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}`;
 }
 
-/** The console banner for this workspace's credits, or null when there is nothing to say. */
+/** The console banner for this workspace's billing or credits, or null when there is nothing to say. */
 export function bannerText(u: UsageSummary): string | null {
+  // A billing problem comes before credits.
+  if (u.billingState === 'suspended') return 'This workspace is suspended';
+  if (u.billingState === 'past_due') return 'Payment failed — update billing';
   switch (u.state) {
     case 'warn':
       return "This workspace has used 80% of this month's AI credits.";

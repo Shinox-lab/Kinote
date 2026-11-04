@@ -135,5 +135,9 @@ export const UsageSummarySchema = z.object({
   /** When this period's credits renew (ISO). */
   resetsAt: z.string(),
   billingUrl: z.string().nullable(),
+  /** Set by the control plane: `past_due` and `suspended` show a billing banner. */
+  billingState: BillingStateSchema,
+  /** Where to fix billing; owners and admins only, and only while billing is not `ok`. */
+  manageUrl: z.string().nullable(),
 });
 export type UsageSummary = z.infer<typeof UsageSummarySchema>;
