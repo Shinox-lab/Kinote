@@ -255,6 +255,7 @@ describe('error model', () => {
       signup_invite_only: 403,
       signup_closed: 403,
       email_unverified: 403,
+      password_too_common: 400,
       link_invalid: 404,
       embedding_unavailable: 503,
       search_unavailable: 503,

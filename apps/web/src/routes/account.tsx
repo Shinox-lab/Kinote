@@ -59,7 +59,7 @@ export function AccountPage() {
             onChange={setNext}
             autoComplete="new-password"
             minLength={10}
-            hint="At least 10 characters. Your other sessions are signed out."
+            hint="At least 10 characters, and not a common password. Your other sessions are signed out."
             required
           />
           <ErrorNote error={change.error} />
