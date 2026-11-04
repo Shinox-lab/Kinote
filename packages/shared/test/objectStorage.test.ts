@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { Readable } from 'node:stream';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import {
   CreateBucketCommand,
@@ -102,6 +103,41 @@ describe.each(implementations)('ObjectStorage contract: $name', ({ skip, make })
       expect(Array.from(await storage.getRange(tenantA, stored.objectKey, 10, 19))).toEqual(Array.from(bytes.slice(10, 20)));
       expect(Array.from(await storage.getRange(tenantA, stored.objectKey, 95, 500))).toEqual(Array.from(bytes.slice(95)));
       await expect(storage.getRange(tenantB, stored.objectKey, 0, 1)).rejects.toThrow();
+    });
+
+    it('put takes a stream, read once, and counts its size (20 MiB: a multipart upload on S3)', async () => {
+      const chunk = Buffer.alloc(1024 * 1024);
+      for (let i = 0; i < chunk.length; i++) chunk[i] = i % 251;
+      const chunks = 20;
+      const stored = await storage.put(
+        tenantA,
+        `uploads/${randomUUID()}.bin`,
+        Readable.from((function* () {
+          for (let i = 0; i < chunks; i++) yield chunk;
+        })()),
+        'application/octet-stream'
+      );
+      expect(stored.sizeBytes).toBe(chunks * chunk.length);
+      const { stream, sizeBytes } = await storage.getStream(tenantA, stored.objectKey);
+      expect(sizeBytes).toBe(chunks * chunk.length);
+      let at = 0;
+      for await (const part of stream as AsyncIterable<Buffer>) {
+        for (let i = 0; i < part.length; i += 4099) expect(part[i]).toBe(((at + i) % chunk.length) % 251);
+        at += part.length;
+      }
+      expect(at).toBe(chunks * chunk.length);
+    });
+
+    it('a stream that fails part-way rejects the put and stores nothing', async () => {
+      const path = `uploads/${randomUUID()}.bin`;
+      const failing = new Readable({
+        read() {
+          this.push(Buffer.alloc(64 * 1024, 1));
+          this.destroy(new Error('disk read failed'));
+        },
+      });
+      await expect(storage.put(tenantA, path, failing, 'application/octet-stream')).rejects.toThrow();
+      await expect(storage.get(tenantA, `${tenantA}/${path}`)).rejects.toThrow();
     });
 
     it('getStream streams the whole object with its size and type, and refuses another tenant', async () => {

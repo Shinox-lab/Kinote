@@ -74,8 +74,10 @@ The bucket is created on start if missing, so the key needs `CreateBucket` or th
 bucket must already exist. Files above 8 MiB are written as S3 multipart uploads and
 a failed upload is aborted, leaving no orphaned parts. `S3_FORCE_PATH_STYLE=false`
 selects virtual-hosted addressing for providers that need it. To store larger files
-raise `MAX_UPLOAD_BYTES` (at most 500 MB); the api still reads one upload fully into
-memory, so size its container accordingly.
+raise `MAX_UPLOAD_BYTES` (at most 500 MB). Uploads stream through the api: each waits
+in a temporary file (in `UPLOAD_TMP_DIR`, default the OS temp dir) while it is checked
+and stored, so give that directory about `MAX_CONCURRENT_UPLOADS` × `MAX_UPLOAD_BYTES`
+of free space. Memory stays flat whatever the file size.
 
 Secrets have no defaults. Copy `.env.example` to `.env` (untracked) and fill
 in `POSTGRES_PASSWORD`, `APP_DB_PASSWORD`, `COLLAB_TOKEN_SECRET`,

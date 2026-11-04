@@ -41,8 +41,12 @@ export {
 } from './answer.js';
 export {
   detectFileType,
+  detectFileTypeOf,
   listZipEntries,
+  listZipEntriesFrom,
   cleanFileName,
+  DETECT_HEAD_BYTES,
+  type DetectInput,
   type DetectedFile,
   type DetectResult,
   type FileHandling,
