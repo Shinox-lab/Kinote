@@ -565,7 +565,7 @@ const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
  * stored. A pending invitation for the same email is replaced (its old token
  * stops working).
  */
-export async function inviteMember(actor: Actor, input: unknown): Promise<InviteMemberResponse> {
+export async function inviteMember(actor: Actor, input: unknown): Promise<Omit<InviteMemberResponse, 'emailed'>> {
   // Authorization first: a non-admin gets 403 whatever the body looks like.
   if (
     actor.principalType !== 'user' ||

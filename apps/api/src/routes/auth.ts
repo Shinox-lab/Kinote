@@ -23,7 +23,7 @@ import {
 import { getDummyHash, hashPassword, isUsableHash, verifyPassword } from '../auth/password.js';
 import { createSession, revokeAllSessions, revokeSession } from '../auth/sessions.js';
 import { consumeEmailToken, createEmailToken, peekEmailToken } from '../auth/emailTokens.js';
-import type { Mailer } from '../mail.js';
+import { trySend, type Mail, type Mailer } from '../mail.js';
 import { assertSignInAllowed, recordFailedSignIn, recordSuccessfulSignIn } from '../auth/signInThrottle.js';
 import type { AuthSession } from '../auth/actor.js';
 import { parseReply } from '../reply.js';
@@ -307,12 +307,8 @@ export async function authRoutes(
 }
 
 /** Sends a mail; a failure is logged and not shown, so the answer never depends on the mail server. */
-async function sendMail(req: FastifyRequest, mailer: Mailer, mail: Parameters<Mailer['send']>[0]): Promise<void> {
-  try {
-    await mailer.send(mail);
-  } catch (err) {
-    req.log.error({ err }, 'sending mail failed');
-  }
+async function sendMail(req: FastifyRequest, mailer: Mailer, mail: Mail): Promise<void> {
+  await trySend(mailer, mail, req.log);
 }
 
 async function sendVerification(req: FastifyRequest, mailer: Mailer, user: { id: string; email: string }): Promise<void> {

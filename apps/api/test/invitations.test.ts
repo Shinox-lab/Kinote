@@ -375,7 +375,7 @@ describe('authenticated tenants and accept-by-token invitations', () => {
     const res = await invite(headers, 'newcomer@example.test', 'member');
     assert.equal(res.statusCode, 201, res.body);
     const body = res.json();
-    assert.deepEqual(Object.keys(body).sort(), ['acceptToken', 'invitation']);
+    assert.deepEqual(Object.keys(body).sort(), ['acceptToken', 'emailed', 'invitation']);
     assert.deepEqual(Object.keys(body.invitation).sort(), ['email', 'expiresAt', 'id', 'role']);
     for (const key of ['userId', 'phone', 'passwordHash']) {
       assert.equal(key in body, false);

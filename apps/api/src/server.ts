@@ -195,6 +195,7 @@ import {
   updateComment,
 } from './routes/talk.js';
 import { listNotifications, markNotificationsRead } from './routes/notifications.js';
+import { emailInvitation } from './invitationMail.js';
 import {
   addField,
   collectionRows,
@@ -476,8 +477,12 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
   );
 
   app.post('/api/v1/invitations', async (req, reply) => {
-    const res = await inviteMember(actorOf(req), req.body);
-    return reply.status(201).send(parseReply(InviteMemberResponseSchema, res));
+    const actor = actorOf(req);
+    const res = await inviteMember(actor, req.body);
+    // inviteMember checked the role and the body; the link goes out by email only when asked and possible.
+    const wantsEmail = (req.body as { send_email?: unknown }).send_email === true;
+    const emailed = wantsEmail && opts.mailer ? await emailInvitation(opts.mailer, actor, res, req.log) : false;
+    return reply.status(201).send(parseReply(InviteMemberResponseSchema, { ...res, emailed }));
   });
 
   app.get('/api/v1/invitations', async (req, reply) => {

@@ -255,7 +255,7 @@ for verify and reset.
     email can't take their invitation
   - new endpoints: `POST /auth/verify`, `POST /auth/password-reset/request` (always 202) and
     `POST /auth/password-reset/confirm` (sets the password, revokes all sessions)
-  - *(not done: invitations still hand the admin the link to send)* creating an invitation can also email the link, if the admin ticks "Send email"
+  - [x] *(Done 2026-11-04: `send_email` on `POST /invitations`, `emailed` in the answer, 20 emails per workspace an hour; the link is still shown to the admin. The form's "Email the link to them" is ticked by default, and "New link" emails too.)* creating an invitation can also email the link, if the admin ticks "Send email"
 - [x] Rate-limit the reset request and verify resend through T6, per email and per IP.
 - [x] Tests (with a fake transport): the verify flow; an unverified account can't accept an invite; a reset revokes
   sessions; a reset request for an unknown email gets the same 202 and sends nothing.

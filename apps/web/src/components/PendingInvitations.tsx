@@ -6,7 +6,7 @@ import { expiryLabel, inviteLink } from '../lib/console.js';
 import { useInvitations, useRefresh } from '../lib/queries.js';
 import { relativeTime } from '../lib/pageStatus.js';
 import { TENANT_ROLE_INFO } from '../lib/roles.js';
-import { AcceptLink } from './InviteForm.js';
+import { AcceptLink, useEmailEnabled } from './InviteForm.js';
 import { Button, ErrorNote } from './ui.js';
 
 const roleLabel = (role: PendingInvitation['role']) => TENANT_ROLE_INFO.find((i) => i.role === role)?.label ?? role;
@@ -14,9 +14,12 @@ const roleLabel = (role: PendingInvitation['role']) => TENANT_ROLE_INFO.find((i)
 function InvitationRow({ invitation }: { invitation: PendingInvitation }) {
   const refresh = useRefresh();
   const [confirming, setConfirming] = useState(false);
+  const emailEnabled = useEmailEnabled();
   // Only a hash of the token is stored, so a new link means inviting the email again (the old link stops working).
+  // With email on, the new link is emailed too.
   const renew = useMutation({
-    mutationFn: () => api.invite({ email: invitation.email, role: invitation.role }),
+    mutationFn: () =>
+      api.invite({ email: invitation.email, role: invitation.role, ...(emailEnabled ? { send_email: true } : {}) }),
     onSuccess: () => refresh('invitations'),
   });
   const revoke = useMutation({
@@ -83,6 +86,7 @@ function InvitationRow({ invitation }: { invitation: PendingInvitation }) {
             link={inviteLink(window.location.origin, renew.data.acceptToken)}
             email={renew.data.invitation.email}
             expiresAt={renew.data.invitation.expiresAt}
+            {...(emailEnabled ? { emailed: renew.data.emailed } : {})}
           />
         </div>
       )}
