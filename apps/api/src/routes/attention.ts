@@ -4,6 +4,7 @@ import { withTenantTx, documents, pages, versions } from '@kinote/db';
 import type { AttentionItem, AttentionReason } from '@kinote/contracts';
 import { isTenantAdmin, type Actor } from '@kinote/core';
 import { computeFileBadge, computePageBadge, isAwaitingApproval } from '../pages/badge.js';
+import { indexingPausedIn } from '../usageLimits.js';
 import { readableSpaces } from './updates.js';
 
 const ORDER: Record<AttentionReason, number> = { failed: 0, review: 1, unindexed: 2 };
@@ -65,6 +66,7 @@ export async function listAttention(actor: Actor): Promise<AttentionItem[]> {
       .where(and(eq(documents.tenantId, actor.tenantId), isNull(documents.archivedAt), scopes.length === 1 ? scopes[0] : sql`(${sql.join(scopes, sql` or `)})`));
 
     const out: AttentionItem[] = [];
+    const indexingPaused = rows.length > 0 && (await indexingPausedIn(tx, actor.tenantId));
     for (const r of rows) {
       const space = byId.get(r.spaceId)!;
       const latestVersion = r.latestNumber !== null && r.latestStatus !== null ? { number: r.latestNumber, status: r.latestStatus } : null;
@@ -79,6 +81,7 @@ export async function listAttention(actor: Actor): Promise<AttentionItem[]> {
           spaceReviewRequired: space.reviewRequired,
           latestVersion,
           indexedVersion,
+          indexingPaused,
         };
         badge = computePageBadge(input);
         if (latestVersion?.status === 'failed') reason = 'failed';
@@ -91,6 +94,7 @@ export async function listAttention(actor: Actor): Promise<AttentionItem[]> {
           indexedVersion,
           sourceDeleted: r.sourceDeletedAt !== null,
           placement: r.placement,
+          indexingPaused,
         });
         if (latestVersion?.status === 'failed') reason = 'failed';
         else if (latestVersion?.status === 'pending_review') reason = 'review';

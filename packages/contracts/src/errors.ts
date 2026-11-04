@@ -29,6 +29,9 @@ export const ErrorCodeSchema = z.enum([
   'quota_exceeded',
   'rate_limited',
   'ai_budget_exhausted',
+  'credits_exhausted',
+  'seat_limit_reached',
+  'storage_limit_reached',
   'tenant_limit_reached',
   'signup_invite_only',
   'signup_closed',
@@ -110,6 +113,9 @@ export const ERROR_SENTENCES: Record<ErrorCode, string> = {
   quota_exceeded: 'Your organisation has reached its monthly usage quota; ingestion is paused.',
   rate_limited: 'Too many requests; please wait a moment and try again.',
   ai_budget_exhausted: 'This workspace has used its AI allowance for today. It resets at midnight UTC.',
+  credits_exhausted: "This workspace has used this month's AI credits.",
+  seat_limit_reached: 'This workspace has no free seats on its plan. Remove someone or upgrade to add more.',
+  storage_limit_reached: 'This file would take the workspace over its storage limit.',
   tenant_limit_reached: 'You have created as many workspaces as this server allows.',
   signup_invite_only: 'New accounts need an invitation. Ask a workspace admin for an invitation link.',
   signup_closed: 'This server does not create new accounts. Ask its operator for one.',
@@ -181,6 +187,9 @@ const STATUS_OVERRIDES: Partial<Record<ErrorCode, number>> = {
   quota_exceeded: 429,
   rate_limited: 429,
   ai_budget_exhausted: 429,
+  credits_exhausted: 429,
+  seat_limit_reached: 409,
+  storage_limit_reached: 413,
   tenant_limit_reached: 403,
   signup_invite_only: 403,
   signup_closed: 403,
@@ -205,11 +214,14 @@ export const ERROR_STATUS = Object.fromEntries(
 
 export class AppError extends Error {
   readonly code: ErrorCode;
+  /** Extra fields for the reply body beside `error` and `message` (e.g. `resetsAt` on credits_exhausted). */
+  readonly details?: Record<string, string>;
 
-  constructor(code: ErrorCode, message?: string) {
+  constructor(code: ErrorCode, message?: string, details?: Record<string, string>) {
     super(message ?? ERROR_SENTENCES[code]);
     this.name = 'AppError';
     this.code = code;
+    if (details) this.details = details;
   }
 
   get statusCode(): number {
@@ -221,4 +233,8 @@ export const ApiErrorSchema = z.object({
   error: ErrorCodeSchema,
   message: z.string(),
   issues: z.array(z.object({ path: z.string(), message: z.string() })).optional(),
+  /** credits_exhausted: when the credits renew (ISO). */
+  resetsAt: z.string().optional(),
+  /** credits_exhausted: where to upgrade, when BILLING_URL is set. */
+  billingUrl: z.string().optional(),
 });

@@ -95,6 +95,7 @@ export const NOTIFICATION_KINDS = [
   'review_approved',
   'review_rejected',
   'capture_waiting',
+  'credits_warning',
 ] as const;
 
 /** Something a person should hear about, in the app's bell. Read access is checked when it is listed. */

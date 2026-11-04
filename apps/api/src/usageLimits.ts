@@ -1,6 +1,7 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { AppError } from '@kinote/contracts';
-import { chargeAiAction, hasAiActionsLeft, hitLimit } from '@kinote/db';
+import { chargeAiAction, hasAiActionsLeft, hitLimit, readStanding, withTenantTx, type DbTransaction } from '@kinote/db';
+import { creditVerdict, indexHeld } from '@kinote/core';
 
 const MINUTE_MS = 60_000;
 
@@ -97,4 +98,55 @@ export function uploadSlots(max: number) {
       return inUse;
     },
   };
+}
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/** "1 Dec": a renewal date as the refusal says it (UTC). */
+export function renewalDate(d: Date): string {
+  return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}`;
+}
+
+/**
+ * An `onRequest` hook for actions people start that spend AI credits (Capture,
+ * Ask, moving or placing captured work). Past the grace limit it refuses with
+ * `credits_exhausted` (Retry-After: until the period ends), carrying `resetsAt`
+ * and, when set, `billingUrl`. Work already accepted is never stopped here. If
+ * the standing can't be read the request goes through: billing must never take
+ * the product down.
+ */
+export function requireCredits(billingUrl?: string) {
+  return async (req: FastifyRequest, reply: FastifyReply): Promise<void> => {
+    const tenantId = req.actor?.tenantId;
+    if (!tenantId) return;
+    let verdict: ReturnType<typeof creditVerdict>;
+    try {
+      const now = new Date();
+      verdict = creditVerdict(await withTenantTx(tenantId, (tx) => readStanding(tx, tenantId, now)));
+    } catch (err) {
+      req.log.error({ err }, 'credit standing unavailable; action allowed');
+      return;
+    }
+    if (verdict.state !== 'exhausted') return;
+    reply.header('retry-after', Math.max(1, Math.ceil((verdict.resetsAt.getTime() - Date.now()) / 1000)));
+    throw new AppError(
+      'credits_exhausted',
+      `This workspace has used this month's AI credits. They renew on ${renewalDate(verdict.resetsAt)}.`,
+      { resetsAt: verdict.resetsAt.toISOString(), ...(billingUrl ? { billingUrl } : {}) }
+    );
+  };
+}
+
+/**
+ * Whether the workspace's indexing is paused at its index credit limit, read
+ * inside `tx` behind a savepoint so an unreadable standing (false: fail open)
+ * cannot abort the caller's transaction.
+ */
+export async function indexingPausedIn(tx: DbTransaction, tenantId: string, now: Date = new Date()): Promise<boolean> {
+  try {
+    return await tx.transaction(async (sp) => indexHeld(await readStanding(sp, tenantId, now)));
+  } catch (err) {
+    console.error('[api] usage standing unavailable; indexing shown as running:', err instanceof Error ? err.message : err);
+    return false;
+  }
 }

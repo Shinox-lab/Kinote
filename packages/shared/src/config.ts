@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { parseCreditRates } from './creditRates.js';
 
 /** Per-IP sign-up and sign-in attempts per minute when `AUTH_RATE_LIMIT_MAX` is unset. */
 export const DEFAULT_AUTH_RATE_LIMIT_MAX = 10;
@@ -171,7 +172,35 @@ export const ConfigSchema = z.object({
    * lease (300 s), so a slow file is not claimed and run a second time.
    */
   EXTRACTOR_TIMEOUT_MS: z.coerce.number().int().positive().max(270_000).default(240_000),
+  /**
+   * Model id → credits per 1,000 input and output tokens, plus a `default`
+   * (inline JSON, or a path to a JSON file). Unset: every model call costs 0
+   * credits (tokens are still recorded). Checked at startup.
+   */
+  MODEL_CREDIT_RATES: z.string().min(1).optional(),
+  /**
+   * Bearer tokens for the control-plane API under /internal/v1/ (comma-separated,
+   * so a token can be rotated; each at least 32 characters). Unset: that API does not exist.
+   */
+  CONTROL_PLANE_TOKENS: z
+    .string()
+    .transform((v) => v.split(',').map((t) => t.trim()).filter((t) => t.length > 0))
+    .pipe(z.array(z.string().min(32, 'each token must be at least 32 characters')).min(1))
+    .optional(),
+  /** Where Upgrade links point (shown to owners and admins). Unset: no Upgrade links. */
+  BILLING_URL: z.string().url().optional(),
 }).superRefine((value, ctx) => {
+  if (value.MODEL_CREDIT_RATES !== undefined) {
+    try {
+      parseCreditRates(value.MODEL_CREDIT_RATES);
+    } catch (err) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['MODEL_CREDIT_RATES'],
+        message: (err as Error).message.replace(/^MODEL_CREDIT_RATES: /, ''),
+      });
+    }
+  }
   if (value.SMTP_URL) {
     for (const key of ['MAIL_FROM', 'PUBLIC_URL'] as const) {
       if (!value[key]) {

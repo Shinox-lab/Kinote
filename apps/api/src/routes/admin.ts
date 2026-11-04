@@ -24,7 +24,7 @@ import {
   type Grant,
   type TenantRole,
 } from '@kinote/contracts';
-import { requireSpaceRole, type Actor } from '@kinote/core';
+import { assertSeatFor, requireSpaceRole, type Actor } from '@kinote/core';
 import { principalExists } from './foundations.js';
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -169,6 +169,8 @@ export async function changeMemberRole(
     }
     if (oldRole === newRole) return target;
     if (oldRole === 'owner' && ownerCount <= 1) throw new AppError('last_owner');
+    // Only a viewer taking a seat-holding role adds a seat; other changes never are refused.
+    if (oldRole === 'viewer') await assertSeatFor(tx, actor.tenantId, newRole, new Date());
 
     await tx
       .update(memberships)

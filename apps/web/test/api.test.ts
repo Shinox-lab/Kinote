@@ -112,6 +112,19 @@ describe('web api client', () => {
     expect(headers.has('x-tenant-id')).toBe(false);
   });
 
+  test('credits_exhausted keeps the server sentence, which names the renewal date', async () => {
+    const message = "This workspace has used this month's AI credits. They renew on 1 Dec.";
+    fetchMock.mockResolvedValue(jsonResponse({ error: 'credits_exhausted', message, resetsAt: '2026-12-01T00:00:00.000Z' }, 429));
+    const err = await request('/api/v1/captures', z.unknown(), { method: 'POST', body: '{}' }).catch((e: unknown) => e);
+    expect((err as ApiError).code).toBe('credits_exhausted');
+    expect((err as ApiError).message).toBe(message);
+    expect(errorMessage(err)).toBe(message);
+    // Anything else from the server is not shown as-is.
+    fetchMock.mockResolvedValue(jsonResponse({ error: 'credits_exhausted', message: 42 }, 429));
+    const odd = await request('/api/v1/captures', z.unknown(), { method: 'POST', body: '{}' }).catch((e: unknown) => e);
+    expect((odd as ApiError).message).toBe(ERROR_SENTENCES.credits_exhausted);
+  });
+
   test('an error body becomes an ApiError carrying the contract sentence', async () => {
     fetchMock.mockResolvedValue(jsonResponse({ error: 'space_not_found', message: 'ignored' }, 404));
     const err = await request('/api/v1/spaces/x', z.unknown()).catch((e: unknown) => e);

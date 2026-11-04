@@ -9,6 +9,7 @@ import {
   type DocumentRow,
 } from '@kinote/db';
 import type { FileHandling } from './detect.js';
+import { assertStorageFor } from '../usage/capacity.js';
 
 export type VersionRow = typeof versions.$inferSelect;
 
@@ -56,6 +57,7 @@ export async function insertFileVersion(
   p: InsertFileVersionParams
 ): Promise<VersionRow> {
   const { tenantId, doc, file, actor } = p;
+  await assertStorageFor(tx, tenantId, file.sizeBytes);
 
   const [latest] = await tx
     .select({ number: versions.number })

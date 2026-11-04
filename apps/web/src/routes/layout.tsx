@@ -18,6 +18,7 @@ import { useWorkspace } from '../lib/queries.js';
 import { useFocusTrap } from '../lib/useFocusTrap.js';
 import { useMediaQuery } from '../lib/useMediaQuery.js';
 import { usePeek } from '../lib/usePeek.js';
+import { UsageBanner } from '../components/UsageBanner.js';
 
 // The side panel carries the editor: load it only when a page is peeked.
 const PagePeek = lazy(() => import('../components/PagePeek.js').then((m) => ({ default: m.PagePeek })));
@@ -120,6 +121,7 @@ function Shell() {
               </div>
             )}
             <main className="mx-auto w-full max-w-[1188px] px-5 py-6 md:px-7">
+              <UsageBanner />
               <Outlet />
             </main>
           </div>

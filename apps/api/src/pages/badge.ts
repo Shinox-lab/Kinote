@@ -9,7 +9,11 @@ export interface BadgeInput {
   indexedVersion: {
     number: number;
   } | null;
+  /** The workspace reached its indexing credit limit: index jobs wait for the period's end. */
+  indexingPaused?: boolean;
 }
+
+export const INDEXING_PAUSED_BADGE = 'Saved · not indexed (indexing limit reached)';
 
 /**
  * How recently (seconds) a page's live document must have changed for the
@@ -81,7 +85,7 @@ export function computePageBadge(input: BadgeInput): string {
     return 'Index failed';
   }
   if (isIndexing(input)) {
-    return 'Indexing…';
+    return input.indexingPaused ? INDEXING_PAUSED_BADGE : 'Indexing…';
   }
   if (isPendingReview(input)) {
     if (liveChangedSinceSnapshot) {
@@ -93,7 +97,8 @@ export function computePageBadge(input: BadgeInput): string {
     return `Not indexed · v${latestVersion!.number} rejected`;
   }
   if (isUnsavedText(input)) {
-    return needsReview(input) ? 'Saved · not indexed (awaiting approval)' : 'Saved · indexing soon';
+    if (needsReview(input)) return 'Saved · not indexed (awaiting approval)';
+    return input.indexingPaused ? INDEXING_PAUSED_BADGE : 'Saved · indexing soon';
   }
   return `Indexed · v${indexedVersion!.number}`;
 }
@@ -124,6 +129,8 @@ export interface FileBadgeInput {
   indexedVersion: { number: number } | null;
   sourceDeleted: boolean;
   placement: 'pinned' | 'synced';
+  /** The workspace reached its indexing credit limit: index jobs wait for the period's end. */
+  indexingPaused?: boolean;
 }
 
 /**
@@ -152,7 +159,9 @@ export function computeFileBadge(input: FileBadgeInput): string {
     case 'extracting':
       return newer('Reading text…', 'being read');
     case 'indexing':
-      return newer('Indexing…', 'indexing');
+      return input.indexingPaused
+        ? newer('Not indexed (indexing limit reached)', 'waiting (indexing limit reached)')
+        : newer('Indexing…', 'indexing');
     case 'pending_review':
       return newer('Not indexed (awaiting approval)', 'awaiting approval');
     case 'rejected':
