@@ -38,6 +38,7 @@ import {
   SourceListSchema,
   SourceSchema,
   SourceTokenSchema,
+  RevokeSourceTokensResponseSchema,
   CreateSourceTokenResponseSchema,
   GroupMemberResponseSchema,
   PageSummarySchema,
@@ -123,7 +124,7 @@ import {
 } from './routes/admin.js';
 import { deleteSourceFile, putSourceFile } from './routes/sourceFiles.js';
 import { registerInternalRoutes } from './routes/internal.js';
-import { createSource, issueSourceToken, listSources, revokeSourceToken, updateSource } from './routes/sources.js';
+import { createSource, issueSourceToken, listSources, revokeSourceToken, revokeTokensMadeBy, updateSource } from './routes/sources.js';
 import {
   createPage,
   getPageDetails,
@@ -673,6 +674,11 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
   app.post('/api/v1/sources/:id/tokens', async (req, reply) => {
     const res = await issueSourceToken(actorOf(req), (req.params as any).id, req.body);
     return reply.status(201).send(parseReply(CreateSourceTokenResponseSchema, res));
+  });
+
+  app.post('/api/v1/source-tokens/revoke', async (req, reply) => {
+    const res = await revokeTokensMadeBy(actorOf(req), req.body);
+    return reply.send(parseReply(RevokeSourceTokensResponseSchema, res));
   });
 
   app.delete('/api/v1/sources/:id/tokens/:tokenId', async (req, reply) => {

@@ -10,6 +10,7 @@ import { loadSession } from '../../lib/session.js';
 import { MoreIcon, SearchIcon } from '../../components/icons.js';
 import { InviteForm } from '../../components/InviteForm.js';
 import { PendingInvitations } from '../../components/PendingInvitations.js';
+import { LeftoverTokensNotice } from '../../components/LeftoverTokensNotice.js';
 import { Avatar, Button, EmptyState, ErrorNote, Loading } from '../../components/ui.js';
 
 function MemberRow({ member, actorRole, isSelf }: { member: Member; actorRole: TenantRole; isSelf: boolean }) {
@@ -48,7 +49,8 @@ function MemberRow({ member, actorRole, isSelf }: { member: Member; actorRole: T
     onSettled: () => {
       setConfirming(false);
       setMenu(false);
-      return refresh('members');
+      // Their source tokens keep working: the sources list (and its notice) learns they left.
+      return Promise.all([refresh('members'), refresh('sources')]);
     },
   });
 
@@ -179,6 +181,7 @@ export function MembersPage() {
         <InviteForm onInvited={() => void refresh('invitations')} onClose={() => setInviting(false)} />
       )}
       <PendingInvitations />
+      {(role === 'owner' || role === 'admin') && <LeftoverTokensNotice />}
       {isPending && <Loading what="members" />}
       <ErrorNote error={error} />
       {members && (

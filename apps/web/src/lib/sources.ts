@@ -28,6 +28,23 @@ export function tokenState(token: SourceToken, now: Date): 'active' | 'revoked' 
   return 'active';
 }
 
+/** Working tokens whose maker has left the workspace, grouped by that person (most tokens first). */
+export function tokensOfPeopleWhoLeft(
+  sources: readonly Source[],
+  now: Date
+): Array<{ creator: SourceToken['createdBy']; tokens: Array<{ source: Source; token: SourceToken }> }> {
+  const byCreator = new Map<string, { creator: SourceToken['createdBy']; tokens: Array<{ source: Source; token: SourceToken }> }>();
+  for (const source of sources) {
+    for (const token of source.tokens) {
+      if (token.createdBy.role !== null || tokenState(token, now) !== 'active') continue;
+      const entry = byCreator.get(token.createdBy.id) ?? { creator: token.createdBy, tokens: [] };
+      entry.tokens.push({ source, token });
+      byCreator.set(token.createdBy.id, entry);
+    }
+  }
+  return [...byCreator.values()].sort((a, b) => b.tokens.length - a.tokens.length || a.creator.name.localeCompare(b.creator.name));
+}
+
 export function lastUsedLabel(token: Pick<SourceToken, 'lastUsedAt'>, now: Date): string {
   if (token.lastUsedAt === null) return 'Never used';
   const when = relativeTime(token.lastUsedAt, now);
