@@ -53,6 +53,16 @@ export const TenantUsageSchema = z.object({
 });
 export type TenantUsage = z.infer<typeof TenantUsageSchema>;
 
+/** A workspace's billing state, set by the control plane: `past_due` shows a banner, `suspended` makes it read-only. */
+export const BillingStateSchema = z.enum(['ok', 'past_due', 'suspended']);
+export type BillingState = z.infer<typeof BillingStateSchema>;
+
+/** PUT /internal/v1/tenants/:id/billing-state, and `billingState` in tenant listings and details. */
+export const BillingStateBodySchema = z
+  .object({ state: BillingStateSchema, manageUrl: z.string().url().max(2000).nullable() })
+  .strict();
+export type BillingStateBody = z.infer<typeof BillingStateBodySchema>;
+
 export const InternalTenantSchema = z.object({
   id: z.string().uuid(),
   slug: z.string(),
@@ -62,6 +72,8 @@ export const InternalTenantSchema = z.object({
   deletedAt: z.string().nullable(),
   ownerEmail: z.string().nullable(),
   seats: z.number().int(),
+  /** Optional so clients keep accepting servers from before the billing state existed. */
+  billingState: BillingStateBodySchema.optional(),
 });
 export type InternalTenant = z.infer<typeof InternalTenantSchema>;
 

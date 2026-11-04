@@ -48,6 +48,7 @@ export const AuditEventTypeSchema = z.enum([
   'tenant.deleted',
   'limits.updated',
   'credits.topup',
+  'billing.state_updated',
   'member.invited',
   'member.invitation_revoked',
   'member.role_changed',

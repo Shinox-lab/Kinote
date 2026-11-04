@@ -1174,7 +1174,9 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
     return reply.send(parseReply(RetryVersionResponseSchema, res));
   });
 
-  registerInternalRoutes(app, opts.controlPlaneTokens ?? []);
+  registerInternalRoutes(app, opts.controlPlaneTokens ?? [], {
+    ...(opts.collab ? { revokeTenant: (tenantId: string) => opts.collab!.revoke({ tenantId }) } : {}),
+  });
 
   app.get('/api/v1/usage', async (req, reply) => {
     const actor = actorOf(req);
