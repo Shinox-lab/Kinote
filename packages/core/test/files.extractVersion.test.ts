@@ -47,6 +47,37 @@ const jobsOf = (seed: FileSeed, queue: string) =>
   );
 
 describe('extractVersion', () => {
+  it('streams a file the extractor reads, and reads only its head and zip directory to recognise it', async () => {
+    const seed = await seedFileDocument({ title: 'report.pdf' });
+    const pdf = await upload(seed, 'report.pdf', `%PDF-1.7\nFAKE-EXTRACT\n${'x'.repeat(200_000)}`);
+    const reads: string[] = [];
+    let ranged = 0;
+    const watched = Object.create(storage) as InMemoryObjectStorage;
+    watched.get = async (tenantId, key) => {
+      reads.push(key);
+      return storage.get(tenantId, key);
+    };
+    watched.getRange = async (tenantId, key, start, end) => {
+      ranged += end - start + 1;
+      return storage.getRange(tenantId, key, start, end);
+    };
+    let streamed = false;
+    const extractor: Extractor = {
+      extract: async (input) => {
+        streamed = !(input.body instanceof Uint8Array);
+        return new FakeExtractor().extract(input);
+      },
+    };
+    expect(await extractVersion({ tenantId: seed.tenantId, versionId: pdf.id }, { ...deps({ extractor }), storage: watched })).toEqual({
+      outcome: 'extracted',
+      status: 'indexing',
+    });
+    expect(streamed).toBe(true);
+    expect(reads).toEqual([]);
+    expect(ranged).toBeLessThanOrEqual(8192);
+    expect((await reload(seed, pdf.id)).extractedKey).not.toBeNull();
+  });
+
   it('reads a text file in the worker and sends it straight to indexing in a space without review', async () => {
     const seed = await seedFileDocument({ title: 'notes.txt' });
     const v = await upload(seed, 'notes.txt', 'hello world');
