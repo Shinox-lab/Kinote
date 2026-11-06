@@ -44,6 +44,7 @@ export {
   detectFileTypeOf,
   listZipEntries,
   listZipEntriesFrom,
+  listZipEntriesAsync,
   cleanFileName,
   DETECT_HEAD_BYTES,
   type DetectInput,

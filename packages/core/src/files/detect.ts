@@ -193,22 +193,41 @@ export function listZipEntries(bytes: Uint8Array): string[] | null {
 export function listZipEntriesFrom(read: (offset: number, length: number) => Uint8Array, size: number): string[] | null {
   if (size < 22) return null;
   const tailStart = Math.max(0, size - 22 - 65_535);
-  const tail = read(tailStart, size - tailStart);
-  const tailView = new DataView(tail.buffer, tail.byteOffset, tail.byteLength);
+  const dir = zipDirectoryIn(read(tailStart, size - tailStart), size);
+  return dir && zipNames(read(dir.start, dir.length), dir.total);
+}
+
+/** {@link listZipEntriesFrom} for a zip read through an async `read`, say ranged requests to object storage. */
+export async function listZipEntriesAsync(
+  read: (offset: number, length: number) => Promise<Uint8Array>,
+  size: number
+): Promise<string[] | null> {
+  if (size < 22) return null;
+  const tailStart = Math.max(0, size - 22 - 65_535);
+  const dir = zipDirectoryIn(await read(tailStart, size - tailStart), size);
+  return dir && zipNames(await read(dir.start, dir.length), dir.total);
+}
+
+/** Where the central directory sits, from the zip's last 64 KiB; null when it is not a zip this reads. */
+function zipDirectoryIn(tail: Uint8Array, size: number): { start: number; length: number; total: number } | null {
+  const view = new DataView(tail.buffer, tail.byteOffset, tail.byteLength);
   let end = -1;
   for (let i = tail.length - 22; i >= 0; i--) {
-    if (tailView.getUint32(i, true) === ZIP_END) {
+    if (view.getUint32(i, true) === ZIP_END) {
       end = i;
       break;
     }
   }
   if (end < 0) return null;
-  const total = tailView.getUint16(end + 10, true);
-  const size_ = tailView.getUint32(end + 12, true);
-  const start = tailView.getUint32(end + 16, true);
-  if (total === 0xffff || size_ === 0xffffffff || start === 0xffffffff || total > MAX_ZIP_ENTRIES) return null;
-  if (start + size_ > size) return null;
-  const dir = read(start, size_);
+  const total = view.getUint16(end + 10, true);
+  const length = view.getUint32(end + 12, true);
+  const start = view.getUint32(end + 16, true);
+  if (total === 0xffff || length === 0xffffffff || start === 0xffffffff || total > MAX_ZIP_ENTRIES) return null;
+  if (start + length > size) return null;
+  return { start, length, total };
+}
+
+function zipNames(dir: Uint8Array, total: number): string[] | null {
   const view = new DataView(dir.buffer, dir.byteOffset, dir.byteLength);
   const names: string[] = [];
   const decoder = new TextDecoder('utf-8');

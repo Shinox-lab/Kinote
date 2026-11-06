@@ -345,13 +345,13 @@ in-memory or test storage implementations.
   today.
 - [x] *(Only for files over 4 MiB; smaller ones still answer 200 whole.)* Media without a `Range` header (`files.ts:862`): treat it as `bytes=0-` capped at the existing 4 MiB and send 206
   with `Content-Range`. Browsers' media players handle this.
-- [x] *(Done 2026-11-04, differently: each upload is written to a private temp file as it arrives (`apps/api/src/uploadedFile.ts`), hashed and counted on the way, so the duplicate check still runs before storing; it is then streamed to storage. Detection reads the first 8 KiB plus, for Office files, only the zip's tail and central directory. `UPLOAD_TMP_DIR` picks the disk. A 400 MB upload raised memory by about 50 MB, against about 800 MB buffered.)* Uploads (`files.ts:388`):
+- [x] *(Done 2026-11-04, differently: each upload is written to a private temp file as it arrives (`apps/api/src/uploadedFile.ts`), hashed and counted on the way, so the duplicate check still runs before storing; it is then streamed to storage. Detection reads the first 8 KiB plus, for Office files, only the zip's tail and central directory. `UPLOAD_TMP_DIR` picks the disk. A 400 MB upload raised memory by about 50 MB, against about 800 MB buffered. On 2026-11-06 the worker followed: `extractVersion` recognises a stored file from ranged reads of its head and zip directory and streams it from storage to the extractor; only TXT, MD, CSV and code, which the worker parses itself, are still loaded whole.)* Uploads (`files.ts:388`):
   - replace `part.toBuffer()` with `part.file` streamed into `@aws-sdk/lib-storage` `Upload`
   - read the first 4 KiB for `detectFileType` through a peek stream
   - if the code hashes the bytes or passes them to extraction, hash on the fly and have extraction read from storage
     (check what it does with the buffer today)
   - if multipart's `truncated` flag is set, abort the upload and delete the partial object
-- [ ] *(Dropped: Task 7 of the plans/usage plan.)* Quota: `MAX_TENANT_STORAGE_BYTES` (default 10 GiB, `0` means unlimited). Before an upload, compare the sum of
+- [x] *(Done as Task 7 of the plans/usage plan, merged in PR #2: `assertStorageFor` in `packages/core/src/usage/capacity.ts` refuses with `storage_limit_reached` against the workspace's `tenant_limits.storage_bytes`; no limit set means unlimited, as for self-hosting.)* Quota: `MAX_TENANT_STORAGE_BYTES` (default 10 GiB, `0` means unlimited). Before an upload, compare the sum of
   `size_bytes` over the tenant's current file versions plus the declared size. Afterwards, re-check with the real size
   and delete if over. New error `storage_quota_exceeded` (413).
 - [x] The per-user upload rate limit comes from T7.

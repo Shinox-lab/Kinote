@@ -11,7 +11,7 @@ import {
 } from '@kinote/db';
 import { AppError, ExtractedDocumentSchema, type ExtractedDocument } from '@kinote/contracts';
 import type { ObjectStorage } from '@kinote/shared';
-import { detectFileType } from './detect.js';
+import { DETECT_HEAD_BYTES, detectFileTypeOf, listZipEntriesAsync, type DetectedFile } from './detect.js';
 import type { Extractor } from './extractor.js';
 import { readTextNative, type TextNativeType } from './textNative.js';
 import { fileObjectPath } from './versions.js';
@@ -29,21 +29,60 @@ export interface ExtractDeps {
 
 const NO_TEXT = 'No text could be read from this file.';
 
+/**
+ * Reads a stored file's text without holding the file whole when the extractor reads it: detection
+ * fetches the first 8 KiB (and, for a zip, its directory) by range, and the file is streamed from
+ * storage to the extractor. Only TXT, MD, CSV and code, which the worker parses itself, are loaded.
+ */
 async function readDocument(
-  bytes: Uint8Array,
+  tenantId: string,
+  objectKey: string,
+  sizeBytes: number,
   fileName: string,
   deps: ExtractDeps
 ): Promise<ExtractedDocument> {
-  const detected = detectFileType(fileName, bytes);
-  if (!detected.ok) throw new AppError('file_unreadable');
-  const { file } = detected;
-  const document =
-    file.handling === 'text'
-      ? readTextNative(file.type as TextNativeType, bytes)
-      : await deps.extractor.extract({ bytes, fileName, file });
+  const file = await detectStored(tenantId, objectKey, sizeBytes, fileName, deps.storage);
+  let document: ExtractedDocument;
+  if (file.handling === 'text') {
+    const { bytes } = await deps.storage.get(tenantId, objectKey);
+    document = readTextNative(file.type as TextNativeType, bytes);
+  } else {
+    const { stream } = await deps.storage.getStream(tenantId, objectKey);
+    try {
+      document = await deps.extractor.extract({ body: stream, fileName, file });
+    } finally {
+      stream.destroy();
+    }
+  }
   const chars = document.sections.reduce((n, s) => n + s.text.length, 0);
   if (chars > deps.maxChars) throw new AppError('file_text_too_large');
   return withoutNul(ExtractedDocumentSchema.parse(document));
+}
+
+/** The stored size, for a version recorded without one: opening the object reports it; nothing is read. */
+async function storedSize(tenantId: string, objectKey: string, storage: ObjectStorage): Promise<number> {
+  const { stream, sizeBytes } = await storage.getStream(tenantId, objectKey);
+  stream.destroy();
+  return sizeBytes;
+}
+
+async function detectStored(
+  tenantId: string,
+  objectKey: string,
+  sizeBytes: number,
+  fileName: string,
+  storage: ObjectStorage
+): Promise<DetectedFile> {
+  if (sizeBytes <= 0) throw new AppError('file_unreadable');
+  const range = (offset: number, length: number) =>
+    length <= 0 ? Promise.resolve(new Uint8Array()) : storage.getRange(tenantId, objectKey, offset, offset + length - 1);
+  const head = await range(0, Math.min(sizeBytes, DETECT_HEAD_BYTES));
+  // Only a file that starts like a zip can be Word, Excel or PowerPoint: the others skip the directory reads.
+  const isZip = head[0] === 0x50 && head[1] === 0x4b && head[2] === 0x03 && head[3] === 0x04;
+  const entries = isZip ? await listZipEntriesAsync(range, sizeBytes) : null;
+  const detected = detectFileTypeOf(fileName, { sizeBytes, head, zipEntries: () => entries });
+  if (!detected.ok) throw new AppError('file_unreadable');
+  return detected.file;
 }
 
 /** Postgres text cannot hold a NUL character; an extractor (or a file) that yields one must not fail indexing later. */
@@ -60,8 +99,8 @@ function withoutNul(document: ExtractedDocument): ExtractedDocument {
  * so no transaction is held while the file is read:
  *
  * A. (transaction) load the version; skip unless it is `extracting`;
- * B. (no transaction) fetch the bytes, read them (the worker for TXT, MD and
- *    CSV; the extractor for the rest) and store `extracted.json`;
+ * B. (no transaction) read the file (the worker for TXT, MD and CSV; the
+ *    extractor for the rest, streamed from storage) and store `extracted.json`;
  * C. (transaction, document locked) re-check the version is still `extracting`
  *    and the document live; then no text means `stored`; a space with review
  *    on, an agent author or a connector whose source is not trusted means
@@ -89,8 +128,8 @@ export async function extractVersion(
   if (ver.status !== 'extracting') return { outcome: 'skipped', reason: 'not_extracting' };
   if (!ver.objectKey || !ver.fileName) throw new AppError('file_unreadable');
 
-  const { bytes } = await deps.storage.get(tenantId, ver.objectKey);
-  const extracted = await readDocument(bytes, ver.fileName, deps);
+  const sizeBytes = ver.sizeBytes ?? (await storedSize(tenantId, ver.objectKey, deps.storage));
+  const extracted = await readDocument(tenantId, ver.objectKey, sizeBytes, ver.fileName, deps);
   const { objectKey: extractedKey } = await deps.storage.put(
     tenantId,
     fileObjectPath(ver.documentId, ver.id, 'extracted.json'),

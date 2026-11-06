@@ -1,10 +1,19 @@
+import { Readable } from 'node:stream';
 import { AppError, ExtractedDocumentSchema, type ExtractedDocument } from '@kinote/contracts';
 import type { DetectedFile } from './detect.js';
 
 export interface ExtractInput {
-  bytes: Uint8Array;
+  /** The file: bytes in memory, or a stream (read once) straight from storage so a large file is never held whole. */
+  body: Uint8Array | Readable;
   fileName: string;
   file: DetectedFile;
+}
+
+async function bytesOf(body: Uint8Array | Readable): Promise<Uint8Array> {
+  if (body instanceof Uint8Array) return body;
+  const chunks: Buffer[] = [];
+  for await (const chunk of body) chunks.push(Buffer.from(chunk as Uint8Array));
+  return new Uint8Array(Buffer.concat(chunks));
 }
 
 /** Turns a file's bytes into text with structure. Throws `AppError`s: `extractor_unavailable` (retry), `file_unreadable`, `file_text_too_large`. */
@@ -48,8 +57,8 @@ const MARKER_LINE = /^FAKE-EXTRACT(?:-(DOWN|EMPTY))?[ \t]*$/m;
  * without a marker line are an unreadable file.
  */
 export class FakeExtractor implements Extractor {
-  async extract({ bytes }: ExtractInput): Promise<ExtractedDocument> {
-    const text = new TextDecoder('utf-8').decode(bytes);
+  async extract({ body }: ExtractInput): Promise<ExtractedDocument> {
+    const text = new TextDecoder('utf-8').decode(await bytesOf(body));
     const marker = MARKER_LINE.exec(text);
     if (!marker) throw new AppError('file_unreadable');
     if (marker[1] === 'DOWN') throw new AppError('extractor_unavailable');
@@ -89,7 +98,7 @@ export class HttpExtractor implements Extractor {
     this.fetchImpl = opts.fetchImpl ?? fetch;
   }
 
-  async extract({ bytes, fileName, file }: ExtractInput): Promise<ExtractedDocument> {
+  async extract({ body, fileName, file }: ExtractInput): Promise<ExtractedDocument> {
     let response: Response;
     try {
       response = await this.fetchImpl(`${this.url}/extract`, {
@@ -99,10 +108,16 @@ export class HttpExtractor implements Extractor {
           'x-file-name': encodeURIComponent(fileName),
           'x-file-type': file.type,
         },
-        body: Buffer.from(bytes.buffer as ArrayBuffer, bytes.byteOffset, bytes.byteLength),
+        // A stream goes out chunked as storage hands it over, so the worker holds a few chunks, not the file.
+        body:
+          body instanceof Uint8Array
+            ? Buffer.from(body.buffer as ArrayBuffer, body.byteOffset, body.byteLength)
+            : (Readable.toWeb(body) as ReadableStream<Uint8Array>),
+        duplex: 'half',
         signal: AbortSignal.timeout(this.timeoutMs),
-      });
+      } as RequestInit);
     } catch (err) {
+      if (!(body instanceof Uint8Array)) body.destroy();
       const timedOut = err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError');
       throw unavailable(timedOut ? 'the extractor did not answer in time' : 'the extractor could not be reached', err);
     }

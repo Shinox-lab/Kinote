@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cleanFileName, DETECT_HEAD_BYTES, detectFileType, detectFileTypeOf, listZipEntries, listZipEntriesFrom } from '../src/files/detect.js';
+import { cleanFileName, DETECT_HEAD_BYTES, detectFileType, detectFileTypeOf, listZipEntries, listZipEntriesAsync, listZipEntriesFrom } from '../src/files/detect.js';
 
 const enc = (s: string) => new TextEncoder().encode(s);
 const bytes = (...n: number[]) => new Uint8Array(n);
@@ -199,6 +199,18 @@ describe('detection without reading the whole file', () => {
     expect(names).toEqual(['[Content_Types].xml', 'word/document.xml']);
     expect(names).toEqual(listZipEntries(zip));
     expect(bytesRead).toBeLessThan(70_000);
+  });
+
+  it('listZipEntriesAsync reads the same names through async ranged reads', async () => {
+    const zip = spreadZip(['[Content_Types].xml', 'xl/workbook.xml'], 300_000);
+    let bytesRead = 0;
+    const names = await listZipEntriesAsync(async (offset, length) => {
+      bytesRead += length;
+      return zip.subarray(offset, offset + length);
+    }, zip.length);
+    expect(names).toEqual(listZipEntries(zip));
+    expect(bytesRead).toBeLessThan(70_000);
+    expect(await listZipEntriesAsync(async () => new Uint8Array(30), 30)).toBeNull();
   });
 
   it('detectFileTypeOf decides from the head and the zip directory alone', () => {

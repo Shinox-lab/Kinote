@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { Readable } from 'node:stream';
 import { createServer, type IncomingMessage, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -24,7 +25,7 @@ async function codeOf(p: Promise<unknown>): Promise<string> {
 
 describe('FakeExtractor', () => {
   const fake = new FakeExtractor();
-  const run = (text: string) => fake.extract({ bytes: enc(text), fileName: 'a.pdf', file: pdf });
+  const run = (text: string) => fake.extract({ body: enc(text), fileName: 'a.pdf', file: pdf });
 
   it('reads JSON after the marker as the extracted document', async () => {
     expect(await run(`FAKE-EXTRACT\n${JSON.stringify(fixture)}`)).toEqual(fixture);
@@ -88,7 +89,21 @@ describe('HttpExtractor', () => {
   }
 
   const extract = (url: string, timeoutMs = 2000) =>
-    new HttpExtractor({ url, timeoutMs }).extract({ bytes: enc('%PDF-1.7 data'), fileName: 'Q3 report ü.pdf', file: pdf });
+    new HttpExtractor({ url, timeoutMs }).extract({ body: enc('%PDF-1.7 data'), fileName: 'Q3 report ü.pdf', file: pdf });
+
+  it('streams a stream body to the service without loading it first', async () => {
+    const { url, seen } = await serve(() => ({ status: 200, body: JSON.stringify(fixture) }));
+    const chunks = Array.from({ length: 64 }, (_, i) => Buffer.alloc(64 * 1024, i));
+    const body = Readable.from(chunks);
+    expect(await new HttpExtractor({ url, timeoutMs: 5000 }).extract({ body, fileName: 'big.pdf', file: pdf })).toEqual(fixture);
+    expect(seen[0]!.body.equals(Buffer.concat(chunks))).toBe(true);
+    expect(seen[0]!.headers['transfer-encoding']).toBe('chunked');
+  });
+
+  it('the fake extractor reads a stream body too', async () => {
+    const doc = await new FakeExtractor().extract({ body: Readable.from([Buffer.from('FAKE-EXTRACT\n'), Buffer.from('streamed')]), fileName: 'a.pdf', file: pdf });
+    expect(doc.sections.map((s) => s.text)).toEqual(['streamed']);
+  });
 
   it('posts the bytes with the name and type, and parses the answer', async () => {
     const { url, seen } = await serve(() => ({ status: 200, body: JSON.stringify(fixture) }));
@@ -153,7 +168,7 @@ describe('HttpExtractor', () => {
 });
 
 describe('createExtractor', () => {
-  const input = { bytes: enc('x'), fileName: 'a.pdf', file: pdf };
+  const input = { body: enc('x'), fileName: 'a.pdf', file: pdf };
 
   it('is unavailable when off', async () => {
     const extractor = createExtractor({ EXTRACTOR_MODE: 'off', EXTRACTOR_TIMEOUT_MS: 1000 });
