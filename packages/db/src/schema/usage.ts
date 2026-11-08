@@ -31,6 +31,19 @@ export const tenantLimits = pgTable('tenant_limits', {
   updatedBy: text('updated_by').notNull().default('control_plane'),
 });
 
+/** Limits for new workspaces, pushed by the control plane. At most one row (id true); no row = no defaults. */
+export const tenantDefaults = pgTable('tenant_defaults', {
+  id: boolean('id').primaryKey().default(true),
+  plan: text('plan').notNull(),
+  seats: integer('seats'),
+  storageBytes: bigint('storage_bytes', { mode: 'number' }),
+  creditsPerMonth: integer('credits_per_month'),
+  indexCreditsPerMonth: integer('index_credits_per_month'),
+  gracePercent: integer('grace_percent').notNull().default(10),
+  maxFreePerOwner: integer('max_free_per_owner'),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const USAGE_KINDS = ['capture', 'ask', 'index'] as const;
 
 /** The ledger: one row per model call. Append-only. */

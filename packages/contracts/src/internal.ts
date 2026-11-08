@@ -29,6 +29,27 @@ export type LimitsInput = z.infer<typeof LimitsInputSchema>;
 /** PUT /internal/v1/tenants/:id/limits: the new limits, or null to remove them all. */
 export const PutLimitsRequestSchema = LimitsInputSchema.nullable();
 
+/** PUT /internal/v1/defaults: limits every new workspace starts with, and how many workspaces on that plan one person may own. */
+export const DefaultsInputSchema = z
+  .object({
+    plan: LimitsInputSchema.shape.plan,
+    seats: limitNumber,
+    storageBytes: limitNumber,
+    creditsPerMonth: limitNumber,
+    indexCreditsPerMonth: limitNumber,
+    gracePercent: z.number().int().min(0).max(100).optional(),
+    maxFreePerOwner: z.number().int().min(0).nullable(),
+  })
+  .strict();
+export type DefaultsInput = z.infer<typeof DefaultsInputSchema>;
+export const PutDefaultsRequestSchema = DefaultsInputSchema.nullable();
+
+export const TenantDefaultsSchema = DefaultsInputSchema.extend({ gracePercent: z.number().int() });
+export type TenantDefaults = z.infer<typeof TenantDefaultsSchema>;
+
+/** GET and PUT /internal/v1/defaults: the stored defaults, or null when none. */
+export const DefaultsReplySchema = z.object({ defaults: TenantDefaultsSchema.nullable() });
+
 export const TenantLimitsSchema = z.object({
   seats: z.number().int().nullable(),
   storageBytes: z.number().int().nullable(),

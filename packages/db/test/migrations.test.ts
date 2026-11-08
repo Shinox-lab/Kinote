@@ -124,7 +124,8 @@ describe('migration chain', () => {
       .map((t) => t.relname)
       .sort();
     // rate_limit_counters (0038) and email_tokens (0039) are global by design: its keys name whose count it is, and it holds no tenant data.
-    assert.deepEqual(withoutTenantId, ['email_tokens', 'rate_limit_counters', 'sessions', 'tenants', 'users']);
+    // tenant_defaults (0042) is one row of control-plane settings for new workspaces.
+    assert.deepEqual(withoutTenantId, ['email_tokens', 'rate_limit_counters', 'sessions', 'tenant_defaults', 'tenants', 'users']);
 
     const tenants = tables.find((t) => t.relname === 'tenants')!;
     assert.equal(tenants.relrowsecurity, true, 'tenants: row level security not enabled');
@@ -139,6 +140,24 @@ describe('migration chain', () => {
     assert.equal(role.length, 1, 'kinote_app role missing');
     assert.equal(role[0]!.rolsuper, false);
     assert.equal(role[0]!.rolbypassrls, false);
+  });
+
+  test('kinote_app can read tenant_defaults and run count_owned_on_plan', async () => {
+    const grants = await rows<{ privilege_type: string }>(
+      `SELECT privilege_type FROM information_schema.role_table_grants WHERE grantee = 'kinote_app' AND table_name = 'tenant_defaults'`
+    );
+    assert.ok(grants.some((g) => g.privilege_type === 'SELECT'), 'kinote_app cannot read tenant_defaults');
+    const fn = await rows<{ app: boolean; pub: boolean; definer: boolean }>(
+      `SELECT has_function_privilege('kinote_app', 'public.count_owned_on_plan(uuid, text)', 'EXECUTE') AS app,
+              p.prosecdef AS definer,
+              has_function_privilege('public', 'public.count_owned_on_plan(uuid, text)', 'EXECUTE') AS pub
+       FROM pg_proc p WHERE p.proname = 'count_owned_on_plan'`
+    );
+    assert.equal(fn.length, 1, 'count_owned_on_plan missing');
+    assert.equal(fn[0]!.app, true);
+    assert.equal(fn[0]!.definer, true);
+    assert.equal(fn[0]!.pub, false);
+    assert.deepEqual(await rows(`SELECT public.count_owned_on_plan('${randomUUID()}', 'free') AS n`), [{ n: 0 }]);
   });
 
   test('chunks has the HNSW embedding index and a GIN index on tsv', async () => {
