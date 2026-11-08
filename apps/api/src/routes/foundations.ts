@@ -16,6 +16,9 @@ import {
   pages,
   versions,
   writeAuditEvent,
+  readTenantDefaults,
+  rowsOf,
+  tenantLimits,
   type DbTransaction,
 } from '@kinote/db';
 import {
@@ -78,11 +81,25 @@ function toSpaceResponse(row: typeof spaces.$inferSelect, myRole: SpaceRole): Sp
  */
 export async function createTenantWithInbox(
   userId: string,
-  input: unknown
+  input: unknown,
+  o: { billingUrl?: string } = {}
 ): Promise<CreateTenantResponse> {
   const parsed = CreateTenantRequestSchema.parse(input);
 
   return getDb().transaction(async (tx) => {
+    // One creation per person at a time, so two at once cannot both pass the free-workspace count.
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${'tenant-create:' + userId}))`);
+    // The control plane's defaults for new workspaces (none: unlimited, plan 'standard', as before).
+    const defaults = await readTenantDefaults(tx);
+    if (defaults && defaults.maxFreePerOwner !== null) {
+      const [row] = rowsOf<{ n: number }>(
+        await tx.execute(sql`SELECT public.count_owned_on_plan(${userId}::uuid, ${defaults.plan}) AS n`)
+      );
+      if (Number(row?.n ?? 0) >= defaults.maxFreePerOwner) {
+        throw new AppError('free_workspace_limit', undefined, o.billingUrl ? { billingUrl: o.billingUrl } : undefined);
+      }
+    }
+
     const tenantId = randomUUID();
     // Bootstrap path: the tenant row does not exist yet, so the tenant-scoped
     // RLS policy (WITH CHECK id = current_tenant_id()) only passes if the RLS
@@ -91,7 +108,7 @@ export async function createTenantWithInbox(
 
     const [tenant] = await tx
       .insert(tenants)
-      .values({ id: tenantId, name: parsed.name, slug: parsed.slug, plan: 'standard' })
+      .values({ id: tenantId, name: parsed.name, slug: parsed.slug, plan: defaults?.plan ?? 'standard' })
       .returning();
 
     const inboxSpace = await withTenantTx(
@@ -102,6 +119,20 @@ export async function createTenantWithInbox(
           userId,
           role: 'owner',
         });
+
+        if (defaults) {
+          await tenantTx.insert(tenantLimits).values({
+            tenantId: tenant.id,
+            seats: defaults.seats,
+            storageBytes: defaults.storageBytes,
+            creditsPerMonth: defaults.creditsPerMonth,
+            indexCreditsPerMonth: defaults.indexCreditsPerMonth,
+            gracePercent: defaults.gracePercent,
+            // Periods start on the day the workspace was created (the control plane uses the same rule).
+            periodAnchorDay: Math.min(new Date().getUTCDate(), 28),
+            updatedBy: 'defaults',
+          });
+        }
 
         const [inbox] = await tenantTx
           .insert(spaces)

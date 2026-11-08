@@ -53,7 +53,7 @@ A missing or wrong token answers `401 unauthenticated`. A console session is not
 ### `GET /internal/v1/info`
 
 ```json
-{ "kinoteVersion": "0.1.0", "apiVersion": 1, "features": ["limits", "usage", "topups", "billing_state"] }
+{ "kinoteVersion": "0.1.0", "apiVersion": 1, "features": ["limits", "usage", "topups", "billing_state", "default_limits"] }
 ```
 
 ### `GET /internal/v1/tenants?after=<id>&limit=<n>`
@@ -162,6 +162,21 @@ Both fields are required; `manageUrl` may be `null`. Answers `200` with the work
 Repeating the same body changes nothing and writes no audit event. Lifting a suspension lets held indexing run at
 once. Unknown or deleted workspace: `404 tenant_not_found`.
 
+### `GET /internal/v1/defaults` and `PUT /internal/v1/defaults`
+
+Limits every new workspace starts with, until the control plane sets its own. Feature `default_limits`.
+
+```json
+{ "plan": "free", "seats": 3, "storageBytes": 1073741824, "creditsPerMonth": 100, "indexCreditsPerMonth": 200, "gracePercent": 10, "maxFreePerOwner": 2 }
+```
+
+The limit fields work as in `PUT /tenants/:id/limits` (`null` is unlimited; `gracePercent` defaults to 10; no
+`periodAnchorDay`: a new workspace's periods start on the day it was created, at most the 28th). `maxFreePerOwner`
+(`null`: no cap) is how many live workspaces on `plan` one person may own: creating another answers
+`409 free_workspace_limit`; workspaces on other plans do not count. `PUT` with `null` removes the defaults, and new
+workspaces are unlimited again, as they are when nothing was ever set. Both answer `{ "defaults": … | null }`.
+Workspaces that already exist are not changed.
+
 ### `GET /internal/v1/usage?period=<YYYY-MM-DD>&after=<id>&limit=<n>`
 
 Usage for every workspace, paged like `/tenants`. Without `period`, each workspace's current period. With `period`,
@@ -191,5 +206,6 @@ the period containing that date for each workspace.
 | 404 | (as any unknown path) | Any `/internal/` path while `CONTROL_PLANE_TOKENS` is unset. |
 
 What members see when a limit is reached: `credits_exhausted` (429, with `Retry-After`, `resetsAt` and, with
-`BILLING_URL`, `billingUrl`), `seat_limit_reached` (409) and `storage_limit_reached` (413). While suspended: `workspace_suspended` (423, with
+`BILLING_URL`, `billingUrl`), `seat_limit_reached` (409) and `storage_limit_reached` (413). Creating a workspace past the defaults'
+`maxFreePerOwner`: `free_workspace_limit` (409, with `billingUrl` when `BILLING_URL` is set). While suspended: `workspace_suspended` (423, with
 `manageUrl` for owners and admins).

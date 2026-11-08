@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { useRouter } from '@tanstack/react-router';
 import { useMutation } from '@tanstack/react-query';
-import { api } from '../lib/api.js';
+import { ApiError, api } from '../lib/api.js';
 import { slugify } from '../lib/console.js';
 import { ME_KEY } from '../lib/queries.js';
 import { queryClient } from '../lib/queryClient.js';
@@ -56,6 +56,11 @@ export function CreateWorkspacePage({ additional = false }: { additional?: boole
           required
         />
         <ErrorNote error={create.error} />
+        {create.error instanceof ApiError && create.error.code === 'free_workspace_limit' && create.error.billingUrl && (
+          <a href={create.error.billingUrl} target="_blank" rel="noopener noreferrer" className="text-sm font-medium underline">
+            Upgrade
+          </a>
+        )}
         <Button type="submit" disabled={create.isPending}>
           {create.isPending ? 'Creating…' : 'Create workspace'}
         </Button>

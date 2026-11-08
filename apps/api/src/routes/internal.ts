@@ -7,6 +7,8 @@ import {
   getDb,
   memberships,
   readBillingState,
+  readTenantDefaults,
+  tenantDefaults,
   readStanding,
   releaseHeldIndexJobs,
   tenantBilling,
@@ -22,6 +24,7 @@ import {
   AppError,
   BillingStateBodySchema,
   PageQuerySchema,
+  PutDefaultsRequestSchema,
   PutLimitsRequestSchema,
   TopupInputSchema,
   UsageQuerySchema,
@@ -163,8 +166,33 @@ export function registerInternalRoutes(app: FastifyInstance, tokens: string[], o
   app.get('/internal/v1/info', opts, async () => ({
     kinoteVersion: kinoteVersion(),
     apiVersion: 1 as const,
-    features: ['limits', 'usage', 'topups', 'billing_state'],
+    features: ['limits', 'usage', 'topups', 'billing_state', 'default_limits'],
   }));
+
+  app.get('/internal/v1/defaults', opts, async () => ({ defaults: await readTenantDefaults(getDb()) }));
+
+  app.put('/internal/v1/defaults', opts, async (req) => {
+    // A missing body is a mistake, not "no defaults": that takes an explicit JSON null.
+    if (req.body === undefined) throw new AppError('validation_failed', 'The body must be the defaults, or null to remove them.');
+    const body = PutDefaultsRequestSchema.parse(req.body);
+    const db = getDb();
+    if (body === null) {
+      await db.delete(tenantDefaults).where(eq(tenantDefaults.id, true));
+    } else {
+      const values = {
+        plan: body.plan,
+        seats: body.seats,
+        storageBytes: body.storageBytes,
+        creditsPerMonth: body.creditsPerMonth,
+        indexCreditsPerMonth: body.indexCreditsPerMonth,
+        gracePercent: body.gracePercent ?? 10,
+        maxFreePerOwner: body.maxFreePerOwner,
+        updatedAt: new Date(),
+      };
+      await db.insert(tenantDefaults).values({ id: true, ...values }).onConflictDoUpdate({ target: tenantDefaults.id, set: values });
+    }
+    return { defaults: await readTenantDefaults(db) };
+  });
 
   app.get('/internal/v1/tenants', opts, async (req) => {
     const { after, limit } = PageQuerySchema.parse(req.query);

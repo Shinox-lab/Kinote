@@ -7,3 +7,6 @@ test-results
 site/.vitepress/dist
 site/.vitepress/cache
 site/clips/.work
+
+# Written by the web tests (Excalidraw copies its fonts here).
+apps/web/dummy-non-existing-folder/

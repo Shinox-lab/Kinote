@@ -476,7 +476,7 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
       if (owned.filter((t) => t.role === 'owner').length >= limits.maxTenantsPerUser) {
         throw new AppError('tenant_limit_reached');
       }
-      const res = await createTenantWithInbox(userId, req.body);
+      const res = await createTenantWithInbox(userId, req.body, { billingUrl: opts.billingUrl });
       return reply.status(201).send(parseReply(CreateTenantResponseSchema, res));
     }
   );

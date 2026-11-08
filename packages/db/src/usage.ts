@@ -1,7 +1,7 @@
 import { and, eq, gt, inArray, sql } from 'drizzle-orm';
 import type { DbTransaction } from './client.js';
 import { jobs } from './schema/foundations.js';
-import { creditTopups, tenantLimits, tenantStorage, tenantUsage, usageEvents } from './schema/usage.js';
+import { creditTopups, tenantDefaults, tenantLimits, tenantStorage, tenantUsage, usageEvents } from './schema/usage.js';
 import { tenantBilling, type BillingState } from './schema/billing.js';
 
 // Plans, usage and quotas: periods, the usage ledger, running totals and top-ups.
@@ -62,6 +62,31 @@ async function readLimits(tx: DbTransaction, tenantId: string): Promise<TenantLi
     indexCreditsPerMonth: row.indexCreditsPerMonth,
     gracePercent: row.gracePercent,
     periodAnchorDay: row.periodAnchorDay,
+  };
+}
+
+export interface TenantDefaultsRow {
+  plan: string;
+  seats: number | null;
+  storageBytes: number | null;
+  creditsPerMonth: number | null;
+  indexCreditsPerMonth: number | null;
+  gracePercent: number;
+  maxFreePerOwner: number | null;
+}
+
+/** The control plane's defaults for new workspaces, or null when none were pushed. Not tenant-scoped. */
+export async function readTenantDefaults(tx: Pick<DbTransaction, 'select'>): Promise<TenantDefaultsRow | null> {
+  const [row] = await tx.select().from(tenantDefaults).where(eq(tenantDefaults.id, true));
+  if (!row) return null;
+  return {
+    plan: row.plan,
+    seats: row.seats,
+    storageBytes: row.storageBytes === null ? null : Number(row.storageBytes),
+    creditsPerMonth: row.creditsPerMonth,
+    indexCreditsPerMonth: row.indexCreditsPerMonth,
+    gracePercent: row.gracePercent,
+    maxFreePerOwner: row.maxFreePerOwner,
   };
 }
 

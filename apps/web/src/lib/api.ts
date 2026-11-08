@@ -128,12 +128,15 @@ const NO_CONTENT: ReplySchema<undefined> = {
 export class ApiError extends Error {
   readonly code: string;
   readonly status: number;
+  /** Where to upgrade, when the server named it (credits_exhausted, free_workspace_limit). */
+  readonly billingUrl?: string;
 
-  constructor(code: string, status = 0, message?: string) {
+  constructor(code: string, status = 0, message?: string, extra: { billingUrl?: string } = {}) {
     super(message ?? errorSentence(code));
     this.name = 'ApiError';
     this.code = code;
     this.status = status;
+    if (extra.billingUrl) this.billingUrl = extra.billingUrl;
   }
 }
 
@@ -208,10 +211,12 @@ export async function request<T>(
         : 'internal_error';
     // credits_exhausted's sentence names the renewal date, which only the server knows.
     const serverMessage = (body as { message?: unknown } | null)?.message;
+    const billingUrl = (body as { billingUrl?: unknown } | null)?.billingUrl;
     throw new ApiError(
       code,
       res.status,
-      code === 'credits_exhausted' && typeof serverMessage === 'string' ? serverMessage : undefined
+      code === 'credits_exhausted' && typeof serverMessage === 'string' ? serverMessage : undefined,
+      typeof billingUrl === 'string' ? { billingUrl } : {}
     );
   }
 

@@ -11,6 +11,7 @@ import {
   withTenantTx,
 } from '@kinote/db';
 import {
+  DefaultsReplySchema,
   InfoSchema,
   InternalTenantDetailSchema,
   TenantPageSchema,
@@ -84,7 +85,7 @@ describe('control-plane API', () => {
   test('info answers apiVersion 1', async () => {
     const info = InfoSchema.parse((await get('/internal/v1/info')).json());
     expect(info.apiVersion).toBe(1);
-    expect(info.features).toEqual(['limits', 'usage', 'topups', 'billing_state']);
+    expect(info.features).toEqual(['limits', 'usage', 'topups', 'billing_state', 'default_limits']);
   });
 
   test('tenants page in creation order and continue after the last id', async () => {
@@ -206,6 +207,39 @@ describe('control-plane API', () => {
     expect(res.json().plan).toBe('demo');
     expect(res.json().limits.creditsPerMonth).toBe(100);
     expect((await putLimits(w.tenant.id, null)).json().plan).toBe('demo');
+  });
+
+  const putDefaults = (body: unknown, headers: Record<string, string> = cp()) =>
+    app.inject({ method: 'PUT', url: '/internal/v1/defaults', headers: { ...headers, 'content-type': 'application/json' }, payload: JSON.stringify(body) });
+  const freeDefaults = { plan: 'free', seats: 3, storageBytes: 1000, creditsPerMonth: 50, indexCreditsPerMonth: 20, maxFreePerOwner: 2 };
+
+  test('GET defaults is null until PUT; PUT stores and answers them; PUT null clears', async () => {
+    expect(DefaultsReplySchema.parse((await get('/internal/v1/defaults')).json())).toEqual({ defaults: null });
+    const put = await putDefaults(freeDefaults);
+    expect(put.statusCode, put.body).toBe(200);
+    expect(DefaultsReplySchema.parse(put.json())).toEqual({ defaults: { ...freeDefaults, gracePercent: 10 } });
+    expect((await get('/internal/v1/defaults')).json()).toEqual({ defaults: { ...freeDefaults, gracePercent: 10 } });
+    const again = await putDefaults({ ...freeDefaults, seats: null, gracePercent: 0, maxFreePerOwner: null });
+    expect(again.json().defaults).toEqual({ ...freeDefaults, seats: null, gracePercent: 0, maxFreePerOwner: null });
+    const cleared = await putDefaults(null);
+    expect(cleared.statusCode).toBe(200);
+    expect(cleared.json()).toEqual({ defaults: null });
+    expect((await get('/internal/v1/defaults')).json()).toEqual({ defaults: null });
+  });
+
+  test('PUT defaults refuses demo, extra keys, a missing body and negative numbers', async () => {
+    expect((await putDefaults({ ...freeDefaults, plan: 'Demo' })).statusCode).toBe(400);
+    expect((await putDefaults({ ...freeDefaults, periodAnchorDay: 3 })).statusCode).toBe(400);
+    expect((await putDefaults({ ...freeDefaults, seats: -1 })).statusCode).toBe(400);
+    expect((await putDefaults({ ...freeDefaults, maxFreePerOwner: -1 })).statusCode).toBe(400);
+    const missing = await app.inject({ method: 'PUT', url: '/internal/v1/defaults', headers: cp() });
+    expect(missing.statusCode).toBe(400);
+    expect((await get('/internal/v1/defaults')).json()).toEqual({ defaults: null });
+  });
+
+  test('defaults need the control-plane token', async () => {
+    expect((await app.inject({ method: 'GET', url: '/internal/v1/defaults' })).statusCode).toBe(401);
+    expect((await putDefaults(freeDefaults, {})).statusCode).toBe(401);
   });
 
   test('bad bodies are 400', async () => {

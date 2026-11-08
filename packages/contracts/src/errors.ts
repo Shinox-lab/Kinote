@@ -34,6 +34,7 @@ export const ErrorCodeSchema = z.enum([
   'seat_limit_reached',
   'storage_limit_reached',
   'tenant_limit_reached',
+  'free_workspace_limit',
   'signup_invite_only',
   'signup_closed',
   'email_unverified',
@@ -120,6 +121,7 @@ export const ERROR_SENTENCES: Record<ErrorCode, string> = {
   seat_limit_reached: 'This workspace has no free seats on its plan. Remove someone or upgrade to add more.',
   storage_limit_reached: 'This file would take the workspace over its storage limit.',
   tenant_limit_reached: 'You have created as many workspaces as this server allows.',
+  free_workspace_limit: 'You have reached the number of free workspaces. Upgrade one or delete one to create another.',
   signup_invite_only: 'New accounts need an invitation. Ask a workspace admin for an invitation link.',
   signup_closed: 'This server does not create new accounts. Ask its operator for one.',
   email_unverified: 'Confirm your email address first: open the link we emailed you.',
@@ -196,6 +198,7 @@ const STATUS_OVERRIDES: Partial<Record<ErrorCode, number>> = {
   seat_limit_reached: 409,
   storage_limit_reached: 413,
   tenant_limit_reached: 403,
+  free_workspace_limit: 409,
   signup_invite_only: 403,
   signup_closed: 403,
   email_unverified: 403,
@@ -241,6 +244,6 @@ export const ApiErrorSchema = z.object({
   issues: z.array(z.object({ path: z.string(), message: z.string() })).optional(),
   /** credits_exhausted: when the credits renew (ISO). */
   resetsAt: z.string().optional(),
-  /** credits_exhausted: where to upgrade, when BILLING_URL is set. */
+  /** credits_exhausted and free_workspace_limit: where to upgrade, when BILLING_URL is set. */
   billingUrl: z.string().optional(),
 });
