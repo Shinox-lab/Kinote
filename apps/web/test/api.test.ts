@@ -92,6 +92,24 @@ describe('web api client', () => {
     expect(headers.has('content-type')).toBe(false);
   });
 
+  test("an error answer's billingUrl is kept on the ApiError", async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse({ error: 'free_workspace_limit', message: 'x', billingUrl: 'https://cp.example/portal' }, 409)
+    );
+    const err = await request('/api/v1/tenants', z.unknown(), { method: 'POST', body: '{}' }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as ApiError).code).toBe('free_workspace_limit');
+    expect((err as ApiError).status).toBe(409);
+    expect((err as ApiError).billingUrl).toBe('https://cp.example/portal');
+    expect((err as ApiError).message).toBe(ERROR_SENTENCES.free_workspace_limit);
+  });
+
+  test('an error answer without billingUrl has none', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ error: 'slug_taken' }, 409));
+    const err = await request('/api/v1/tenants', z.unknown(), { method: 'POST', body: '{}' }).catch((e: unknown) => e);
+    expect((err as ApiError).billingUrl).toBeUndefined();
+  });
+
   test('a file that is too big is an ApiError with its sentence', async () => {
     fetchMock.mockResolvedValue(jsonResponse({ error: 'file_too_large' }, 413));
     const err = await request('/api/v1/files', z.unknown(), { method: 'POST', body: new FormData() }).catch((e: unknown) => e);

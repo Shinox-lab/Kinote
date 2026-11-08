@@ -386,7 +386,7 @@ the settings below behaves as before. Usage is still metered and shown.
 | --- | --- | --- |
 | `MODEL_CREDIT_RATES` | unset (every call 0 credits) | Model id → credits per 1,000 input and output tokens, plus `default` for models not listed (a warning is logged once per model). Inline JSON or a path to a JSON file. A bad value stops the service at startup. Deterministic models are free unless listed. |
 | `CONTROL_PLANE_TOKENS` | unset (API off: `/internal/v1/` is 404) | Comma-separated bearer tokens, each at least 32 characters. List two while rotating. |
-| `BILLING_URL` | unset | Where Upgrade links point; shown only to owners and admins. |
+| `BILLING_URL` | unset | Where Upgrade links point; shown only to owners and admins, and to anyone refused a new workspace by the free-workspace cap. |
 
 With Docker Compose (and Coolify) the three settings are passed through `docker-compose.yml`. Prefer inline JSON for
 `MODEL_CREDIT_RATES` there: a file path must be mounted into every service container (api, worker and collab all
@@ -400,6 +400,19 @@ the only one.
 Storage counts every stored file version, old versions included. Archiving a file keeps its versions, and nothing
 purges version rows yet, so a workspace's storage only grows: at its storage limit it needs a higher limit to upload
 again.
+
+### Hosted shared deployment (open sign-up)
+
+On a deployment where anyone may sign up (hosted Kinote's shared deployment, managed by Kinote-SaaS), new workspaces
+must never start unlimited. The control plane pushes **defaults** (`PUT /internal/v1/defaults`): every workspace
+created afterwards starts on those limits and plan, and one person may own only `maxFreePerOwner` workspaces on that
+plan (more answers `free_workspace_limit`, with the Upgrade link). Nothing is set in Kinote by hand; without defaults
+(any self-hosted install) creation is unchanged. Order:
+
+1. Set `SMTP_URL` (sign-ups must confirm their email before they can create a workspace) and `CONTROL_PLANE_TOKENS`.
+2. Set `BILLING_URL` to the control plane's billing area, `<PORTAL_BASE_URL>/portal`.
+3. Register the deployment in Kinote-SaaS and wait until its "Public sign-up" panel shows the defaults pushed.
+4. Only then set `SIGNUP_MODE=open`.
 
 `TENANT_DAILY_AI_ACTIONS` stays as a safety net against runaway loops. It is
 not billing: plan limits are credits, set per workspace.

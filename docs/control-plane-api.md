@@ -206,5 +206,6 @@ the period containing that date for each workspace.
 | 404 | (as any unknown path) | Any `/internal/` path while `CONTROL_PLANE_TOKENS` is unset. |
 
 What members see when a limit is reached: `credits_exhausted` (429, with `Retry-After`, `resetsAt` and, with
-`BILLING_URL`, `billingUrl`), `seat_limit_reached` (409) and `storage_limit_reached` (413). While suspended: `workspace_suspended` (423, with
+`BILLING_URL`, `billingUrl`), `seat_limit_reached` (409) and `storage_limit_reached` (413). Creating a workspace past the defaults'
+`maxFreePerOwner`: `free_workspace_limit` (409, with `billingUrl` when `BILLING_URL` is set). While suspended: `workspace_suspended` (423, with
 `manageUrl` for owners and admins).
