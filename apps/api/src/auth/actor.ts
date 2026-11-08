@@ -55,6 +55,8 @@ declare module 'fastify' {
   interface FastifyContextConfig {
     /** Who may call the route. Default: 'tenant'. 'source' is a bearer source token, never a session. */
     auth?: AuthMode;
+    /** 'allow': a POST that only reads (search, a collab token) still works while the workspace is suspended. */
+    whenSuspended?: 'allow';
   }
   interface FastifyRequest {
     /** Set for 'session' and 'tenant' routes. */

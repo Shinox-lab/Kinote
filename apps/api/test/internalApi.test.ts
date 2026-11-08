@@ -16,6 +16,7 @@ import {
   TenantPageSchema,
   UsagePageSchema,
 } from '@kinote/contracts';
+import type { CollabClient } from '@kinote/shared';
 import { bootstrapTenant, buildTestApp, useTestDb } from './support/testkit.js';
 
 const TOKEN_A = 'a'.repeat(40);
@@ -29,8 +30,15 @@ const limitsBody = {
   indexCreditsPerMonth: 50,
 };
 
+const revoked: { tenantId: string }[] = [];
+const recordingCollab = {
+  revoke: async (target: { tenantId: string }) => {
+    revoked.push(target);
+  },
+} as unknown as CollabClient;
+
 describe('control-plane API', () => {
-  const app = buildTestApp({ controlPlaneTokens: [TOKEN_A, TOKEN_B] });
+  const app = buildTestApp({ controlPlaneTokens: [TOKEN_A, TOKEN_B], collab: recordingCollab });
   const off = buildTestApp();
   useTestDb();
 
@@ -76,7 +84,7 @@ describe('control-plane API', () => {
   test('info answers apiVersion 1', async () => {
     const info = InfoSchema.parse((await get('/internal/v1/info')).json());
     expect(info.apiVersion).toBe(1);
-    expect(info.features).toEqual(['limits', 'usage', 'topups']);
+    expect(info.features).toEqual(['limits', 'usage', 'topups', 'billing_state']);
   });
 
   test('tenants page in creation order and continue after the last id', async () => {
@@ -227,5 +235,62 @@ describe('control-plane API', () => {
     const lastMonth = new Date(period.start.getTime() - 86_400_000).toISOString().slice(0, 10);
     const old = UsagePageSchema.parse((await get(`/internal/v1/usage?period=${lastMonth}`)).json());
     expect(old.usage.find((u) => u.tenantId === a.tenant.id)!.creditsUsed).toBe(0);
+  });
+  const putBilling = (id: string, body: unknown) =>
+    app.inject({ method: 'PUT', url: `/internal/v1/tenants/${id}/billing-state`, headers: { ...cp(), 'content-type': 'application/json' }, payload: JSON.stringify(body) });
+  const billingAudits = (tenantId: string) =>
+    withTenantTx(tenantId, (tx) =>
+      tx.select().from(auditEvents).where(and(eq(auditEvents.tenantId, tenantId), eq(auditEvents.type, 'billing.state_updated')))
+    );
+
+  test('PUT billing-state stores it, shows it in the detail and the listing, and audits a change once', async () => {
+    const w = await world('billing-co');
+    const body = { state: 'past_due', manageUrl: 'https://cp.test/portal' };
+    const res = await putBilling(w.tenant.id, body);
+    expect(res.statusCode, res.body).toBe(200);
+    expect(InternalTenantDetailSchema.parse(res.json()).billingState).toEqual(body);
+    expect(InternalTenantDetailSchema.parse((await get(`/internal/v1/tenants/${w.tenant.id}`)).json()).billingState).toEqual(body);
+    const page = TenantPageSchema.parse((await get('/internal/v1/tenants?limit=500')).json());
+    expect(page.tenants.find((t) => t.id === w.tenant.id)!.billingState).toEqual(body);
+    expect((await putBilling(w.tenant.id, body)).statusCode).toBe(200);
+    const audits = await billingAudits(w.tenant.id);
+    expect(audits).toHaveLength(1);
+    expect(audits[0]!.payload).toMatchObject({ by: 'control_plane', state: 'past_due', manageUrl: 'https://cp.test/portal' });
+  });
+
+  test('a workspace never set shows billing state ok', async () => {
+    const w = await world('billing-default-co');
+    const detail = InternalTenantDetailSchema.parse((await get(`/internal/v1/tenants/${w.tenant.id}`)).json());
+    expect(detail.billingState).toEqual({ state: 'ok', manageUrl: null });
+  });
+
+  test('PUT billing-state refuses bad bodies, unknown and deleted tenants', async () => {
+    const w = await world('billing-bad-co');
+    expect((await putBilling(w.tenant.id, { state: 'paused', manageUrl: null })).json().error).toBe('validation_failed');
+    expect((await putBilling(w.tenant.id, { state: 'ok' })).statusCode).toBe(400);
+    expect((await putBilling(w.tenant.id, { state: 'ok', manageUrl: 'not a url' })).statusCode).toBe(400);
+    const empty = await app.inject({ method: 'PUT', url: `/internal/v1/tenants/${w.tenant.id}/billing-state`, headers: cp() });
+    expect(empty.statusCode).toBe(400);
+    const missing = await putBilling('00000000-0000-4000-8000-000000000000', { state: 'ok', manageUrl: null });
+    expect(missing.statusCode).toBe(404);
+    expect(missing.json().error).toBe('tenant_not_found');
+    await withTenantTx(w.tenant.id, (tx) => tx.update(tenants).set({ deletedAt: new Date() }).where(eq(tenants.id, w.tenant.id)));
+    expect((await putBilling(w.tenant.id, { state: 'ok', manageUrl: null })).statusCode).toBe(404);
+  });
+
+  test('suspending closes live editing; lifting it releases held index jobs', async () => {
+    const w = await world('billing-suspend-co');
+    revoked.length = 0;
+    expect((await putBilling(w.tenant.id, { state: 'suspended', manageUrl: 'https://cp.test/portal' })).statusCode).toBe(200);
+    expect(revoked).toEqual([{ tenantId: w.tenant.id }]);
+    await putBilling(w.tenant.id, { state: 'suspended', manageUrl: 'https://cp.test/portal' });
+    expect(revoked).toHaveLength(1);
+    const later = new Date(Date.now() + 86_400_000);
+    const held = await withTenantTx(w.tenant.id, (tx) =>
+      enqueueJob(tx, { tenantId: w.tenant.id, queue: 'version.index', idempotencyKey: 'held-billing', payload: {}, runAt: later })
+    );
+    expect((await putBilling(w.tenant.id, { state: 'ok', manageUrl: null })).statusCode).toBe(200);
+    const [job] = await withTenantTx(w.tenant.id, (tx) => tx.select().from(jobs).where(eq(jobs.id, held.id)));
+    expect(job!.runAt.getTime()).toBeLessThanOrEqual(Date.now());
   });
 });

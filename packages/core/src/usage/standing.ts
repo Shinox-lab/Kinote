@@ -32,8 +32,12 @@ export function creditVerdict(s: UsageStanding): CreditVerdict {
   return { ...base, state, limitCredits, graceLeftCredits };
 }
 
-/** Indexing waits once index credits reach index_credits_per_month × (1 + grace). Top-ups never add here. */
+/**
+ * Indexing waits once index credits reach index_credits_per_month × (1 + grace), and while the
+ * workspace is suspended for billing. Top-ups never add here.
+ */
 export function indexHeld(s: UsageStanding): boolean {
+  if (s.suspended) return true;
   const perMonth = s.limits?.indexCreditsPerMonth;
   if (perMonth === null || perMonth === undefined) return false;
   return s.indexCreditsUsedMilli * 100 >= perMonth * 1000 * (100 + s.limits!.gracePercent);

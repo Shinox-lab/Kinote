@@ -2,7 +2,7 @@ import { describe, test, beforeAll, afterEach, afterAll, expect } from 'vitest';
 import assert from 'node:assert/strict';
 import type * as Y from 'yjs';
 import { and, eq } from 'drizzle-orm';
-import { withTenantTx, memberships, spaces } from '@kinote/db';
+import { withTenantTx, memberships, spaces, tenantBilling } from '@kinote/db';
 import {
   signCollabToken,
   getCollabTokenSecret,
@@ -217,6 +217,14 @@ describe('collab connection authentication', () => {
     const client = await connect({ documentName: name, token });
     client.doc.getMap('probe').set('demoted', 'edit');
     await stays(() => serverDoc(name).getMap('probe').get('demoted') === undefined, 400);
+  });
+
+  test('a write token is read-only while the workspace is suspended for billing', async () => {
+    const w = await world();
+    const name = documentName(w.tenant.id, w.pageA.id);
+    await withTenantTx(w.tenant.id, (tx) => tx.insert(tenantBilling).values({ tenantId: w.tenant.id, state: 'suspended' }));
+    const ctx = await authenticateCollabConnection(tokenFor(w, w.pageA.id, w.editor.userId, 'write'), name);
+    expect(ctx.readOnly).toBe(true);
   });
 
   test('a read token is read-only even for an editor; a write token for an editor is writable', async () => {

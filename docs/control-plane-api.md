@@ -27,7 +27,7 @@ A missing or wrong token answers `401 unauthenticated`. A console session is not
 - Bodies are JSON with camelCase fields. Credits are numbers with up to 3 decimals; bytes and seats are integers.
 - `null` for a limit means unlimited.
 - Errors use Kinote's usual shape: `{ "error": "<code>", "message": "<sentence>" }`, with `issues` on `400 validation_failed`.
-- Every write records an audit event in the workspace (`limits.updated`, `credits.topup`) with actor type `system`,
+- Every write records an audit event in the workspace (`limits.updated`, `credits.topup`, `billing.state_updated`) with actor type `system`,
   actor id `00000000-0000-0000-0000-000000000000` and `payload.by = "control_plane"`.
 - **Within `v1` changes are additive only** (new fields, new endpoints, new `features`). Anything that would break a
   client becomes `v2`. Clients must ignore fields they do not know.
@@ -53,7 +53,7 @@ A missing or wrong token answers `401 unauthenticated`. A console session is not
 ### `GET /internal/v1/info`
 
 ```json
-{ "kinoteVersion": "0.1.0", "apiVersion": 1, "features": ["limits", "usage", "topups"] }
+{ "kinoteVersion": "0.1.0", "apiVersion": 1, "features": ["limits", "usage", "topups", "billing_state"] }
 ```
 
 ### `GET /internal/v1/tenants?after=<id>&limit=<n>`
@@ -72,7 +72,8 @@ pass as `after` for the next page, or `null` on the last page.
       "createdAt": "2026-11-03T10:00:00.000Z",
       "deletedAt": null,
       "ownerEmail": "owner@acme.example",
-      "seats": 4
+      "seats": 4,
+      "billingState": { "state": "ok", "manageUrl": null }
     }
   ],
   "next": "6f1c…"
@@ -86,7 +87,8 @@ id it saw.
 ### `GET /internal/v1/tenants/:id`
 
 One workspace with its limits (`null`: none) and current-period usage. A deleted workspace is returned with
-`deletedAt` set. Unknown: `404 tenant_not_found`.
+`deletedAt` set. Unknown: `404 tenant_not_found`. It carries `billingState` as in the listing (a server without
+the `billing_state` feature leaves the field out; treat that as `ok`).
 
 ```json
 {
@@ -142,6 +144,24 @@ next period.
 `201` with the workspace (as `GET /tenants/:id`) when added. Repeating an `idempotencyKey` adds nothing and answers
 `200` with the same body shape. Unknown or deleted workspace: `404 tenant_not_found`.
 
+### `PUT /internal/v1/tenants/:id/billing-state`
+
+Where the workspace stands with its payments. Feature `billing_state`.
+
+```json
+{ "state": "past_due", "manageUrl": "https://billing.example.com/portal" }
+```
+
+| `state` | Effect |
+|---|---|
+| `ok` | Nothing. |
+| `past_due` | Everything works; owners and admins see "Payment failed — update billing", linking to `manageUrl`. |
+| `suspended` | Read-only: every write answers `423 workspace_suspended` (sign-in, sign-out and reads still work), AI is refused, background indexing is held, and live editing reconnects read-only. Every member sees "This workspace is suspended"; owners and admins also get the `manageUrl` link. |
+
+Both fields are required; `manageUrl` may be `null`. Answers `200` with the workspace (as `GET /tenants/:id`).
+Repeating the same body changes nothing and writes no audit event. Lifting a suspension lets held indexing run at
+once. Unknown or deleted workspace: `404 tenant_not_found`.
+
 ### `GET /internal/v1/usage?period=<YYYY-MM-DD>&after=<id>&limit=<n>`
 
 Usage for every workspace, paged like `/tenants`. Without `period`, each workspace's current period. With `period`,
@@ -171,4 +191,5 @@ the period containing that date for each workspace.
 | 404 | (as any unknown path) | Any `/internal/` path while `CONTROL_PLANE_TOKENS` is unset. |
 
 What members see when a limit is reached: `credits_exhausted` (429, with `Retry-After`, `resetsAt` and, with
-`BILLING_URL`, `billingUrl`), `seat_limit_reached` (409) and `storage_limit_reached` (413).
+`BILLING_URL`, `billingUrl`), `seat_limit_reached` (409) and `storage_limit_reached` (413). While suspended: `workspace_suspended` (423, with
+`manageUrl` for owners and admins).

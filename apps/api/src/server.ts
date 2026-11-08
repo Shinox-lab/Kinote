@@ -1,7 +1,7 @@
 import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 import rateLimit from '@fastify/rate-limit';
 import multipart from '@fastify/multipart';
-import { getDb, readStanding, rowsOf, tenants, withTenantTx } from '@kinote/db';
+import { getDb, readBillingState, readStanding, rowsOf, tenants, withTenantTx } from '@kinote/db';
 import { eq, sql } from 'drizzle-orm';
 import { DEFAULT_AUTH_RATE_LIMIT_MAX, DEFAULT_USAGE_LIMITS, type CreditRates, type ObjectStorage, type UsageLimits } from '@kinote/shared';
 import {
@@ -212,7 +212,7 @@ import {
 import { authRoutes, type AuthRateLimit, type SignUpModeSetting } from './routes/auth.js';
 import { PgRateLimitStore } from './rateLimitStore.js';
 import type { Mailer } from './mail.js';
-import { aiActionsLeftOrUnknown, chargeAi, requestLimit, requireCredits, uploadSlots } from './usageLimits.js';
+import { aiActionsLeftOrUnknown, chargeAi, refuseWhenSuspended, requestLimit, requireCredits, uploadSlots } from './usageLimits.js';
 import { demoSeedRunning, demoSeedStatus, startDemoSeed } from './routes/demoSeed.js';
 import {
   invalidateActor,
@@ -439,6 +439,8 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
     req.authSession = await requireSession(req);
     if (mode === 'tenant') req.actor = await resolveActor(req);
   });
+  // A workspace suspended for billing is read-only (after the auth hook: it needs the actor).
+  app.addHook('onRequest', refuseWhenSuspended());
 
   // Rate limiting is opt-in per route (sign-up, sign-in). The plugin's onRoute
   // hook must be installed before those routes are declared, so the auth
@@ -579,7 +581,7 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
   });
 
   // The signed-in user leaves this workspace. Registered before `/members/:userId`; "me" is never a user id.
-  app.delete('/api/v1/members/me', async (req, reply) => {
+  app.delete('/api/v1/members/me', { config: { whenSuspended: 'allow' } }, async (req, reply) => {
     const actor = actorOf(req);
     await leaveWorkspace(actor);
     invalidateActor(actor.tenantId, actor.principalId);
@@ -597,7 +599,7 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
   });
 
   // Deletes the workspace in x-tenant-id (Settings -> Workspace, owners only); a demo workspace is purged.
-  app.delete('/api/v1/tenant', async (req, reply) => {
+  app.delete('/api/v1/tenant', { config: { whenSuspended: 'allow' } }, async (req, reply) => {
     const actor = actorOf(req);
     if (demoSeedRunning(actor.tenantId)) throw new AppError('demo_seed_running');
     await deleteWorkspace(actor);
@@ -742,7 +744,7 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
     );
   });
 
-  app.post('/api/v1/pages/:id/collab-token', async (req, reply) => {
+  app.post('/api/v1/pages/:id/collab-token', { config: { whenSuspended: 'allow' } }, async (req, reply) => {
     const res = await issueCollabToken(actorOf(req), (req.params as any).id);
     return reply.send(parseReply(CollabTokenResponseSchema, res));
   });
@@ -874,7 +876,7 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
     return reply.headers(out.headers).send(out.stream);
   });
 
-  app.post('/api/v1/versions/:id/media-url', async (req, reply) => {
+  app.post('/api/v1/versions/:id/media-url', { config: { whenSuspended: 'allow' } }, async (req, reply) => {
     const res = await createMediaUrl(actorOf(req), (req.params as any).id, getCollabTokenSecret());
     return reply.send(res);
   });
@@ -1061,7 +1063,7 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
     return reply.send(parseReply(NotificationListSchema, await listNotifications(actorOf(req))));
   });
 
-  app.post('/api/v1/notifications/read', async (req, reply) => {
+  app.post('/api/v1/notifications/read', { config: { whenSuspended: 'allow' } }, async (req, reply) => {
     return reply.send(await markNotificationsRead(actorOf(req), req.body ?? {}));
   });
 
@@ -1187,7 +1189,9 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
     return reply.send(parseReply(RetryVersionResponseSchema, res));
   });
 
-  registerInternalRoutes(app, opts.controlPlaneTokens ?? []);
+  registerInternalRoutes(app, opts.controlPlaneTokens ?? [], {
+    ...(opts.collab ? { revokeTenant: (tenantId: string) => opts.collab!.revoke({ tenantId }) } : {}),
+  });
 
   app.get('/api/v1/usage', async (req, reply) => {
     const actor = actorOf(req);
@@ -1197,6 +1201,7 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
       const verdict = creditVerdict(standing);
       const [tenant] = await tx.select({ plan: tenants.plan }).from(tenants).where(eq(tenants.id, actor.tenantId));
       const admin = actor.tenantRole === 'owner' || actor.tenantRole === 'admin';
+      const billing = await readBillingState(tx, actor.tenantId);
       return {
         state: verdict.state,
         plan: tenant?.plan ?? 'standard',
@@ -1213,12 +1218,14 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
         seatLimit: standing.limits?.seats ?? null,
         resetsAt: verdict.resetsAt.toISOString(),
         billingUrl: admin && opts.billingUrl ? opts.billingUrl : null,
+        billingState: billing.state,
+        manageUrl: admin && billing.state !== 'ok' ? billing.manageUrl : null,
       };
     });
     return reply.send(parseReply(UsageSummarySchema, summary));
   });
 
-  app.post('/api/v1/search', { onRequest: requestLimit('search', limits.searchPerMinute) }, async (req, reply) =>
+  app.post('/api/v1/search', { config: { whenSuspended: 'allow' }, onRequest: requestLimit('search', limits.searchPerMinute) }, async (req, reply) =>
     metered('index', req, async () => {
     const actor = actorOf(req);
     const parsed = SearchRequestSchema.parse(req.body);

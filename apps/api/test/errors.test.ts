@@ -249,6 +249,7 @@ describe('error model', () => {
       rate_limited: 429,
       ai_budget_exhausted: 429,
       credits_exhausted: 429,
+      workspace_suspended: 423,
       seat_limit_reached: 409,
       storage_limit_reached: 413,
       tenant_limit_reached: 403,

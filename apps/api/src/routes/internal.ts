@@ -6,8 +6,10 @@ import {
   addTopup,
   getDb,
   memberships,
+  readBillingState,
   readStanding,
   releaseHeldIndexJobs,
+  tenantBilling,
   rowsOf,
   tenantLimits,
   tenants,
@@ -18,6 +20,7 @@ import {
 } from '@kinote/db';
 import {
   AppError,
+  BillingStateBodySchema,
   PageQuerySchema,
   PutLimitsRequestSchema,
   TopupInputSchema,
@@ -111,6 +114,7 @@ async function detailOf(tx: DbTransaction, id: string): Promise<InternalTenantDe
     deletedAt: tenant.deletedAt?.toISOString() ?? null,
     ownerEmail: await ownerEmail(tx, id),
     seats: usage.seats,
+    billingState: await readBillingState(tx, id),
     limits: standing.limits,
     usage,
   };
@@ -132,6 +136,8 @@ type CpTenantRow = {
   deleted_at: Date | string | null;
   owner_email: string | null;
   seats: number;
+  billing_state: 'ok' | 'past_due' | 'suspended';
+  manage_url: string | null;
 };
 
 async function listTenants(after: string | undefined, limit: number): Promise<CpTenantRow[]> {
@@ -141,7 +147,12 @@ async function listTenants(after: string | undefined, limit: number): Promise<Cp
 
 const iso = (v: Date | string) => new Date(v).toISOString();
 
-export function registerInternalRoutes(app: FastifyInstance, tokens: string[]): void {
+export interface InternalRouteOptions {
+  /** Closes a workspace's live editing sessions (after it is suspended, so they reconnect read-only). */
+  revokeTenant?: (tenantId: string) => Promise<void>;
+}
+
+export function registerInternalRoutes(app: FastifyInstance, tokens: string[], o: InternalRouteOptions = {}): void {
   if (tokens.length === 0) {
     // Off: the paths do not exist (the session auth would otherwise answer 401).
     app.all('/internal/*', { config: { auth: 'public' } }, async (_req, reply: FastifyReply) => reply.callNotFound());
@@ -152,7 +163,7 @@ export function registerInternalRoutes(app: FastifyInstance, tokens: string[]): 
   app.get('/internal/v1/info', opts, async () => ({
     kinoteVersion: kinoteVersion(),
     apiVersion: 1 as const,
-    features: ['limits', 'usage', 'topups'],
+    features: ['limits', 'usage', 'topups', 'billing_state'],
   }));
 
   app.get('/internal/v1/tenants', opts, async (req) => {
@@ -167,6 +178,7 @@ export function registerInternalRoutes(app: FastifyInstance, tokens: string[]): 
       deletedAt: r.deleted_at === null ? null : iso(r.deleted_at),
       ownerEmail: r.owner_email,
       seats: Number(r.seats),
+      billingState: { state: r.billing_state, manageUrl: r.manage_url },
     }));
     return { tenants: page, next: rows.length === limit ? rows.at(-1)!.id : null };
   });
@@ -219,6 +231,43 @@ export function registerInternalRoutes(app: FastifyInstance, tokens: string[]): 
       });
       return detailOf(tx, id);
     });
+  });
+
+  app.put('/internal/v1/tenants/:id/billing-state', opts, async (req) => {
+    const id = tenantIdOf(req);
+    if (req.body === undefined) throw new AppError('validation_failed', 'The body must be the billing state.');
+    const body = BillingStateBodySchema.parse(req.body);
+    const { detail, from } = await withTenantTx(id, async (tx) => {
+      const tenant = await tenantRow(tx, id);
+      if (!tenant || tenant.deletedAt) throw notFound();
+      const before = await readBillingState(tx, id);
+      const now = new Date();
+      if (before.state !== body.state || before.manageUrl !== body.manageUrl) {
+        const values = { state: body.state, manageUrl: body.manageUrl, updatedAt: now };
+        await tx.insert(tenantBilling).values({ tenantId: id, ...values }).onConflictDoUpdate({ target: tenantBilling.tenantId, set: values });
+        // Lifting a suspension lets held indexing run now (jobs still over an index limit are held again).
+        if (before.state === 'suspended' && body.state !== 'suspended') await releaseHeldIndexJobs(tx, id, now);
+        await writeAuditEvent(tx, {
+          tenantId: id,
+          type: 'billing.state_updated',
+          actorType: 'system',
+          actorId: CONTROL_PLANE_ACTOR_ID,
+          subjectType: 'tenant',
+          subjectId: id,
+          payload: { by: 'control_plane', state: body.state, manageUrl: body.manageUrl },
+        });
+      }
+      return { detail: await detailOf(tx, id), from: before.state };
+    });
+    // After commit: live editors reconnect and find the workspace read-only. Best effort.
+    if (body.state === 'suspended' && from !== 'suspended' && o.revokeTenant) {
+      try {
+        await o.revokeTenant(id);
+      } catch (err) {
+        req.log.error({ err }, 'collab revoke after suspension failed');
+      }
+    }
+    return detail;
   });
 
   app.post('/internal/v1/tenants/:id/topups', opts, async (req, reply) => {

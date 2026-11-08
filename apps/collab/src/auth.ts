@@ -1,5 +1,5 @@
 import { and, eq, isNull } from 'drizzle-orm';
-import { withTenantTx, documents, pages, memberships, tenants } from '@kinote/db';
+import { withTenantTx, documents, pages, memberships, readBillingState, tenants } from '@kinote/db';
 import { requireDocumentRole, type Actor } from '@kinote/core';
 import { AppError } from '@kinote/contracts';
 import { getCollabTokenSecret, parseDocumentName, verifyCollabToken } from '@kinote/shared';
@@ -101,6 +101,8 @@ export async function authenticateCollabConnection(
     }
 
     const canWrite = effectiveRole !== 'viewer';
+    // A workspace suspended for billing is read-only for everyone.
+    const suspended = (await readBillingState(tx, tenantId)).state === 'suspended';
     return {
       tenantId,
       pageId,
@@ -113,6 +115,7 @@ export async function authenticateCollabConnection(
       readOnly:
         claims.access === 'read' ||
         !canWrite ||
+        suspended ||
         row.archivedAt !== null ||
         space.archivedAt !== null,
     };

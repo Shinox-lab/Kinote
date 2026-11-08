@@ -1,12 +1,19 @@
 import { useUsage } from '../lib/queries.js';
 import { bannerText } from '../lib/usage.js';
 
-/** The credit banner at the top of the console: shown from 80% of the month's AI credits, for everyone in the workspace. */
+/**
+ * The banner at the top of the console, for everyone in the workspace: a billing problem (payment
+ * failed, or suspended), else credits from 80% of the month's AI credits.
+ */
 export function UsageBanner() {
   const usage = useUsage();
   const text = usage.data ? bannerText(usage.data) : null;
   if (!usage.data || !text) return null;
-  const refused = usage.data.state === 'exhausted';
+  const billingProblem = usage.data.billingState !== 'ok';
+  const refused = usage.data.state === 'exhausted' || usage.data.billingState === 'suspended';
+  const link = billingProblem
+    ? usage.data.manageUrl && { href: usage.data.manageUrl, label: 'Update billing' }
+    : usage.data.billingUrl && { href: usage.data.billingUrl, label: 'Upgrade' };
   return (
     <div
       role="status"
@@ -16,9 +23,9 @@ export function UsageBanner() {
       }`}
     >
       <span>{text}</span>
-      {usage.data.billingUrl && (
-        <a href={usage.data.billingUrl} target="_blank" rel="noopener noreferrer" className="font-medium underline">
-          Upgrade
+      {link && (
+        <a href={link.href} target="_blank" rel="noopener noreferrer" className="font-medium underline">
+          {link.label}
         </a>
       )}
     </div>

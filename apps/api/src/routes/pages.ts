@@ -17,6 +17,7 @@ import {
   enqueueJob,
   writeAuditEvent,
   lockDocument,
+  readBillingState,
   type DbTransaction,
   type DocumentRow,
 } from '@kinote/db';
@@ -1610,8 +1611,9 @@ export async function issueCollabToken(actor: Actor, pageId: string): Promise<Co
     const { space, effectiveRole } = await requireDocumentRole(tx, actor, doc, 'viewer', {
       notFound: 'page_not_found',
     });
-    // An archived space is read-only for everyone, tenant admins included.
-    const canWrite = effectiveRole !== 'viewer' && space.archivedAt === null;
+    // An archived space is read-only for everyone, tenant admins included; so is a workspace suspended for billing.
+    const suspended = (await readBillingState(tx, actor.tenantId)).state === 'suspended';
+    const canWrite = effectiveRole !== 'viewer' && space.archivedAt === null && !suspended;
     return {
       documentId: doc.id,
       access: canWrite ? ('write' as const) : ('read' as const),
