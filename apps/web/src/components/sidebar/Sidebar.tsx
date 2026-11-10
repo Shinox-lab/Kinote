@@ -1,7 +1,6 @@
 import { Link } from '@tanstack/react-router';
-import { adminScreens } from '../../lib/console.js';
 import { useNotifications, useReviews, useWorkspace } from '../../lib/queries.js';
-import { BellIcon, CaptureIcon, HomeIcon, SearchIcon, SettingsIcon, SidebarIcon, ReviewsIcon } from '../icons.js';
+import { BellIcon, CaptureIcon, HomeIcon, SearchIcon, SidebarIcon, ReviewsIcon } from '../icons.js';
 import { AccountRow } from './AccountRow.js';
 import { ROW, ROW_ACTIVE, RowContent } from './NavRow.js';
 import { UploadPanel } from './UploadPanel.js';
@@ -14,10 +13,9 @@ import { WorkspaceMenu } from './WorkspaceMenu.js';
  * column that can be hidden.
  */
 export function Sidebar({ onCollapse }: { onCollapse?: () => void }) {
-  const { tenant, role } = useWorkspace();
+  const { tenant } = useWorkspace();
   const { data: waiting } = useReviews();
   const { data: notes } = useNotifications();
-  const screens = adminScreens(role);
 
   return (
     <div className="flex h-full flex-col gap-1 px-2 py-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
@@ -91,18 +89,6 @@ export function Sidebar({ onCollapse }: { onCollapse?: () => void }) {
               <RowContent icon={<BellIcon />} label="Notifications" count={notes?.unread ?? 0} countLabel="unread" />
             </Link>
           </li>
-          {screens.length > 0 && (
-            <li>
-              <Link
-                to={screens[0]!.to}
-                params={{ tenantSlug: tenant.slug }}
-                className={ROW}
-                activeProps={{ className: ROW_ACTIVE, 'aria-current': 'page' }}
-              >
-                <RowContent icon={<SettingsIcon />} label="Settings & members" />
-              </Link>
-            </li>
-          )}
         </ul>
         {/* Keyed by workspace: another workspace starts from its own remembered state, not this one's. */}
         <SpacesSection key={tenant.id} />

@@ -357,6 +357,26 @@ test('on a wide screen Ctrl+\\ hides and shows the sidebar', async ({ browser, r
   await expect(sidebar(page)).toBeVisible();
 });
 
+test('the sidebar is resized by dragging its edge, and the width is remembered', async ({ browser, request }) => {
+  const world = await seedWorld(request, { reviewRequired: false });
+  const page = await openAs(browser, world, world.owner);
+  await page.goto(`/w/${world.slug}`);
+
+  const before = (await sidebar(page).boundingBox())!.width;
+  const grip = (await page.getByRole('separator', { name: 'Resize sidebar' }).boundingBox())!;
+  const startX = grip.x + grip.width / 2;
+  const startY = grip.y + 40;
+  await page.mouse.move(startX, startY);
+  await page.mouse.down();
+  await page.mouse.move(startX + 80, startY, { steps: 5 });
+  await page.mouse.up();
+
+  const after = (await sidebar(page).boundingBox())!.width;
+  expect(after).toBeCloseTo(before + 80, 0);
+  await page.reload();
+  await expect.poll(async () => (await sidebar(page).boundingBox())!.width).toBe(after);
+});
+
 // --- Found by the final review ------------------------------------------------------
 
 test("switching workspace does not carry the sidebar's open spaces over to the other workspace", async ({

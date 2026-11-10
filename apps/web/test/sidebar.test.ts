@@ -1,12 +1,19 @@
 import { describe, expect, test } from 'vitest';
 import {
   COLLAPSED_KEY,
+  SIDEBAR_DEFAULT_WIDTH,
+  SIDEBAR_MAX_WIDTH,
+  SIDEBAR_MIN_WIDTH,
+  WIDTH_KEY,
+  clampWidth,
   expandedKey,
   isCollapseShortcut,
   loadCollapsed,
   loadExpanded,
+  loadWidth,
   saveCollapsed,
   saveExpanded,
+  saveWidth,
 } from '../src/lib/sidebar.js';
 
 /** A Storage stand-in over a map. */
@@ -41,6 +48,26 @@ describe('collapsed state', () => {
   test('survives blocked storage', () => {
     expect(loadCollapsed(throwing)).toBe(false);
     expect(() => saveCollapsed(true, throwing)).not.toThrow();
+  });
+});
+
+describe('sidebar width', () => {
+  test('round-trips and stays within the drag limits', () => {
+    const s = store();
+    expect(loadWidth(s)).toBe(SIDEBAR_DEFAULT_WIDTH);
+    saveWidth(320, s);
+    expect(s.data.get(WIDTH_KEY)).toBe('320');
+    expect(loadWidth(s)).toBe(320);
+    expect(clampWidth(50)).toBe(SIDEBAR_MIN_WIDTH);
+    expect(clampWidth(9999)).toBe(SIDEBAR_MAX_WIDTH);
+  });
+
+  test('malformed, non-positive or blocked storage falls back to the default', () => {
+    expect(loadWidth(store({ [WIDTH_KEY]: 'wide' }))).toBe(SIDEBAR_DEFAULT_WIDTH);
+    expect(loadWidth(store({ [WIDTH_KEY]: '-20' }))).toBe(SIDEBAR_DEFAULT_WIDTH);
+    expect(loadWidth(store({ [WIDTH_KEY]: '0' }))).toBe(SIDEBAR_DEFAULT_WIDTH);
+    expect(loadWidth(throwing)).toBe(SIDEBAR_DEFAULT_WIDTH);
+    expect(() => saveWidth(300, throwing)).not.toThrow();
   });
 });
 

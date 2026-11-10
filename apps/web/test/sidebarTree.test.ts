@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import type { TreeNode } from '@kinote/contracts';
-import { ancestorIds, attentionLabel, buildTree, canCreatePages, expandedFor } from '../src/lib/wiki.js';
+import { ancestorIds, attentionLabel, buildTree, canCreatePages, expandedFor, pasteParent } from '../src/lib/wiki.js';
 
 function node(id: string, parentId: string | null, attention: TreeNode['attention'] = null): TreeNode {
   return { id, parentId, position: 'a0', kind: 'page', title: id, icon: null, slug: id, attention };
@@ -56,6 +56,14 @@ describe('expandedFor', () => {
     const saved = new Set(['x']);
     expandedFor(nodes, 'leaf', saved);
     expect(saved).toEqual(new Set(['x']));
+  });
+});
+
+describe('pasteParent', () => {
+  test('files pasted on a page go under it; on a file, under the folder that holds it', () => {
+    expect(pasteParent({ kind: 'page', id: 'leaf', parentId: 'mid' })).toBe('leaf');
+    expect(pasteParent({ kind: 'file', id: 'doc', parentId: 'mid' })).toBe('mid');
+    expect(pasteParent({ kind: 'file', id: 'doc', parentId: null })).toBeNull();
   });
 });
 
