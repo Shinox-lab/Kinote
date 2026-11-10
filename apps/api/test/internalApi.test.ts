@@ -1,16 +1,21 @@
 import { describe, test, expect } from 'vitest';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import {
   auditEvents,
   enqueueJob,
+  getDb,
   jobs,
+  memberships,
   periodOf,
+  rowsOf,
   tenantLimits,
   tenantUsage,
   tenants,
+  users,
   withTenantTx,
 } from '@kinote/db';
 import {
+  BootstrapResponseSchema,
   DefaultsReplySchema,
   InfoSchema,
   InternalTenantDetailSchema,
@@ -18,7 +23,8 @@ import {
   UsagePageSchema,
 } from '@kinote/contracts';
 import type { CollabClient } from '@kinote/shared';
-import { bootstrapTenant, buildTestApp, useTestDb } from './support/testkit.js';
+import { createEmailToken, peekEmailToken } from '../src/auth/emailTokens.js';
+import { bootstrapTenant, buildTestApp, signUp, useTestDb } from './support/testkit.js';
 
 const TOKEN_A = 'a'.repeat(40);
 const TOKEN_B = 'b'.repeat(40);
@@ -357,3 +363,102 @@ describe('control-plane API: baked version and IP allowlist', () => {
   });
 });
 
+describe('control-plane API: bootstrap', () => {
+  useTestDb();
+  const PUBLIC = 'https://acme.kinote.example';
+  const app = buildTestApp({ controlPlaneTokens: [TOKEN_A], publicUrl: PUBLIC });
+  const bootstrap = (body: unknown) =>
+    app.inject({ method: 'POST', url: '/internal/v1/bootstrap', headers: cp(), payload: body as Record<string, unknown> });
+  const confirm = (token: string, password = 'a-fresh-long-password-1') =>
+    app.inject({ method: 'POST', url: '/api/v1/auth/password-reset/confirm', payload: { token, password } });
+  const tokenOf = (setupUrl: string) => setupUrl.slice(`${PUBLIC}/reset-password/`.length);
+
+  test('creates the owner, the workspace and a setup link', async () => {
+    const res = await bootstrap({ email: 'Owner@Acme.test', workspaceName: 'Acme HQ' });
+    expect(res.statusCode, res.body).toBe(201);
+    const body = BootstrapResponseSchema.parse(res.json());
+    expect(body.setupUrl.startsWith(`${PUBLIC}/reset-password/`)).toBe(true);
+    const [user] = await getDb().select().from(users).where(eq(users.id, body.userId));
+    expect(user?.email).toBe('owner@acme.test');
+    expect(user?.passwordHash).toBe('!');
+    const [tenant] = await withTenantTx(body.tenantId, (tx) => tx.select().from(tenants).where(eq(tenants.id, body.tenantId)));
+    expect(tenant?.name).toBe('Acme HQ');
+    const owners = await withTenantTx(body.tenantId, (tx) =>
+      tx.select().from(memberships).where(and(eq(memberships.tenantId, body.tenantId), eq(memberships.userId, body.userId)))
+    );
+    expect(owners.map((m) => m.role)).toEqual(['owner']);
+  });
+
+  test('the link sets the password once and signs in', async () => {
+    const body = BootstrapResponseSchema.parse((await bootstrap({ email: 'owner@acme.test', workspaceName: 'Acme HQ' })).json());
+    const first = await confirm(tokenOf(body.setupUrl));
+    expect(first.statusCode, first.body).toBe(200);
+    expect(first.json().user.email).toBe('owner@acme.test');
+    expect((await confirm(tokenOf(body.setupUrl))).json().error).toBe('link_invalid');
+  });
+
+  test('the link works for 72 hours', async () => {
+    const body = BootstrapResponseSchema.parse((await bootstrap({ email: 'owner@acme.test', workspaceName: 'Acme HQ' })).json());
+    const token = tokenOf(body.setupUrl);
+    const now = Date.now();
+    expect(await peekEmailToken(token, 'setup', new Date(now + 71 * 3_600_000))).toBe(body.userId);
+    expect(await peekEmailToken(token, 'setup', new Date(now + 73 * 3_600_000))).toBeNull();
+  });
+
+  test('again while pending: same user and workspace, a new link, the old one stops', async () => {
+    const a = BootstrapResponseSchema.parse((await bootstrap({ email: 'owner@acme.test', workspaceName: 'Acme HQ' })).json());
+    const again = await bootstrap({ email: 'owner@acme.test', workspaceName: 'Acme HQ' });
+    expect(again.statusCode).toBe(201);
+    const b = BootstrapResponseSchema.parse(again.json());
+    expect(b.userId).toBe(a.userId);
+    expect(b.tenantId).toBe(a.tenantId);
+    expect(b.setupUrl).not.toBe(a.setupUrl);
+    expect((await confirm(tokenOf(a.setupUrl))).json().error).toBe('link_invalid');
+    expect((await confirm(tokenOf(b.setupUrl))).statusCode).toBe(200);
+    const owned = await getDb().execute(sql`SELECT tenant_id FROM my_tenants(${a.userId}::uuid)`);
+    expect(rowsOf(owned)).toHaveLength(1);
+  });
+
+  test('refused once anyone has a password, and for another email', async () => {
+    await bootstrap({ email: 'owner@acme.test', workspaceName: 'Acme HQ' });
+    const other = await bootstrap({ email: 'someone@acme.test', workspaceName: 'Other' });
+    expect(other.statusCode).toBe(409);
+    expect(other.json().error).toBe('already_set_up');
+
+    const fresh = BootstrapResponseSchema.parse((await bootstrap({ email: 'owner@acme.test', workspaceName: 'Acme HQ' })).json());
+    await confirm(tokenOf(fresh.setupUrl));
+    const done = await bootstrap({ email: 'owner@acme.test', workspaceName: 'Acme HQ' });
+    expect(done.statusCode).toBe(409);
+    expect(done.json().error).toBe('already_set_up');
+  });
+
+  test('refused when someone signed up first', async () => {
+    await signUp(app, 'early@acme.test');
+    expect((await bootstrap({ email: 'owner@acme.test', workspaceName: 'Acme HQ' })).statusCode).toBe(409);
+  });
+
+  test('a bad body is validation_failed; no token is 401', async () => {
+    expect((await bootstrap({ email: 'not-an-email', workspaceName: 'x' })).json().error).toBe('validation_failed');
+    expect((await bootstrap({ email: 'owner@acme.test', workspaceName: '' })).json().error).toBe('validation_failed');
+    expect((await app.inject({ method: 'POST', url: '/internal/v1/bootstrap', payload: { email: 'a@b.test', workspaceName: 'x' } })).statusCode).toBe(401);
+  });
+
+  test('a workspace name that slugs to a taken or empty slug still works', async () => {
+    const res = await bootstrap({ email: 'owner@acme.test', workspaceName: '!!!' });
+    expect(res.statusCode, res.body).toBe(201);
+  });
+});
+
+describe('password-reset confirm: which links it takes', () => {
+  useTestDb();
+  const app = buildTestApp();
+  const confirm = (token: string) =>
+    app.inject({ method: 'POST', url: '/api/v1/auth/password-reset/confirm', payload: { token, password: 'a-fresh-long-password-1' } });
+
+  test('a reset link and a setup link work; a verify link does not', async () => {
+    const s = await signUp(app, 'person@acme.test');
+    expect((await confirm(await createEmailToken(s.userId, 'verify'))).json().error).toBe('link_invalid');
+    expect((await confirm(await createEmailToken(s.userId, 'setup'))).statusCode).toBe(200);
+    expect((await confirm(await createEmailToken(s.userId, 'reset'))).statusCode).toBe(200);
+  });
+});

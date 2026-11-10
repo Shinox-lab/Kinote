@@ -3,12 +3,14 @@ import { and, eq, gt, isNull } from 'drizzle-orm';
 import { emailTokens, getDb } from '@kinote/db';
 import { sha256Hex } from '@kinote/shared';
 
-export type EmailTokenPurpose = 'verify' | 'reset';
+/** `setup`: a new instance's first owner sets their password (POST /internal/v1/bootstrap). */
+export type EmailTokenPurpose = 'verify' | 'reset' | 'setup';
 
 /** How long each kind of link works. */
 export const EMAIL_TOKEN_TTL_MS: Record<EmailTokenPurpose, number> = {
   verify: 24 * 60 * 60 * 1000,
   reset: 60 * 60 * 1000,
+  setup: 72 * 60 * 60 * 1000,
 };
 
 const PREFIX = 'lwe_';

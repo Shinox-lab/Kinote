@@ -171,6 +171,21 @@ Both fields are required; `manageUrl` may be `null`. Answers `200` with the work
 Repeating the same body changes nothing and writes no audit event. Lifting a suspension lets held indexing run at
 once. Unknown or deleted workspace: `404 tenant_not_found`.
 
+### `POST /internal/v1/bootstrap`
+
+Sets up a new dedicated instance's first owner. Body `{ "email": "owner@acme.test", "workspaceName": "Acme HQ" }`;
+answers `201`:
+
+```json
+{ "userId": "…", "tenantId": "…", "setupUrl": "https://acme.kinote.example/reset-password/lwe_…" }
+```
+
+It creates a user for `email` with no usable password and the workspace `workspaceName` they own, then a single-use
+`setup` link (72 hours) that sets their password on the reset-password page and signs them in. Called again for the
+same email while that person has not set a password: no new user or workspace, a new link (older ones stop working).
+Refused with `409 already_set_up` once anyone has a password, or for another email while someone else exists. The link
+uses `PUBLIC_URL`; without it the call answers `500`.
+
 ### `GET /internal/v1/defaults` and `PUT /internal/v1/defaults`
 
 Limits every new workspace starts with, until the control plane sets its own. Feature `default_limits`.
@@ -212,6 +227,7 @@ the period containing that date for each workspace.
 | 400 | `validation_failed` | A body or query that does not match its schema. |
 | 401 | `unauthenticated` | No `Authorization: Bearer`, or a token not in `CONTROL_PLANE_TOKENS`. |
 | 403 | `forbidden` | The client address is not in `CONTROL_PLANE_ALLOWED_IPS` (checked first). |
+| 409 | `already_set_up` | `POST /bootstrap` once someone can sign in, or for another email. |
 | 404 | `tenant_not_found` | Unknown workspace (or, for writes, a deleted one). |
 | 404 | (as any unknown path) | Any `/internal/` path while `CONTROL_PLANE_TOKENS` is unset. |
 

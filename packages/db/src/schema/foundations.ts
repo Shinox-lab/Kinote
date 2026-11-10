@@ -40,7 +40,7 @@ export const emailTokens = pgTable(
     userId: uuid('user_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
-    purpose: text('purpose', { enum: ['verify', 'reset'] }).notNull(),
+    purpose: text('purpose', { enum: ['verify', 'reset', 'setup'] }).notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
     usedAt: timestamp('used_at', { withTimezone: true }),

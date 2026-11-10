@@ -108,6 +108,14 @@ export const TopupInputSchema = z
   .object({ credits: z.number().int().positive(), idempotencyKey: z.string().min(1).max(200) })
   .strict();
 
+/** POST /internal/v1/bootstrap: the first owner and workspace of a new dedicated instance. */
+export const BootstrapRequestSchema = z
+  .object({ email: z.string().trim().toLowerCase().email(), workspaceName: z.string().trim().min(1).max(100) })
+  .strict();
+export type BootstrapRequest = z.infer<typeof BootstrapRequestSchema>;
+export const BootstrapResponseSchema = z.object({ userId: z.string().uuid(), tenantId: z.string().uuid(), setupUrl: z.string().url() });
+export type BootstrapResponse = z.infer<typeof BootstrapResponseSchema>;
+
 export const InfoSchema = z.object({
   kinoteVersion: z.string(),
   apiVersion: z.literal(1),

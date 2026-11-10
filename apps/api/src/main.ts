@@ -31,6 +31,7 @@ async function main(): Promise<void> {
     controlPlaneTokens: config.CONTROL_PLANE_TOKENS,
     controlPlaneAllowedIps: config.CONTROL_PLANE_ALLOWED_IPS,
     ...(config.KINOTE_VERSION ? { kinoteVersion: config.KINOTE_VERSION } : {}),
+    ...(config.PUBLIC_URL ? { publicUrl: config.PUBLIC_URL } : {}),
     maxUploadBytes: config.MAX_UPLOAD_BYTES,
     maxConcurrentUploads: config.MAX_CONCURRENT_UPLOADS,
     ...(config.UPLOAD_TMP_DIR ? { uploadTmpDir: config.UPLOAD_TMP_DIR } : {}),
