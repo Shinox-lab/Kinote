@@ -2,8 +2,13 @@
 // wrapped: a blocked or full storage just forgets, it never breaks the page.
 
 export const COLLAPSED_KEY = 'lw-sidebar-collapsed';
+export const WIDTH_KEY = 'lw-sidebar-width';
 /** Below this width the sidebar is a slide-over instead of a column. */
 export const SIDEBAR_BREAKPOINT_PX = 1024;
+/** The column's width: remembered per person, bounded so it never swallows the page. */
+export const SIDEBAR_MIN_WIDTH = 200;
+export const SIDEBAR_MAX_WIDTH = 420;
+export const SIDEBAR_DEFAULT_WIDTH = 252;
 
 type ReadStorage = Pick<Storage, 'getItem'> | undefined;
 type WriteStorage = Pick<Storage, 'setItem'> | undefined;
@@ -27,6 +32,27 @@ export function loadCollapsed(storage: ReadStorage = browserStorage()): boolean 
 export function saveCollapsed(collapsed: boolean, storage: WriteStorage = browserStorage()): void {
   try {
     storage?.setItem(COLLAPSED_KEY, collapsed ? '1' : '0');
+  } catch {
+    // Forgotten at the next visit; nothing else to do.
+  }
+}
+
+export function clampWidth(width: number): number {
+  return Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, Math.round(width)));
+}
+
+export function loadWidth(storage: ReadStorage = browserStorage()): number {
+  try {
+    const width = Number(storage?.getItem(WIDTH_KEY));
+    return Number.isFinite(width) && width > 0 ? clampWidth(width) : SIDEBAR_DEFAULT_WIDTH;
+  } catch {
+    return SIDEBAR_DEFAULT_WIDTH;
+  }
+}
+
+export function saveWidth(width: number, storage: WriteStorage = browserStorage()): void {
+  try {
+    storage?.setItem(WIDTH_KEY, String(clampWidth(width)));
   } catch {
     // Forgotten at the next visit; nothing else to do.
   }

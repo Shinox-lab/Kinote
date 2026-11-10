@@ -62,6 +62,61 @@ export const PAGE_WIDTH_OPTIONS: ReadonlyArray<{ value: PageWidth; label: string
   { value: 'full', label: 'Full' },
 ];
 
+/** localStorage key for the one width every page reads at. */
+export const PAGE_WIDTH_KEY = 'lw-page-width';
+
+function browserStorage(): Storage | undefined {
+  try {
+    return globalThis.localStorage;
+  } catch {
+    return undefined;
+  }
+}
+
+/** The remembered width; the default column when nothing usable is stored or storage is unavailable. */
+export function loadPageWidth(storage: Pick<Storage, 'getItem'> | undefined = browserStorage()): PageWidth {
+  try {
+    const stored = storage?.getItem(PAGE_WIDTH_KEY);
+    return PAGE_WIDTH_OPTIONS.find((o) => o.value === stored)?.value ?? 'default';
+  } catch {
+    return 'default';
+  }
+}
+
+/** Remembers the width for every page; never throws (a private window or blocked storage just forgets it). */
+export function savePageWidth(width: PageWidth, storage: Pick<Storage, 'setItem'> | undefined = browserStorage()): void {
+  try {
+    storage?.setItem(PAGE_WIDTH_KEY, width);
+  } catch {
+    // The choice still applies to this visit.
+  }
+}
+
+// One width for every page, shared by the page and the account menu.
+let width: PageWidth | null = null;
+const widthListeners = new Set<() => void>();
+
+export function getPageWidth(): PageWidth {
+  return (width ??= loadPageWidth());
+}
+
+export function setPageWidth(next: PageWidth): void {
+  if (getPageWidth() === next) return;
+  width = next;
+  savePageWidth(next);
+  for (const listener of [...widthListeners]) listener();
+}
+
+function subscribePageWidth(listener: () => void): () => void {
+  widthListeners.add(listener);
+  return () => void widthListeners.delete(listener);
+}
+
+/** The width every page reads at, re-rendering when the account menu changes it. */
+export function usePageWidth(): PageWidth {
+  return useSyncExternalStore(subscribePageWidth, getPageWidth, () => 'default');
+}
+
 /**
  * Calls `refetch` whenever `value` changes after it was first seen (undefined while loading is not a value). The page
  * screen passes the polled count of unindexed changes, so the page and its status chip follow edits made in this

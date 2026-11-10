@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { useRouter } from '@tanstack/react-router';
 import { api } from '../../lib/api.js';
+import { PAGE_WIDTH_OPTIONS, setPageWidth, usePageWidth } from '../../lib/pageUi.js';
 import { endSession } from '../../lib/queryClient.js';
 import { loadSession } from '../../lib/session.js';
 import { applyTheme, loadTheme, saveTheme, type ThemeChoice } from '../../lib/theme.js';
@@ -22,12 +23,14 @@ function initials(name: string | undefined): string {
 
 /**
  * The foot of the sidebar: who is signed in. The row opens the account menu:
- * appearance (light/dark/system) and sign-out live here, not in the sidebar.
+ * appearance (light/dark/system and the width every page reads at) and sign-out
+ * live here, not in the sidebar.
  */
 export function AccountRow() {
   const router = useRouter();
   const user = loadSession()?.user;
   const [theme, setTheme] = useState<ThemeChoice>(() => loadTheme());
+  const width = usePageWidth();
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -115,6 +118,26 @@ export function AccountRow() {
               <span aria-hidden="true" className="flex size-4 shrink-0 items-center justify-center">
                 <Icon />
               </span>
+              <span className="flex-1">{label}</span>
+            </button>
+          ))}
+          <div role="separator" className="my-1 h-px bg-line" />
+          <p className="px-2 py-1 text-xs text-muted">Page width</p>
+          {PAGE_WIDTH_OPTIONS.map(({ value, label }) => (
+            <button
+              key={value}
+              type="button"
+              role="menuitemradio"
+              aria-checked={width === value}
+              onClick={() => {
+                setPageWidth(value);
+                setOpen(false);
+                buttonRef.current?.focus();
+              }}
+              className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm ${
+                width === value ? 'bg-active text-fg' : 'text-muted hover:bg-hover'
+              }`}
+            >
               <span className="flex-1">{label}</span>
             </button>
           ))}

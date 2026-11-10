@@ -1,5 +1,16 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
-import { PAGE_WIDTH_OPTIONS, closeHistory, getHistoryOpenFor, getHistoryTab, openHistory, pageWidthClass, subscribeHistory } from '../src/lib/pageUi.js';
+import {
+  PAGE_WIDTH_KEY,
+  PAGE_WIDTH_OPTIONS,
+  closeHistory,
+  getHistoryOpenFor,
+  getHistoryTab,
+  loadPageWidth,
+  openHistory,
+  pageWidthClass,
+  savePageWidth,
+  subscribeHistory,
+} from '../src/lib/pageUi.js';
 
 afterEach(() => closeHistory());
 
@@ -47,7 +58,7 @@ describe('page width', () => {
     expect(pageWidthClass('full')).toBe('max-w-none');
   });
 
-  test('a page from a server without widths reads at the default width', () => {
+  test('a missing width reads at the default width', () => {
     expect(pageWidthClass(undefined)).toBe('max-w-[660px]');
   });
 
@@ -57,5 +68,33 @@ describe('page width', () => {
       ['wide', 'Wide'],
       ['full', 'Full'],
     ]);
+  });
+});
+
+describe('remembered page width', () => {
+  test('loads the stored width and defaults to the reading column', () => {
+    expect(loadPageWidth({ getItem: (k) => (k === PAGE_WIDTH_KEY ? 'wide' : null) })).toBe('wide');
+    expect(loadPageWidth({ getItem: () => null })).toBe('default');
+    expect(loadPageWidth({ getItem: () => 'huge' })).toBe('default');
+    expect(
+      loadPageWidth({
+        getItem: () => {
+          throw new Error('blocked');
+        },
+      })
+    ).toBe('default');
+  });
+
+  test('saves the width under its key and swallows a throwing storage', () => {
+    const written: Record<string, string> = {};
+    savePageWidth('full', { setItem: (k, v) => void (written[k] = v) });
+    expect(written).toEqual({ [PAGE_WIDTH_KEY]: 'full' });
+    expect(() =>
+      savePageWidth('wide', {
+        setItem: () => {
+          throw new Error('quota');
+        },
+      })
+    ).not.toThrow();
   });
 });
