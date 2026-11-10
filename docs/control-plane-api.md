@@ -22,6 +22,12 @@ Authorization: Bearer <token>
 the new one, move the control plane to it, then remove the old one. Tokens are compared by SHA-256 in constant time.
 A missing or wrong token answers `401 unauthenticated`. A console session is not a token.
 
+`CONTROL_PLANE_ALLOWED_IPS` (comma-separated IPv4/IPv6 addresses or CIDRs, e.g. `203.0.113.10,10.0.0.0/8`) limits
+which client addresses may call the API at all. The client address is the one `TRUST_PROXY` resolves. A request from
+any other address answers `403 forbidden` before the token is looked at. Empty or unset: any address (the shared
+deployment, where the control plane reaches Kinote over a private network). Dedicated instances set it to the control
+plane's outbound address, since their API is reachable from the internet.
+
 ## Conventions
 
 - Bodies are JSON with camelCase fields. Credits are numbers with up to 3 decimals; bytes and seats are integers.
@@ -55,6 +61,9 @@ A missing or wrong token answers `401 unauthenticated`. A console session is not
 ```json
 { "kinoteVersion": "0.1.0", "apiVersion": 1, "features": ["limits", "usage", "topups", "billing_state", "default_limits"] }
 ```
+
+`kinoteVersion` is `KINOTE_VERSION`, which release images carry (`X.Y.Z` for the tag `vX.Y.Z`); an image built from
+source reports the api package's version instead.
 
 ### `GET /internal/v1/tenants?after=<id>&limit=<n>`
 
@@ -202,6 +211,7 @@ the period containing that date for each workspace.
 |---|---|---|
 | 400 | `validation_failed` | A body or query that does not match its schema. |
 | 401 | `unauthenticated` | No `Authorization: Bearer`, or a token not in `CONTROL_PLANE_TOKENS`. |
+| 403 | `forbidden` | The client address is not in `CONTROL_PLANE_ALLOWED_IPS` (checked first). |
 | 404 | `tenant_not_found` | Unknown workspace (or, for writes, a deleted one). |
 | 404 | (as any unknown path) | Any `/internal/` path while `CONTROL_PLANE_TOKENS` is unset. |
 

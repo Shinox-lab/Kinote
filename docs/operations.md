@@ -386,6 +386,7 @@ the settings below behaves as before. Usage is still metered and shown.
 | --- | --- | --- |
 | `MODEL_CREDIT_RATES` | unset (every call 0 credits) | Model id → credits per 1,000 input and output tokens, plus `default` for models not listed (a warning is logged once per model). Inline JSON or a path to a JSON file. A bad value stops the service at startup. Deterministic models are free unless listed. |
 | `CONTROL_PLANE_TOKENS` | unset (API off: `/internal/v1/` is 404) | Comma-separated bearer tokens, each at least 32 characters. List two while rotating. |
+| `CONTROL_PLANE_ALLOWED_IPS` | empty (any address) | Comma-separated addresses or CIDRs allowed to call `/internal/v1/` (403 otherwise, before the token). Dedicated instances set it to the control plane's outbound address. |
 | `BILLING_URL` | unset | Where Upgrade links point; shown only to owners and admins, and to anyone refused a new workspace by the free-workspace cap. |
 
 With Docker Compose (and Coolify) the three settings are passed through `docker-compose.yml`. Prefer inline JSON for

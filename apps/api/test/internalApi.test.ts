@@ -328,3 +328,32 @@ describe('control-plane API', () => {
     expect(job!.runAt.getTime()).toBeLessThanOrEqual(Date.now());
   });
 });
+
+describe('control-plane API: baked version and IP allowlist', () => {
+  useTestDb();
+  const info = (app: ReturnType<typeof buildTestApp>, headers: Record<string, string>) =>
+    app.inject({ method: 'GET', url: '/internal/v1/info', headers });
+
+  test('info reports the baked version', async () => {
+    const app = buildTestApp({ controlPlaneTokens: [TOKEN_A], kinoteVersion: '0.2.0' });
+    expect(InfoSchema.parse((await info(app, cp())).json()).kinoteVersion).toBe('0.2.0');
+  });
+
+  test('the allowlist refuses other addresses before the token', async () => {
+    const app = buildTestApp({ controlPlaneTokens: [TOKEN_A], controlPlaneAllowedIps: ['10.1.0.0/16', '172.16.0.9'], trustProxy: 1 });
+    expect((await info(app, { ...cp(), 'x-forwarded-for': '10.1.2.3' })).statusCode).toBe(200);
+    expect((await info(app, { ...cp(), 'x-forwarded-for': '172.16.0.9' })).statusCode).toBe(200);
+    const refused = await info(app, { ...cp(), 'x-forwarded-for': '10.2.0.1' });
+    expect(refused.statusCode).toBe(403);
+    expect(refused.json().error).toBe('forbidden');
+    expect((await info(app, { 'x-forwarded-for': '10.2.0.1' })).statusCode).toBe(403);
+    // Allowed address, no token: the token check still applies.
+    expect((await info(app, { 'x-forwarded-for': '10.1.2.3' })).statusCode).toBe(401);
+  });
+
+  test('an empty allowlist lets any address through', async () => {
+    const app = buildTestApp({ controlPlaneTokens: [TOKEN_A], controlPlaneAllowedIps: [], trustProxy: 1 });
+    expect((await info(app, { ...cp(), 'x-forwarded-for': '203.0.113.7' })).statusCode).toBe(200);
+  });
+});
+

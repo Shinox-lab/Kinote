@@ -289,6 +289,10 @@ export interface ApiServerOptions {
   billingUrl?: string;
   /** CONTROL_PLANE_TOKENS: bearer tokens for /internal/v1/. None: that API does not exist (404). */
   controlPlaneTokens?: string[];
+  /** CONTROL_PLANE_ALLOWED_IPS: addresses and CIDRs allowed to call /internal/v1/ (empty: any). */
+  controlPlaneAllowedIps?: string[];
+  /** KINOTE_VERSION, baked into release images; reported by /internal/v1/info. Default: the api package's version. */
+  kinoteVersion?: string;
 }
 
 const DEFAULT_MAX_UPLOAD_BYTES = 52_428_800;
@@ -1190,6 +1194,8 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
   });
 
   registerInternalRoutes(app, opts.controlPlaneTokens ?? [], {
+    ...(opts.controlPlaneAllowedIps ? { allowedIps: opts.controlPlaneAllowedIps } : {}),
+    ...(opts.kinoteVersion ? { kinoteVersion: opts.kinoteVersion } : {}),
     ...(opts.collab ? { revokeTenant: (tenantId: string) => opts.collab!.revoke({ tenantId }) } : {}),
   });
 

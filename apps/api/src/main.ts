@@ -29,6 +29,8 @@ async function main(): Promise<void> {
     creditRates: parseCreditRates(config.MODEL_CREDIT_RATES),
     billingUrl: config.BILLING_URL,
     controlPlaneTokens: config.CONTROL_PLANE_TOKENS,
+    controlPlaneAllowedIps: config.CONTROL_PLANE_ALLOWED_IPS,
+    ...(config.KINOTE_VERSION ? { kinoteVersion: config.KINOTE_VERSION } : {}),
     maxUploadBytes: config.MAX_UPLOAD_BYTES,
     maxConcurrentUploads: config.MAX_CONCURRENT_UPLOADS,
     ...(config.UPLOAD_TMP_DIR ? { uploadTmpDir: config.UPLOAD_TMP_DIR } : {}),

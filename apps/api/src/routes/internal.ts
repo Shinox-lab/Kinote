@@ -1,5 +1,6 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { createRequire } from 'node:module';
+import { BlockList, isIP } from 'node:net';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import {
@@ -65,6 +66,26 @@ function bearerCheck(tokens: string[]) {
     let ok = false;
     for (const hash of hashes) ok = timingSafeEqual(hash, presented) || ok;
     if (!ok) throw new AppError('unauthenticated');
+  };
+}
+
+/**
+ * An onRequest hook refusing (403) any client address outside `allowed`
+ * (addresses and CIDRs; `req.ip` as TRUST_PROXY resolves it). Runs before the
+ * token check, so a caller from elsewhere learns nothing about the token.
+ */
+function allowlistCheck(allowed: string[]) {
+  const list = new BlockList();
+  for (const entry of allowed) {
+    const [address, prefix] = entry.split('/') as [string, string | undefined];
+    const type = isIP(address) === 6 ? 'ipv6' : 'ipv4';
+    if (prefix === undefined) list.addAddress(address, type);
+    else list.addSubnet(address, Number(prefix), type);
+  }
+  return async (req: FastifyRequest): Promise<void> => {
+    const ip = req.ip.startsWith('::ffff:') && isIP(req.ip.slice(7)) === 4 ? req.ip.slice(7) : req.ip;
+    const family = isIP(ip);
+    if (family === 0 || !list.check(ip, family === 6 ? 'ipv6' : 'ipv4')) throw new AppError('forbidden');
   };
 }
 
@@ -153,6 +174,10 @@ const iso = (v: Date | string) => new Date(v).toISOString();
 export interface InternalRouteOptions {
   /** Closes a workspace's live editing sessions (after it is suspended, so they reconnect read-only). */
   revokeTenant?: (tenantId: string) => Promise<void>;
+  /** CONTROL_PLANE_ALLOWED_IPS; empty or unset: any address. */
+  allowedIps?: string[];
+  /** Reported as kinoteVersion by /info; default the api package's version. */
+  kinoteVersion?: string;
 }
 
 export function registerInternalRoutes(app: FastifyInstance, tokens: string[], o: InternalRouteOptions = {}): void {
@@ -161,10 +186,12 @@ export function registerInternalRoutes(app: FastifyInstance, tokens: string[], o
     app.all('/internal/*', { config: { auth: 'public' } }, async (_req, reply: FastifyReply) => reply.callNotFound());
     return;
   }
-  const opts = { config: { auth: 'public' as const }, onRequest: bearerCheck(tokens) };
+  const allowed = o.allowedIps ?? [];
+  const onRequest = allowed.length > 0 ? [allowlistCheck(allowed), bearerCheck(tokens)] : [bearerCheck(tokens)];
+  const opts = { config: { auth: 'public' as const }, onRequest };
 
   app.get('/internal/v1/info', opts, async () => ({
-    kinoteVersion: kinoteVersion(),
+    kinoteVersion: o.kinoteVersion ?? kinoteVersion(),
     apiVersion: 1 as const,
     features: ['limits', 'usage', 'topups', 'billing_state', 'default_limits'],
   }));
