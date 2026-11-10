@@ -7,7 +7,7 @@ import { FileTypeTile } from '../FileTypeTile.js';
 import { useUploads } from '../../lib/useUploads.js';
 import { loadExpanded, saveExpanded } from '../../lib/sidebar.js';
 import { useFile, usePage, useRefresh, useSpaceTree, useSpaces, useWorkspace } from '../../lib/queries.js';
-import { buildTree, canCreatePages, expandedFor, type TreeItem } from '../../lib/wiki.js';
+import { buildTree, canCreatePages, expandedFor, pasteParent, type TreeItem } from '../../lib/wiki.js';
 import { api, errorMessage } from '../../lib/api.js';
 import { canAdminister } from '../../lib/console.js';
 import { BookIcon, ChevronDownIcon, ChevronRightIcon, InboxIcon, PageIcon, PlusIcon } from '../icons.js';
@@ -149,6 +149,16 @@ function PageNode({
           e.stopPropagation();
           if (!takesDrop) return;
           actions.drop(e, { spaceId, parentId: node.id });
+        }}
+        onPaste={(e) => {
+          if (!canAdd) return;
+          const files = Array.from(e.clipboardData.files);
+          if (files.length === 0 || (e.target as HTMLElement).closest?.('input, textarea')) return;
+          e.preventDefault();
+          // A page holds the files; a file has no children, so they go to its folder.
+          const parentId = pasteParent(node);
+          enqueue(files, { spaceId, parentId });
+          if (parentId !== null && !expanded.has(parentId)) toggle(parentId);
         }}
       >
         {hasChildren ? (
@@ -307,6 +317,14 @@ function SpaceNode({
           e.dataTransfer.dropEffect = 'move';
         }}
         onDrop={(e) => actions.drop(e, { spaceId: space.id, parentId: null })}
+        onPaste={(e) => {
+          if (!canAdd) return;
+          const files = Array.from(e.clipboardData.files);
+          if (files.length === 0 || (e.target as HTMLElement).closest?.('input, textarea')) return;
+          e.preventDefault();
+          if (!open) toggle(space.id);
+          enqueue(files, { spaceId: space.id, parentId: null });
+        }}
       >
         {/* The space row is a toggle, not a link: it opens and closes the tree. */}
         <button

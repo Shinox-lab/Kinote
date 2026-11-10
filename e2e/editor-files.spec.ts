@@ -1,15 +1,22 @@
 import { expect, test, type Page } from '@playwright/test';
-import { call, createPageInSpace, editorOf, openAs, seedWorld } from './support.js';
+import { call, createPageInSpace, editorOf, openAs, seedWorld, treeLink } from './support.js';
 
 /** A paste of real File objects from the desktop, as the browser sees it. */
-async function pasteFiles(page: Page, files: { name: string; mimeType: string; text: string }[]): Promise<void> {
-  await page.evaluate((items) => {
-    const data = new DataTransfer();
-    for (const item of items) data.items.add(new File([item.text], item.name, { type: item.mimeType }));
-    const event = new ClipboardEvent('paste', { bubbles: true, cancelable: true });
-    Object.defineProperty(event, 'clipboardData', { value: data });
-    (document.querySelector('.bn-editor') as HTMLElement).dispatchEvent(event);
-  }, files);
+async function pasteFiles(
+  page: Page,
+  files: { name: string; mimeType: string; text: string }[],
+  target = '.bn-editor'
+): Promise<void> {
+  await page.evaluate(
+    ({ items, target }) => {
+      const data = new DataTransfer();
+      for (const item of items) data.items.add(new File([item.text], item.name, { type: item.mimeType }));
+      const event = new ClipboardEvent('paste', { bubbles: true, cancelable: true });
+      Object.defineProperty(event, 'clipboardData', { value: data });
+      (document.querySelector(target) as HTMLElement).dispatchEvent(event);
+    },
+    { items: files, target }
+  );
 }
 
 /** Drops a file at a point in the editor, as the browser reports a real drag. */
@@ -63,6 +70,39 @@ test('a pasted text file becomes a file under the page, previewed in place and k
   await expect(page.getByText(`second from paste ${world.suffix}`)).toBeVisible();
   await expect(editorOf(page).getByRole('link', { name: /Pasted notes\.txt/ })).toBeVisible();
   await expect(editorOf(page).getByRole('link', { name: /Second notes\.txt/ })).toBeVisible();
+});
+
+test('a file pasted with focus on a tree row goes under that row’s folder', async ({ browser, request }) => {
+  const world = await seedWorld(request, { reviewRequired: false });
+  const page = await openAs(browser, world, world.owner);
+  const pageId = await createPageInSpace(page, world, 'Paste in tree');
+
+  const treeNodes = async () =>
+    (
+      await call<{ nodes: { id: string; title: string; parentId: string | null }[] }>(
+        request,
+        `/spaces/${world.spaceId}/tree`,
+        { account: world.owner, tenantId: world.tenantId }
+      )
+    ).nodes;
+
+  // Focus on the page row: the pasted file goes under that page.
+  const pageRow = treeLink(page, 'Paste in tree');
+  await pageRow.click();
+  await pageRow.focus();
+  await pasteFiles(page, [{ name: 'Tree notes.txt', mimeType: 'text/plain', text: `tree paste ${world.suffix}` }], ':focus');
+  await expect(treeLink(page, 'Tree notes.txt')).toBeVisible();
+  const underPage = (await treeNodes()).find((n) => n.title === 'Tree notes.txt')!;
+  expect(underPage.parentId).toBe(pageId);
+
+  // Focus on the file row: the file has no children, so the paste goes to its folder.
+  const fileRow = treeLink(page, 'Tree notes.txt');
+  await fileRow.click();
+  await fileRow.focus();
+  await pasteFiles(page, [{ name: 'Sibling notes.txt', mimeType: 'text/plain', text: `sibling paste ${world.suffix}` }], ':focus');
+  await expect(treeLink(page, 'Sibling notes.txt')).toBeVisible();
+  const sibling = (await treeNodes()).find((n) => n.title === 'Sibling notes.txt')!;
+  expect(sibling.parentId).toBe(pageId);
 });
 
 test('a dropped file lands at the drop point and is previewed in place', async ({ browser, request }) => {
