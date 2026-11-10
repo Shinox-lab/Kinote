@@ -24,6 +24,7 @@ import { useFocusTrap } from '../lib/useFocusTrap.js';
 import { useMediaQuery } from '../lib/useMediaQuery.js';
 import { usePeek } from '../lib/usePeek.js';
 import { UsageBanner } from '../components/UsageBanner.js';
+import { rememberBeneathSettings } from '../lib/settingsReturn.js';
 
 // The side panel carries the editor: load it only when a page is peeked.
 const PagePeek = lazy(() => import('../components/PagePeek.js').then((m) => ({ default: m.PagePeek })));
@@ -54,6 +55,12 @@ function Shell() {
   const panelRef = useRef<HTMLDivElement>(null);
   const drag = useRef<{ startX: number; startWidth: number; width: number } | null>(null);
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const href = useRouterState({ select: (s) => s.location.href });
+
+  // Settings is a panel over whatever the person was on: note that screen so closing returns to it.
+  useEffect(() => {
+    if (!/\/admin(\/|$)/.test(pathname)) rememberBeneathSettings(href);
+  }, [pathname, href]);
 
   // A slide-over closes when the person goes somewhere, and when the screen widens into a column.
   useEffect(() => setSlideOver(false), [pathname, isDesktop]);

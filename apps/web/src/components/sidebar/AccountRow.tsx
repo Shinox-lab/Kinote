@@ -2,6 +2,8 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { useRouter } from '@tanstack/react-router';
 import { api } from '../../lib/api.js';
+import { adminScreens } from '../../lib/console.js';
+import { useWorkspace } from '../../lib/queries.js';
 import { PAGE_WIDTH_OPTIONS, setPageWidth, usePageWidth } from '../../lib/pageUi.js';
 import { endSession } from '../../lib/queryClient.js';
 import { loadSession } from '../../lib/session.js';
@@ -29,6 +31,8 @@ function initials(name: string | undefined): string {
 export function AccountRow() {
   const router = useRouter();
   const user = loadSession()?.user;
+  const { tenant, role } = useWorkspace();
+  const settingsTo = adminScreens(role)[0]?.to;
   const [theme, setTheme] = useState<ThemeChoice>(() => loadTheme());
   const width = usePageWidth();
   const [open, setOpen] = useState(false);
@@ -142,6 +146,19 @@ export function AccountRow() {
             </button>
           ))}
           <div role="separator" className="my-1 h-px bg-line" />
+          {settingsTo && (
+            <button
+              type="button"
+              role="menuitem"
+              className="w-full rounded-md px-2 py-1.5 text-left text-sm text-muted hover:bg-hover"
+              onClick={() => {
+                setOpen(false);
+                void router.navigate({ to: settingsTo, params: { tenantSlug: tenant.slug } });
+              }}
+            >
+              Settings &amp; members
+            </button>
+          )}
           <button
             type="button"
             role="menuitem"
