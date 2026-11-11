@@ -134,11 +134,18 @@ function PageNode({
   const renaming = actions.renaming?.id === node.id;
   // Only a page can hold children, so only a page row takes a drop.
   const takesDrop = node.kind === 'page';
+  // Where files pasted on this row go: the page itself, or a file's folder.
+  const pasteTo = pasteParent(node);
   return (
     <li>
       <div
         className="group flex items-center gap-0.5"
         style={{ paddingLeft: `${depth * INDENT_PX}px` }}
+        // Firefox dispatches a paste on the body, so the focused row carries its target for the
+        // document listener in SpacesSection (Chrome targets the row itself).
+        data-paste-space={canAdd ? spaceId : undefined}
+        data-paste-parent={canAdd ? (pasteTo ?? '') : undefined}
+        data-paste-open={canAdd ? (pasteTo ?? '') : undefined}
         onDragOver={(e) => {
           if (!takesDrop || !carriesNode(e)) return;
           e.preventDefault();
@@ -149,16 +156,6 @@ function PageNode({
           e.stopPropagation();
           if (!takesDrop) return;
           actions.drop(e, { spaceId, parentId: node.id });
-        }}
-        onPaste={(e) => {
-          if (!canAdd) return;
-          const files = Array.from(e.clipboardData.files);
-          if (files.length === 0 || (e.target as HTMLElement).closest?.('input, textarea')) return;
-          e.preventDefault();
-          // A page holds the files; a file has no children, so they go to its folder.
-          const parentId = pasteParent(node);
-          enqueue(files, { spaceId, parentId });
-          if (parentId !== null && !expanded.has(parentId)) toggle(parentId);
         }}
       >
         {hasChildren ? (
@@ -311,20 +308,14 @@ function SpaceNode({
     <li>
       <div
         className="group flex items-center gap-0.5"
+        data-paste-space={canAdd ? space.id : undefined}
+        data-paste-open={canAdd ? space.id : undefined}
         onDragOver={(e) => {
           if (!carriesNode(e)) return;
           e.preventDefault();
           e.dataTransfer.dropEffect = 'move';
         }}
         onDrop={(e) => actions.drop(e, { spaceId: space.id, parentId: null })}
-        onPaste={(e) => {
-          if (!canAdd) return;
-          const files = Array.from(e.clipboardData.files);
-          if (files.length === 0 || (e.target as HTMLElement).closest?.('input, textarea')) return;
-          e.preventDefault();
-          if (!open) toggle(space.id);
-          enqueue(files, { spaceId: space.id, parentId: null });
-        }}
       >
         {/* The space row is a toggle, not a link: it opens and closes the tree. */}
         <button
@@ -414,6 +405,7 @@ export function SpacesSection() {
   const { data: page } = usePage(pageId);
   const { data: file } = useFile(fileId);
   const refresh = useRefresh();
+  const { enqueue } = useUploads();
   // The document being read, a page or a file: its space opens and its row is revealed.
   const currentDocId = pageId ?? fileId;
   const [expanded, setExpanded] = useState<Set<string>>(() => loadExpanded(tenant.id));
@@ -463,6 +455,26 @@ export function SpacesSection() {
       return next;
     });
   }
+
+  // Files pasted while a tree row has focus go under that row's folder. The listener is on the
+  // document because Firefox reports a paste on the body, not on the focused link.
+  useEffect(() => {
+    function onPaste(e: ClipboardEvent) {
+      const files = Array.from(e.clipboardData?.files ?? []);
+      if (files.length === 0) return;
+      const active = document.activeElement as HTMLElement | null;
+      if (active?.closest?.('input, textarea, [contenteditable="true"]')) return;
+      const row = active?.closest('[data-paste-space]') as HTMLElement | null;
+      const spaceId = row?.dataset.pasteSpace;
+      if (!row || !spaceId) return;
+      e.preventDefault();
+      enqueue(files, { spaceId, parentId: row.dataset.pasteParent || null });
+      const openId = row.dataset.pasteOpen;
+      if (openId) setExpanded((prev) => (prev.has(openId) ? prev : new Set(prev).add(openId)));
+    }
+    document.addEventListener('paste', onPaste);
+    return () => document.removeEventListener('paste', onPaste);
+  }, [enqueue]);
 
   const move = useMutation({
     mutationFn: (target: Dragged & { spaceId: string; parentId: string | null }) => {
