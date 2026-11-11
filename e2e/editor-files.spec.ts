@@ -86,11 +86,12 @@ test('a file pasted with focus on a tree row goes under that row’s folder', as
       )
     ).nodes;
 
-  // Focus on the page row: the pasted file goes under that page.
+  // Focus on the page row: the pasted file goes under that page. The event is dispatched on
+  // the body, as Firefox reports it, while the row is what has focus.
   const pageRow = treeLink(page, 'Paste in tree');
   await pageRow.click();
   await pageRow.focus();
-  await pasteFiles(page, [{ name: 'Tree notes.txt', mimeType: 'text/plain', text: `tree paste ${world.suffix}` }], ':focus');
+  await pasteFiles(page, [{ name: 'Tree notes.txt', mimeType: 'text/plain', text: `tree paste ${world.suffix}` }], 'body');
   await expect(treeLink(page, 'Tree notes.txt')).toBeVisible();
   const underPage = (await treeNodes()).find((n) => n.title === 'Tree notes.txt')!;
   expect(underPage.parentId).toBe(pageId);
