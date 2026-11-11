@@ -202,6 +202,11 @@ export const ConfigSchema = z.object({
     .pipe(z.array(z.string().refine(isAddressOrCidr, (v) => ({ message: `${v} is not an IP address or CIDR` })))),
   /** The release version, baked into release images (vX.Y.Z → X.Y.Z). Unset: the api package's version. */
   KINOTE_VERSION: z.string().optional(),
+  /**
+   * Set by the control plane on every deploy of a dedicated instance and echoed by /internal/v1/info, so it can
+   * tell the new containers from the ones still running. Unset: not reported.
+   */
+  KINOTE_DEPLOY_ID: z.string().max(200).optional(),
   /** Where Upgrade links point (shown to owners and admins). Unset: no Upgrade links. */
   BILLING_URL: z.string().url().optional(),
 }).superRefine((value, ctx) => {

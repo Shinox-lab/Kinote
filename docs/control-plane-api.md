@@ -62,7 +62,8 @@ plane's outbound address, since their API is reachable from the internet.
 { "kinoteVersion": "0.1.0", "apiVersion": 1, "features": ["limits", "usage", "topups", "billing_state", "default_limits"] }
 ```
 
-`kinoteVersion` is `KINOTE_VERSION`, which release images carry (`X.Y.Z` for the tag `vX.Y.Z`); an image built from
+`deployId` is `KINOTE_DEPLOY_ID` when set (absent otherwise): the control plane sets a new one on every deploy of a
+dedicated instance, so it can tell the new containers from the old ones. `kinoteVersion` is `KINOTE_VERSION`, which release images carry (`X.Y.Z` for the tag `vX.Y.Z`); an image built from
 source reports the api package's version instead.
 
 ### `GET /internal/v1/tenants?after=<id>&limit=<n>`

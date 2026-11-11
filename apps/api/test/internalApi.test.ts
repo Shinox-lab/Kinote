@@ -340,6 +340,13 @@ describe('control-plane API: baked version and IP allowlist', () => {
   const info = (app: ReturnType<typeof buildTestApp>, headers: Record<string, string>) =>
     app.inject({ method: 'GET', url: '/internal/v1/info', headers });
 
+  test('info echoes the deploy id it was started with, and nothing without one', async () => {
+    const withId = buildTestApp({ controlPlaneTokens: [TOKEN_A], deployId: 'dep-123' });
+    expect((await info(withId, cp())).json().deployId).toBe('dep-123');
+    const without = buildTestApp({ controlPlaneTokens: [TOKEN_A] });
+    expect((await info(without, cp())).json()).not.toHaveProperty('deployId');
+  });
+
   test('info reports the baked version', async () => {
     const app = buildTestApp({ controlPlaneTokens: [TOKEN_A], kinoteVersion: '0.2.0' });
     expect(InfoSchema.parse((await info(app, cp())).json()).kinoteVersion).toBe('0.2.0');

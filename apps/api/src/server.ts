@@ -293,6 +293,8 @@ export interface ApiServerOptions {
   controlPlaneAllowedIps?: string[];
   /** KINOTE_VERSION, baked into release images; reported by /internal/v1/info. Default: the api package's version. */
   kinoteVersion?: string;
+  /** KINOTE_DEPLOY_ID: echoed by /internal/v1/info as deployId. */
+  deployId?: string;
   /** PUBLIC_URL: where people open Kinote (the setup link of POST /internal/v1/bootstrap). */
   publicUrl?: string;
 }
@@ -1199,6 +1201,7 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
     ...(opts.controlPlaneAllowedIps ? { allowedIps: opts.controlPlaneAllowedIps } : {}),
     ...(opts.kinoteVersion ? { kinoteVersion: opts.kinoteVersion } : {}),
     ...(opts.publicUrl ? { publicUrl: opts.publicUrl } : {}),
+    ...(opts.deployId ? { deployId: opts.deployId } : {}),
     ...(opts.collab ? { revokeTenant: (tenantId: string) => opts.collab!.revoke({ tenantId }) } : {}),
   });
 

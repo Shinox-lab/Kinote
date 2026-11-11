@@ -118,6 +118,8 @@ export type BootstrapResponse = z.infer<typeof BootstrapResponseSchema>;
 
 export const InfoSchema = z.object({
   kinoteVersion: z.string(),
+  /** KINOTE_DEPLOY_ID, when the deploy set one (dedicated instances). */
+  deployId: z.string().optional(),
   apiVersion: z.literal(1),
   features: z.array(z.string()),
 });

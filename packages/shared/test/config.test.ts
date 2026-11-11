@@ -218,6 +218,11 @@ describe('loadConfig: dedicated instance settings', () => {
     expect(() => loadConfig({ ...base, CONTROL_PLANE_ALLOWED_IPS: '10.0.0.0/33' })).toThrow(/CONTROL_PLANE_ALLOWED_IPS/);
   });
 
+  it('reads KINOTE_DEPLOY_ID', () => {
+    expect(loadConfig({ ...base, KINOTE_DEPLOY_ID: 'dep-1' }).KINOTE_DEPLOY_ID).toBe('dep-1');
+    expect(loadConfig(base).KINOTE_DEPLOY_ID).toBeUndefined();
+  });
+
   it('reads the baked KINOTE_VERSION', () => {
     expect(loadConfig({ ...base, KINOTE_VERSION: '0.2.0' }).KINOTE_VERSION).toBe('0.2.0');
     expect(loadConfig(base).KINOTE_VERSION).toBeUndefined();

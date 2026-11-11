@@ -184,6 +184,8 @@ export interface InternalRouteOptions {
   kinoteVersion?: string;
   /** PUBLIC_URL, for the setup link POST /bootstrap answers. */
   publicUrl?: string;
+  /** KINOTE_DEPLOY_ID, echoed by /info as deployId. */
+  deployId?: string;
 }
 
 /** A workspace slug from its name: lowercase letters, digits and dashes; "workspace" when nothing is left. */
@@ -250,6 +252,7 @@ export function registerInternalRoutes(app: FastifyInstance, tokens: string[], o
 
   app.get('/internal/v1/info', opts, async () => ({
     kinoteVersion: o.kinoteVersion ?? kinoteVersion(),
+    ...(o.deployId ? { deployId: o.deployId } : {}),
     apiVersion: 1 as const,
     features: ['limits', 'usage', 'topups', 'billing_state', 'default_limits'],
   }));
