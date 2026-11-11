@@ -1,0 +1,244 @@
+# Kinote from published release images: docker-compose.yml with every built
+# service replaced by its image `ghcr.io/shinox-lab/kinote-<service>:<version>`
+# (the release workflow pushes them on a tag vX.Y.Z) and no host ports. This is
+# what Kinote-SaaS deploys on a dedicated instance (a Coolify service from raw
+# compose); apps/api/test/releaseCompose.test.ts keeps it in step with
+# docker-compose.yml, so change both together.
+#
+#   KINOTE_VERSION=0.2.0 docker compose -f deploy/docker-compose.release.yml up -d
+#
+# Coolify gives web (container port 80) the public domain and api (8787) a
+# second one, for the control plane's /internal/v1/ calls only (guard it with
+# CONTROL_PLANE_TOKENS and CONTROL_PLANE_ALLOWED_IPS). Secrets have no defaults.
+# Data lives in the named volumes below; only `down -v` deletes it.
+name: kinote
+
+x-app-env: &app-env
+  DATABASE_URL: postgres://kinote_app:${APP_DB_PASSWORD:?set APP_DB_PASSWORD}@postgres:5432/kinote
+  COLLAB_TOKEN_SECRET: ${COLLAB_TOKEN_SECRET:?set COLLAB_TOKEN_SECRET}
+  INTERNAL_SECRET: ${INTERNAL_SECRET:?set INTERNAL_SECRET}
+  # The release this stack runs; also the image tag of every service below.
+  KINOTE_VERSION: ${KINOTE_VERSION:?set KINOTE_VERSION}
+  COLLAB_INTERNAL_URL: http://collab:1234
+  API_PORT: "8787"
+  COLLAB_PORT: "1234"
+  # Largest live-editing message a client may send (default 8 MiB, at most 64 MiB).
+  COLLAB_MAX_MESSAGE_BYTES: ${COLLAB_MAX_MESSAGE_BYTES:-8388608}
+  HOST: 0.0.0.0
+  # The bundled web nginx is always one proxy in front of the api, so 1 by
+  # default: each client gets its own sign-in bucket. Coolify (or any other
+  # edge proxy) adds one more: set TRUST_PROXY=2 there. `false` would put every
+  # user behind the nginx address into one shared bucket.
+  TRUST_PROXY: ${TRUST_PROXY:-1}
+  # `pnpm e2e` sets both (the suite signs up more accounts than 10 a minute).
+  AUTH_RATE_LIMIT_MAX: ${AUTH_RATE_LIMIT_MAX:-10}
+  # Per-person requests per minute, workspaces per person, and AI actions per
+  # workspace per UTC day (0: no allowance). See site/self-host/configuration.md.
+  ASK_RATE_LIMIT_PER_MIN: ${ASK_RATE_LIMIT_PER_MIN:-10}
+  SEARCH_RATE_LIMIT_PER_MIN: ${SEARCH_RATE_LIMIT_PER_MIN:-60}
+  CAPTURE_RATE_LIMIT_PER_MIN: ${CAPTURE_RATE_LIMIT_PER_MIN:-20}
+  UPLOAD_RATE_LIMIT_PER_MIN: ${UPLOAD_RATE_LIMIT_PER_MIN:-30}
+  MAX_TENANTS_PER_USER: ${MAX_TENANTS_PER_USER:-5}
+  # Who may create an account: auto (open until the first account, then by
+  # invitation only), open, invite or closed.
+  SIGNUP_MODE: ${SIGNUP_MODE:-auto}
+  # Optional outgoing email: verification links and password reset by email.
+  SMTP_URL: ${SMTP_URL:-}
+  MAIL_FROM: ${MAIL_FROM:-}
+  PUBLIC_URL: ${PUBLIC_URL:-}
+  TENANT_DAILY_AI_ACTIONS: ${TENANT_DAILY_AI_ACTIONS:-2000}
+  # Plans and usage (docs/operations.md): all optional; empty means unset. A file-path
+  # MODEL_CREDIT_RATES must be mounted into every service (they all check it at startup);
+  # inline JSON needs no mount.
+  MODEL_CREDIT_RATES: ${MODEL_CREDIT_RATES:-}
+  CONTROL_PLANE_TOKENS: ${CONTROL_PLANE_TOKENS:-}
+  CONTROL_PLANE_ALLOWED_IPS: ${CONTROL_PLANE_ALLOWED_IPS:-}
+  BILLING_URL: ${BILLING_URL:-}
+  LOG_LEVEL: ${LOG_LEVEL:-info}
+  EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-deterministic}
+  EMBEDDING_BASE_URL: ${EMBEDDING_BASE_URL:-}
+  EMBEDDING_API_KEY: ${EMBEDDING_API_KEY:-}
+  EMBEDDING_MODEL: ${EMBEDDING_MODEL:-}
+  EMBEDDING_BATCH_SIZE: ${EMBEDDING_BATCH_SIZE:-64}
+  EMBEDDING_TIMEOUT_MS: ${EMBEDDING_TIMEOUT_MS:-30000}
+  EMBEDDING_QUERY_INSTRUCTION: ${EMBEDDING_QUERY_INSTRUCTION:-}
+  ASK_PROVIDER: ${ASK_PROVIDER:-deterministic}
+  ASK_BASE_URL: ${ASK_BASE_URL:-}
+  ASK_API_KEY: ${ASK_API_KEY:-}
+  ASK_MODEL: ${ASK_MODEL:-}
+  ASK_TIMEOUT_MS: ${ASK_TIMEOUT_MS:-60000}
+  ASK_MAX_TOKENS: ${ASK_MAX_TOKENS:-800}
+  # The routing model: page cards, entity extraction and capture routing.
+  ROUTER_PROVIDER: ${ROUTER_PROVIDER:-deterministic}
+  ROUTER_BASE_URL: ${ROUTER_BASE_URL:-}
+  ROUTER_API_KEY: ${ROUTER_API_KEY:-}
+  ROUTER_MODEL: ${ROUTER_MODEL:-}
+  ROUTER_TIMEOUT_MS: ${ROUTER_TIMEOUT_MS:-60000}
+  ROUTER_MAX_TOKENS: ${ROUTER_MAX_TOKENS:-2000}
+  ROUTER_REASONING: ${ROUTER_REASONING:-}
+  # MinIO is the bundled default; set S3_ENDPOINT to a vetted external store in
+  # production (the minio service still runs but is unused by the app).
+  S3_ENDPOINT: ${S3_ENDPOINT:-http://minio:9000}
+  S3_BUCKET: ${S3_BUCKET:-kinote}
+  S3_ACCESS_KEY: ${S3_ACCESS_KEY:?set S3_ACCESS_KEY}
+  S3_SECRET_KEY: ${S3_SECRET_KEY:?set S3_SECRET_KEY}
+  S3_REGION: ${S3_REGION:-us-east-1}
+  S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-}
+  MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-52428800}
+  # Uploads one api takes at once: they wait on disk, about this times MAX_UPLOAD_BYTES at most.
+  MAX_CONCURRENT_UPLOADS: ${MAX_CONCURRENT_UPLOADS:-4}
+  UPLOAD_TMP_DIR: ${UPLOAD_TMP_DIR:-}
+  MAX_EXTRACTED_CHARS: ${MAX_EXTRACTED_CHARS:-2000000}
+  # The extractor is part of the stack; http is the default. `off` is a
+  # deliberate text/CSV-only run, `fake` is for tests.
+  EXTRACTOR_MODE: ${EXTRACTOR_MODE:-http}
+  EXTRACTOR_URL: ${EXTRACTOR_URL:-http://extractor:8000}
+  EXTRACTOR_TIMEOUT_MS: ${EXTRACTOR_TIMEOUT_MS:-240000}
+
+services:
+  postgres:
+    # pgvector/pgvector:pg17 with infra/postgres/01-roles.sh copied into
+    # /docker-entrypoint-initdb.d/ (built from infra/postgres/Dockerfile).
+    image: ghcr.io/shinox-lab/kinote-postgres:${KINOTE_VERSION:?set KINOTE_VERSION}
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: kinote
+      # Read by infra/postgres/01-roles.sh to create the kinote_app login.
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?set APP_DB_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      # TCP, not the socket: the entrypoint's temporary init server listens on
+      # the socket only, so this passes once the real server is up.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres -d kinote"]
+      interval: 2s
+      timeout: 3s
+      retries: 60
+    restart: unless-stopped
+
+  minio:
+    # minio/minio is no longer published on Docker Hub; pgsty/minio is a
+    # community build of the same server (same CLI, ports and env), for the
+    # bundled stack only. Pinned by digest (the tag alone could be re-pushed).
+    image: pgsty/minio:RELEASE.2026-08-04T00-00-00Z@sha256:b6bfe7239bfc83fb90d31612d9704d86039dd714f7904b3f1ad68f211e602372
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:?set S3_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:?set S3_SECRET_KEY}
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 2s
+      timeout: 3s
+      retries: 60
+    restart: unless-stopped
+
+  migrate:
+    image: ghcr.io/shinox-lab/kinote-migrate:${KINOTE_VERSION:?set KINOTE_VERSION}
+    environment:
+      # The postgres superuser: RLS is forced on every table and the
+      # SECURITY DEFINER functions run as the migration owner.
+      DATABASE_MIGRATE_URL: postgres://postgres:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/kinote
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    image: ghcr.io/shinox-lab/kinote-api:${KINOTE_VERSION:?set KINOTE_VERSION}
+    environment:
+      <<: *app-env
+      # Coolify generates a domain for the api too: the control plane's address (cp-<sub>.<domain>).
+      SERVICE_URL_API_8787: /
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8787/api/v1/me').then(r => process.exit(r.status < 500 ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 30s
+    restart: unless-stopped
+
+  collab:
+    image: ghcr.io/shinox-lab/kinote-collab:${KINOTE_VERSION:?set KINOTE_VERSION}
+    environment: *app-env
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:1234/').then(r => process.exit(r.status < 500 ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 30s
+    restart: unless-stopped
+
+  worker:
+    image: ghcr.io/shinox-lab/kinote-worker:${KINOTE_VERSION:?set KINOTE_VERSION}
+    environment: *app-env
+    networks: [default, extractor_net]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      minio:
+        condition: service_healthy
+      extractor:
+        condition: service_healthy
+    restart: unless-stopped
+
+  extractor:
+    # Docling behind POST /extract. It shares an internal network with the
+    # worker only: no internet, no database, no object storage.
+    image: ghcr.io/shinox-lab/kinote-extractor:${KINOTE_VERSION:?set KINOTE_VERSION}
+    environment:
+      MAX_EXTRACTED_CHARS: ${MAX_EXTRACTED_CHARS:-2000000}
+    networks: [extractor_net]
+    restart: unless-stopped
+
+  gridcraft:
+    # The pinned GridCraft web build, internal only. The web nginx proxies
+    # /gridcraft/ to it; Coolify never gets a domain for this service.
+    image: ghcr.io/shinox-lab/kinote-gridcraft:${KINOTE_VERSION:?set KINOTE_VERSION}
+    expose:
+      - "80"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/ || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  web:
+    image: ghcr.io/shinox-lab/kinote-web:${KINOTE_VERSION:?set KINOTE_VERSION}
+    # Coolify generates the public domain for this service on container port 80.
+    environment:
+      SERVICE_URL_WEB_80: /
+    expose:
+      - "80"
+    depends_on:
+      api:
+        condition: service_healthy
+      collab:
+        condition: service_healthy
+      gridcraft:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/ || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+networks:
+  extractor_net:
+    internal: true
+
+volumes:
+  pgdata:
+  miniodata:

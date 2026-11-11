@@ -193,6 +193,27 @@ the e2e suite; Coolify routes only the web domain to container port 80. For a
 hard split, remove the `ports:` entries from `postgres`, `minio`, `api` and
 `collab`; the web does not need them.
 
+## Releases
+
+A release is a git tag `vX.Y.Z` on `main`. Pushing it runs `.github/workflows/release.yml`, which builds every image
+once (`postgres`, `migrate`, `api`, `collab`, `worker`, `extractor`, `gridcraft`, `web`), pushes each as
+`ghcr.io/shinox-lab/kinote-<image>:X.Y.Z` with the version baked in (`KINOTE_VERSION`; the api reports it as
+`kinoteVersion` on `GET /internal/v1/info`), then creates the GitHub release `vX.Y.Z` with generated notes.
+
+```bash
+git tag v0.2.0 && git push origin v0.2.0
+```
+
+- A tag with a suffix (`v0.2.0-rc.1`) makes a pre-release: use one to check the workflow before a real release.
+  Kinote-SaaS offers only plain `X.Y.Z` releases for dedicated instances.
+- GitHub creates each package private on its first push. Once per image, open the package in the organisation's
+  **Packages** and set its visibility to **Public**, so a dedicated server can pull without credentials.
+- `deploy/docker-compose.release.yml` runs a release from these images: the services of `docker-compose.yml` with
+  `image:` in place of `build:`, no host ports, and the same environment plus `KINOTE_VERSION`. Coolify gives `web`
+  the public domain (`SERVICE_URL_WEB_80`) and `api` a second one (`SERVICE_URL_API_8787`) for the control plane.
+  `apps/api/test/releaseCompose.test.ts` fails when the two files drift apart: change both together.
+- Moving an instance to an older release only works when that release has the same database migrations.
+
 ## Demo content
 
 For a customer try-out, create a workspace for it (**Workspace menu → New
