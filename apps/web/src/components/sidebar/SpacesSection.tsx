@@ -468,7 +468,7 @@ export function SpacesSection() {
       const spaceId = row?.dataset.pasteSpace;
       if (!row || !spaceId) return;
       e.preventDefault();
-      enqueue(files, { spaceId, parentId: row.dataset.pasteParent || null });
+      enqueue(files, { spaceId, parentId: row.dataset.pasteParent || null, copy: true });
       const openId = row.dataset.pasteOpen;
       if (openId) setExpanded((prev) => (prev.has(openId) ? prev : new Set(prev).add(openId)));
     }
