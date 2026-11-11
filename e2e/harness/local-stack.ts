@@ -117,6 +117,10 @@ const app = buildApiServer({
   creditRates: parseCreditRates(config.MODEL_CREDIT_RATES),
   controlPlaneTokens: config.CONTROL_PLANE_TOKENS,
   billingUrl: config.BILLING_URL ?? 'https://billing.example.test/upgrade',
+  // Kinote-SaaS's dedicated-instance e2e runs a stack as a "release" (KINOTE_VERSION) whose first owner it
+  // bootstraps (the setup link needs PUBLIC_URL).
+  ...(config.KINOTE_VERSION ? { kinoteVersion: config.KINOTE_VERSION } : {}),
+  ...(config.PUBLIC_URL ? { publicUrl: config.PUBLIC_URL } : {}),
 });
 await app.listen({ port: apiPort, host: HOST });
 
