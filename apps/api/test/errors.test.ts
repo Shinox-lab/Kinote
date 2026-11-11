@@ -254,6 +254,7 @@ describe('error model', () => {
       storage_limit_reached: 413,
       tenant_limit_reached: 403,
       free_workspace_limit: 409,
+      already_set_up: 409,
       signup_invite_only: 403,
       signup_closed: 403,
       email_unverified: 403,
