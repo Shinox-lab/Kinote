@@ -14,6 +14,8 @@ import {
 export interface UploadTarget {
   spaceId: string | null;
   parentId: string | null;
+  /** An explicit tree-row paste keeps a copy under the target even when the bytes exist elsewhere. */
+  copy?: boolean;
 }
 
 interface Uploads {
@@ -61,6 +63,7 @@ export function UploadsProvider({ children }: { children: ReactNode }) {
         size: file.size,
         spaceId: target.spaceId,
         parentId: target.parentId,
+        copy: target.copy === true,
         status: 'waiting',
         documentId: null,
         badge: null,
@@ -91,6 +94,7 @@ export function UploadsProvider({ children }: { children: ReactNode }) {
     form.set('file', file, file.name);
     if (next.spaceId) form.set('space_id', next.spaceId);
     if (next.parentId) form.set('parent_id', next.parentId);
+    if (next.copy) form.set('copy', 'true');
     void (async () => {
       try {
         const out = await api.uploadFile(form);

@@ -143,6 +143,17 @@ describe('uploading and replacing files', () => {
     assert.equal((await documentRows(tenant.id)).length, 1);
   });
 
+  test('copy: true keeps the same bytes as a second document under the target', async () => {
+    const { tenant, space, editor } = await setup();
+    const first = await upload(editor.headers, { name: 'notes.txt', data: 'same bytes' }, { space_id: space.id });
+    assert.equal(first.statusCode, 201);
+    const again = await upload(editor.headers, { name: 'notes.txt', data: 'same bytes' }, { space_id: space.id, copy: 'true' });
+    assert.equal(again.statusCode, 201, again.body);
+    assert.equal(again.json().unchanged, false);
+    assert.notEqual(again.json().document.id, first.json().document.id);
+    assert.equal((await documentRows(tenant.id)).length, 2);
+  });
+
   test('Inbox: a second member uploading the same bytes gets their own file and learns nothing of the first', async () => {
     const { tenant, inboxSpace, editor, editor2 } = await setup();
     const a = await upload(editor.headers, { name: 'secret.txt', data: 'inbox bytes' });

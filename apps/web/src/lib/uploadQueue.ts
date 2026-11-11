@@ -14,6 +14,8 @@ export interface UploadItem {
   /** Where it goes: a space (null: the Inbox) and an optional parent page. */
   spaceId: string | null;
   parentId: string | null;
+  /** Keep the bytes as a new document under the target (an explicit tree-row paste). */
+  copy?: boolean;
   status: UploadStatus;
   documentId: string | null;
   /** The file's own badge as the server last wrote it. */
