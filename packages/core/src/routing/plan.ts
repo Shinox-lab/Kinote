@@ -376,7 +376,7 @@ async function planFact(tenantId: string, ctx: Context, input: PlanFactInput, de
   // 2. Gather candidate pages from passages, cards and the graph, fused.
   const [vector] = await deps.embedder.embed([fact.statement], 'query');
   const { candidates, examples } = await withTenantTx(tenantId, async (tx) => {
-    let candidates = await gatherCandidates(tx, ctx, fact, vector!, resolved, deps.fromDocument?.pageId ?? undefined);
+    let candidates = await gatherCandidates(tx, ctx, fact, vector!, resolved, deps.fromDocument?.pageId ?? undefined, deps.embedder.model);
     // A document filed as a collection row may set its own page's fields (never its text).
     const own = deps.fromDocument?.pageId ? await documentPageCandidate(tx, ctx, deps.fromDocument.pageId) : null;
     if (own) candidates = new Map([[own.card.documentId, own], ...candidates]);
@@ -407,7 +407,9 @@ export async function gatherCandidates(
   fact: CaptureFact,
   vector: number[],
   entityIds: string[],
-  exclude?: string
+  exclude?: string,
+  /** The query vector's model: passages from chunks of another model are not ranked by vector. */
+  embeddingModel?: string
 ): Promise<Map<string, Candidate>> {
   const statement = fact.statement;
   /** Block ids passage search matched, per page: the blocks most about this fact. */
@@ -417,7 +419,7 @@ export async function gatherCandidates(
     ids = [ctx.scopePageId];
   } else {
     const passages = (
-      await searchWiki(tx, ctx.actor, ctx.filter.spaceIds, ctx.inboxSpaceId, statement, vector, 20)
+      await searchWiki(tx, ctx.actor, ctx.filter.spaceIds, ctx.inboxSpaceId, statement, vector, 20, embeddingModel)
     ).filter((p) => p.documentKind === 'page');
     for (const p of passages) {
       const set = hitBlocks.get(p.documentId) ?? new Set<string>();

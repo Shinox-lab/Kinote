@@ -130,13 +130,13 @@ describe('model settings API', () => {
     expect((await readModelSettings(getDb()))?.askModel).toBe('kept');
   });
 
-  test('an embedding change queues free re-index and placement jobs; the reply counts them', async () => {
+  test('an embedding change queues free re-index jobs (each queues its own placement); the reply counts them', async () => {
     const w = await indexedWorkspace('embed-co');
     const res = await put({ ...none, embeddingModel: 'e2' });
     expect(res.statusCode, res.body).toBe(200);
     const body = ModelSettingsReplySchema.parse(res.json());
     expect(body.queued!.reindex).toBeGreaterThanOrEqual(1);
-    expect(body.queued!.placement).toBeGreaterThanOrEqual(1);
+    expect(body.queued!.placement).toBe(0);
     const queued = await operatorJobs(w.tenant.id);
     expect(queued.map((j) => j.queue)).toContain('document.reindex');
     expect(ModelSettingsReplySchema.parse((await get()).json()).reindex.pendingJobs).toBe(queued.length);
@@ -168,4 +168,46 @@ describe('model settings API', () => {
     const usage = await app.inject({ method: 'GET', url: '/api/v1/usage', headers: w.headers });
     expect(usage.json().usedCredits).toBeGreaterThan(0);
   });
+
+  test('an operator re-index queues its placement follow-ups as operator jobs; the PUT queues no second pass', async () => {
+    const w = await indexedWorkspace('follow-co');
+    const body = ModelSettingsReplySchema.parse((await put({ ...none, embeddingModel: 'e2' })).json());
+    expect(body.queued).toMatchObject({ placement: 0 });
+    expect(body.queued!.reindex).toBeGreaterThanOrEqual(1);
+    await runPendingJobsForTenant(w.tenant.id, { embeddingProvider: embeddingFor('e2') });
+    const followUps = await withTenantTx(w.tenant.id, async (tx) =>
+      (await tx.select().from(jobs).where(eq(jobs.tenantId, w.tenant.id))).filter((j) => j.queue === 'version.card' || j.queue === 'version.entities')
+    );
+    expect(followUps.length).toBeGreaterThanOrEqual(1);
+    for (const j of followUps) expect((j.payload as { operator?: boolean }).operator).toBe(true);
+  });
+
+  test('askModel on limits or defaults while ASK_PROVIDER is deterministic is 422', async () => {
+    const ctx = await bootstrapTenant(deterministic.app, { name: 'Det', slug: 'det-co' });
+    const limits = { plan: 'pro', seats: null, storageBytes: null, creditsPerMonth: null, indexCreditsPerMonth: null };
+    const res = await deterministic.app.inject({
+      method: 'PUT',
+      url: `/internal/v1/tenants/${ctx.tenant.id}/limits`,
+      headers: cp,
+      payload: JSON.stringify({ ...limits, askModel: 'gpt' }),
+    });
+    expect(res.statusCode).toBe(422);
+    expect(res.json()).toMatchObject({ error: 'invalid_model_settings', field: 'askModel' });
+    const defaults = await deterministic.app.inject({
+      method: 'PUT',
+      url: '/internal/v1/defaults',
+      headers: cp,
+      payload: JSON.stringify({ ...limits, plan: 'free', maxFreePerOwner: null, askModel: 'gpt' }),
+    });
+    expect(defaults.statusCode).toBe(422);
+    // Null (the deployment's model) is fine.
+    const ok = await deterministic.app.inject({
+      method: 'PUT',
+      url: `/internal/v1/tenants/${ctx.tenant.id}/limits`,
+      headers: cp,
+      payload: JSON.stringify({ ...limits, askModel: null }),
+    });
+    expect(ok.statusCode, ok.body).toBe(200);
+  });
 });
+

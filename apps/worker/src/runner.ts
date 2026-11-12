@@ -23,6 +23,7 @@ import {
   indexHeld,
   type EmbeddingProvider,
   type Extractor,
+  type ModelProviders,
   type RoutingModel,
 } from '@kinote/core';
 import { InMemoryObjectStorage, type CollabClient, type CreditRates, type ObjectStorage } from '@kinote/shared';
@@ -89,6 +90,12 @@ export interface RunnerOptions {
   /** MODEL_CREDIT_RATES, parsed. Each job's model calls are metered; null charges 0 credits. */
   /** The rate table, or a getter read as each job runs (the live model settings). */
   creditRates?: CreditRates | null | (() => CreditRates | null);
+  /**
+   * The deployment's model settings. Each job first reloads them (one small read) and runs with the providers for
+   * the models then in effect, fixed for the whole job: a job never embeds with a model the settings already left,
+   * and never switches model halfway. Overrides embeddingProvider and placementModel.
+   */
+  models?: ModelProviders;
 }
 
 type Processed = { id: string; queue: string; status: string };
@@ -169,7 +176,8 @@ export async function runPendingJobsForTenant(
         );
         status = 'skipped_expired';
       } else {
-        status = await runOne(tenantId, job, registry, clock, deps, o.aiDailyLimit ?? 0, o.creditRates ?? null);
+        const jobDeps = o.models ? await currentModels(o.models, deps) : deps;
+        status = await runOne(tenantId, job, registry, clock, jobDeps, o.aiDailyLimit ?? 0, o.creditRates ?? null);
       }
       processed.push({ id: job.id, queue: job.queue, status });
     }
@@ -210,6 +218,16 @@ async function deferredPastAllowance(job: Job, aiDailyLimit: number, now: Date):
 }
 
 const HELD_QUEUES = new Set<string>(INDEX_QUEUES);
+
+/** The deps with providers for the models in effect now (reloaded from the database). */
+async function currentModels(models: ModelProviders, deps: RunDeps): Promise<RunDeps> {
+  const settings = await models.cache.refresh();
+  return {
+    ...deps,
+    embeddingProvider: models.embeddingFor(settings.embeddingModel),
+    placementModel: models.routingFor(settings.routerModel),
+  };
+}
 
 /** Work the operator caused (`operator: true` in the payload, e.g. a model change re-index): free, never held. */
 function isOperatorJob(job: Job): boolean {
@@ -315,7 +333,7 @@ async function runOne(
     if (!handler) throw new NonRetryableError(`No handler registered for queue "${job.queue}"`);
     if (
       !(await heldAtIndexLimit(job, clock())) &&
-      !(handler.usesAi && (await deferredPastAllowance(job, aiDailyLimit, clock())))
+      !(handler.usesAi && !isOperatorJob(job) && (await deferredPastAllowance(job, aiDailyLimit, clock())))
     ) {
       const rates = typeof creditRates === 'function' ? creditRates() : creditRates;
       await withUsageScope(usageScopeOf(job, clock), rates, () => handler.run(job, { now: clock(), ...deps }));
@@ -400,6 +418,8 @@ export async function runWorkerLoop(o: {
   aiDailyLimit?: number;
   /** The rate table, or a getter read as each job runs (the live model settings). */
   creditRates?: CreditRates | null | (() => CreditRates | null);
+  /** See RunnerOptions.models. */
+  models?: ModelProviders;
 }): Promise<void> {
   let lastSweep = 0;
   while (!o.signal.aborted) {
@@ -432,6 +452,7 @@ export async function runWorkerLoop(o: {
           signal: o.signal,
           aiDailyLimit: o.aiDailyLimit,
           creditRates: o.creditRates,
+          models: o.models,
         });
       } catch (err) {
         console.error(`[worker] running jobs for tenant ${tenantId} failed:`, errorMessage(err));

@@ -49,6 +49,11 @@ export class ModelSettingsCache {
     return this.value;
   }
 
+  /** What would be in effect with `stored` (this process's env as the fallback). */
+  effectiveFor(stored: ModelSettingsInput | null): EffectiveModelSettings {
+    return effectiveModelSettings(stored, this.env);
+  }
+
   /** Loads the stored settings now. A failed load is logged and the last value kept. */
   async refresh(): Promise<EffectiveModelSettings> {
     try {

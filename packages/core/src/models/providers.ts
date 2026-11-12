@@ -60,6 +60,16 @@ export class ModelProviders {
     return provider;
   }
 
+  /** The embedding provider for one model id (kept), unlike embedding() which follows the settings. */
+  embeddingFor(model: string | null): EmbeddingProvider {
+    return this.cached(this.embeddings, model, this.factories.embedding);
+  }
+
+  /** The routing model for one model id (kept). */
+  routingFor(model: string | null): RoutingModel {
+    return this.cached(this.routers, model, this.factories.routing);
+  }
+
   /** The answer provider for a workspace's model; null uses the deployment's. */
   answerFor(askModel: string | null): AnswerProvider {
     return this.cached(this.answers, askModel ?? this.cache.current().askModel, this.factories.answer);

@@ -128,7 +128,8 @@ default 1) are optional.
 
 Optional, with feature `model_settings`: `askModel` (1–200 characters, or `null`: the deployment's model) is the model
 Ask answers this workspace with; `creditMultiplier` (0–10, default 1) multiplies every charge. Like the other fields
-they are replaced on every PUT: a body without them sets `null` and `1`.
+they are replaced on every PUT: a body without them sets `null` and `1`. `creditMultiplier` has at most 3 decimals.
+A non-null `askModel` while `ASK_PROVIDER` is `deterministic` is refused: `422 invalid_model_settings` (field `askModel`).
 
 A body of `null` removes every limit and sets the plan label back to `standard`: the workspace is unlimited at once.
 

@@ -21,7 +21,8 @@ const modelId = z.string().min(1).max(200);
 /** A workspace's answer model; null (or absent) means the deployment's. */
 const askModelField = modelId.nullable().optional();
 /** Charges are multiplied by this (1 = as the rate table says). */
-const creditMultiplierField = z.number().finite().min(0).max(10).optional();
+// At most 3 decimals: stored as numeric(6,3), so more would come back rounded (and look like drift to the control plane).
+const creditMultiplierField = z.number().finite().min(0).max(10).multipleOf(0.001).optional();
 
 export const LimitsInputSchema = z
   .object({

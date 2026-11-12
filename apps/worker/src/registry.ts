@@ -270,8 +270,11 @@ export const handlers: Record<string, JobHandler> = {
   },
   'document.reindex': {
     async run(job, ctx) {
-      const payload = job.payload as { documentId: string };
-      await reindexDocument(job.tenantId, payload.documentId, ctx.embeddingProvider, { storage: ctx.storage });
+      const payload = job.payload as { documentId: string; operator?: boolean };
+      await reindexDocument(job.tenantId, payload.documentId, ctx.embeddingProvider, {
+        storage: ctx.storage,
+        operator: payload.operator === true,
+      });
     },
   },
   'version.index': {

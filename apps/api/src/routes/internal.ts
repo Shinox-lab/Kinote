@@ -165,6 +165,14 @@ export interface InternalRouteOptions {
 
 const invalidSettings = (field: string, message: string) => new AppError('invalid_model_settings', message, { field });
 
+/** A workspace's answer model is only usable when Ask has a model to choose (ASK_PROVIDER=openai). */
+function assertAskModelUsable(askModel: string | null | undefined, models: ModelProviders | undefined): void {
+  if (askModel == null || !models) return;
+  if (models.cache.current().providers.ask === 'deterministic') {
+    throw invalidSettings('askModel', 'ASK_PROVIDER is deterministic: there is no model to choose. Set ASK_PROVIDER=openai in Kinote first.');
+  }
+}
+
 /** The fields of a model-settings body that name a model, and the provider each needs. */
 const MODEL_FIELDS = [
   ['askModel', 'ask', 'ASK_PROVIDER'],
@@ -209,15 +217,18 @@ function registerModelSettingsRoutes(app: FastifyInstance, opts: object, models:
         throw invalidSettings('embeddingModel', `The embedding model did not work: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
-    const db = getDb();
-    await writeModelSettings(db, body);
-    const after = await models.cache.refresh();
+    const after = models.cache.effectiveFor(body);
     const routerChanged = after.routerModel !== before.routerModel;
     const reindexNeeded = after.embeddingModel !== before.embeddingModel;
-    const queued =
-      (reindexNeeded || routerChanged) && after.embeddingModel !== null
-        ? await queueModelRebuild(db, { embeddingModel: after.embeddingModel, reindex: reindexNeeded, placement: true })
-        : { reindex: 0, placement: 0 };
+    // The row and the jobs commit together: a failure stores nothing, so a retry of the same body queues the work.
+    // A re-index queues each document's placement jobs itself, so a separate placement pass is for the router alone.
+    const queued = await getDb().transaction(async (tx) => {
+      await writeModelSettings(tx, body);
+      const placement = routerChanged && !reindexNeeded;
+      if ((!reindexNeeded && !placement) || after.embeddingModel === null) return { reindex: 0, placement: 0 };
+      return queueModelRebuild(tx, { embeddingModel: after.embeddingModel, reindex: reindexNeeded, placement });
+    });
+    await models.cache.refresh();
     const changed = JSON.stringify(before) !== JSON.stringify(after);
     // Deployment-wide, so no workspace audit row: the control plane audits who changed it.
     if (changed) req.log.info({ event: 'model_settings.updated', before, after, queued }, 'model settings updated by the control plane');
@@ -247,6 +258,7 @@ export function registerInternalRoutes(app: FastifyInstance, tokens: string[], o
     // A missing body is a mistake, not "no defaults": that takes an explicit JSON null.
     if (req.body === undefined) throw new AppError('validation_failed', 'The body must be the defaults, or null to remove them.');
     const body = PutDefaultsRequestSchema.parse(req.body);
+    assertAskModelUsable(body?.askModel, o.models);
     const db = getDb();
     if (body === null) {
       await db.delete(tenantDefaults).where(eq(tenantDefaults.id, true));
@@ -295,6 +307,7 @@ export function registerInternalRoutes(app: FastifyInstance, tokens: string[], o
     // A missing body is a mistake, not "remove every limit": that takes an explicit JSON null.
     if (req.body === undefined) throw new AppError('validation_failed', 'The body must be the limits, or null to remove them.');
     const body = PutLimitsRequestSchema.parse(req.body);
+    assertAskModelUsable(body?.askModel, o.models);
     return withTenantTx(id, async (tx) => {
       const tenant = await tenantRow(tx, id);
       if (!tenant || tenant.deletedAt) throw notFound();

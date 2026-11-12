@@ -1,6 +1,6 @@
 import { eq, sql } from 'drizzle-orm';
 import type { ModelSettingsInput } from '@kinote/contracts';
-import { rowsOf, type Db } from './client.js';
+import { rowsOf, type Db, type DbTransaction } from './client.js';
 import { modelSettings } from './schema/usage.js';
 
 /** The control plane's stored model settings, or null when none were set. Not tenant-scoped. */
@@ -16,7 +16,7 @@ export async function readModelSettings(db: Pick<Db, 'select'>): Promise<ModelSe
 }
 
 /** Replaces the stored model settings (one row). */
-export async function writeModelSettings(db: Pick<Db, 'insert'>, value: ModelSettingsInput): Promise<void> {
+export async function writeModelSettings(db: Pick<Db | DbTransaction, 'insert'>, value: ModelSettingsInput): Promise<void> {
   const values = { ...value, updatedAt: new Date() };
   await db.insert(modelSettings).values({ id: true, ...values }).onConflictDoUpdate({ target: modelSettings.id, set: values });
 }
@@ -26,7 +26,7 @@ export async function writeModelSettings(db: Pick<Db, 'insert'>, value: ModelSet
  * with chunks from another embedding model, and/or the placement rebuild. Jobs are operator jobs (free, never held).
  */
 export async function queueModelRebuild(
-  db: Pick<Db, 'execute'>,
+  db: Pick<Db | DbTransaction, 'execute'>,
   o: { embeddingModel: string; reindex: boolean; placement: boolean }
 ): Promise<{ reindex: number; placement: number }> {
   const result = await db.execute(sql`SELECT * FROM public.cp_queue_model_rebuild(${o.embeddingModel}, ${o.reindex}, ${o.placement})`);

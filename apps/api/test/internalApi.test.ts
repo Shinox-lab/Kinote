@@ -136,7 +136,8 @@ describe('control-plane API', () => {
 
   test('creditMultiplier outside 0–10 is refused', async () => {
     const w = await world('mult-co');
-    for (const creditMultiplier of [11, -0.1]) {
+    // More than 3 decimals would be rounded when stored, and the control plane would see drift forever.
+    for (const creditMultiplier of [11, -0.1, 1.2345]) {
       const res = await putLimits(w.tenant.id, { ...limitsBody, creditMultiplier });
       expect(res.statusCode).toBe(400);
       expect(res.json().error).toBe('validation_failed');
