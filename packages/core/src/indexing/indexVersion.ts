@@ -29,6 +29,8 @@ export interface IndexDeps {
    * as they are; only its chunks and placement data are rebuilt.
    */
   reindex?: boolean;
+  /** Work the operator caused (a model change): the placement jobs it queues are operator jobs too (free, never held). */
+  operator?: boolean;
 }
 
 export type IndexVersionResult =
@@ -257,7 +259,7 @@ export async function indexVersion(
     }
 
     if (deps.reindex) {
-      if (space.kind !== 'inbox') await enqueuePlacementJobs(tx, tenantId, ver.id, doc.kind);
+      if (space.kind !== 'inbox') await enqueuePlacementJobs(tx, tenantId, ver.id, doc.kind, { operator: deps.operator === true });
       return { outcome: 'indexed' };
     }
 

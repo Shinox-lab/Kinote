@@ -52,6 +52,14 @@ describe('new-workspace defaults', () => {
     expect(usage.json()).toMatchObject({ plan: 'free', limitCredits: 50 });
   });
 
+  test("a new workspace copies the defaults' askModel and multiplier", async () => {
+    await setDefaults({ ...freeDefaults, askModel: 'free-model', creditMultiplier: 1.5 });
+    const owner = await signUp(app);
+    const { tenant } = await createTenant(app, owner, { name: 'Modelled', slug: 'modelled' });
+    const detail = await app.inject({ method: 'GET', url: `/internal/v1/tenants/${tenant.id}`, headers: cp });
+    expect(detail.json().limits).toMatchObject({ askModel: 'free-model', creditMultiplier: 1.5 });
+  });
+
   test('the Free cap refuses the next free workspace with 409 free_workspace_limit and billingUrl', async () => {
     await setDefaults(freeDefaults);
     const owner = await signUp(app);

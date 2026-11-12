@@ -1,6 +1,6 @@
-import { assertEmbeddingDimensions, closeDb, initDb } from '@kinote/db';
-import { createAnswerProvider, createEmbeddingProvider, EMBEDDING_DIMENSIONS } from '@kinote/core';
-import { createObjectStorage, loadConfig, parseCreditRates, usageLimitsOf } from '@kinote/shared';
+import { assertEmbeddingDimensions, closeDb, initDb, readModelSettings } from '@kinote/db';
+import { EMBEDDING_DIMENSIONS, modelFactoriesFrom, ModelProviders, ModelSettingsCache } from '@kinote/core';
+import { createObjectStorage, loadConfig, usageLimitsOf } from '@kinote/shared';
 import { buildApiServer } from './server.js';
 import { createSmtpMailer } from './mail.js';
 import { HttpCollabClient } from '@kinote/shared';
@@ -20,13 +20,14 @@ async function main(): Promise<void> {
     console.warn('api: SIGNUP_MODE=open without SMTP_URL: anyone can sign up with any email address, unverified');
   }
 
-  const embeddingProvider = createEmbeddingProvider(config);
-  const answerProvider = createAnswerProvider(config);
+  // Models and rates: the control plane's stored settings, each falling back to the env.
+  const modelCache = new ModelSettingsCache(() => readModelSettings(db), config);
+  await modelCache.refresh();
+  const stopModelRefresh = modelCache.start();
+  const models = new ModelProviders(modelCache, modelFactoriesFrom(config));
   const app = buildApiServer({
     storage,
-    embeddingProvider,
-    answerProvider,
-    creditRates: parseCreditRates(config.MODEL_CREDIT_RATES),
+    models,
     billingUrl: config.BILLING_URL,
     controlPlaneTokens: config.CONTROL_PLANE_TOKENS,
     controlPlaneAllowedIps: config.CONTROL_PLANE_ALLOWED_IPS,
@@ -52,6 +53,7 @@ async function main(): Promise<void> {
     if (stopping) return;
     stopping = true;
     try {
+      stopModelRefresh();
       await app.close();
       await closeDb();
       process.exit(0);

@@ -3,18 +3,26 @@ import { addMember, call, editorOf, openAs, seedWorld, uploadViaApi } from './su
 
 const sidebar = (page: Page): Locator => page.getByRole('complementary', { name: 'Sidebar' });
 
-test('the sidebar leads with Home, then Capture, Search, Reviews, Notifications and Settings', async ({ browser, request }) => {
+test('the sidebar leads with Home, then Capture, Search, Reviews, and Notifications; Settings opens from the account menu', async ({ browser, request }) => {
   const world = await seedWorld(request, { reviewRequired: false });
   const page = await openAs(browser, world, world.owner);
   await page.goto(`/w/${world.slug}`);
 
   const main = sidebar(page).getByRole('list', { name: 'Main' });
-  await expect(main.getByRole('link')).toHaveText(['Home', 'Capture', 'Search', 'Reviews', 'Notifications', 'Settings & members']);
+  await expect(main.getByRole('link')).toHaveText(['Home', 'Capture', 'Search', 'Reviews', 'Notifications']);
   await expect(main.getByRole('link', { name: 'Home' })).toHaveAttribute('aria-current', 'page');
 
   await main.getByRole('link', { name: 'Search' }).click();
   await expect(page).toHaveURL(new RegExp(`/w/${world.slug}/search$`));
   await expect(main.getByRole('link', { name: 'Home' })).not.toHaveAttribute('aria-current', 'page');
+
+  await sidebar(page).getByRole('button', { name: 'Account' }).click();
+  await page.getByRole('menuitem', { name: 'Settings & members' }).click();
+  const panel = page.getByRole('dialog', { name: 'Settings & members' });
+  await expect(panel).toBeVisible();
+  await panel.getByRole('button', { name: 'Close settings' }).click();
+  await expect(panel).toHaveCount(0);
+  await expect(page).toHaveURL(new RegExp(`/w/${world.slug}/search$`));
 });
 
 test('a member sees the tree but no Settings link', async ({ browser, request }) => {
@@ -24,7 +32,8 @@ test('a member sees the tree but no Settings link', async ({ browser, request })
   await page.goto(`/w/${world.slug}`);
 
   await expect(sidebar(page).getByRole('list', { name: 'Main' }).getByRole('link', { name: 'Home' })).toBeVisible();
-  await expect(sidebar(page).getByRole('link', { name: 'Settings & members' })).toHaveCount(0);
+  await sidebar(page).getByRole('button', { name: 'Account' }).click();
+  await expect(page.getByRole('menuitem', { name: 'Settings & members' })).toHaveCount(0);
 });
 
 test('the sidebar is a column on a desktop and a slide-over below 1024', async ({ browser, request }) => {

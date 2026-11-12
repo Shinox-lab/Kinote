@@ -257,6 +257,34 @@
 }
 
 /*
+ * Sidebar slides. The pane stays rendered while it closes, then leaves the
+ * accessibility tree; opening makes it visible before the width/transform runs.
+ */
+.sidebar-column {
+  transition: width 200ms ease-out;
+}
+
+.sidebar-column[data-collapsed='true'] {
+  visibility: hidden;
+  transition:
+    width 200ms ease-out,
+    visibility 0s linear 200ms;
+}
+
+.sidebar-column[data-resizing='true'] {
+  transition: none;
+}
+
+.sidebar-slide-over {
+  transition: visibility 0s;
+}
+
+.sidebar-slide-over[data-open='false'] {
+  visibility: hidden;
+  transition: visibility 0s linear 200ms;
+}
+
+/*
  * BlockNote reads its own variables (set per colour scheme on .bn-container);
  * these map them onto the console's tokens so the editor is part of the page:
  * no frame, the page's own background and text, a menu that matches the sidebar.

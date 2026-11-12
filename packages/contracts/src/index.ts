@@ -1149,6 +1149,8 @@ export type ExtractedDocument = z.infer<typeof ExtractedDocumentSchema>;
 export const UploadFileFieldsSchema = z.object({
   space_id: z.string().uuid().optional(),
   parent_id: z.string().uuid().optional(),
+  /** `true` keeps the bytes as a new document under the parent, even when they exist elsewhere. */
+  copy: z.enum(['true', 'false']).optional(),
 });
 export type UploadFileFields = z.infer<typeof UploadFileFieldsSchema>;
 

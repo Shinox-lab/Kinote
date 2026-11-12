@@ -37,6 +37,11 @@ export function buildTree(nodes: readonly TreeNode[]): TreeItem[] {
   return roots;
 }
 
+/** Where files pasted on a tree row go: under a page, or under the folder that holds a file. */
+export function pasteParent(node: Pick<TreeNode, 'kind' | 'id' | 'parentId'>): string | null {
+  return node.kind === 'page' ? node.id : node.parentId;
+}
+
 /** Ids of every node below `id` (not `id` itself): the parents a page may not be moved under. */
 export function descendantIds(nodes: readonly TreeNode[], id: string): Set<string> {
   const found = new Set<string>();

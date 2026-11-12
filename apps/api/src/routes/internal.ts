@@ -7,6 +7,10 @@ import {
   addTopup,
   emailTokens,
   getDb,
+  pendingModelJobs,
+  queueModelRebuild,
+  readModelSettings,
+  writeModelSettings,
   memberships,
   readBillingState,
   readTenantDefaults,
@@ -26,6 +30,8 @@ import {
   AppError,
   BillingStateBodySchema,
   BootstrapRequestSchema,
+  ModelSettingsInputSchema,
+  type ModelSettingsReply,
   PageQuerySchema,
   PutDefaultsRequestSchema,
   PutLimitsRequestSchema,
@@ -35,7 +41,7 @@ import {
   type InternalTenantDetail,
   type TenantUsage,
 } from '@kinote/contracts';
-import { countSeats, creditVerdict, indexHeld } from '@kinote/core';
+import { countSeats, creditVerdict, indexHeld, type ModelProviders } from '@kinote/core';
 import { createEmailToken } from '../auth/emailTokens.js';
 import { createTenantWithInbox } from './foundations.js';
 
@@ -186,6 +192,8 @@ export interface InternalRouteOptions {
   publicUrl?: string;
   /** KINOTE_DEPLOY_ID, echoed by /info as deployId. */
   deployId?: string;
+  /** The deployment's model settings and providers. Without them there is no model-settings API (feature off). */
+  models?: ModelProviders;
 }
 
 /** A workspace slug from its name: lowercase letters, digits and dashes; "workspace" when nothing is left. */
@@ -240,6 +248,79 @@ async function bootstrapOwner(email: string, workspaceName: string, publicUrl: s
   return { userId, tenantId, setupUrl: `${publicUrl.replace(/\/+$/, '')}/reset-password/${token}` };
 }
 
+const invalidSettings = (field: string, message: string) => new AppError('invalid_model_settings', message, { field });
+
+/** A workspace's answer model is only usable when Ask has a model to choose (ASK_PROVIDER=openai). */
+function assertAskModelUsable(askModel: string | null | undefined, models: ModelProviders | undefined): void {
+  if (askModel == null || !models) return;
+  if (models.cache.current().providers.ask === 'deterministic') {
+    throw invalidSettings('askModel', 'ASK_PROVIDER is deterministic: there is no model to choose. Set ASK_PROVIDER=openai in Kinote first.');
+  }
+}
+
+/** The fields of a model-settings body that name a model, and the provider each needs. */
+const MODEL_FIELDS = [
+  ['askModel', 'ask', 'ASK_PROVIDER'],
+  ['routerModel', 'router', 'ROUTER_PROVIDER'],
+  ['embeddingModel', 'embedding', 'EMBEDDING_PROVIDER'],
+] as const;
+
+/** GET/PUT /internal/v1/model-settings (feature `model_settings`). */
+function registerModelSettingsRoutes(app: FastifyInstance, opts: object, models: ModelProviders): void {
+  const reply = async (queued?: { reindex: number; placement: number }): Promise<ModelSettingsReply> => {
+    const db = getDb();
+    const stored = (await readModelSettings(db)) ?? { askModel: null, routerModel: null, embeddingModel: null, creditRates: null };
+    return {
+      stored,
+      effective: models.cache.current(),
+      reindex: { pendingJobs: await pendingModelJobs(db) },
+      ...(queued ? { queued } : {}),
+    };
+  };
+
+  app.get('/internal/v1/model-settings', opts, async () => reply());
+
+  app.put('/internal/v1/model-settings', opts, async (req) => {
+    const parsed = ModelSettingsInputSchema.safeParse(req.body);
+    if (!parsed.success) {
+      const issue = parsed.error.issues[0]!;
+      const field = String(issue.path[0] ?? 'body');
+      throw invalidSettings(field, `${issue.path.join('.') || 'body'}: ${issue.message}`);
+    }
+    const body = parsed.data;
+    const before = await models.cache.refresh();
+    for (const [field, role, env] of MODEL_FIELDS) {
+      if (body[field] !== null && before.providers[role] === 'deterministic') {
+        throw invalidSettings(field, `${env} is deterministic: there is no model to choose. Set ${env}=openai in Kinote first.`);
+      }
+    }
+    const embeddingChanged = body.embeddingModel !== null && body.embeddingModel !== before.embeddingModel;
+    if (embeddingChanged) {
+      try {
+        await models.probeEmbedding(body.embeddingModel!);
+      } catch (err) {
+        throw invalidSettings('embeddingModel', `The embedding model did not work: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+    const after = models.cache.effectiveFor(body);
+    const routerChanged = after.routerModel !== before.routerModel;
+    const reindexNeeded = after.embeddingModel !== before.embeddingModel;
+    // The row and the jobs commit together: a failure stores nothing, so a retry of the same body queues the work.
+    // A re-index queues each document's placement jobs itself, so a separate placement pass is for the router alone.
+    const queued = await getDb().transaction(async (tx) => {
+      await writeModelSettings(tx, body);
+      const placement = routerChanged && !reindexNeeded;
+      if ((!reindexNeeded && !placement) || after.embeddingModel === null) return { reindex: 0, placement: 0 };
+      return queueModelRebuild(tx, { embeddingModel: after.embeddingModel, reindex: reindexNeeded, placement });
+    });
+    await models.cache.refresh();
+    const changed = JSON.stringify(before) !== JSON.stringify(after);
+    // Deployment-wide, so no workspace audit row: the control plane audits who changed it.
+    if (changed) req.log.info({ event: 'model_settings.updated', before, after, queued }, 'model settings updated by the control plane');
+    return reply(queued);
+  });
+}
+
 export function registerInternalRoutes(app: FastifyInstance, tokens: string[], o: InternalRouteOptions = {}): void {
   if (tokens.length === 0) {
     // Off: the paths do not exist (the session auth would otherwise answer 401).
@@ -254,7 +335,7 @@ export function registerInternalRoutes(app: FastifyInstance, tokens: string[], o
     kinoteVersion: o.kinoteVersion ?? kinoteVersion(),
     ...(o.deployId ? { deployId: o.deployId } : {}),
     apiVersion: 1 as const,
-    features: ['limits', 'usage', 'topups', 'billing_state', 'default_limits'],
+    features: ['limits', 'usage', 'topups', 'billing_state', 'default_limits', ...(o.models ? ['model_settings'] : [])],
   }));
 
   app.post('/internal/v1/bootstrap', opts, async (req, reply) => {
@@ -263,12 +344,15 @@ export function registerInternalRoutes(app: FastifyInstance, tokens: string[], o
     return reply.status(201).send(await bootstrapOwner(body.email, body.workspaceName, o.publicUrl));
   });
 
+  if (o.models) registerModelSettingsRoutes(app, opts, o.models);
+
   app.get('/internal/v1/defaults', opts, async () => ({ defaults: await readTenantDefaults(getDb()) }));
 
   app.put('/internal/v1/defaults', opts, async (req) => {
     // A missing body is a mistake, not "no defaults": that takes an explicit JSON null.
     if (req.body === undefined) throw new AppError('validation_failed', 'The body must be the defaults, or null to remove them.');
     const body = PutDefaultsRequestSchema.parse(req.body);
+    assertAskModelUsable(body?.askModel, o.models);
     const db = getDb();
     if (body === null) {
       await db.delete(tenantDefaults).where(eq(tenantDefaults.id, true));
@@ -281,6 +365,8 @@ export function registerInternalRoutes(app: FastifyInstance, tokens: string[], o
         indexCreditsPerMonth: body.indexCreditsPerMonth,
         gracePercent: body.gracePercent ?? 10,
         maxFreePerOwner: body.maxFreePerOwner,
+        askModel: body.askModel ?? null,
+        creditMultiplier: body.creditMultiplier ?? 1,
         updatedAt: new Date(),
       };
       await db.insert(tenantDefaults).values({ id: true, ...values }).onConflictDoUpdate({ target: tenantDefaults.id, set: values });
@@ -315,6 +401,7 @@ export function registerInternalRoutes(app: FastifyInstance, tokens: string[], o
     // A missing body is a mistake, not "remove every limit": that takes an explicit JSON null.
     if (req.body === undefined) throw new AppError('validation_failed', 'The body must be the limits, or null to remove them.');
     const body = PutLimitsRequestSchema.parse(req.body);
+    assertAskModelUsable(body?.askModel, o.models);
     return withTenantTx(id, async (tx) => {
       const tenant = await tenantRow(tx, id);
       if (!tenant || tenant.deletedAt) throw notFound();
@@ -329,6 +416,8 @@ export function registerInternalRoutes(app: FastifyInstance, tokens: string[], o
           indexCreditsPerMonth: body.indexCreditsPerMonth,
           gracePercent: body.gracePercent ?? 10,
           periodAnchorDay: body.periodAnchorDay ?? 1,
+          askModel: body.askModel ?? null,
+          creditMultiplier: body.creditMultiplier ?? 1,
           updatedAt: now,
           updatedBy: 'control_plane',
         };

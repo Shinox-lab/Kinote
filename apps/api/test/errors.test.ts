@@ -234,6 +234,7 @@ describe('error model', () => {
       forbidden: 403,
       unauthenticated: 401,
       invalid_credentials: 401,
+      invalid_model_settings: 422,
       validation_failed: 400,
       capture_too_long: 400,
       comment_too_long: 400,

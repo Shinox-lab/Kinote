@@ -37,6 +37,8 @@ export interface TenantLimits {
   indexCreditsPerMonth: number | null;
   gracePercent: number;
   periodAnchorDay: number;
+  askModel: string | null;
+  creditMultiplier: number;
 }
 
 export interface UsageStanding {
@@ -62,7 +64,24 @@ async function readLimits(tx: DbTransaction, tenantId: string): Promise<TenantLi
     indexCreditsPerMonth: row.indexCreditsPerMonth,
     gracePercent: row.gracePercent,
     periodAnchorDay: row.periodAnchorDay,
+    askModel: row.askModel,
+    creditMultiplier: row.creditMultiplier,
   };
+}
+
+/** The workspace's answer model (tenant_limits.ask_model); null: the deployment's. */
+export async function readAskModel(tx: DbTransaction, tenantId: string): Promise<string | null> {
+  const [row] = await tx.select({ askModel: tenantLimits.askModel }).from(tenantLimits).where(eq(tenantLimits.tenantId, tenantId));
+  return row?.askModel ?? null;
+}
+
+/** The workspace's credit multiplier; 1 without a limits row. */
+export async function readCreditMultiplier(tx: DbTransaction, tenantId: string): Promise<number> {
+  const [row] = await tx
+    .select({ m: tenantLimits.creditMultiplier })
+    .from(tenantLimits)
+    .where(eq(tenantLimits.tenantId, tenantId));
+  return row?.m ?? 1;
 }
 
 export interface TenantDefaultsRow {
@@ -73,6 +92,8 @@ export interface TenantDefaultsRow {
   indexCreditsPerMonth: number | null;
   gracePercent: number;
   maxFreePerOwner: number | null;
+  askModel: string | null;
+  creditMultiplier: number;
 }
 
 /** The control plane's defaults for new workspaces, or null when none were pushed. Not tenant-scoped. */
@@ -87,6 +108,8 @@ export async function readTenantDefaults(tx: Pick<DbTransaction, 'select'>): Pro
     indexCreditsPerMonth: row.indexCreditsPerMonth,
     gracePercent: row.gracePercent,
     maxFreePerOwner: row.maxFreePerOwner,
+    askModel: row.askModel,
+    creditMultiplier: row.creditMultiplier,
   };
 }
 

@@ -128,6 +128,8 @@ export async function createTenantWithInbox(
             creditsPerMonth: defaults.creditsPerMonth,
             indexCreditsPerMonth: defaults.indexCreditsPerMonth,
             gracePercent: defaults.gracePercent,
+            askModel: defaults.askModel,
+            creditMultiplier: defaults.creditMultiplier,
             // Periods start on the day the workspace was created (the control plane uses the same rule).
             periodAnchorDay: Math.min(new Date().getUTCDate(), 28),
             updatedBy: 'defaults',

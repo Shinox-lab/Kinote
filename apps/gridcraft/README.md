@@ -7,9 +7,9 @@ the editor runs in an iframe with an opaque origin.
 
 ## Pin
 
-- Version: `0.13.0`
-- Release: `https://github.com/storytold/gridcraft/releases/download/v0.13.0/gridcraft-web-0.13.0.zip`
-- SHA-256: `e232edde1898459f13568ca7b1f3feecb4037f0cbb8f6aec86de1a3c096af5dc`
+- Version: `0.19.1`
+- Release: `https://github.com/storytold/gridcraft/releases/download/v0.19.1/gridcraft-web-0.19.1.zip`
+- SHA-256: `48c5d1b101befebb3c5ba3b7a14914f01c3207934813ed07dc4251b7ae116a78`
 
 The release is downloaded and checksum-verified at image build time. The
 release's license and notice files are copied with the rest of the site.

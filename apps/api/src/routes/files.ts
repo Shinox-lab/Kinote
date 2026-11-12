@@ -191,7 +191,8 @@ export async function withStoredBytes<T>(
  * stores nothing; then the bytes; then, in one transaction under a lock on
  * (space, bytes), the duplicate check again, the document, its first version
  * and the `file.extract` job. The same bytes already in the space (in the
- * Inbox: among the actor's own files) answer `unchanged`.
+ * Inbox: among the actor's own files) answer `unchanged`, unless the client
+ * asked for a copy (an explicit paste onto a tree row).
  */
 export async function uploadFile(
   actor: Actor,
@@ -199,6 +200,7 @@ export async function uploadFile(
   deps: FileDeps
 ): Promise<UploadOutcome> {
   const fields = UploadFileFieldsSchema.parse(input.fields);
+  const copy = fields.copy === 'true';
   const detected = detect(input.file);
   const name = cleanFileName(input.file.name);
   const { contentHash } = input.file;
@@ -206,7 +208,7 @@ export async function uploadFile(
   const gate = await withTenantTx(actor.tenantId, async (tx) => {
     const space = await targetSpace(tx, actor, fields.space_id);
     if (fields.parent_id) await requireVisibleParent(tx, actor, fields.parent_id, space.id);
-    return { space, duplicate: await findDuplicate(tx, actor, space, contentHash) };
+    return { space, duplicate: copy ? null : await findDuplicate(tx, actor, space, contentHash) };
   });
   if (gate.duplicate) return unchanged(gate.duplicate.doc, gate.duplicate.ver);
 
@@ -220,7 +222,7 @@ export async function uploadFile(
       const space = await targetSpace(tx, actor, gate.space.id, 'share');
       if (fields.parent_id) await requireVisibleParent(tx, actor, fields.parent_id, space.id);
 
-      const duplicate = await findDuplicate(tx, actor, space, contentHash);
+      const duplicate = copy ? null : await findDuplicate(tx, actor, space, contentHash);
       if (duplicate) return { result: unchanged(duplicate.doc, duplicate.ver), keep: false };
 
       const [doc] = await tx

@@ -61,7 +61,7 @@ export async function planDocument(
   const [vector] = await deps.embedder.embed([text], 'query');
   const { candidates, examples, spaceNames } = await withTenantTx(tenantId, async (tx) => {
     const fact = { statement: text, kind: 'new' as const, names, date: null };
-    const candidates = await gatherCandidates(tx, ctx, fact, vector!, resolved);
+    const candidates = await gatherCandidates(tx, ctx, fact, vector!, resolved, undefined, deps.embedder.model);
     const spaceIds = [...new Set([...candidates.values()].map((c) => c.spaceId))];
     const rows = await tx.select({ id: spaces.id, name: spaces.name }).from(spaces).where(eq(spaces.tenantId, tenantId));
     return {

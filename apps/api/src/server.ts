@@ -1,7 +1,7 @@
 import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 import rateLimit from '@fastify/rate-limit';
 import multipart from '@fastify/multipart';
-import { getDb, readBillingState, readStanding, rowsOf, tenants, withTenantTx } from '@kinote/db';
+import { getDb, readAskModel, readBillingState, readStanding, rowsOf, tenants, withTenantTx } from '@kinote/db';
 import { eq, sql } from 'drizzle-orm';
 import { DEFAULT_AUTH_RATE_LIMIT_MAX, DEFAULT_USAGE_LIMITS, type CreditRates, type ObjectStorage, type UsageLimits } from '@kinote/shared';
 import {
@@ -85,6 +85,7 @@ import {
   getReadableSpaceIds,
   defaultAnswerProvider,
   defaultEmbeddingProvider,
+  type ModelProviders,
   withUsageScope,
   countSeats,
   creditVerdict,
@@ -283,8 +284,13 @@ export interface ApiServerOptions {
   embeddingProvider?: EmbeddingProvider;
   /** Answers for Ask. Default: the deterministic quoted-passage provider. */
   answerProvider?: AnswerProvider;
-  /** MODEL_CREDIT_RATES, parsed. Null or unset: model calls are recorded at 0 credits. */
+  /** MODEL_CREDIT_RATES, parsed. Null or unset: model calls are recorded at 0 credits. Ignored when `models` is set. */
   creditRates?: CreditRates | null;
+  /**
+   * Providers chosen by model id (the control plane's model settings, else the env). When set: Ask uses the
+   * workspace's model, embeddings follow the deployment's, and credit rates come from the settings.
+   */
+  models?: ModelProviders;
   /** BILLING_URL: where Upgrade links point. */
   billingUrl?: string;
   /** CONTROL_PLANE_TOKENS: bearer tokens for /internal/v1/. None: that API does not exist (404). */
@@ -360,7 +366,8 @@ function sessionOf(req: FastifyRequest): AuthSession {
 }
 
 export function buildApiServer(opts: ApiServerOptions = {}) {
-  const embeddingProvider = opts.embeddingProvider ?? defaultEmbeddingProvider;
+  const models = opts.models;
+  const embeddingProvider = opts.embeddingProvider ?? models?.embedding() ?? defaultEmbeddingProvider;
   const answerProvider = opts.answerProvider ?? defaultAnswerProvider;
   const limits = opts.limits ?? DEFAULT_USAGE_LIMITS;
   const creditRates = opts.creditRates ?? null;
@@ -368,7 +375,8 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
   /** Runs a route's work in a usage scope: its model calls are charged to the caller's workspace as `kind`. */
   const metered = <T>(kind: 'capture' | 'ask' | 'index', req: FastifyRequest, fn: () => Promise<T>): Promise<T> => {
     const actor = actorOf(req);
-    return withUsageScope({ tenantId: actor.tenantId, kind, principalId: actor.principalId }, creditRates, fn);
+    const rates = models ? models.cache.current().creditRates : creditRates;
+    return withUsageScope({ tenantId: actor.tenantId, kind, principalId: actor.principalId }, rates, fn);
   };
   const HOUR_MS = 60 * 60 * 1000;
   const uploadLimit = requestLimit('upload', limits.uploadPerMinute);
@@ -1203,6 +1211,7 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
     ...(opts.publicUrl ? { publicUrl: opts.publicUrl } : {}),
     ...(opts.deployId ? { deployId: opts.deployId } : {}),
     ...(opts.collab ? { revokeTenant: (tenantId: string) => opts.collab!.revoke({ tenantId }) } : {}),
+    ...(models ? { models } : {}),
   });
 
   app.get('/api/v1/usage', async (req, reply) => {
@@ -1260,7 +1269,8 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
         inboxSpaceId,
         parsed.query,
         queryEmbedding,
-        parsed.limit
+        parsed.limit,
+        embeddingProvider.model
       );
     });
     return reply.send(parseReply(SearchResponseSchema, { passages: res }));
@@ -1278,7 +1288,7 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
       throw new AppError('search_unavailable');
     }
 
-    const { passages, tables } = await withTenantTx(actor.tenantId, async (tx) => {
+    const { passages, tables, askModel } = await withTenantTx(actor.tenantId, async (tx) => {
       const { readableSpaceIds, inboxSpaceId } = await getReadableSpaceIds(tx, actor);
       const effectiveSpaces = parsed.space_ids
         ? readableSpaceIds.filter((id) => parsed.space_ids!.includes(id))
@@ -1290,12 +1300,14 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
         inboxSpaceId,
         parsed.question,
         queryEmbedding,
-        5
+        5,
+        embeddingProvider.model
       );
       // Questions across a collection ("which clients launch in December?") read its rows as a table.
-      return { passages, tables: passages.length > 0 ? await collectionTables(tx, actor, effectiveSpaces, passages) : [] };
+      const tables = passages.length > 0 ? await collectionTables(tx, actor, effectiveSpaces, passages) : [];
+      return { passages, tables, askModel: models ? await readAskModel(tx, actor.tenantId) : null };
     });
-    const res = await answerPassages(parsed.question, passages, answerProvider, tables);
+    const res = await answerPassages(parsed.question, passages, models ? models.answerFor(askModel) : answerProvider, tables);
     return reply.send(parseReply(AskResponseSchema, res));
   }));
 
