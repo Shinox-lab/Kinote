@@ -3,13 +3,14 @@ import { and, eq, inArray } from 'drizzle-orm';
 import {
   markWarned,
   memberships,
+  readCreditMultiplier,
   recordUsage,
   withTenantTx,
   type DbTransaction,
   type UsageKind,
   type UsageStanding,
 } from '@kinote/db';
-import { millicreditsFor, type CreditRates } from '@kinote/shared';
+import { millicreditsFor, scaleMillicredits, type CreditRates } from '@kinote/shared';
 import { notify } from '../talk/notify.js';
 
 // Metering: model providers report each call with reportModelCall; the api and
@@ -25,6 +26,8 @@ export interface UsageScope {
   documentId?: string | null;
   /** Time the calls are charged at (tests, the worker's clock). Default: wall clock. */
   clock?: () => Date;
+  /** Work the operator caused (a model change re-index): recorded, charged 0. */
+  operator?: boolean;
 }
 
 export interface ModelCall {
@@ -84,6 +87,7 @@ async function flush(open: OpenScope, rates: CreditRates | null): Promise<void> 
   const now = scope.clock?.() ?? new Date();
   try {
     await withTenantTx(scope.tenantId, async (tx) => {
+      const multiplier = scope.operator ? 0 : await readCreditMultiplier(tx, scope.tenantId);
       const standing = await recordUsage(
         tx,
         scope.tenantId,
@@ -93,7 +97,7 @@ async function flush(open: OpenScope, rates: CreditRates | null): Promise<void> 
           inputTokens: c.inputTokens,
           outputTokens: c.outputTokens,
           estimated: c.estimated,
-          millicredits: millicreditsFor(rates, c.model, c.inputTokens, c.outputTokens),
+          millicredits: scaleMillicredits(millicreditsFor(rates, c.model, c.inputTokens, c.outputTokens), multiplier),
           principalId: scope.principalId ?? null,
           documentId: scope.documentId ?? null,
         })),

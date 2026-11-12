@@ -87,7 +87,8 @@ export interface RunnerOptions {
    */
   aiDailyLimit?: number;
   /** MODEL_CREDIT_RATES, parsed. Each job's model calls are metered; null charges 0 credits. */
-  creditRates?: CreditRates | null;
+  /** The rate table, or a getter read as each job runs (the live model settings). */
+  creditRates?: CreditRates | null | (() => CreditRates | null);
 }
 
 type Processed = { id: string; queue: string; status: string };
@@ -210,6 +211,11 @@ async function deferredPastAllowance(job: Job, aiDailyLimit: number, now: Date):
 
 const HELD_QUEUES = new Set<string>(INDEX_QUEUES);
 
+/** Work the operator caused (`operator: true` in the payload, e.g. a model change re-index): free, never held. */
+function isOperatorJob(job: Job): boolean {
+  return (job.payload as Record<string, unknown> | null)?.operator === true;
+}
+
 /**
  * Indexing work past the workspace's index credit limit (plus grace) is held,
  * not failed: the job is put back for the period's end and true is returned
@@ -217,7 +223,7 @@ const HELD_QUEUES = new Set<string>(INDEX_QUEUES);
  * sooner. An unreadable standing lets the job run.
  */
 async function heldAtIndexLimit(job: Job, now: Date): Promise<boolean> {
-  if (!HELD_QUEUES.has(job.queue)) return false;
+  if (!HELD_QUEUES.has(job.queue) || isOperatorJob(job)) return false;
   let standing: Awaited<ReturnType<typeof readStanding>>;
   try {
     standing = await withTenantTx(job.tenantId, (tx) => readStanding(tx, job.tenantId, now));
@@ -254,6 +260,7 @@ function usageScopeOf(job: Job, clock: () => Date) {
     principalId: id(payload.principalId),
     documentId: id(payload.documentId),
     clock,
+    operator: isOperatorJob(job),
   };
 }
 
@@ -299,7 +306,7 @@ async function runOne(
   clock: () => Date,
   deps: RunDeps,
   aiDailyLimit: number,
-  creditRates: CreditRates | null
+  creditRates: CreditRates | null | (() => CreditRates | null)
 ): Promise<string> {
   const handler = registry[job.queue];
   const lease = job.lockedAt ?? undefined;
@@ -310,7 +317,8 @@ async function runOne(
       !(await heldAtIndexLimit(job, clock())) &&
       !(handler.usesAi && (await deferredPastAllowance(job, aiDailyLimit, clock())))
     ) {
-      await withUsageScope(usageScopeOf(job, clock), creditRates, () => handler.run(job, { now: clock(), ...deps }));
+      const rates = typeof creditRates === 'function' ? creditRates() : creditRates;
+      await withUsageScope(usageScopeOf(job, clock), rates, () => handler.run(job, { now: clock(), ...deps }));
     }
   } catch (err) {
     failure = { err };
@@ -390,7 +398,8 @@ export async function runWorkerLoop(o: {
   collab?: CollabClient;
   handlers?: Record<string, JobHandler>;
   aiDailyLimit?: number;
-  creditRates?: CreditRates | null;
+  /** The rate table, or a getter read as each job runs (the live model settings). */
+  creditRates?: CreditRates | null | (() => CreditRates | null);
 }): Promise<void> {
   let lastSweep = 0;
   while (!o.signal.aborted) {

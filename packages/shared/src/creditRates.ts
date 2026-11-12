@@ -75,3 +75,8 @@ export function millicreditsFor(
   const exact = inputTokens * rate.input + outputTokens * rate.output;
   return Math.ceil(Math.round(exact * 1e6) / 1e6);
 }
+
+/** A charge times a workspace's credit multiplier, rounded up to a whole millicredit (float noise ignored). */
+export function scaleMillicredits(milli: number, multiplier: number): number {
+  return Math.ceil(Math.round(milli * multiplier * 1e6) / 1e6);
+}

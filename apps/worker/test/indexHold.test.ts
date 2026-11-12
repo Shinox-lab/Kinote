@@ -1,8 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { and, eq } from 'drizzle-orm';
+import { reportModelCall } from '@kinote/core';
 import {
   enqueueJob,
+  usageEvents,
   jobs,
   periodOf,
   releaseHeldIndexJobs,
@@ -44,9 +46,9 @@ function recording() {
   return { runs, handlers };
 }
 
-async function enqueue(tenantId: string, queue: string) {
+async function enqueue(tenantId: string, queue: string, payload: Record<string, unknown> = {}, key = `k-${queue}`) {
   return withTenantTx(tenantId, (tx) =>
-    enqueueJob(tx, { tenantId, queue, idempotencyKey: `k-${queue}`, payload: {}, runAt: new Date(now.getTime() - 1000) })
+    enqueueJob(tx, { tenantId, queue, idempotencyKey: key, payload, runAt: new Date(now.getTime() - 1000) })
   );
 }
 
@@ -115,5 +117,30 @@ describe('holding indexing at the index credit limit', () => {
     const { runs, handlers } = recording();
     await runPendingJobsForTenant(tenantId, { handlers, now });
     expect(runs).toEqual(['version.index']);
+  });
+
+  it('operator jobs (a model change re-index) are not held at the indexing limit', async () => {
+    const tenantId = await seedTenant();
+    await indexPoolSpent(tenantId);
+    await enqueue(tenantId, 'document.reindex', { documentId: randomUUID(), operator: true }, 'op');
+    await enqueue(tenantId, 'version.index');
+    const runs: string[] = [];
+    const handler: JobHandler = { run: async (job) => void runs.push(job.queue) };
+    await runPendingJobsForTenant(tenantId, { handlers: { 'document.reindex': handler, 'version.index': handler }, now });
+    expect(runs).toEqual(['document.reindex']);
+  });
+
+  it('operator jobs are free; rates can be a getter (the live model settings)', async () => {
+    const tenantId = await seedTenant();
+    await enqueue(tenantId, 'document.reindex', { documentId: randomUUID(), operator: true }, 'op');
+    await enqueue(tenantId, 'version.index');
+    const handler: JobHandler = { run: async () => reportModelCall({ model: 'm', inputTokens: 1000, outputTokens: 0, estimated: false }) };
+    await runPendingJobsForTenant(tenantId, {
+      handlers: { 'document.reindex': handler, 'version.index': handler },
+      now,
+      creditRates: () => ({ default: { input: 1, output: 0 }, models: {} }),
+    });
+    const events = await withTenantTx(tenantId, (tx) => tx.select().from(usageEvents).where(eq(usageEvents.tenantId, tenantId)));
+    expect(events.map((e) => e.millicredits).sort((a, b) => a - b)).toEqual([0, 1000]);
   });
 });

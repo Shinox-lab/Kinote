@@ -44,7 +44,7 @@ async function main(): Promise<void> {
       placementModel: models.routing(),
       collab: new HttpCollabClient(config.COLLAB_INTERNAL_URL, config.INTERNAL_SECRET),
       aiDailyLimit: config.TENANT_DAILY_AI_ACTIONS,
-      creditRates: modelCache.current().creditRates,
+      creditRates: () => modelCache.current().creditRates,
     });
   } finally {
     stopModelRefresh();

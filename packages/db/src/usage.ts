@@ -75,6 +75,15 @@ export async function readAskModel(tx: DbTransaction, tenantId: string): Promise
   return row?.askModel ?? null;
 }
 
+/** The workspace's credit multiplier; 1 without a limits row. */
+export async function readCreditMultiplier(tx: DbTransaction, tenantId: string): Promise<number> {
+  const [row] = await tx
+    .select({ m: tenantLimits.creditMultiplier })
+    .from(tenantLimits)
+    .where(eq(tenantLimits.tenantId, tenantId));
+  return row?.m ?? 1;
+}
+
 export interface TenantDefaultsRow {
   plan: string;
   seats: number | null;

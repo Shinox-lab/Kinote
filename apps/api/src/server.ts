@@ -367,7 +367,8 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
   /** Runs a route's work in a usage scope: its model calls are charged to the caller's workspace as `kind`. */
   const metered = <T>(kind: 'capture' | 'ask' | 'index', req: FastifyRequest, fn: () => Promise<T>): Promise<T> => {
     const actor = actorOf(req);
-    return withUsageScope({ tenantId: actor.tenantId, kind, principalId: actor.principalId }, creditRates, fn);
+    const rates = models ? models.cache.current().creditRates : creditRates;
+    return withUsageScope({ tenantId: actor.tenantId, kind, principalId: actor.principalId }, rates, fn);
   };
   const HOUR_MS = 60 * 60 * 1000;
   const uploadLimit = requestLimit('upload', limits.uploadPerMinute);
