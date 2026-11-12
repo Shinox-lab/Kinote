@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { call, createPageInSpace, editorOf, openAs, seedWorld, treeLink } from './support.js';
+import { call, createPageInSpace, editorOf, openAs, seedWorld, treeLink, uploadViaApi } from './support.js';
 
 /** A paste of real File objects from the desktop, as the browser sees it. */
 async function pasteFiles(
@@ -74,6 +74,13 @@ test('a pasted text file becomes a file under the page, previewed in place and k
 
 test('a file pasted with focus on a tree row goes under that row’s folder', async ({ browser, request }) => {
   const world = await seedWorld(request, { reviewRequired: false });
+  const bytes = `tree paste ${world.suffix}`;
+  // The same bytes already sit at the space root; an explicit tree-row paste must still make a copy under the page.
+  await uploadViaApi(request, world, world.owner, {
+    name: 'Tree notes.txt',
+    mimeType: 'text/plain',
+    buffer: Buffer.from(bytes),
+  });
   const page = await openAs(browser, world, world.owner);
   const pageId = await createPageInSpace(page, world, 'Paste in tree');
 
@@ -86,23 +93,28 @@ test('a file pasted with focus on a tree row goes under that row’s folder', as
       )
     ).nodes;
 
-  // Focus on the page row: the pasted file goes under that page.
+  // Focus on the page row: the pasted file goes under that page. The event is dispatched on
+  // the body, as Firefox reports it, while the row is what has focus.
   const pageRow = treeLink(page, 'Paste in tree');
   await pageRow.click();
   await pageRow.focus();
-  await pasteFiles(page, [{ name: 'Tree notes.txt', mimeType: 'text/plain', text: `tree paste ${world.suffix}` }], ':focus');
-  await expect(treeLink(page, 'Tree notes.txt')).toBeVisible();
-  const underPage = (await treeNodes()).find((n) => n.title === 'Tree notes.txt')!;
-  expect(underPage.parentId).toBe(pageId);
+  await pasteFiles(page, [{ name: 'Tree notes.txt', mimeType: 'text/plain', text: bytes }], 'body');
+  // The tree cache lives for five seconds; poll until the copy lands instead of racing the upload.
+  await expect
+    .poll(async () => (await treeNodes()).filter((n) => n.title === 'Tree notes.txt').map((n) => n.parentId))
+    .toEqual(expect.arrayContaining([null, pageId]));
 
   // Focus on the file row: the file has no children, so the paste goes to its folder.
-  const fileRow = treeLink(page, 'Tree notes.txt');
+  const fileRow = pageRow
+    .locator('xpath=ancestor::li[1]')
+    .getByRole('link', { name: /^Tree notes\.txt(?:\s|$)/ })
+    .first();
   await fileRow.click();
   await fileRow.focus();
   await pasteFiles(page, [{ name: 'Sibling notes.txt', mimeType: 'text/plain', text: `sibling paste ${world.suffix}` }], ':focus');
-  await expect(treeLink(page, 'Sibling notes.txt')).toBeVisible();
-  const sibling = (await treeNodes()).find((n) => n.title === 'Sibling notes.txt')!;
-  expect(sibling.parentId).toBe(pageId);
+  await expect
+    .poll(async () => (await treeNodes()).find((n) => n.title === 'Sibling notes.txt')?.parentId)
+    .toBe(pageId);
 });
 
 test('a dropped file lands at the drop point and is previewed in place', async ({ browser, request }) => {
