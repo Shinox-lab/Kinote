@@ -63,11 +63,8 @@ export const DefaultsInputSchema = z
 export type DefaultsInput = z.infer<typeof DefaultsInputSchema>;
 export const PutDefaultsRequestSchema = DefaultsInputSchema.nullable();
 
-export const TenantDefaultsSchema = DefaultsInputSchema.extend({
-  gracePercent: z.number().int(),
-  askModel: modelId.nullable(),
-  creditMultiplier: z.number(),
-});
+/** askModel and creditMultiplier stay optional so clients keep accepting servers from before model settings. */
+export const TenantDefaultsSchema = DefaultsInputSchema.extend({ gracePercent: z.number().int() });
 export type TenantDefaults = z.infer<typeof TenantDefaultsSchema>;
 
 /** GET and PUT /internal/v1/defaults: the stored defaults, or null when none. */
