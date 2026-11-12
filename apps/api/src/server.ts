@@ -1257,7 +1257,8 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
         inboxSpaceId,
         parsed.query,
         queryEmbedding,
-        parsed.limit
+        parsed.limit,
+        embeddingProvider.model
       );
     });
     return reply.send(parseReply(SearchResponseSchema, { passages: res }));
@@ -1287,7 +1288,8 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
         inboxSpaceId,
         parsed.question,
         queryEmbedding,
-        5
+        5,
+        embeddingProvider.model
       );
       // Questions across a collection ("which clients launch in December?") read its rows as a table.
       const tables = passages.length > 0 ? await collectionTables(tx, actor, effectiveSpaces, passages) : [];
