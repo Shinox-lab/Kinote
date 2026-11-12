@@ -193,3 +193,4 @@ export {
   type ModelEnv,
   type ProviderKind,
 } from './models/settings.js';
+export { delegating, modelFactoriesFrom, ModelProviders, type ModelFactories } from './models/providers.js';

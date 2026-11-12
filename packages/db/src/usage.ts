@@ -69,6 +69,12 @@ async function readLimits(tx: DbTransaction, tenantId: string): Promise<TenantLi
   };
 }
 
+/** The workspace's answer model (tenant_limits.ask_model); null: the deployment's. */
+export async function readAskModel(tx: DbTransaction, tenantId: string): Promise<string | null> {
+  const [row] = await tx.select({ askModel: tenantLimits.askModel }).from(tenantLimits).where(eq(tenantLimits.tenantId, tenantId));
+  return row?.askModel ?? null;
+}
+
 export interface TenantDefaultsRow {
   plan: string;
   seats: number | null;
