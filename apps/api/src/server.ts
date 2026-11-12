@@ -1199,6 +1199,7 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
 
   registerInternalRoutes(app, opts.controlPlaneTokens ?? [], {
     ...(opts.collab ? { revokeTenant: (tenantId: string) => opts.collab!.revoke({ tenantId }) } : {}),
+    ...(models ? { models } : {}),
   });
 
   app.get('/api/v1/usage', async (req, reply) => {

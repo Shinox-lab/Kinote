@@ -5,6 +5,10 @@ import { and, eq, isNull, sql } from 'drizzle-orm';
 import {
   addTopup,
   getDb,
+  pendingModelJobs,
+  queueModelRebuild,
+  readModelSettings,
+  writeModelSettings,
   memberships,
   readBillingState,
   readTenantDefaults,
@@ -23,6 +27,8 @@ import {
 import {
   AppError,
   BillingStateBodySchema,
+  ModelSettingsInputSchema,
+  type ModelSettingsReply,
   PageQuerySchema,
   PutDefaultsRequestSchema,
   PutLimitsRequestSchema,
@@ -32,7 +38,7 @@ import {
   type InternalTenantDetail,
   type TenantUsage,
 } from '@kinote/contracts';
-import { countSeats, creditVerdict, indexHeld } from '@kinote/core';
+import { countSeats, creditVerdict, indexHeld, type ModelProviders } from '@kinote/core';
 
 // The control-plane API: Kinote-SaaS sets limits, adds top-ups and reads usage
 // here. Mounted only when CONTROL_PLANE_TOKENS is set; every route checks the
@@ -153,6 +159,70 @@ const iso = (v: Date | string) => new Date(v).toISOString();
 export interface InternalRouteOptions {
   /** Closes a workspace's live editing sessions (after it is suspended, so they reconnect read-only). */
   revokeTenant?: (tenantId: string) => Promise<void>;
+  /** The deployment's model settings and providers. Without them there is no model-settings API (feature off). */
+  models?: ModelProviders;
+}
+
+const invalidSettings = (field: string, message: string) => new AppError('invalid_model_settings', message, { field });
+
+/** The fields of a model-settings body that name a model, and the provider each needs. */
+const MODEL_FIELDS = [
+  ['askModel', 'ask', 'ASK_PROVIDER'],
+  ['routerModel', 'router', 'ROUTER_PROVIDER'],
+  ['embeddingModel', 'embedding', 'EMBEDDING_PROVIDER'],
+] as const;
+
+/** GET/PUT /internal/v1/model-settings (feature `model_settings`). */
+function registerModelSettingsRoutes(app: FastifyInstance, opts: object, models: ModelProviders): void {
+  const reply = async (queued?: { reindex: number; placement: number }): Promise<ModelSettingsReply> => {
+    const db = getDb();
+    const stored = (await readModelSettings(db)) ?? { askModel: null, routerModel: null, embeddingModel: null, creditRates: null };
+    return {
+      stored,
+      effective: models.cache.current(),
+      reindex: { pendingJobs: await pendingModelJobs(db) },
+      ...(queued ? { queued } : {}),
+    };
+  };
+
+  app.get('/internal/v1/model-settings', opts, async () => reply());
+
+  app.put('/internal/v1/model-settings', opts, async (req) => {
+    const parsed = ModelSettingsInputSchema.safeParse(req.body);
+    if (!parsed.success) {
+      const issue = parsed.error.issues[0]!;
+      const field = String(issue.path[0] ?? 'body');
+      throw invalidSettings(field, `${issue.path.join('.') || 'body'}: ${issue.message}`);
+    }
+    const body = parsed.data;
+    const before = await models.cache.refresh();
+    for (const [field, role, env] of MODEL_FIELDS) {
+      if (body[field] !== null && before.providers[role] === 'deterministic') {
+        throw invalidSettings(field, `${env} is deterministic: there is no model to choose. Set ${env}=openai in Kinote first.`);
+      }
+    }
+    const embeddingChanged = body.embeddingModel !== null && body.embeddingModel !== before.embeddingModel;
+    if (embeddingChanged) {
+      try {
+        await models.probeEmbedding(body.embeddingModel!);
+      } catch (err) {
+        throw invalidSettings('embeddingModel', `The embedding model did not work: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+    const db = getDb();
+    await writeModelSettings(db, body);
+    const after = await models.cache.refresh();
+    const routerChanged = after.routerModel !== before.routerModel;
+    const reindexNeeded = after.embeddingModel !== before.embeddingModel;
+    const queued =
+      (reindexNeeded || routerChanged) && after.embeddingModel !== null
+        ? await queueModelRebuild(db, { embeddingModel: after.embeddingModel, reindex: reindexNeeded, placement: true })
+        : { reindex: 0, placement: 0 };
+    const changed = JSON.stringify(before) !== JSON.stringify(after);
+    // Deployment-wide, so no workspace audit row: the control plane audits who changed it.
+    if (changed) req.log.info({ event: 'model_settings.updated', before, after, queued }, 'model settings updated by the control plane');
+    return reply(queued);
+  });
 }
 
 export function registerInternalRoutes(app: FastifyInstance, tokens: string[], o: InternalRouteOptions = {}): void {
@@ -166,8 +236,10 @@ export function registerInternalRoutes(app: FastifyInstance, tokens: string[], o
   app.get('/internal/v1/info', opts, async () => ({
     kinoteVersion: kinoteVersion(),
     apiVersion: 1 as const,
-    features: ['limits', 'usage', 'topups', 'billing_state', 'default_limits'],
+    features: ['limits', 'usage', 'topups', 'billing_state', 'default_limits', ...(o.models ? ['model_settings'] : [])],
   }));
+
+  if (o.models) registerModelSettingsRoutes(app, opts, o.models);
 
   app.get('/internal/v1/defaults', opts, async () => ({ defaults: await readTenantDefaults(getDb()) }));
 
