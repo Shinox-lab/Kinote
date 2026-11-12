@@ -113,7 +113,7 @@ describe('control-plane API', () => {
     expect(res.statusCode, res.body).toBe(200);
     const detail = InternalTenantDetailSchema.parse(res.json());
     expect(detail.plan).toBe('team');
-    expect(detail.limits).toEqual({ ...limitsBody, plan: undefined, gracePercent: 10, periodAnchorDay: 1 });
+    expect(detail.limits).toEqual({ ...limitsBody, plan: undefined, gracePercent: 10, periodAnchorDay: 1, askModel: null, creditMultiplier: 1 });
     expect(detail.usage).toMatchObject({ creditsUsed: 200, state: 'exhausted', seats: 1 });
     const audits = await withTenantTx(w.tenant.id, (tx) =>
       tx.select().from(auditEvents).where(and(eq(auditEvents.tenantId, w.tenant.id), eq(auditEvents.type, 'limits.updated')))
@@ -124,6 +124,23 @@ describe('control-plane API', () => {
     expect((await capture(w.headers)).json().error).toBe('credits_exhausted');
     // The same PUT again changes nothing (idempotent).
     expect(InternalTenantDetailSchema.parse((await putLimits(w.tenant.id, limitsBody)).json()).limits).toEqual(detail.limits);
+  });
+
+  test('limits carry askModel and creditMultiplier; a body without them resets them', async () => {
+    const w = await world('model-co');
+    const first = InternalTenantDetailSchema.parse((await putLimits(w.tenant.id, { ...limitsBody, askModel: 'pro-model', creditMultiplier: 0.8 })).json());
+    expect(first.limits).toMatchObject({ askModel: 'pro-model', creditMultiplier: 0.8 });
+    const second = InternalTenantDetailSchema.parse((await putLimits(w.tenant.id, limitsBody)).json());
+    expect(second.limits).toMatchObject({ askModel: null, creditMultiplier: 1 });
+  });
+
+  test('creditMultiplier outside 0–10 is refused', async () => {
+    const w = await world('mult-co');
+    for (const creditMultiplier of [11, -0.1]) {
+      const res = await putLimits(w.tenant.id, { ...limitsBody, creditMultiplier });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().error).toBe('validation_failed');
+    }
   });
 
   test('PUT null removes limits: the workspace is unlimited again and held index jobs are released', async () => {
@@ -217,10 +234,10 @@ describe('control-plane API', () => {
     expect(DefaultsReplySchema.parse((await get('/internal/v1/defaults')).json())).toEqual({ defaults: null });
     const put = await putDefaults(freeDefaults);
     expect(put.statusCode, put.body).toBe(200);
-    expect(DefaultsReplySchema.parse(put.json())).toEqual({ defaults: { ...freeDefaults, gracePercent: 10 } });
-    expect((await get('/internal/v1/defaults')).json()).toEqual({ defaults: { ...freeDefaults, gracePercent: 10 } });
+    expect(DefaultsReplySchema.parse(put.json())).toEqual({ defaults: { ...freeDefaults, gracePercent: 10, askModel: null, creditMultiplier: 1 } });
+    expect((await get('/internal/v1/defaults')).json()).toEqual({ defaults: { ...freeDefaults, gracePercent: 10, askModel: null, creditMultiplier: 1 } });
     const again = await putDefaults({ ...freeDefaults, seats: null, gracePercent: 0, maxFreePerOwner: null });
-    expect(again.json().defaults).toEqual({ ...freeDefaults, seats: null, gracePercent: 0, maxFreePerOwner: null });
+    expect(again.json().defaults).toEqual({ ...freeDefaults, seats: null, gracePercent: 0, maxFreePerOwner: null, askModel: null, creditMultiplier: 1 });
     const cleared = await putDefaults(null);
     expect(cleared.statusCode).toBe(200);
     expect(cleared.json()).toEqual({ defaults: null });

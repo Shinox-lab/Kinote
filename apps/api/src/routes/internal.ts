@@ -187,6 +187,8 @@ export function registerInternalRoutes(app: FastifyInstance, tokens: string[], o
         indexCreditsPerMonth: body.indexCreditsPerMonth,
         gracePercent: body.gracePercent ?? 10,
         maxFreePerOwner: body.maxFreePerOwner,
+        askModel: body.askModel ?? null,
+        creditMultiplier: body.creditMultiplier ?? 1,
         updatedAt: new Date(),
       };
       await db.insert(tenantDefaults).values({ id: true, ...values }).onConflictDoUpdate({ target: tenantDefaults.id, set: values });
@@ -235,6 +237,8 @@ export function registerInternalRoutes(app: FastifyInstance, tokens: string[], o
           indexCreditsPerMonth: body.indexCreditsPerMonth,
           gracePercent: body.gracePercent ?? 10,
           periodAnchorDay: body.periodAnchorDay ?? 1,
+          askModel: body.askModel ?? null,
+          creditMultiplier: body.creditMultiplier ?? 1,
           updatedAt: now,
           updatedBy: 'control_plane',
         };

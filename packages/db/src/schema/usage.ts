@@ -5,6 +5,8 @@ import {
   integer,
   bigint,
   boolean,
+  jsonb,
+  numeric,
   date,
   timestamp,
   index,
@@ -27,6 +29,10 @@ export const tenantLimits = pgTable('tenant_limits', {
   indexCreditsPerMonth: integer('index_credits_per_month'),
   gracePercent: integer('grace_percent').notNull().default(10),
   periodAnchorDay: integer('period_anchor_day').notNull().default(1),
+  /** The workspace's answer model; null = the deployment's (model_settings, else ASK_MODEL). */
+  askModel: text('ask_model'),
+  /** Charges are multiplied by this, 0–10. */
+  creditMultiplier: numeric('credit_multiplier', { precision: 6, scale: 3, mode: 'number' }).notNull().default(1),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   updatedBy: text('updated_by').notNull().default('control_plane'),
 });
@@ -41,6 +47,21 @@ export const tenantDefaults = pgTable('tenant_defaults', {
   indexCreditsPerMonth: integer('index_credits_per_month'),
   gracePercent: integer('grace_percent').notNull().default(10),
   maxFreePerOwner: integer('max_free_per_owner'),
+  askModel: text('ask_model'),
+  creditMultiplier: numeric('credit_multiplier', { precision: 6, scale: 3, mode: 'number' }).notNull().default(1),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
+ * The deployment's models and rate table, set by the control plane. At most one row (id true); no row or a
+ * null column = the env value (ASK_MODEL, ROUTER_MODEL, EMBEDDING_MODEL, MODEL_CREDIT_RATES).
+ */
+export const modelSettings = pgTable('model_settings', {
+  id: boolean('id').primaryKey().default(true),
+  askModel: text('ask_model'),
+  routerModel: text('router_model'),
+  embeddingModel: text('embedding_model'),
+  creditRates: jsonb('credit_rates').$type<{ default: { input: number; output: number }; models: Record<string, { input: number; output: number }> }>(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 

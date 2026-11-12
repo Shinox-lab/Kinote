@@ -37,6 +37,8 @@ export interface TenantLimits {
   indexCreditsPerMonth: number | null;
   gracePercent: number;
   periodAnchorDay: number;
+  askModel: string | null;
+  creditMultiplier: number;
 }
 
 export interface UsageStanding {
@@ -62,6 +64,8 @@ async function readLimits(tx: DbTransaction, tenantId: string): Promise<TenantLi
     indexCreditsPerMonth: row.indexCreditsPerMonth,
     gracePercent: row.gracePercent,
     periodAnchorDay: row.periodAnchorDay,
+    askModel: row.askModel,
+    creditMultiplier: row.creditMultiplier,
   };
 }
 
@@ -73,6 +77,8 @@ export interface TenantDefaultsRow {
   indexCreditsPerMonth: number | null;
   gracePercent: number;
   maxFreePerOwner: number | null;
+  askModel: string | null;
+  creditMultiplier: number;
 }
 
 /** The control plane's defaults for new workspaces, or null when none were pushed. Not tenant-scoped. */
@@ -87,6 +93,8 @@ export async function readTenantDefaults(tx: Pick<DbTransaction, 'select'>): Pro
     indexCreditsPerMonth: row.indexCreditsPerMonth,
     gracePercent: row.gracePercent,
     maxFreePerOwner: row.maxFreePerOwner,
+    askModel: row.askModel,
+    creditMultiplier: row.creditMultiplier,
   };
 }
 
