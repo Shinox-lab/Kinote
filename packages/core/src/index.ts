@@ -185,3 +185,11 @@ export { people as demoPeople, workspace as demoWorkspace, type PersonKey as Dem
 export { estimateTokens, reportModelCall, withUsageScope, type ModelCall, type UsageScope } from './usage/meter.js';
 export { creditVerdict, indexHeld, type CreditState, type CreditVerdict } from './usage/standing.js';
 export { assertSeatFor, assertStorageFor, countSeats } from './usage/capacity.js';
+export {
+  effectiveModelSettings,
+  ModelSettingsCache,
+  MODEL_SETTINGS_TTL_MS,
+  type EffectiveModelSettings,
+  type ModelEnv,
+  type ProviderKind,
+} from './models/settings.js';
