@@ -9,6 +9,10 @@ RUN apk add --no-cache curl unzip \
  && mv "/tmp/gridcraft/gridcraft-web-${GRIDCRAFT_VERSION}" /site
 
 FROM nginx:1.27-alpine
+# The release (X.Y.Z), set by the release workflow; empty in a build from source.
+ARG KINOTE_VERSION=
+ENV KINOTE_VERSION=${KINOTE_VERSION}
+LABEL org.opencontainers.image.version=${KINOTE_VERSION}
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=fetch /site /usr/share/nginx/html
 EXPOSE 80

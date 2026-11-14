@@ -1,9 +1,11 @@
-import { createHash, timingSafeEqual } from 'node:crypto';
+import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { createRequire } from 'node:module';
+import { BlockList, isIP } from 'node:net';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import {
   addTopup,
+  emailTokens,
   getDb,
   pendingModelJobs,
   queueModelRebuild,
@@ -27,6 +29,7 @@ import {
 import {
   AppError,
   BillingStateBodySchema,
+  BootstrapRequestSchema,
   ModelSettingsInputSchema,
   type ModelSettingsReply,
   PageQuerySchema,
@@ -39,6 +42,8 @@ import {
   type TenantUsage,
 } from '@kinote/contracts';
 import { countSeats, creditVerdict, indexHeld, type ModelProviders } from '@kinote/core';
+import { createEmailToken } from '../auth/emailTokens.js';
+import { createTenantWithInbox } from './foundations.js';
 
 // The control-plane API: Kinote-SaaS sets limits, adds top-ups and reads usage
 // here. Mounted only when CONTROL_PLANE_TOKENS is set; every route checks the
@@ -71,6 +76,26 @@ function bearerCheck(tokens: string[]) {
     let ok = false;
     for (const hash of hashes) ok = timingSafeEqual(hash, presented) || ok;
     if (!ok) throw new AppError('unauthenticated');
+  };
+}
+
+/**
+ * An onRequest hook refusing (403) any client address outside `allowed`
+ * (addresses and CIDRs; `req.ip` as TRUST_PROXY resolves it). Runs before the
+ * token check, so a caller from elsewhere learns nothing about the token.
+ */
+function allowlistCheck(allowed: string[]) {
+  const list = new BlockList();
+  for (const entry of allowed) {
+    const [address, prefix] = entry.split('/') as [string, string | undefined];
+    const type = isIP(address) === 6 ? 'ipv6' : 'ipv4';
+    if (prefix === undefined) list.addAddress(address, type);
+    else list.addSubnet(address, Number(prefix), type);
+  }
+  return async (req: FastifyRequest): Promise<void> => {
+    const ip = req.ip.startsWith('::ffff:') && isIP(req.ip.slice(7)) === 4 ? req.ip.slice(7) : req.ip;
+    const family = isIP(ip);
+    if (family === 0 || !list.check(ip, family === 6 ? 'ipv6' : 'ipv4')) throw new AppError('forbidden');
   };
 }
 
@@ -159,8 +184,68 @@ const iso = (v: Date | string) => new Date(v).toISOString();
 export interface InternalRouteOptions {
   /** Closes a workspace's live editing sessions (after it is suspended, so they reconnect read-only). */
   revokeTenant?: (tenantId: string) => Promise<void>;
+  /** CONTROL_PLANE_ALLOWED_IPS; empty or unset: any address. */
+  allowedIps?: string[];
+  /** Reported as kinoteVersion by /info; default the api package's version. */
+  kinoteVersion?: string;
+  /** PUBLIC_URL, for the setup link POST /bootstrap answers. */
+  publicUrl?: string;
+  /** KINOTE_DEPLOY_ID, echoed by /info as deployId. */
+  deployId?: string;
   /** The deployment's model settings and providers. Without them there is no model-settings API (feature off). */
   models?: ModelProviders;
+}
+
+/** A workspace slug from its name: lowercase letters, digits and dashes; "workspace" when nothing is left. */
+function slugFrom(name: string): string {
+  const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40).replace(/-+$/, '');
+  return slug.length > 0 ? slug : 'workspace';
+}
+
+/**
+ * The first owner of a new dedicated instance: their user (no usable password
+ * yet), their workspace and a 72-hour setup link. Again for the same person
+ * while they have not set a password: the same user and workspace, a new link
+ * (older ones stop working). Refused once anyone can sign in, or for another
+ * email while someone else exists.
+ */
+async function bootstrapOwner(email: string, workspaceName: string, publicUrl: string) {
+  const userId = await getDb().transaction(async (tx) => {
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext('internal-bootstrap'))`);
+    const [blocked] = rowsOf<{ blocked: boolean }>(
+      await tx.execute(
+        sql`SELECT EXISTS (SELECT 1 FROM users WHERE password_hash LIKE '$argon2%' OR email <> ${email}) AS blocked`
+      )
+    );
+    if (blocked?.blocked) throw new AppError('already_set_up');
+    const [existing] = await tx.select({ id: users.id }).from(users).where(eq(users.email, email));
+    if (existing) return existing.id;
+    const [created] = await tx
+      .insert(users)
+      .values({ email, name: email.split('@')[0] || email, passwordHash: '!' })
+      .returning({ id: users.id });
+    return created!.id;
+  });
+
+  const owned = rowsOf<{ tenant_id: string }>(
+    await getDb().execute(sql`SELECT tenant_id FROM my_tenants(${userId}::uuid) WHERE role = 'owner' ORDER BY tenant_id LIMIT 1`)
+  );
+  let tenantId = owned[0]?.tenant_id;
+  for (let attempt = 0; !tenantId; attempt++) {
+    const slug = attempt === 0 ? slugFrom(workspaceName) : `${slugFrom(workspaceName).slice(0, 35)}-${randomBytes(2).toString('hex')}`;
+    try {
+      tenantId = (await createTenantWithInbox(userId, { name: workspaceName, slug })).tenant.id;
+    } catch (err) {
+      if (!(err instanceof AppError && err.code === 'slug_taken') || attempt >= 4) throw err;
+    }
+  }
+
+  await getDb()
+    .update(emailTokens)
+    .set({ usedAt: new Date() })
+    .where(and(eq(emailTokens.userId, userId), eq(emailTokens.purpose, 'setup'), isNull(emailTokens.usedAt)));
+  const token = await createEmailToken(userId, 'setup');
+  return { userId, tenantId, setupUrl: `${publicUrl.replace(/\/+$/, '')}/reset-password/${token}` };
 }
 
 const invalidSettings = (field: string, message: string) => new AppError('invalid_model_settings', message, { field });
@@ -242,13 +327,22 @@ export function registerInternalRoutes(app: FastifyInstance, tokens: string[], o
     app.all('/internal/*', { config: { auth: 'public' } }, async (_req, reply: FastifyReply) => reply.callNotFound());
     return;
   }
-  const opts = { config: { auth: 'public' as const }, onRequest: bearerCheck(tokens) };
+  const allowed = o.allowedIps ?? [];
+  const onRequest = allowed.length > 0 ? [allowlistCheck(allowed), bearerCheck(tokens)] : [bearerCheck(tokens)];
+  const opts = { config: { auth: 'public' as const }, onRequest };
 
   app.get('/internal/v1/info', opts, async () => ({
-    kinoteVersion: kinoteVersion(),
+    kinoteVersion: o.kinoteVersion ?? kinoteVersion(),
+    ...(o.deployId ? { deployId: o.deployId } : {}),
     apiVersion: 1 as const,
     features: ['limits', 'usage', 'topups', 'billing_state', 'default_limits', ...(o.models ? ['model_settings'] : [])],
   }));
+
+  app.post('/internal/v1/bootstrap', opts, async (req, reply) => {
+    const body = BootstrapRequestSchema.parse(req.body);
+    if (!o.publicUrl) throw new AppError('internal_error', 'PUBLIC_URL is not set on this Kinote.');
+    return reply.status(201).send(await bootstrapOwner(body.email, body.workspaceName, o.publicUrl));
+  });
 
   if (o.models) registerModelSettingsRoutes(app, opts, o.models);
 

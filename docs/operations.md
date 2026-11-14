@@ -193,6 +193,27 @@ the e2e suite; Coolify routes only the web domain to container port 80. For a
 hard split, remove the `ports:` entries from `postgres`, `minio`, `api` and
 `collab`; the web does not need them.
 
+## Releases
+
+A release is a git tag `vX.Y.Z` on `main`. Pushing it runs `.github/workflows/release.yml`, which builds every image
+once (`postgres`, `migrate`, `api`, `collab`, `worker`, `extractor`, `gridcraft`, `web`), pushes each as
+`ghcr.io/shinox-lab/kinote-<image>:X.Y.Z` with the version baked in (`KINOTE_VERSION`; the api reports it as
+`kinoteVersion` on `GET /internal/v1/info`), then creates the GitHub release `vX.Y.Z` with generated notes.
+
+```bash
+git tag v0.2.0 && git push origin v0.2.0
+```
+
+- A tag with a suffix (`v0.2.0-rc.1`) makes a pre-release: use one to check the workflow before a real release.
+  Kinote-SaaS offers only plain `X.Y.Z` releases for dedicated instances.
+- GitHub creates each package private on its first push. Once per image, open the package in the organisation's
+  **Packages** and set its visibility to **Public**, so a dedicated server can pull without credentials.
+- `deploy/docker-compose.release.yml` runs a release from these images: the services of `docker-compose.yml` with
+  `image:` in place of `build:`, no host ports, and the same environment plus `KINOTE_VERSION`. Coolify gives `web`
+  the public domain (`SERVICE_URL_WEB_80`) and `api` a second one (`SERVICE_URL_API_8787`) for the control plane.
+  `apps/api/test/releaseCompose.test.ts` fails when the two files drift apart: change both together.
+- Moving an instance to an older release only works when that release has the same database migrations.
+
 ## Demo content
 
 For a customer try-out, create a workspace for it (**Workspace menu → New
@@ -386,6 +407,7 @@ the settings below behaves as before. Usage is still metered and shown.
 | --- | --- | --- |
 | `MODEL_CREDIT_RATES` | unset (every call 0 credits) | Model id → credits per 1,000 input and output tokens, plus `default` for models not listed (a warning is logged once per model). Inline JSON or a path to a JSON file. A bad value stops the service at startup. Deterministic models are free unless listed. |
 | `CONTROL_PLANE_TOKENS` | unset (API off: `/internal/v1/` is 404) | Comma-separated bearer tokens, each at least 32 characters. List two while rotating. |
+| `CONTROL_PLANE_ALLOWED_IPS` | empty (any address) | Comma-separated addresses or CIDRs allowed to call `/internal/v1/` (403 otherwise, before the token). Dedicated instances set it to the control plane's outbound address. |
 | `BILLING_URL` | unset | Where Upgrade links point; shown only to owners and admins, and to anyone refused a new workspace by the free-workspace cap. |
 
 With Docker Compose (and Coolify) the three settings are passed through `docker-compose.yml`. Prefer inline JSON for

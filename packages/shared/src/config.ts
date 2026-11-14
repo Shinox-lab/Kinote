@@ -1,3 +1,4 @@
+import { isIP } from 'node:net';
 import { z } from 'zod';
 import { parseCreditRates } from './creditRates.js';
 
@@ -189,6 +190,23 @@ export const ConfigSchema = z.object({
     .transform((v) => v.split(',').map((t) => t.trim()).filter((t) => t.length > 0))
     .pipe(z.array(z.string().min(32, 'each token must be at least 32 characters')).min(1))
     .optional(),
+  /**
+   * Addresses allowed to call the control-plane API (comma-separated IPv4/IPv6
+   * addresses or CIDRs), checked against the client address as TRUST_PROXY
+   * resolves it, before the token. Unset or empty: any address.
+   */
+  CONTROL_PLANE_ALLOWED_IPS: z
+    .string()
+    .optional()
+    .transform((v) => (v ?? '').split(',').map((t) => t.trim()).filter((t) => t.length > 0))
+    .pipe(z.array(z.string().refine(isAddressOrCidr, (v) => ({ message: `${v} is not an IP address or CIDR` })))),
+  /** The release version, baked into release images (vX.Y.Z → X.Y.Z). Unset: the api package's version. */
+  KINOTE_VERSION: z.string().optional(),
+  /**
+   * Set by the control plane on every deploy of a dedicated instance and echoed by /internal/v1/info, so it can
+   * tell the new containers from the ones still running. Unset: not reported.
+   */
+  KINOTE_DEPLOY_ID: z.string().max(200).optional(),
   /** Where Upgrade links point (shown to owners and admins). Unset: no Upgrade links. */
   BILLING_URL: z.string().url().optional(),
 }).superRefine((value, ctx) => {
@@ -273,6 +291,17 @@ export type Config = z.infer<typeof ConfigSchema>;
  * Parses and validates the environment. Throws one Error naming every
  * missing or invalid variable (never its value, so secrets stay out of logs).
  */
+/** An IPv4/IPv6 address, or one with a prefix length in range (10.0.0.0/8, fd00::/8). */
+export function isAddressOrCidr(value: string): boolean {
+  const [address, prefix, ...rest] = value.split('/');
+  if (rest.length > 0 || !address) return false;
+  const family = isIP(address);
+  if (family === 0) return false;
+  if (prefix === undefined) return true;
+  if (!/^[0-9]{1,3}$/.test(prefix)) return false;
+  return Number(prefix) <= (family === 4 ? 32 : 128);
+}
+
 export function loadConfig(env: Record<string, string | undefined> = process.env): Config {
   // Treat empty strings (e.g. `S3_ENDPOINT=` in a .env file) as unset.
   const cleaned: Record<string, string | undefined> = {};

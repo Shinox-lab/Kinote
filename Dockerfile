@@ -33,6 +33,10 @@ RUN chmod -R a+rX apps packages \
  && chmod a+r package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc tsconfig*.json
 ENV NODE_ENV=production
 USER node
+# The release (X.Y.Z), set by the release workflow; empty in a build from source.
+ARG KINOTE_VERSION=
+ENV KINOTE_VERSION=${KINOTE_VERSION}
+LABEL org.opencontainers.image.version=${KINOTE_VERSION}
 
 # One-shot: applies packages/db/migrations to DATABASE_MIGRATE_URL.
 FROM build AS migrate
@@ -56,6 +60,10 @@ USER root
 RUN pnpm --filter @kinote/web build
 
 FROM nginx:1.27-alpine AS web-runtime
+# The release (X.Y.Z), set by the release workflow; empty in a build from source.
+ARG KINOTE_VERSION=
+ENV KINOTE_VERSION=${KINOTE_VERSION}
+LABEL org.opencontainers.image.version=${KINOTE_VERSION}
 COPY apps/web/nginx.conf /etc/nginx/conf.d/default.conf
 COPY apps/web/security-headers.conf /etc/nginx/snippets/security-headers.conf
 COPY --from=web /app/apps/web/dist /usr/share/nginx/html

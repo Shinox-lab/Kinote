@@ -19,6 +19,10 @@ RUN docling-tools models download
 # Docling reads its models from here and never looks anything up online.
 ENV DOCLING_ARTIFACTS_PATH=/home/app/.cache/docling/models HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
 COPY --chown=app apps/extractor/app ./app
+# The release (X.Y.Z), set by the release workflow; empty in a build from source.
+ARG KINOTE_VERSION=
+ENV KINOTE_VERSION=${KINOTE_VERSION}
+LABEL org.opencontainers.image.version=${KINOTE_VERSION}
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s CMD python -c "import urllib.request as u; u.urlopen('http://127.0.0.1:8000/health', timeout=4)"
 CMD ["uvicorn", "app.main:build", "--factory", "--host", "0.0.0.0", "--port", "8000"]

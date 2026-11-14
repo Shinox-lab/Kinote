@@ -251,18 +251,20 @@ export async function authRoutes(
 
   /**
    * Sets a new password from a reset link (an email link or the operator's
-   * CLI). Opening it proves the address too, so the email counts as verified.
-   * Every existing session ends; the answer signs the person in afresh.
+   * CLI) or a new instance's setup link (POST /internal/v1/bootstrap). Opening
+   * it proves the address too, so the email counts as verified. Every existing
+   * session ends; the answer signs the person in afresh.
    */
   app.post('/api/v1/auth/password-reset/confirm', { config: { auth: 'public', rateLimit } }, async (req, reply) => {
     const parsed = PasswordResetConfirmSchema.parse(req.body);
     // Checked before the link is used, so a refused password leaves it working.
-    const owner = await peekEmailToken(parsed.token, 'reset');
+    const purpose = (await peekEmailToken(parsed.token, 'reset')) ? 'reset' : 'setup';
+    const owner = await peekEmailToken(parsed.token, purpose);
     if (!owner) throw new AppError('link_invalid');
     const [account] = await getDb().select({ email: users.email }).from(users).where(eq(users.id, owner));
     assertPasswordAllowed(parsed.password, account?.email);
     const passwordHash = await hashPassword(parsed.password);
-    const userId = await consumeEmailToken(parsed.token, 'reset');
+    const userId = await consumeEmailToken(parsed.token, purpose);
     if (!userId) throw new AppError('link_invalid');
     const [user] = await getDb()
       .update(users)

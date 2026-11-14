@@ -201,3 +201,31 @@ describe('loadConfig: security settings', () => {
     expect(loadConfig({ ...base, TENANT_DAILY_AI_ACTIONS: '0' }).TENANT_DAILY_AI_ACTIONS).toBe(0);
   });
 });
+
+describe('loadConfig: dedicated instance settings', () => {
+  it('reads CONTROL_PLANE_ALLOWED_IPS as addresses and CIDRs', () => {
+    expect(loadConfig({ ...base, CONTROL_PLANE_ALLOWED_IPS: '10.0.0.1, 192.168.0.0/16,::1' }).CONTROL_PLANE_ALLOWED_IPS).toEqual([
+      '10.0.0.1',
+      '192.168.0.0/16',
+      '::1',
+    ]);
+    expect(loadConfig(base).CONTROL_PLANE_ALLOWED_IPS).toEqual([]);
+    expect(loadConfig({ ...base, CONTROL_PLANE_ALLOWED_IPS: '' }).CONTROL_PLANE_ALLOWED_IPS).toEqual([]);
+  });
+
+  it('refuses an entry that is not an address or CIDR', () => {
+    expect(() => loadConfig({ ...base, CONTROL_PLANE_ALLOWED_IPS: 'nope' })).toThrow(/CONTROL_PLANE_ALLOWED_IPS/);
+    expect(() => loadConfig({ ...base, CONTROL_PLANE_ALLOWED_IPS: '10.0.0.0/33' })).toThrow(/CONTROL_PLANE_ALLOWED_IPS/);
+  });
+
+  it('reads KINOTE_DEPLOY_ID', () => {
+    expect(loadConfig({ ...base, KINOTE_DEPLOY_ID: 'dep-1' }).KINOTE_DEPLOY_ID).toBe('dep-1');
+    expect(loadConfig(base).KINOTE_DEPLOY_ID).toBeUndefined();
+  });
+
+  it('reads the baked KINOTE_VERSION', () => {
+    expect(loadConfig({ ...base, KINOTE_VERSION: '0.2.0' }).KINOTE_VERSION).toBe('0.2.0');
+    expect(loadConfig(base).KINOTE_VERSION).toBeUndefined();
+    expect(loadConfig({ ...base, KINOTE_VERSION: '' }).KINOTE_VERSION).toBeUndefined();
+  });
+});

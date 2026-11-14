@@ -22,6 +22,12 @@ Authorization: Bearer <token>
 the new one, move the control plane to it, then remove the old one. Tokens are compared by SHA-256 in constant time.
 A missing or wrong token answers `401 unauthenticated`. A console session is not a token.
 
+`CONTROL_PLANE_ALLOWED_IPS` (comma-separated IPv4/IPv6 addresses or CIDRs, e.g. `203.0.113.10,10.0.0.0/8`) limits
+which client addresses may call the API at all. The client address is the one `TRUST_PROXY` resolves. A request from
+any other address answers `403 forbidden` before the token is looked at. Empty or unset: any address (the shared
+deployment, where the control plane reaches Kinote over a private network). Dedicated instances set it to the control
+plane's outbound address, since their API is reachable from the internet.
+
 ## Conventions
 
 - Bodies are JSON with camelCase fields. Credits are numbers with up to 3 decimals; bytes and seats are integers.
@@ -55,6 +61,10 @@ A missing or wrong token answers `401 unauthenticated`. A console session is not
 ```json
 { "kinoteVersion": "0.1.0", "apiVersion": 1, "features": ["limits", "usage", "topups", "billing_state", "default_limits", "model_settings"] }
 ```
+
+`deployId` is `KINOTE_DEPLOY_ID` when set (absent otherwise): the control plane sets a new one on every deploy of a
+dedicated instance, so it can tell the new containers from the old ones. `kinoteVersion` is `KINOTE_VERSION`, which release images carry (`X.Y.Z` for the tag `vX.Y.Z`); an image built from
+source reports the api package's version instead.
 
 ### `GET /internal/v1/tenants?after=<id>&limit=<n>`
 
@@ -167,6 +177,21 @@ Both fields are required; `manageUrl` may be `null`. Answers `200` with the work
 Repeating the same body changes nothing and writes no audit event. Lifting a suspension lets held indexing run at
 once. Unknown or deleted workspace: `404 tenant_not_found`.
 
+### `POST /internal/v1/bootstrap`
+
+Sets up a new dedicated instance's first owner. Body `{ "email": "owner@acme.test", "workspaceName": "Acme HQ" }`;
+answers `201`:
+
+```json
+{ "userId": "…", "tenantId": "…", "setupUrl": "https://acme.kinote.example/reset-password/lwe_…" }
+```
+
+It creates a user for `email` with no usable password and the workspace `workspaceName` they own, then a single-use
+`setup` link (72 hours) that sets their password on the reset-password page and signs them in. Called again for the
+same email while that person has not set a password: no new user or workspace, a new link (older ones stop working).
+Refused with `409 already_set_up` once anyone has a password, or for another email while someone else exists. The link
+uses `PUBLIC_URL`; without it the call answers `500`.
+
 ### `GET /internal/v1/defaults` and `PUT /internal/v1/defaults`
 
 Limits every new workspace starts with, until the control plane sets its own. Feature `default_limits`.
@@ -244,6 +269,8 @@ the period containing that date for each workspace.
 |---|---|---|
 | 400 | `validation_failed` | A body or query that does not match its schema. |
 | 401 | `unauthenticated` | No `Authorization: Bearer`, or a token not in `CONTROL_PLANE_TOKENS`. |
+| 403 | `forbidden` | The client address is not in `CONTROL_PLANE_ALLOWED_IPS` (checked first). |
+| 409 | `already_set_up` | `POST /bootstrap` once someone can sign in, or for another email. |
 | 404 | `tenant_not_found` | Unknown workspace (or, for writes, a deleted one). |
 | 422 | `invalid_model_settings` | Model settings that cannot be used; `field` names which. |
 | 404 | (as any unknown path) | Any `/internal/` path while `CONTROL_PLANE_TOKENS` is unset. |

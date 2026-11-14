@@ -31,6 +31,9 @@ importers:
       vitest:
         specifier: ^3.2.7
         version: 3.2.7(@types/debug@4.1.13)(@types/node@24.19.2)(jsdom@30.1.3)(lightningcss@1.32.0)(sass@1.51.0)
+      yaml:
+        specifier: ^2.8.0
+        version: 2.9.1
 
   apps/api:
     dependencies:
@@ -5539,6 +5542,11 @@ packages:
 
   yallist@3.1.1:
     resolution: {integrity: sha512-a4UGQaWPH59mOXUYnAG2ewncQS4i4F43Tv3JoAM+s2VDAmS9NsK8GpDMLrCHPksFT7h3K6TOoUNn2pb7RoXx4g==}
+
+  yaml@2.9.1:
+    resolution: {integrity: sha512-3NxN8+78OdzbT7C/WjGsyfPAtJaN3FNDsWxv7Y7mcDsT/oOmgW8BpyQQFFBnvZE3j9Y2Sdz1ULFLezL7Eb2yFw==}
+    engines: {node: '>= 14.6'}
+    hasBin: true
 
   yjs@13.6.33:
     resolution: {integrity: sha512-q/UYvr1gOk4XII+Cu1CW2dINjYqJJFifTzogEaIARznrvX7uOlHsdTEXcnOBMuIsrCGEEKdNxi74kyMLZlKVfw==}
@@ -11341,6 +11349,8 @@ snapshots:
       yjs: 13.6.33
 
   yallist@3.1.1: {}
+
+  yaml@2.9.1: {}
 
   yjs@13.6.33:
     dependencies:
