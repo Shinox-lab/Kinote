@@ -1,14 +1,9 @@
 import fs from 'node:fs';
-import { z } from 'zod';
+import { CreditRatesSchema as RatesSchema } from '@kinote/contracts';
 
 /** Credits per 1,000 tokens. */
 export type CreditRate = { input: number; output: number };
 export type CreditRates = { default: CreditRate; models: Record<string, CreditRate> };
-
-const RateSchema = z.object({ input: z.number().finite().min(0), output: z.number().finite().min(0) }).strict();
-const RatesSchema = z
-  .object({ default: RateSchema, models: z.record(z.string().min(1), RateSchema).default({}) })
-  .strict();
 
 /**
  * Reads MODEL_CREDIT_RATES: unset → null (every call costs 0). A value starting
@@ -79,4 +74,9 @@ export function millicreditsFor(
   // float noise (0.1 × 3000 = 300.00000000000006) does not add a millicredit.
   const exact = inputTokens * rate.input + outputTokens * rate.output;
   return Math.ceil(Math.round(exact * 1e6) / 1e6);
+}
+
+/** A charge times a workspace's credit multiplier, rounded up to a whole millicredit (float noise ignored). */
+export function scaleMillicredits(milli: number, multiplier: number): number {
+  return Math.ceil(Math.round(milli * multiplier * 1e6) / 1e6);
 }

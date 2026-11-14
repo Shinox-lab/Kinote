@@ -95,6 +95,30 @@ describe('usage scope', () => {
     }
   });
 
+  it('the workspace multiplier scales the charge', async () => {
+    const tenantId = await seedTenant();
+    await withTenantTx(tenantId, (tx) => tx.insert(tenantLimits).values({ tenantId, creditMultiplier: 0.5 }));
+    await withUsageScope({ tenantId, kind: 'ask' }, rates, async () => call(1000));
+    const { events, usage } = await ledger(tenantId);
+    expect(events[0]!.millicredits).toBe(500);
+    expect(usage[0]!.creditsUsedMilli).toBe(500);
+  });
+
+  it('multiplier 0 records the tokens and charges nothing', async () => {
+    const tenantId = await seedTenant();
+    await withTenantTx(tenantId, (tx) => tx.insert(tenantLimits).values({ tenantId, creditMultiplier: 0 }));
+    await withUsageScope({ tenantId, kind: 'ask' }, rates, async () => call(1000));
+    const { events } = await ledger(tenantId);
+    expect(events[0]).toMatchObject({ inputTokens: 1000, millicredits: 0 });
+  });
+
+  it('an operator scope charges nothing', async () => {
+    const tenantId = await seedTenant();
+    await withUsageScope({ tenantId, kind: 'index', operator: true }, rates, async () => call(1000));
+    const { events } = await ledger(tenantId);
+    expect(events[0]).toMatchObject({ inputTokens: 1000, millicredits: 0 });
+  });
+
   it('a call with no scope open is dropped, not thrown', () => {
     expect(() => call(10)).not.toThrow();
   });

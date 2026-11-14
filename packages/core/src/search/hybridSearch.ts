@@ -21,6 +21,11 @@ export interface ChunkFilter {
   isTenantAdmin: boolean;
   /** The actor's principal key, compared with `chunks.inbox_owner`. */
   me: string;
+  /**
+   * The query vector's model: the vector branch ranks only chunks embedded with it (after an embedding model change,
+   * older chunks are in another vector space until re-indexed). Unset: every chunk.
+   */
+  embeddingModel?: string;
 }
 
 export function chunkFilterFor(
@@ -53,9 +58,10 @@ function chunkWhere(f: ChunkFilter): SQL {
  * exact order relaxed scans may loosen.
  */
 export function vectorBranchSql(f: ChunkFilter, vectorLiteral: string, limit = BRANCH_LIMIT): SQL {
+  const sameModel = f.embeddingModel === undefined ? sql`` : sql` AND embedding_model = ${f.embeddingModel}`;
   return sql`SELECT id, embedding <=> ${vectorLiteral}::halfvec AS distance
     FROM chunks
-    WHERE ${chunkWhere(f)}
+    WHERE ${chunkWhere(f)}${sameModel}
     ORDER BY embedding <=> ${vectorLiteral}::halfvec
     LIMIT ${limit}`;
 }
@@ -136,11 +142,12 @@ export async function searchWiki(
   inboxSpaceId: string,
   queryText: string,
   queryEmbedding: number[],
-  limit = 10
+  limit = 10,
+  embeddingModel?: string
 ): Promise<SearchPassage[]> {
   if (readableSpaceIds.length === 0) return [];
 
-  const filter = chunkFilterFor(actor, readableSpaceIds, inboxSpaceId);
+  const filter = { ...chunkFilterFor(actor, readableSpaceIds, inboxSpaceId), ...(embeddingModel !== undefined ? { embeddingModel } : {}) };
   const vectorLiteral = `[${queryEmbedding.join(',')}]`;
 
   // Enable pgvector 0.8 iterative index scans so filtered queries do not under-return rows

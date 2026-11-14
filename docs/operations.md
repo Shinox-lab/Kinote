@@ -392,6 +392,14 @@ With Docker Compose (and Coolify) the three settings are passed through `docker-
 `MODEL_CREDIT_RATES` there: a file path must be mounted into every service container (api, worker and collab all
 check it at startup and refuse to start when it cannot be read).
 
+The control plane can also set the models and the rate table (`PUT /internal/v1/model-settings`, feature
+`model_settings`): what it stores wins over `ASK_MODEL`, `ROUTER_MODEL`, `EMBEDDING_MODEL` and `MODEL_CREDIT_RATES`,
+which stay as the fallback, and every process picks a change up within 30 seconds. The `*_PROVIDER`, `*_BASE_URL` and
+`*_API_KEY` settings stay here: a model can only be chosen for a role whose provider is `openai`, and it must be served
+by that endpoint. A workspace can have its own Ask model and a credit multiplier (both set with its limits). Changing
+the embedding model re-indexes every workspace in the background (vector search skips chunks from the old model until
+then); changing the router model rebuilds placement. That work is not charged to workspaces.
+
 `/internal/` must not be exposed through the public reverse proxy. The web
 nginx only forwards `/api/`, `/mcp` and `/collab`, so it is not; keep it that
 way on any other proxy in front of the api. The token is a second guard, not

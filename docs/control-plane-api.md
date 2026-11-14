@@ -53,7 +53,7 @@ A missing or wrong token answers `401 unauthenticated`. A console session is not
 ### `GET /internal/v1/info`
 
 ```json
-{ "kinoteVersion": "0.1.0", "apiVersion": 1, "features": ["limits", "usage", "topups", "billing_state", "default_limits"] }
+{ "kinoteVersion": "0.1.0", "apiVersion": 1, "features": ["limits", "usage", "topups", "billing_state", "default_limits", "model_settings"] }
 ```
 
 ### `GET /internal/v1/tenants?after=<id>&limit=<n>`
@@ -126,6 +126,11 @@ Replaces the workspace's limits and sets its plan label. Idempotent. Answers the
 required: an integer ≥ 0, or `null` for unlimited. `gracePercent` (0–100, default 10) and `periodAnchorDay` (1–28,
 default 1) are optional.
 
+Optional, with feature `model_settings`: `askModel` (1–200 characters, or `null`: the deployment's model) is the model
+Ask answers this workspace with; `creditMultiplier` (0–10, default 1) multiplies every charge. Like the other fields
+they are replaced on every PUT: a body without them sets `null` and `1`. `creditMultiplier` has at most 3 decimals.
+A non-null `askModel` while `ASK_PROVIDER` is `deterministic` is refused: `422 invalid_model_settings` (field `askModel`).
+
 A body of `null` removes every limit and sets the plan label back to `standard`: the workspace is unlimited at once.
 
 Every PUT releases indexing that was held at the limit; jobs still over a new limit are held again when they run.
@@ -173,9 +178,46 @@ Limits every new workspace starts with, until the control plane sets its own. Fe
 The limit fields work as in `PUT /tenants/:id/limits` (`null` is unlimited; `gracePercent` defaults to 10; no
 `periodAnchorDay`: a new workspace's periods start on the day it was created, at most the 28th). `maxFreePerOwner`
 (`null`: no cap) is how many live workspaces on `plan` one person may own: creating another answers
-`409 free_workspace_limit`; workspaces on other plans do not count. `PUT` with `null` removes the defaults, and new
+`409 free_workspace_limit`; workspaces on other plans do not count. `askModel` and `creditMultiplier` are optional,
+as in the limits, and copied to each new workspace. `PUT` with `null` removes the defaults, and new
 workspaces are unlimited again, as they are when nothing was ever set. Both answer `{ "defaults": … | null }`.
 Workspaces that already exist are not changed.
+
+### `GET /internal/v1/model-settings` and `PUT /internal/v1/model-settings`
+
+The deployment's models and credit rate table. Feature `model_settings`. Each field is a model id as the provider
+names it (case-sensitive), or `null` to use the env (`ASK_MODEL`, `ROUTER_MODEL`, `EMBEDDING_MODEL`,
+`MODEL_CREDIT_RATES`). Providers, endpoints and keys stay in the env and are never stored or returned.
+
+```json
+{
+  "askModel": "deepseek/deepseek-v4.1-flash-1017:floor",
+  "routerModel": null,
+  "embeddingModel": null,
+  "creditRates": { "default": { "input": 0.3, "output": 1.2 }, "models": { "qwen/qwen3.7-flash": { "input": 0.1, "output": 0.4 } } }
+}
+```
+
+`PUT` takes all four fields and answers like `GET`:
+
+```json
+{
+  "stored": { "askModel": "…", "routerModel": null, "embeddingModel": null, "creditRates": { … } },
+  "effective": { "askModel": "…", "routerModel": "…", "embeddingModel": "…", "creditRates": { … },
+                 "providers": { "ask": "openai", "router": "openai", "embedding": "openai" } },
+  "reindex": { "pendingJobs": 0 },
+  "queued": { "reindex": 0, "placement": 0 }
+}
+```
+
+`queued` is on `PUT` answers only. A new embedding model is first tried with one call: it must work and return
+2560-dimension vectors. Then every document with chunks from another embedding model is re-indexed and the
+placement data rebuilt; a new router model rebuilds the placement data. Until a document is re-indexed, vector search
+skips its old chunks (full-text search still finds it). This work is charged to nobody and is never held at a
+workspace's indexing limit; `reindex.pendingJobs` counts what is left. Every process picks up a change within 30
+seconds (the one that handled the `PUT` at once). Refused, with nothing saved: `422 invalid_model_settings` with `field`
+(`creditRates`, `askModel`, `routerModel`, `embeddingModel`) and a `message` — a bad rate table, a model for a role
+whose provider is `deterministic`, or an embedding model that failed the trial call.
 
 ### `GET /internal/v1/usage?period=<YYYY-MM-DD>&after=<id>&limit=<n>`
 
@@ -203,6 +245,7 @@ the period containing that date for each workspace.
 | 400 | `validation_failed` | A body or query that does not match its schema. |
 | 401 | `unauthenticated` | No `Authorization: Bearer`, or a token not in `CONTROL_PLANE_TOKENS`. |
 | 404 | `tenant_not_found` | Unknown workspace (or, for writes, a deleted one). |
+| 422 | `invalid_model_settings` | Model settings that cannot be used; `field` names which. |
 | 404 | (as any unknown path) | Any `/internal/` path while `CONTROL_PLANE_TOKENS` is unset. |
 
 What members see when a limit is reached: `credits_exhausted` (429, with `Retry-After`, `resetsAt` and, with

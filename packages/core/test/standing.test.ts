@@ -10,6 +10,8 @@ const limits = (over: Partial<TenantLimits> = {}): TenantLimits => ({
   indexCreditsPerMonth: 10,
   gracePercent: 10,
   periodAnchorDay: 1,
+  askModel: null,
+  creditMultiplier: 1,
   ...over,
 });
 const standing = (usedCredits: number, over: Partial<UsageStanding> = {}): UsageStanding => ({

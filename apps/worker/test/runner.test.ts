@@ -11,6 +11,8 @@ import {
   withTenantTx,
   type Job,
 } from '@kinote/db';
+import type { ModelSettingsInput } from '@kinote/contracts';
+import { defaultAnswerProvider, defaultPlacementModel, EMBEDDING_DIMENSIONS, ModelProviders, ModelSettingsCache } from '@kinote/core';
 import { runPendingJobsForTenant, runWorkerLoop } from '../src/runner.js';
 import type { JobHandler } from '../src/registry.js';
 import { useTestDb } from '../../api/test/support/testkit.js';
@@ -521,6 +523,51 @@ describe('worker runner', () => {
     expect(ran).toEqual([first.id, second.id]);
     expect(later).toEqual([{ id: second.id, queue: 'test.slow', status: 'completed' }]);
     expect((await load(tenantId, second.id)).status).toBe('completed');
+  });
+
+  it('operator jobs do not use the daily AI allowance', async () => {
+    const tenantId = await seedTenant();
+    const runs: string[] = [];
+    const handlers: Record<string, JobHandler> = { 'test.ai': { usesAi: true, async run(job) { runs.push(job.id); } } };
+    const first = await enqueue(tenantId, 'test.ai', 'a');
+    await runPendingJobsForTenant(tenantId, { handlers, aiDailyLimit: 1 });
+    const op = await enqueue(tenantId, 'test.ai', 'op', { operator: true });
+    await runPendingJobsForTenant(tenantId, { handlers, aiDailyLimit: 1 });
+    const own = await enqueue(tenantId, 'test.ai', 'b');
+    await runPendingJobsForTenant(tenantId, { handlers, aiDailyLimit: 1 });
+    expect(runs).toEqual([first.id, op.id]);
+    expect((await load(tenantId, own.id)).status).toBe('queued');
+  });
+
+  it('with models, each job runs with the current settings, fixed for the whole job', async () => {
+    const tenantId = await seedTenant();
+    let stored: ModelSettingsInput = { askModel: null, routerModel: null, embeddingModel: 'e1', creditRates: null };
+    const cache = new ModelSettingsCache(async () => stored, {
+      ASK_PROVIDER: 'openai', ASK_MODEL: 'a', ROUTER_PROVIDER: 'openai', ROUTER_MODEL: 'r',
+      EMBEDDING_PROVIDER: 'openai', EMBEDDING_MODEL: 'e0', MODEL_CREDIT_RATES: undefined,
+    });
+    await cache.refresh();
+    const models = new ModelProviders(cache, {
+      answer: () => defaultAnswerProvider,
+      embedding: (model) => ({ model: model ?? 'none', dimensions: EMBEDDING_DIMENSIONS, embed: async (t) => t.map(() => []) }),
+      routing: () => defaultPlacementModel,
+    });
+    // Changed in the database; this worker's cache has not refreshed yet.
+    stored = { ...stored, embeddingModel: 'e2' };
+    const seen: string[] = [];
+    const handlers: Record<string, JobHandler> = {
+      'test.embed': {
+        async run(_job, ctx) {
+          seen.push(ctx.embeddingProvider.model);
+          stored = { ...stored, embeddingModel: 'e3' };
+          await cache.refresh();
+          seen.push(ctx.embeddingProvider.model);
+        },
+      },
+    };
+    await enqueue(tenantId, 'test.embed', 'e');
+    await runPendingJobsForTenant(tenantId, { handlers, models });
+    expect(seen).toEqual(['e2', 'e2']);
   });
 
   it('an AI job past the workspace’s daily allowance waits for the next UTC day without running', async () => {

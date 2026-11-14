@@ -8,6 +8,22 @@ export const CreditStateSchema = z.enum(['unlimited', 'ok', 'warn', 'over', 'exh
 
 const limitNumber = z.number().int().min(0).nullable();
 
+/** Credits per 1,000 tokens for one model. */
+export const CreditRateSchema = z.object({ input: z.number().finite().min(0), output: z.number().finite().min(0) }).strict();
+/** The rate table (MODEL_CREDIT_RATES, or the stored model settings): `default` for any model not listed. */
+export const CreditRatesSchema = z
+  .object({ default: CreditRateSchema, models: z.record(z.string().min(1), CreditRateSchema).default({}) })
+  .strict();
+export type CreditRates = z.infer<typeof CreditRatesSchema>;
+
+/** A model id: as the provider names it (case-sensitive). */
+const modelId = z.string().min(1).max(200);
+/** A workspace's answer model; null (or absent) means the deployment's. */
+const askModelField = modelId.nullable().optional();
+/** Charges are multiplied by this (1 = as the rate table says). */
+// At most 3 decimals: stored as numeric(6,3), so more would come back rounded (and look like drift to the control plane).
+const creditMultiplierField = z.number().finite().min(0).max(10).multipleOf(0.001).optional();
+
 export const LimitsInputSchema = z
   .object({
     // 'demo' is Kinote's own marker for the demo workspace (it changes how deletion works): never a plan label.
@@ -22,6 +38,8 @@ export const LimitsInputSchema = z
     indexCreditsPerMonth: limitNumber,
     gracePercent: z.number().int().min(0).max(100).optional(),
     periodAnchorDay: z.number().int().min(1).max(28).optional(),
+    askModel: askModelField,
+    creditMultiplier: creditMultiplierField,
   })
   .strict();
 export type LimitsInput = z.infer<typeof LimitsInputSchema>;
@@ -39,11 +57,14 @@ export const DefaultsInputSchema = z
     indexCreditsPerMonth: limitNumber,
     gracePercent: z.number().int().min(0).max(100).optional(),
     maxFreePerOwner: z.number().int().min(0).nullable(),
+    askModel: askModelField,
+    creditMultiplier: creditMultiplierField,
   })
   .strict();
 export type DefaultsInput = z.infer<typeof DefaultsInputSchema>;
 export const PutDefaultsRequestSchema = DefaultsInputSchema.nullable();
 
+/** askModel and creditMultiplier stay optional so clients keep accepting servers from before model settings. */
 export const TenantDefaultsSchema = DefaultsInputSchema.extend({ gracePercent: z.number().int() });
 export type TenantDefaults = z.infer<typeof TenantDefaultsSchema>;
 
@@ -57,6 +78,9 @@ export const TenantLimitsSchema = z.object({
   indexCreditsPerMonth: z.number().int().nullable(),
   gracePercent: z.number().int(),
   periodAnchorDay: z.number().int(),
+  /** Optional so clients keep accepting servers from before model settings. */
+  askModel: z.string().nullable().optional(),
+  creditMultiplier: z.number().optional(),
 });
 
 export const TenantUsageSchema = z.object({
@@ -162,3 +186,33 @@ export const UsageSummarySchema = z.object({
   manageUrl: z.string().nullable(),
 });
 export type UsageSummary = z.infer<typeof UsageSummarySchema>;
+
+/** GET/PUT /internal/v1/model-settings (feature `model_settings`): the deployment's models and rate table. Null fields fall back to the env. */
+export const ModelSettingsInputSchema = z
+  .object({
+    askModel: modelId.nullable(),
+    routerModel: modelId.nullable(),
+    embeddingModel: modelId.nullable(),
+    creditRates: CreditRatesSchema.nullable(),
+  })
+  .strict();
+export type ModelSettingsInput = z.infer<typeof ModelSettingsInputSchema>;
+
+const ProviderKindSchema = z.enum(['deterministic', 'openai']);
+
+export const ModelSettingsReplySchema = z.object({
+  /** What was set here; null fields use the env. */
+  stored: ModelSettingsInputSchema,
+  /** What is in use (stored, else env). Never includes endpoints or keys. */
+  effective: z.object({
+    askModel: z.string().nullable(),
+    routerModel: z.string().nullable(),
+    embeddingModel: z.string().nullable(),
+    creditRates: CreditRatesSchema.nullable(),
+    providers: z.object({ ask: ProviderKindSchema, router: ProviderKindSchema, embedding: ProviderKindSchema }),
+  }),
+  reindex: z.object({ pendingJobs: z.number().int() }),
+  /** PUT only: jobs queued by this change. */
+  queued: z.object({ reindex: z.number().int(), placement: z.number().int() }).optional(),
+});
+export type ModelSettingsReply = z.infer<typeof ModelSettingsReplySchema>;

@@ -19,10 +19,17 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build, createLogger, preview, type PreviewServer } from 'vite';
-import { assertEmbeddingDimensions, closeDb } from '@kinote/db';
+import { assertEmbeddingDimensions, closeDb, getDb, readModelSettings } from '@kinote/db';
 import { createTestDb } from '@kinote/db/testing';
-import { EMBEDDING_DIMENSIONS, FakeExtractor, defaultEmbeddingProvider } from '@kinote/core';
-import { InMemoryObjectStorage, loadConfig, parseCreditRates } from '@kinote/shared';
+import {
+  EMBEDDING_DIMENSIONS,
+  FakeExtractor,
+  ModelProviders,
+  ModelSettingsCache,
+  defaultEmbeddingProvider,
+  modelFactoriesFrom,
+} from '@kinote/core';
+import { InMemoryObjectStorage, loadConfig } from '@kinote/shared';
 import { buildApiServer } from '../../apps/api/src/server.js';
 import { HttpCollabClient } from '@kinote/shared';
 import { collabSettle, createCollabServer } from '../../apps/collab/src/server.js';
@@ -86,6 +93,11 @@ if (defaultEmbeddingProvider.dimensions !== EMBEDDING_DIMENSIONS) {
 const { db } = await createTestDb();
 await assertEmbeddingDimensions(db, EMBEDDING_DIMENSIONS);
 
+// Model settings from the control plane (feature model_settings), as in the services: the env is the fallback.
+const modelCache = new ModelSettingsCache(() => readModelSettings(getDb()), config);
+await modelCache.refresh();
+const models = new ModelProviders(modelCache, modelFactoriesFrom(config));
+
 const collab = createCollabServer({
   collabTokenSecret: process.env.COLLAB_TOKEN_SECRET,
   internalSecret,
@@ -114,7 +126,7 @@ const app = buildApiServer({
     tenantDailyAiActions: 0,
   },
   collab: new HttpCollabClient(`http://${HOST}:${collabPort}`, internalSecret),
-  creditRates: parseCreditRates(config.MODEL_CREDIT_RATES),
+  models,
   controlPlaneTokens: config.CONTROL_PLANE_TOKENS,
   billingUrl: config.BILLING_URL ?? 'https://billing.example.test/upgrade',
 });
@@ -130,7 +142,8 @@ const worker = runWorkerLoop({
   maxExtractedChars: config.MAX_EXTRACTED_CHARS,
   // Routed captures change live pages through collab, as the api's restore does.
   collab: new HttpCollabClient(`http://${HOST}:${collabPort}`, internalSecret),
-  creditRates: parseCreditRates(config.MODEL_CREDIT_RATES),
+  creditRates: () => modelCache.current().creditRates,
+  models,
 });
 
 // The console, built fresh so the specs run against the production bundle; vite.config.ts

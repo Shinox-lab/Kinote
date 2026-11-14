@@ -302,6 +302,13 @@
       "when": 1794900000000,
       "tag": "0042_tenant_defaults",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1795000000000,
+      "tag": "0043_model_settings",
+      "breakpoints": true
     }
   ]
 }

@@ -15,16 +15,18 @@ export async function enqueuePlacementJobs(
   tx: DbTransaction,
   tenantId: string,
   versionId: string,
-  documentKind: 'page' | 'file'
+  documentKind: 'page' | 'file',
+  o: { operator?: boolean } = {}
 ): Promise<void> {
+  const payload = o.operator ? { versionId, operator: true } : { versionId };
   if (documentKind === 'page') {
-    await enqueueJob(tx, { tenantId, queue: 'version.card', idempotencyKey: `card:${versionId}`, payload: { versionId } });
+    await enqueueJob(tx, { tenantId, queue: 'version.card', idempotencyKey: `card:${versionId}`, payload });
   }
   await enqueueJob(tx, {
     tenantId,
     queue: 'version.entities',
     idempotencyKey: `entities:${versionId}`,
-    payload: { versionId },
+    payload,
   });
 }
 
