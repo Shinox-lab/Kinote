@@ -41,7 +41,13 @@ export function isSpreadsheetSave(name: string, originalName: string): boolean {
   return next.length > 0 && original.length > 0 && next.endsWith('.xlsx') && original.endsWith('.xlsx') && next === original;
 }
 
+/**
+ * The editor page for the sandboxed iframe. GridCraft's `?host=parent` bridge only answers a
+ * same-origin parent, and the sandbox gives the frame an opaque origin, so this is the relay
+ * page (apps/gridcraft/host-relay.js): the editor in page host mode, with its events forwarded
+ * as the `gridcraft:*` messages parsed above.
+ */
 export function gridcraftUrl(author?: string): string {
   const authorParam = author ? `&author=${encodeURIComponent(author)}` : '';
-  return `/gridcraft/?host=parent&webgl&chrome=none${authorParam}`;
+  return `/gridcraft/host.html?webgl&chrome=none${authorParam}`;
 }

@@ -247,7 +247,7 @@ export default function GridCraftEditor({ bytes, version, onSave, onDirtyChange,
         title={`${version.fileName} spreadsheet editor`}
         src={gridcraftUrl(loadSession()?.user.name)}
         sandbox="allow-scripts"
-        // Copy only: GridCraft 0.13 writes with navigator.clipboard.write/writeText and takes
+        // Copy only: GridCraft writes with navigator.clipboard.write/writeText and takes
         // paste from the paste event (no permission needed); it never reads the clipboard itself.
         allow="clipboard-write"
         className={fullScreen ? 'min-h-0 w-full flex-1' : 'h-[70vh] min-h-[520px] w-full'}
