@@ -14,6 +14,16 @@ the editor runs in an iframe with an opaque origin.
 The release is downloaded and checksum-verified at image build time. The
 release's license and notice files are copied with the rest of the site.
 
+## Console bridge
+
+GridCraft's `?host=parent` bridge only answers a same-origin parent, and the
+console's iframe is sandboxed to an opaque origin. So the image also serves
+`host.html`: the release's `index.html` with the canvas in page host mode
+(`data-host="page"`) plus `host-relay.js`, which forwards the editor's
+`gridcraft:*` events to the console as `postMessage`s and the console's
+`gridcraft:open` back. The Dockerfile fails the build if the release's markup
+no longer matches those edits.
+
 ## Upgrade
 
 Change `GRIDCRAFT_VERSION` and `GRIDCRAFT_SHA256` together in the Dockerfile,

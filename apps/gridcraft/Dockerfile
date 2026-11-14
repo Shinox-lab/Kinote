@@ -8,6 +8,18 @@ RUN apk add --no-cache curl unzip \
  && unzip -q /tmp/gridcraft.zip -d /tmp/gridcraft \
  && mv "/tmp/gridcraft/gridcraft-web-${GRIDCRAFT_VERSION}" /site
 
+# host.html is the release's own index.html with the canvas switched to page
+# host mode, plus the relay that carries its events to the sandboxed frame's
+# parent (see host-relay.js). The edits fail the build if the release's markup
+# is not what they expect.
+COPY host-relay.js /site/host-relay.js
+RUN chmod 644 /site/host-relay.js \
+ && sed -e 's|<canvas id="gridcraft_canvas">|<canvas id="gridcraft_canvas" data-host="page">|' \
+        -e 's|</body>|<script src="./host-relay.js"></script></body>|' \
+        /site/index.html > /site/host.html \
+ && grep -q 'data-host="page"' /site/host.html \
+ && grep -q 'host-relay.js' /site/host.html
+
 FROM nginx:1.27-alpine
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=fetch /site /usr/share/nginx/html

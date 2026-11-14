@@ -8,7 +8,7 @@ describe('parseGridCraftMessage', () => {
 
   test('accepts the official gridcraft: prefixed messages', () => {
     const bytes = new Uint8Array([1, 2, 3]).buffer;
-    expect(parseGridCraftMessage({ type: 'gridcraft:ready', version: '0.13.0' })).toEqual({ type: 'ready' });
+    expect(parseGridCraftMessage({ type: 'gridcraft:ready', version: '1' })).toEqual({ type: 'ready' });
     expect(parseGridCraftMessage({ type: 'gridcraft:dirty', dirty: true })).toEqual({ type: 'dirty', dirty: true });
     expect(parseGridCraftMessage({ type: 'gridcraft:save', name: 'Budget.xlsx', bytes })).toEqual({
       type: 'save',
@@ -113,10 +113,10 @@ describe('isSpreadsheetSave', () => {
 
 describe('gridcraftUrl', () => {
   test('uses the official host query and encodes the author', () => {
-    expect(gridcraftUrl('Ada Lovelace')).toBe('/gridcraft/?host=parent&webgl&chrome=none&author=Ada%20Lovelace');
+    expect(gridcraftUrl('Ada Lovelace')).toBe('/gridcraft/host.html?webgl&chrome=none&author=Ada%20Lovelace');
   });
 
   test('omits the author when none is known', () => {
-    expect(gridcraftUrl()).toBe('/gridcraft/?host=parent&webgl&chrome=none');
+    expect(gridcraftUrl()).toBe('/gridcraft/host.html?webgl&chrome=none');
   });
 });

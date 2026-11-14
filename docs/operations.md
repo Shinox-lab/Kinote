@@ -106,10 +106,10 @@ deletes them.
 
 The inline spreadsheet editor is the official
 [GridCraft](https://github.com/storytold/gridcraft) web build, pinned at
-**v0.13.0**:
+**v0.19.1**:
 
-- Release: `https://github.com/storytold/gridcraft/releases/download/v0.13.0/gridcraft-web-0.13.0.zip`
-- SHA-256: `e232edde1898459f13568ca7b1f3feecb4037f0cbb8f6aec86de1a3c096af5dc`
+- Release: `https://github.com/storytold/gridcraft/releases/download/v0.19.1/gridcraft-web-0.19.1.zip`
+- SHA-256: `48c5d1b101befebb3c5ba3b7a14914f01c3207934813ed07dc4251b7ae116a78`
 
 `apps/gridcraft/Dockerfile` downloads and checksum-verifies that release at
 image build time; it is the upgrade point. The `gridcraft` compose service is
@@ -122,6 +122,13 @@ assets, because the sandboxed iframe has an opaque origin; the API stays
 same-origin and token-authenticated. The iframe uses
 `sandbox="allow-scripts"` deliberately. **Never add `allow-same-origin`**: the
 console's bearer token is in `localStorage`.
+
+GridCraft's `?host=parent` bridge only answers a same-origin parent, so the
+iframe loads `/gridcraft/host.html` instead. The image build derives it from
+the release's `index.html` (canvas in `data-host="page"` mode) and adds
+`host-relay.js`, which forwards the editor's events to the console as
+`postMessage`s. The editor and the relay share the sandbox's opaque origin; the
+console talks to the frame only through those messages.
 
 Ctrl+S creates a new version through the normal file replacement path, keeps
 the old version, and follows the space's review rules. Only editors viewing the
