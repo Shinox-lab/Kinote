@@ -1254,6 +1254,12 @@ export const CreateSourceTokenRequestSchema = z.object({
 });
 /** A source token's life when the request doesn't say. */
 export const DEFAULT_SOURCE_TOKEN_DAYS = 90;
+
+/** What an agent token may do: `read` (browse, search, read, related, ask), `capture`, `edit`. */
+export const AGENT_SCOPES = ['read', 'capture', 'edit'] as const;
+export type AgentScope = (typeof AGENT_SCOPES)[number];
+/** An agent token's life when the request doesn't say. */
+export const DEFAULT_AGENT_TOKEN_DAYS = 90;
 export type CreateSourceTokenRequest = z.input<typeof CreateSourceTokenRequestSchema>;
 
 /** A token as listed: never its secret or hash, only the first characters of the secret. */
