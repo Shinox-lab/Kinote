@@ -59,6 +59,10 @@ import {
   UpdatesResponseSchema,
   SearchResponseSchema,
   SourceListSchema,
+  AgentListSchema,
+  AgentSchema,
+  AgentTokenSchema,
+  IssueAgentTokenResponseSchema,
   SourceSchema,
   SourceTokenSchema,
   RevokeSourceTokensResponseSchema,
@@ -84,6 +88,9 @@ import {
   type CreateGroupRequest,
   type CreatePageRequest,
   type CreateSourceRequest,
+  type CreateAgentRequest,
+  type UpdateAgentRequest,
+  type IssueAgentTokenRequest,
   type CreateSourceTokenRequest,
   type MoveFileRequest,
   type UpdateSourceRequest,
@@ -445,6 +452,15 @@ export const api = {
   versionChunks: (id: string) => request(`/api/v1/versions/${e(id)}/chunks`, ChunkInspectorSchema),
   versionFile: (id: string) => fetchBytes(`/api/v1/versions/${e(id)}/file`),
   mediaUrl: (id: string) => request(`/api/v1/versions/${e(id)}/media-url`, MediaUrlSchema, send('POST')),
+
+  // Agents (admin)
+  listAgents: () => request('/api/v1/agents', AgentListSchema),
+  createAgent: (body: CreateAgentRequest) => request('/api/v1/agents', AgentSchema, send('POST', body)),
+  updateAgent: (id: string, body: UpdateAgentRequest) => request(`/api/v1/agents/${e(id)}`, AgentSchema, send('PATCH', body)),
+  issueAgentToken: (id: string, body: IssueAgentTokenRequest) =>
+    request(`/api/v1/agents/${e(id)}/tokens`, IssueAgentTokenResponseSchema, send('POST', body)),
+  revokeAgentToken: (id: string, tokenId: string) =>
+    request(`/api/v1/agents/${e(id)}/tokens/${e(tokenId)}`, AgentTokenSchema, del),
 
   // Sources (admin)
   listSources: () => request('/api/v1/sources', SourceListSchema),
