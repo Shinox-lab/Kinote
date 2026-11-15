@@ -36,6 +36,10 @@ import {
   GroupListSchema,
   GroupMemberListSchema,
   SourceListSchema,
+  AgentListSchema,
+  AgentSchema,
+  AgentTokenSchema,
+  IssueAgentTokenResponseSchema,
   SourceSchema,
   SourceTokenSchema,
   RevokeSourceTokensResponseSchema,
@@ -126,6 +130,7 @@ import {
 import { deleteSourceFile, putSourceFile } from './routes/sourceFiles.js';
 import { registerInternalRoutes } from './routes/internal.js';
 import { createSource, issueSourceToken, listSources, revokeSourceToken, revokeTokensMadeBy, updateSource } from './routes/sources.js';
+import { createAgent, issueAgentToken, listAgents, revokeAgentToken, updateAgent } from './routes/agents.js';
 import {
   createPage,
   getPageDetails,
@@ -711,6 +716,31 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
     const p = req.params as any;
     const res = await revokeSourceToken(actorOf(req), p.id, p.tokenId);
     return reply.send(parseReply(SourceTokenSchema, res));
+  });
+
+  app.get('/api/v1/agents', async (req, reply) => {
+    return reply.send(parseReply(AgentListSchema, await listAgents(actorOf(req))));
+  });
+
+  app.post('/api/v1/agents', async (req, reply) => {
+    const res = await createAgent(actorOf(req), req.body);
+    return reply.status(201).send(parseReply(AgentSchema, res));
+  });
+
+  app.patch('/api/v1/agents/:id', async (req, reply) => {
+    const res = await updateAgent(actorOf(req), (req.params as any).id, req.body);
+    return reply.send(parseReply(AgentSchema, res));
+  });
+
+  app.post('/api/v1/agents/:id/tokens', async (req, reply) => {
+    const res = await issueAgentToken(actorOf(req), (req.params as any).id, req.body);
+    return reply.status(201).send(parseReply(IssueAgentTokenResponseSchema, res));
+  });
+
+  app.delete('/api/v1/agents/:id/tokens/:tokenId', async (req, reply) => {
+    const p = req.params as any;
+    const res = await revokeAgentToken(actorOf(req), p.id, p.tokenId);
+    return reply.send(parseReply(AgentTokenSchema, res));
   });
 
   app.post('/api/v1/pages', async (req, reply) => {
