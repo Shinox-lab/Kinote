@@ -20,6 +20,7 @@ export function usePageView(pageId: string | undefined) {
         role: space?.myRole ?? null,
         reviewRequired: space?.reviewRequired ?? false,
         archived,
+        inbox: space?.kind === 'inbox',
       })
     : null;
 

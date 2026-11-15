@@ -6,6 +6,7 @@ const base: FileControlsInput = {
   role: 'editor',
   spaceArchived: false,
   archived: false,
+  inbox: false,
   placement: 'pinned',
   sourceDeleted: false,
   badge: 'Indexed · v1',
@@ -41,7 +42,7 @@ describe('fileControls', () => {
     expect(controls({ role: 'admin' })).toMatchObject({ withdraw: true, archive: true, restore: false });
   });
 
-  test('an archived file (or space) is read-only; only an admin may restore the file', () => {
+  test('an archived file (or space) is read-only; an admin, or its creator in the Inbox, may restore it', () => {
     expect(controls({ archived: true, role: 'admin' })).toMatchObject({
       replace: false,
       move: false,
@@ -52,6 +53,8 @@ describe('fileControls', () => {
       download: true,
     });
     expect(controls({ archived: true, role: 'editor' }).restore).toBe(false);
+    expect(controls({ archived: true, role: 'editor', inbox: true }).restore).toBe(true);
+    expect(controls({ archived: true, role: 'viewer', inbox: true }).restore).toBe(false);
     expect(controls({ spaceArchived: true, role: 'admin' })).toMatchObject({ replace: false, restore: false });
   });
 

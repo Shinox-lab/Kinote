@@ -290,14 +290,19 @@ export async function updateSpaceSettings(
 async function listTreeNodes(
   actor: Actor,
   spaceId: string,
-  minimumRole: 'viewer' | 'admin',
   archived: boolean
 ): Promise<TreeResponse> {
   return withTenantTx(actor.tenantId, async (tx) => {
     // The archived list is a read: a tenant admin may open it on an archived space.
-    const { space } = await requireSpaceRole(tx, actor, spaceId, minimumRole, {
+    const access = await requireSpaceRole(tx, actor, spaceId, 'viewer', {
       allowArchived: true,
     });
+    const { space } = access;
+    // The archived list is for space admins, except in the Inbox: there each
+    // person lists only their own documents (the query filters to the creator).
+    if (archived && space.kind !== 'inbox' && access.effectiveRole !== 'admin') {
+      throw new AppError('forbidden', 'You do not have permission to perform this action.');
+    }
 
     // Authorization runs before the cache: a revoked viewer never gets a
     // cached tree. Non-admins see only their own documents in the Inbox, so
@@ -414,12 +419,15 @@ async function listTreeNodes(
 
 /** `GET /spaces/:id/tree`: the live documents of a space (viewer). */
 export function getSpaceTree(actor: Actor, spaceId: string): Promise<TreeResponse> {
-  return listTreeNodes(actor, spaceId, 'viewer', false);
+  return listTreeNodes(actor, spaceId, false);
 }
 
-/** `GET /spaces/:id/archived`: the archived documents of a space (space admin). */
+/**
+ * `GET /spaces/:id/archived`: the archived documents of a space (space admin),
+ * or in the Inbox the actor's own archived documents (viewer and up).
+ */
 export function getSpaceArchived(actor: Actor, spaceId: string): Promise<TreeResponse> {
-  return listTreeNodes(actor, spaceId, 'admin', true);
+  return listTreeNodes(actor, spaceId, true);
 }
 
 /**

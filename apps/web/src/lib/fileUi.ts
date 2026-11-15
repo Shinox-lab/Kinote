@@ -12,6 +12,8 @@ export interface FileControlsInput {
   role: SpaceRole | null;
   spaceArchived: boolean;
   archived: boolean;
+  /** The file is in the Inbox, where its creator may restore it. */
+  inbox: boolean;
   placement: FileDetails['placement'];
   /** The file's source has removed it (`sourceDeletedAt` is set). */
   sourceDeleted: boolean;
@@ -36,7 +38,7 @@ const READ_FAILED = /^Extraction failed$| could not be read$/;
 const INDEX_FAILED = /^Index failed$| failed to index$/;
 const STORED = /^Stored · no searchable text$| has no searchable text$/;
 
-export function fileControls({ role, spaceArchived, archived, placement, sourceDeleted, badge }: FileControlsInput): FileControls {
+export function fileControls({ role, spaceArchived, archived, inbox, placement, sourceDeleted, badge }: FileControlsInput): FileControls {
   const rank = rankOf(role);
   const live = !archived && !spaceArchived;
   const editor = live && rank >= RANK.editor;
@@ -45,7 +47,7 @@ export function fileControls({ role, spaceArchived, archived, placement, sourceD
     move: editor,
     withdraw: live && rank >= RANK.reviewer,
     archive: live && rank >= RANK.admin,
-    restore: archived && !spaceArchived && rank >= RANK.admin,
+    restore: archived && !spaceArchived && (rank >= RANK.admin || (inbox && rank >= RANK.editor)),
     retry: editor && (READ_FAILED.test(badge) || INDEX_FAILED.test(badge)),
     dismissRemoval: editor && placement === 'synced' && sourceDeleted,
     download: true,
