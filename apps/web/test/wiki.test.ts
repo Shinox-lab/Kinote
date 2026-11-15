@@ -198,7 +198,7 @@ describe('pagePoll', () => {
 });
 
 describe('pageControls', () => {
-  const base: PageControlsInput = { badge: 'Saved · indexing soon', role: 'editor', reviewRequired: false, archived: false };
+  const base: PageControlsInput = { badge: 'Saved · indexing soon', role: 'editor', reviewRequired: false, archived: false, inbox: false };
   const controls = (over: Partial<PageControlsInput>) => pageControls({ ...base, ...over });
 
   test('the primary button is "Index now" without review and "Submit for review" with it', () => {
@@ -250,7 +250,7 @@ describe('pageControls', () => {
     expect(controls({ badge: 'Not indexed' }).restoreIndexed).toBe(false);
   });
 
-  test('an archived page offers only restore, and only to an admin', () => {
+  test('an archived page offers only restore: an admin anywhere, or its creator in the Inbox', () => {
     expect(controls({ archived: true, role: 'admin', badge: 'Index failed' })).toEqual({
       primary: null,
       retry: false,
@@ -261,7 +261,11 @@ describe('pageControls', () => {
       restorePage: true,
       restoreVersion: false,
     });
+    expect(controls({ archived: true, role: 'editor', inbox: true }).restorePage).toBe(true);
+    expect(controls({ archived: true, role: 'reviewer', inbox: true }).restorePage).toBe(true);
+    expect(controls({ archived: true, role: 'editor' }).restorePage).toBe(false);
     expect(controls({ archived: true, role: 'reviewer' }).restorePage).toBe(false);
+    expect(controls({ archived: true, role: 'viewer', inbox: true }).restorePage).toBe(false);
     expect(controls({ archived: false, role: 'admin' }).restorePage).toBe(false);
   });
 });

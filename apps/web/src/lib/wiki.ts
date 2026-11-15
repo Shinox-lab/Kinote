@@ -261,6 +261,8 @@ export interface PageControlsInput {
   reviewRequired: boolean;
   /** The page or its space is archived. */
   archived: boolean;
+  /** The page is in the Inbox, where its creator may restore it. */
+  inbox: boolean;
 }
 
 export interface PageControls {
@@ -282,9 +284,9 @@ const RANK: Record<SpaceRole, number> = { viewer: 0, editor: 1, reviewer: 2, adm
  * Which controls to show. The server enforces every one of these again; hiding is
  * only so a person is not offered what would be refused. Roles mirror the routes:
  * snapshot, retry, restore (of a page version too) and move need editor, withdraw reviewer, archive and
- * restoring an archived page admin.
+ * restoring an archived page admin (or, in the Inbox, its creator).
  */
-export function pageControls({ badge, role, reviewRequired, archived }: PageControlsInput): PageControls {
+export function pageControls({ badge, role, reviewRequired, archived, inbox }: PageControlsInput): PageControls {
   const rank = role === null ? -1 : RANK[role];
   const live = !archived;
   const editor = live && rank >= RANK.editor;
@@ -295,7 +297,7 @@ export function pageControls({ badge, role, reviewRequired, archived }: PageCont
     move: editor,
     withdraw: live && rank >= RANK.reviewer,
     archive: live && rank >= RANK.admin,
-    restorePage: archived && rank >= RANK.admin,
+    restorePage: archived && (rank >= RANK.admin || (inbox && rank >= RANK.editor)),
     restoreVersion: editor,
   };
 }

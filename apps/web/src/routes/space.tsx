@@ -80,10 +80,14 @@ function CreatePageForm({ space }: { space: SpaceResponse }) {
   );
 }
 
-/** Archived pages, which only a space admin may list; each links to the page, where it can be restored. */
+/**
+ * Archived documents: a space admin lists every one, and in the Inbox each
+ * person lists their own. Each links to the document, where it can be restored.
+ */
 function ArchivedPages({ space, tenantSlug }: { space: SpaceResponse; tenantSlug: string }) {
-  const { data, error } = useArchivedTree(space.id, space.myRole === 'admin');
-  if (space.myRole !== 'admin') return null;
+  const canList = space.myRole === 'admin' || space.kind === 'inbox';
+  const { data, error } = useArchivedTree(space.id, canList);
+  if (!canList) return null;
   return (
     <Card title="Archived pages">
       {error ? (

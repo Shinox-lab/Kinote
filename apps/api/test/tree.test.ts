@@ -1,7 +1,7 @@
 import { describe, test, beforeEach } from 'vitest';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { withTenantTx, rowsOf, versions, documents, pages, auditEvents } from '@kinote/db';
 import { requireSpaceRole, type Actor } from '@kinote/core';
 import { createPage as createPageAs } from '../src/routes/pages.js';
@@ -428,8 +428,8 @@ describe('tree, archived list, space archive, page restore', () => {
       );
 
       assert.deepEqual((await getSpaceTree(agent, ctx.inbox.id)).nodes.map((n) => n.id), [document.id]);
-      // The archived list needs space admin, which an agent can never be.
-      await assert.rejects(getSpaceArchived(agent, ctx.inbox.id), { code: 'forbidden' });
+      // The archived list is per creator in the Inbox: the agent sees only its own.
+      assert.deepEqual((await getSpaceArchived(agent, ctx.inbox.id)).nodes.map((n) => n.id), [own2.id]);
       assert.deepEqual(
         (await tree(ctx.ownerHeaders, ctx.inbox.id)).map((n) => n.id).sort(),
         [theirs, document.id].sort()
@@ -635,6 +635,28 @@ describe('tree, archived list, space archive, page restore', () => {
       assert.equal(res.statusCode, 403, res.body);
       assert.equal(res.json().error, 'forbidden');
       assert.notEqual((await pageBadge(ctx.spaceAdmin.headers, page)).archivedAt, null);
+    });
+
+    test('in the Inbox its creator restores their own page; another member cannot see it', async () => {
+      const mine = await createPage(ctx.editor.headers, ctx.inbox.id, 'mine', 'Mine');
+      const theirs = await createPage(ctx.other.headers, ctx.inbox.id, 'theirs', 'Theirs');
+      // No route archives an Inbox page for a member (capture Undo does), so set the state directly.
+      await withTenantTx(ctx.tenant.id, (tx) =>
+        tx
+          .update(documents)
+          .set({ archivedAt: new Date() })
+          .where(and(eq(documents.tenantId, ctx.tenant.id), inArray(documents.id, [mine, theirs])))
+      );
+
+      assert.deepEqual((await archivedList(ctx.editor.headers, ctx.inbox.id)).map((n) => n.id), [mine]);
+      const res = await post(ctx.editor.headers, `/api/v1/pages/${mine}/restore`);
+      assert.equal(res.statusCode, 200, res.body);
+      assert.equal(res.json().archivedAt, null);
+      assert.equal(await auditTypes('page.restored', mine), 1);
+
+      const hidden = await post(ctx.editor.headers, `/api/v1/pages/${theirs}/restore`);
+      assert.equal(hidden.statusCode, 404, hidden.body);
+      assert.equal(hidden.json().error, 'page_not_found');
     });
 
     test('restoring a page that is not archived is a 200 no-op', async () => {

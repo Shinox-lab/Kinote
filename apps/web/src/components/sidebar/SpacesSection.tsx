@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type DragEvent, type MouseEvent } from 'react';
-import { useParams } from '@tanstack/react-router';
+import { useNavigate, useParams } from '@tanstack/react-router';
 import { useMutation } from '@tanstack/react-query';
 import type { SpaceResponse } from '@kinote/contracts';
 import { isKnownIcon } from '../../lib/emoji.js';
@@ -34,6 +34,9 @@ type MenuTarget = {
   title: string;
   canRename: boolean;
   canArchive: boolean;
+  /** A space: the menu can open its archived list. */
+  canSeeArchived?: boolean;
+  slug?: string;
 };
 
 /** The row whose menu is open, and where the pointer was. */
@@ -293,6 +296,7 @@ function SpaceNode({
   const canAdd = canCreatePages(space.myRole);
   const canArchiveDocuments = space.myRole === 'admin';
   const canArchiveSpace = canArchiveDocuments && space.kind !== 'inbox';
+  const canSeeArchived = space.myRole === 'admin' || space.kind === 'inbox';
 
   // Opening a page reveals it: its parents open once per page, and the person can close them again.
   const revealedFor = useRef<string | undefined>(undefined);
@@ -324,14 +328,16 @@ function SpaceNode({
           aria-expanded={open}
           onClick={() => toggle(space.id)}
           onContextMenu={(e) => {
-            if (!canArchiveSpace) return;
+            if (!canArchiveSpace && !canSeeArchived) return;
             e.preventDefault();
             actions.openMenu(e, {
               id: space.id,
               kind: 'space',
               title: space.name,
               canRename: false,
-              canArchive: true,
+              canArchive: canArchiveSpace,
+              canSeeArchived,
+              slug: space.slug,
             });
           }}
           className={`${ROW} min-w-0 flex-1 ${active ? ROW_ACTIVE : ''}`}
@@ -401,6 +407,7 @@ function SpaceNode({
 export function SpacesSection() {
   const { tenant, role } = useWorkspace();
   const { spaceSlug, pageId, fileId } = useParams({ strict: false });
+  const navigate = useNavigate();
   const { data: spaces = [] } = useSpaces();
   const { data: page } = usePage(pageId);
   const { data: file } = useFile(fileId);
@@ -581,6 +588,19 @@ export function SpacesSection() {
               onSelect={() => {
                 setRenaming({ id: menu.id, kind: menu.kind as 'page' | 'file', title: menu.title });
                 setMenu(null);
+              }}
+            />
+          )}
+          {menu.kind === 'space' && menu.canSeeArchived && (
+            <ContextMenuItem
+              label="Archived…"
+              onSelect={() => {
+                setMenu(null);
+                if (!menu.slug) return;
+                void navigate({
+                  to: '/w/$tenantSlug/s/$spaceSlug',
+                  params: { tenantSlug: tenant.slug, spaceSlug: menu.slug },
+                });
               }}
             />
           )}

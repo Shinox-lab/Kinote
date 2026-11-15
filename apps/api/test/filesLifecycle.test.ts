@@ -227,6 +227,27 @@ describe('file lifecycle', () => {
     assert.equal(restored.json().parentId, null);
   });
 
+  test('in the Inbox the uploader restores their own archived file; another member cannot see it', async () => {
+    const c = await setup();
+    const up = await upload(c.editor.headers, c.inboxSpace.id, 'note.txt', 'inbox text');
+    await withTenantTx(c.tenant.id, (tx) =>
+      tx.update(documents).set({ archivedAt: new Date() }).where(eq(documents.id, up.document.id))
+    );
+
+    const hidden = await app.inject({
+      method: 'GET',
+      url: `/api/v1/files/${up.document.id}`,
+      headers: c.editor2.headers,
+    });
+    assert.equal(hidden.statusCode, 404, hidden.body);
+    const hiddenRestore = await post(c.editor2.headers, `/api/v1/files/${up.document.id}/restore`);
+    assert.equal(hiddenRestore.statusCode, 404, hiddenRestore.body);
+
+    const restored = await post(c.editor.headers, `/api/v1/files/${up.document.id}/restore`);
+    assert.equal(restored.statusCode, 200, restored.body);
+    assert.equal(restored.json().archivedAt, null);
+  });
+
   test('a page that holds a file cannot be archived', async () => {
     const c = await setup();
     const page = await app.inject({
