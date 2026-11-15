@@ -173,6 +173,29 @@ test('a space is archived from the sidebar: right-click, Archive space, confirm'
   await expect(side.getByRole('button', { name: new RegExp(`^(Expand|Collapse) ${name}$`) })).toHaveCount(0);
 });
 
+test('the space menu opens the archived list, where an archived page is restored', async ({ browser, request }) => {
+  const world = await seedWorld(request, { reviewRequired: false });
+  const pageId = await makePage(request, world, world.owner, 'Old notes', 'old-notes');
+  await call(request, `/pages/${pageId}/archive`, {
+    account: world.owner,
+    tenantId: world.tenantId,
+    method: 'POST',
+    data: {},
+  });
+
+  const page = await openAs(browser, world, world.owner);
+  await page.goto(`/w/${world.slug}`);
+  const side = sidebar(page);
+  await side.getByRole('button', { name: 'Expand Docs' }).click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'Archived…' }).click();
+
+  const archived = page.getByRole('navigation', { name: 'Archived pages' });
+  await expect(archived.getByRole('link', { name: /^Old notes/ })).toBeVisible();
+  await archived.getByRole('link', { name: /^Old notes/ }).click();
+  await page.getByRole('button', { name: 'Restore page' }).click();
+  await expect(page.getByRole('button', { name: 'Restore page' })).toHaveCount(0);
+});
+
 test('a space is made from the sidebar', async ({ browser, request }) => {
   const world = await seedWorld(request, { reviewRequired: false });
   const page = await openAs(browser, world, world.owner);

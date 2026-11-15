@@ -633,19 +633,29 @@ export async function dismissRemoval(actor: Actor, fileId: string): Promise<Docu
 }
 
 /**
- * Restores an archived file (space admin). The file comes back withdrawn (its
- * versions stay `withdrawn`; uploading it again goes through review and
- * indexing). A parent that is archived or no longer a page of the same space
- * is dropped: the file returns at the top of the space.
+ * Restores an archived file: a space admin, or in the Inbox its creator. The
+ * file comes back withdrawn (its versions stay `withdrawn`; uploading it again
+ * goes through review and indexing). A parent that is archived or no longer a
+ * page of the same space is dropped: the file returns at the top of the space.
  */
 export async function restoreFile(actor: Actor, fileId: string): Promise<DocumentSummary> {
   assertValidUuid(fileId, 'document_not_found');
   return withTenantTx(actor.tenantId, async (tx) => {
     const doc = await lockFile(tx, actor.tenantId, fileId);
-    await requireDocumentRole(tx, actor, doc, 'admin', {
+    const access = await requireDocumentRole(tx, actor, doc, 'viewer', {
       notFound: 'document_not_found',
       lock: 'share',
     });
+    if (access.space.archivedAt) {
+      throw new AppError('space_archived', 'Space is archived.');
+    }
+    // In the Inbox `requireDocumentRole` already limited the actor to the creator.
+    if (
+      access.effectiveRole !== 'admin' &&
+      !(access.space.kind === 'inbox' && access.effectiveRole !== 'viewer')
+    ) {
+      throw new AppError('forbidden', 'You do not have permission to perform this action.');
+    }
     if (!doc.archivedAt) return toDocumentSummary(doc);
 
     let parentId = doc.parentId;

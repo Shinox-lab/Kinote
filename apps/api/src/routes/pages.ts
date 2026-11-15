@@ -1489,13 +1489,14 @@ export async function archivePageTx(tx: DbTransaction, actor: Actor, doc: Docume
 }
 
 /**
- * Restores an archived page (space admin on the page's space). Clears
- * `archived_at`; the page's versions stay `withdrawn` (it comes back with the
- * `Withdrawn` badge and goes through review and indexing like any page). A
- * parent that is archived, or no longer a page in the same space, is dropped:
- * the page returns at the root. Restoring a page that is not archived changes
- * nothing and answers the page. Same lock as the other lifecycle writers; an
- * archived space is 409 `space_archived` (checked by the gate).
+ * Restores an archived page: a space admin on the page's space, or in the
+ * Inbox its creator. Clears `archived_at`; the page's versions stay
+ * `withdrawn` (it comes back with the `Withdrawn` badge and goes through
+ * review and indexing like any page). A parent that is archived, or no longer
+ * a page in the same space, is dropped: the page returns at the root.
+ * Restoring a page that is not archived changes nothing and answers the page.
+ * Same lock as the other lifecycle writers; an archived space is 409
+ * `space_archived`.
  */
 export async function restorePage(actor: Actor, pageId: string): Promise<DocumentSummary> {
   assertValidUuid(pageId, 'page_not_found');
@@ -1504,10 +1505,20 @@ export async function restorePage(actor: Actor, pageId: string): Promise<Documen
     const doc = await lockPage(tx, actor.tenantId, pageId);
 
     // Document lock first (lockPage), then the space share lock: see SpaceRoleOptions.lock.
-    await requireDocumentRole(tx, actor, doc, 'admin', {
+    const access = await requireDocumentRole(tx, actor, doc, 'viewer', {
       notFound: 'page_not_found',
       lock: 'share',
     });
+    if (access.space.archivedAt) {
+      throw new AppError('space_archived', 'Space is archived.');
+    }
+    // In the Inbox `requireDocumentRole` already limited the actor to the creator.
+    if (
+      access.effectiveRole !== 'admin' &&
+      !(access.space.kind === 'inbox' && access.effectiveRole !== 'viewer')
+    ) {
+      throw new AppError('forbidden', 'You do not have permission to perform this action.');
+    }
 
     if (!doc.archivedAt) {
       return toDocumentSummary(doc);

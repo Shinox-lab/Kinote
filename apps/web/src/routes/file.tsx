@@ -225,6 +225,7 @@ export function FilePage() {
     role,
     spaceArchived,
     archived,
+    inbox: space?.kind === 'inbox',
     placement: file.placement,
     sourceDeleted: file.sourceDeletedAt !== null,
     badge: file.badge,
