@@ -37,6 +37,7 @@ const passage = (documentId: string, spaceId: string): SearchPassage => ({
   pageTo: null,
   citeAs: 't (v1, updated 2026-10-30)',
   rrfScore: 1,
+  vectorDistance: null,
 });
 
 async function clientsWorld() {

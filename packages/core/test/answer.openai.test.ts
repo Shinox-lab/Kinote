@@ -23,6 +23,7 @@ const passage = (overrides: Partial<SearchPassage> = {}): SearchPassage => ({
   pageTo: null,
   citeAs: 'Handbook (v2, updated 2026-10-25)',
   rrfScore: 0.5,
+  vectorDistance: null,
   ...overrides,
 });
 

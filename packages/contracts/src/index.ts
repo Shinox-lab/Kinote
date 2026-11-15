@@ -900,6 +900,8 @@ export const SearchPassageSchema = z.object({
   pageTo: z.number().int().nullable(),
   citeAs: z.string(),
   rrfScore: z.number(),
+  /** Cosine distance from the query; null when only the keyword branch found the passage. */
+  vectorDistance: z.number().nullable(),
 });
 export type SearchPassage = z.infer<typeof SearchPassageSchema>;
 
