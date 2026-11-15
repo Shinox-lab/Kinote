@@ -221,6 +221,7 @@ import {
   requireSession,
   resolveActor,
   resolveSourceActor,
+  resolveAgentActor,
   type AuthSession,
   type SourceActor,
 } from './auth/actor.js';
@@ -439,17 +440,24 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
 
   // Identity comes only from the session token and, for tenant routes, the
   // membership row of the session user in x-tenant-id. Routes declare
-  // config.auth ('public' | 'session' | 'tenant'); undeclared means 'tenant'.
+  // config.auth ('public' | 'session' | 'tenant' | 'source' | 'agent'); undeclared means 'tenant'.
   // Checked in onRequest, before the body is read or parsed: an
   // unauthenticated request never gets as far as the JSON parser.
   app.decorateRequest('authSession', null);
   app.decorateRequest('actor', null);
   app.decorateRequest('sourceActor', null);
+  app.decorateRequest('agentAuth', null);
   app.addHook('onRequest', async (req) => {
     const mode = req.routeOptions.config?.auth ?? 'tenant';
     if (mode === 'public') return;
     if (mode === 'source') {
       req.sourceActor = await resolveSourceActor(req);
+      return;
+    }
+    if (mode === 'agent') {
+      const { actor, agent } = await resolveAgentActor(req);
+      req.actor = actor;
+      req.agentAuth = agent;
       return;
     }
     req.authSession = await requireSession(req);

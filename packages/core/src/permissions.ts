@@ -11,6 +11,11 @@ export interface Actor {
   principalType: 'user' | 'agent';
   principalId: string;
   tenantRole?: 'owner' | 'admin' | 'member' | 'viewer';
+  /**
+   * Set only for agents: the user who owns the agent (`agents.created_by`) and their tenant role now.
+   * An agent never reaches more than its owner can.
+   */
+  owner?: { userId: string; tenantRole: 'owner' | 'admin' | 'member' | 'viewer' };
 }
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
