@@ -128,9 +128,10 @@ import {
   deleteSpaceGrant,
 } from './routes/admin.js';
 import { deleteSourceFile, putSourceFile } from './routes/sourceFiles.js';
-import { registerInternalRoutes } from './routes/internal.js';
+import { kinoteVersion as apiPackageVersion, registerInternalRoutes } from './routes/internal.js';
 import { createSource, issueSourceToken, listSources, revokeSourceToken, revokeTokensMadeBy, updateSource } from './routes/sources.js';
 import { createAgent, issueAgentToken, listAgents, revokeAgentToken, updateAgent } from './routes/agents.js';
+import { registerMcpRoute } from './mcp/route.js';
 import {
   createPage,
   getPageDetails,
@@ -307,8 +308,10 @@ export interface ApiServerOptions {
   kinoteVersion?: string;
   /** KINOTE_DEPLOY_ID: echoed by /internal/v1/info as deployId. */
   deployId?: string;
-  /** PUBLIC_URL: where people open Kinote (the setup link of POST /internal/v1/bootstrap). */
+  /** PUBLIC_URL: where people open Kinote (the setup link of POST /internal/v1/bootstrap; page links in MCP results). */
   publicUrl?: string;
+  /** MCP_SEARCH_MAX_DISTANCE: the cosine distance past which MCP search drops a vector-only hit (default 0.55). */
+  mcpSearchMaxDistance?: number;
 }
 
 const DEFAULT_MAX_UPLOAD_BYTES = 52_428_800;
@@ -716,6 +719,19 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
     const p = req.params as any;
     const res = await revokeSourceToken(actorOf(req), p.id, p.tokenId);
     return reply.send(parseReply(SourceTokenSchema, res));
+  });
+
+  registerMcpRoute(app, {
+    embeddingProvider,
+    answerProvider,
+    ...(models ? { models } : {}),
+    ...(opts.collab ? { collab: opts.collab } : {}),
+    limits,
+    ...(opts.publicUrl ? { publicUrl: opts.publicUrl } : {}),
+    searchMaxDistance: opts.mcpSearchMaxDistance ?? 0.55,
+    meter: (kind, actor, fn) =>
+      withUsageScope({ tenantId: actor.tenantId, kind, principalId: actor.principalId }, models ? models.cache.current().creditRates : creditRates, fn),
+    version: opts.kinoteVersion ?? apiPackageVersion(),
   });
 
   app.get('/api/v1/agents', async (req, reply) => {

@@ -33,6 +33,7 @@ async function main(): Promise<void> {
     controlPlaneAllowedIps: config.CONTROL_PLANE_ALLOWED_IPS,
     ...(config.KINOTE_VERSION ? { kinoteVersion: config.KINOTE_VERSION } : {}),
     ...(config.PUBLIC_URL ? { publicUrl: config.PUBLIC_URL } : {}),
+    mcpSearchMaxDistance: config.MCP_SEARCH_MAX_DISTANCE,
     ...(config.KINOTE_DEPLOY_ID ? { deployId: config.KINOTE_DEPLOY_ID } : {}),
     maxUploadBytes: config.MAX_UPLOAD_BYTES,
     maxConcurrentUploads: config.MAX_CONCURRENT_UPLOADS,

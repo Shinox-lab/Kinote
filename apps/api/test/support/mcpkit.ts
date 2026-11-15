@@ -68,3 +68,54 @@ export async function agentWorld(app: FastifyInstance, slug = 'agent-world') {
   return { tenant, owner, ownerHeaders, inboxSpace, open, strict, hidden, agentId, token, tokenId };
 }
 export type AgentWorld = Awaited<ReturnType<typeof agentWorld>>;
+
+let rpcId = 0;
+
+/** POSTs one JSON-RPC 2.0 request to the MCP endpoint (stateless: no initialize needed first). */
+export async function mcpRequest(
+  app: FastifyInstance,
+  token: string,
+  method: string,
+  params?: object,
+  path = '/mcp'
+): Promise<{ status: number; body: any; headers: Record<string, unknown> }> {
+  const res = await app.inject({
+    method: 'POST',
+    url: path,
+    headers: {
+      authorization: `Bearer ${token}`,
+      'content-type': 'application/json',
+      accept: 'application/json, text/event-stream',
+    },
+    payload: { jsonrpc: '2.0', id: ++rpcId, method, ...(params ? { params } : {}) },
+  });
+  let body: any = res.body;
+  try {
+    body = res.json();
+  } catch {
+    // Not JSON (an empty 202, say): the raw text.
+  }
+  return { status: res.statusCode, body, headers: res.headers };
+}
+
+/** Calls one tool and returns its text and error flag. */
+export async function callTool(
+  app: FastifyInstance,
+  token: string,
+  name: string,
+  args: object = {},
+  path = '/mcp'
+): Promise<{ text: string; isError: boolean }> {
+  const res = await mcpRequest(app, token, 'tools/call', { name, arguments: args }, path);
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  assert.ok(res.body.result, JSON.stringify(res.body));
+  const content = res.body.result.content as Array<{ type: string; text: string }>;
+  return { text: content.map((c) => c.text).join('\n'), isError: res.body.result.isError === true };
+}
+
+/** The tool names `tools/list` shows this token. */
+export async function listToolNames(app: FastifyInstance, token: string, path = '/mcp'): Promise<string[]> {
+  const res = await mcpRequest(app, token, 'tools/list', undefined, path);
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  return (res.body.result.tools as Array<{ name: string }>).map((t) => t.name).sort();
+}
