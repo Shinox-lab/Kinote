@@ -34,6 +34,7 @@ them the same way. After a change, run `docker compose up -d` again to apply it.
 | `SEARCH_RATE_LIMIT_PER_MIN` | `60` | Searches one person may run per minute. |
 | `CAPTURE_RATE_LIMIT_PER_MIN` | `20` | Captures one person may send per minute. |
 | `UPLOAD_RATE_LIMIT_PER_MIN` | `30` | Files one person, or one source token, may upload per minute. |
+| `MCP_SEARCH_MAX_DISTANCE` | `0.55` | For agents connected over MCP: a passage that matches a search only by meaning, not by its words, is left out when its cosine distance from the query is above this (0 to 2). Lower it if agents get unrelated passages; raise it if they miss related ones. Search and Ask limits apply to each agent separately. |
 | `SIGNUP_MODE` | `auto` | Who may create an account. `auto`: anyone until the first account exists, then only someone with an invitation link. `open`: anyone. `invite`: only from an invitation link. `closed`: no new accounts. An account made from an invitation always uses the invited email. |
 | `MAX_TENANTS_PER_USER` | `5` | Workspaces one person may own. Creating workspaces is also limited to 5 an hour. |
 | `TENANT_DAILY_AI_ACTIONS` | `2000` | AI actions one workspace may use per UTC day: each Ask, and each capture routed or placed, page card or entity extraction. Search and indexing aren't counted. Past it, Ask and new captures are refused until midnight UTC and background AI work waits. `0` turns it off. |
@@ -127,7 +128,7 @@ and nobody can reset a forgotten password except through the operator's command 
 |---|---|---|
 | `SMTP_URL` | *(unset)* | Your mail server, such as `smtps://user:password@smtp.example.com:465`. With it set, someone who signs up without an invitation confirms their address from an emailed link, entering their password on that page; until then they can't sign in or accept invitations, and signing in with the right password emails a fresh link. Admins can email an invitation's link straight to the invitee (up to 20 invitation emails per workspace an hour; past that, or if sending fails, they copy the link as before). "Forgot your password?" emails a reset link, which also confirms the address, so the owner of an inbox can take over an account someone else registered with it. |
 | `MAIL_FROM` | *(required with `SMTP_URL`)* | The From address, such as `Kinote <wiki@example.com>`. |
-| `PUBLIC_URL` | *(required with `SMTP_URL`)* | The address people open Kinote at, such as `https://wiki.example.com`. Links in emails start with it. |
+| `PUBLIC_URL` | *(required with `SMTP_URL`)* | The address people open Kinote at, such as `https://wiki.example.com`. Links in emails start with it, and so do page links in results for MCP agents (without it, those results have no links). |
 
 ### Resetting a password without email
 

@@ -71,6 +71,8 @@ describe('the /mcp endpoint', () => {
     const capture = await issueAgentToken(w.tenant.id, w.agentId, { scopes: ['capture'] });
     assert.deepEqual(await listToolNames(app, capture.token, TEST_PATH), ['kinote_capture_echo']);
     assert.deepEqual(await listToolNames(app, capture.token), []);
+    const real = await callTool(app, capture.token, 'kinote_search', { query: 'x' });
+    assert.equal(real.text, 'This token cannot use kinote_search. Ask a workspace admin for a token with the "read" scope.');
     const res = await callTool(app, capture.token, 'kinote_echo', { text: 'hi' }, TEST_PATH);
     assert.equal(res.isError, true);
     assert.equal(res.text, 'This token cannot use kinote_echo. Ask a workspace admin for a token with the "read" scope.');
@@ -180,10 +182,16 @@ describe('the /mcp endpoint', () => {
     assert.equal((await callTool(limited, second.token, 'kinote_echo', { text: '4' }, TEST_PATH)).isError, true);
   });
 
+  test('a read token lists exactly the five read tools', async () => {
+    const w = await agentWorld(app, 'mcp-five');
+    assert.deepEqual(await listToolNames(app, w.token), ['kinote_ask', 'kinote_browse', 'kinote_read', 'kinote_related', 'kinote_search']);
+  });
+
   test('combined tool definitions stay under 2,000 tokens', async () => {
     const w = await agentWorld(app, 'mcp-budget');
     const res = await mcpRequest(app, w.token, 'tools/list');
     const tools = res.body.result.tools as object[];
+    assert.equal(tools.length, 5);
     const total = tools.reduce((n, t) => n + estimateTokens(JSON.stringify(t)), 0);
     assert.ok(total < 2000, `tool definitions use ${total} tokens`);
   });
