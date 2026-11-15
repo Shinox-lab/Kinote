@@ -7,7 +7,7 @@ import { runPendingJobsForTenant } from '../../worker/src/runner.js';
 import { InMemoryObjectStorage } from '@kinote/shared';
 import { buildTestApp, useTestDb } from './support/testkit.js';
 import { uploadRequest } from './support/multipart.js';
-import { agentWorld, callTool, publishPage, type AgentWorld } from './support/mcpkit.js';
+import { agentWorld, callTool, publishPage, unwrap, type AgentWorld } from './support/mcpkit.js';
 
 const short = (id: string) => id.replaceAll('-', '').slice(0, 8);
 
@@ -18,7 +18,10 @@ describe('kinote_browse', () => {
     app = buildTestApp();
   });
 
-  const browse = (w: AgentWorld, args: object = {}) => callTool(app, w.token, 'kinote_browse', args);
+  const browse = async (w: AgentWorld, args: object = {}) => {
+    const res = await callTool(app, w.token, 'kinote_browse', args);
+    return { ...res, raw: res.text, text: unwrap(res.text) };
+  };
 
   test('no arguments lists the granted spaces and not the Inbox or an ungranted space', async () => {
     const w = await agentWorld(app, 'browse-spaces');

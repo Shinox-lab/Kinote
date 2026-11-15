@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { pageCards, spaces, withTenantTx } from '@kinote/db';
 import type { TreeNode } from '@kinote/contracts';
 import { getSpaceTree } from '../../routes/foundations.js';
-import { MAX_RESULT_TOKENS, shortId } from '../format.js';
+import { dataBlock, MAX_RESULT_TOKENS, shortId } from '../format.js';
 import { namedSpaces, resolvePageRef, resolveSpaceRef } from '../refs.js';
 import { defineTool, type ToolContext } from '../tool.js';
 
@@ -131,15 +131,16 @@ export const browseTool = defineTool({
       for (const r of rows) if (r.summary.trim() !== '') summaries.set(r.id, oneLine(r.summary));
     }
 
+    // Titles and summaries are wiki text: the map goes inside one content block; the cut note is the server's.
     const lines = sections.flatMap((s) => render(s, depth, summaries));
-    const budget = MAX_RESULT_TOKENS * 4 - CUT_NOTE.length - 1;
+    const budget = MAX_RESULT_TOKENS * 4 - CUT_NOTE.length - 100;
     let used = 0;
     const kept: string[] = [];
     for (const line of lines) {
-      if (used + line.length + 1 > budget) return `${kept.join('\n')}\n${CUT_NOTE}`;
+      if (used + line.length + 1 > budget) return `${dataBlock('map', kept.join('\n'))}\n${CUT_NOTE}`;
       kept.push(line);
       used += line.length + 1;
     }
-    return kept.join('\n');
+    return dataBlock('map', kept.join('\n'));
   },
 });

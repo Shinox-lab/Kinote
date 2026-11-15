@@ -1,7 +1,7 @@
 import { describe, test, beforeEach } from 'vitest';
 import assert from 'node:assert/strict';
 import { and, eq } from 'drizzle-orm';
-import { auditEvents, withTenantTx } from '@kinote/db';
+import { agents, auditEvents, tenantBilling, withTenantTx } from '@kinote/db';
 import { bootstrapTenant, buildTestApp, signUpMember, useTestDb } from './support/testkit.js';
 import { bearer } from './support/sourcekit.js';
 
@@ -191,5 +191,42 @@ describe('agents admin API', () => {
     await createAgent(w.headers, { name: 'Second' });
     const names = (await call('GET', '/api/v1/agents', w.headers)).json().map((a: { name: string }) => a.name);
     assert.deepEqual(names, ['Second', 'First']);
+  });
+
+  test('while the workspace is suspended, an admin can still revoke a token and disable an agent, but not rename it', async () => {
+    const w = await world('adm-suspended');
+    const agent = await createAgent(w.headers);
+    const a = (await issue(w.headers, agent.id)).json();
+    await withTenantTx(w.tenant.id, (tx) =>
+      tx.insert(tenantBilling).values({ tenantId: w.tenant.id, state: 'suspended' }).onConflictDoUpdate({ target: tenantBilling.tenantId, set: { state: 'suspended' } })
+    );
+    const revoked = await call('DELETE', `/api/v1/agents/${agent.id}/tokens/${a.info.id}`, w.headers);
+    assert.equal(revoked.statusCode, 200, revoked.body);
+    assert.equal((await call('GET', '/test/agent-whoami', bearer(a.token))).statusCode, 401);
+    const off = await call('PATCH', `/api/v1/agents/${agent.id}`, w.headers, { disabled: true });
+    assert.equal(off.statusCode, 200, off.body);
+    const rename = await call('PATCH', `/api/v1/agents/${agent.id}`, w.headers, { name: 'New name' });
+    assert.equal(rename.statusCode, 423, rename.body);
+    const on = await call('PATCH', `/api/v1/agents/${agent.id}`, w.headers, { disabled: false });
+    assert.equal(on.statusCode, 423, on.body);
+  });
+
+  test('the built-in routing engine is not a manageable agent', async () => {
+    const w = await world('adm-router');
+    const [router] = await withTenantTx(w.tenant.id, (tx) =>
+      tx
+        .insert(agents)
+        .values({ tenantId: w.tenant.id, name: 'Routing engine', kind: 'router', createdBy: '00000000-0000-0000-0000-000000000000' })
+        .returning()
+    );
+    const list = (await call('GET', '/api/v1/agents', w.headers)).json();
+    assert.ok(!list.some((a: { id: string }) => a.id === router!.id));
+    for (const res of [
+      await call('PATCH', `/api/v1/agents/${router!.id}`, w.headers, { name: 'Mine' }),
+      await issue(w.headers, router!.id),
+    ]) {
+      assert.equal(res.statusCode, 404, res.body);
+      assert.equal(res.json().error, 'agent_not_found');
+    }
   });
 });

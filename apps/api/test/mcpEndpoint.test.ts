@@ -157,6 +157,20 @@ describe('the /mcp endpoint', () => {
     assert.equal((failed.payload as any).error, 'Nothing to echo. Try other words.');
   });
 
+  test('refused calls are audited too: a missing scope and an unknown tool', async () => {
+    const w = await agentWorld(app, 'mcp-audit-refused');
+    const capture = await issueAgentToken(w.tenant.id, w.agentId, { scopes: ['capture'] });
+    await callTool(app, capture.token, 'kinote_echo', { text: 'probe' }, TEST_PATH);
+    await callTool(app, w.token, 'kinote_nope', {}, TEST_PATH);
+    const rows = await withTenantTx(w.tenant.id, (tx) =>
+      tx.select().from(auditEvents).where(and(eq(auditEvents.type, 'mcp.tool_call'), eq(auditEvents.actorId, w.agentId)))
+    );
+    const byTool = new Map(rows.map((r) => [(r.payload as any).tool, r.payload as any]));
+    assert.equal(byTool.get('kinote_echo')?.tokenId, capture.tokenId);
+    assert.match(byTool.get('kinote_echo')?.error, /^This token cannot use kinote_echo\./);
+    assert.match(byTool.get('kinote_nope')?.error, /^No tool named kinote_nope\./);
+  });
+
   test('results are cut at 6,000 tokens on a line boundary', async () => {
     const w = await agentWorld(app, 'mcp-cap');
     const line = 'word '.repeat(19) + 'end';

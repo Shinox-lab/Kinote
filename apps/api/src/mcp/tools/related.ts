@@ -11,7 +11,7 @@ import {
   type PlacementFilter,
 } from '@kinote/core';
 import { getPageConnections } from '../../routes/connections.js';
-import { shortId } from '../format.js';
+import { dataBlock, shortId } from '../format.js';
 import { resolvePageRef, ToolError } from '../refs.js';
 import { defineTool, type ToolContext } from '../tool.js';
 
@@ -67,7 +67,7 @@ async function byEntity(ctx: ToolContext, name: string, hops: 1 | 2): Promise<st
         lines.push(`- ${titles.get(p.documentId) ?? 'Untitled'} (${shortId(p.documentId)})${via.length > 0 ? `, via ${via.join(', ')}` : ''}`);
       }
     }
-    return lines.join('\n');
+    return dataBlock('results', lines.join('\n'));
   });
 }
 
@@ -133,7 +133,7 @@ async function byPage(ctx: ToolContext, ref: string): Promise<string> {
   group('Shares entities:', shared.map((s) => `- ${s.title} (${shortId(s.id)}) — ${s.names.join(', ')}`));
   ctx.touch([doc.id, ...linkedFrom.map((c) => c.pageId), ...updatedBy.map((c) => c.pageId), ...updated.map((c) => c.pageId), ...shared.map((s) => s.id)]);
   if (lines.length === 0) return 'Nothing connects to this page yet.';
-  return [`# ${doc.title} (${shortId(doc.id)})`, ...lines].join('\n');
+  return dataBlock('results', [`# ${doc.title} (${shortId(doc.id)})`, ...lines].join('\n'));
 }
 
 export const relatedTool = defineTool({

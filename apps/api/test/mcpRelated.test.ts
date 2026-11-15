@@ -5,7 +5,7 @@ import { documents, entities, entityEdges, entityMentions, links, withTenantTx }
 import { EMBEDDING_DIMENSIONS, defaultEmbeddingProvider, entityRelations } from '@kinote/core';
 import { runPendingJobsForTenant } from '../../worker/src/runner.js';
 import { buildTestApp, useTestDb } from './support/testkit.js';
-import { agentWorld, callTool, publishPage, type AgentWorld } from './support/mcpkit.js';
+import { agentWorld, callTool, publishPage, unwrap, type AgentWorld } from './support/mcpkit.js';
 
 const short = (id: string) => id.replaceAll('-', '').slice(0, 8);
 const unit = () => {
@@ -21,7 +21,10 @@ describe('kinote_related', () => {
     app = buildTestApp();
   });
 
-  const related = (w: AgentWorld, args: object) => callTool(app, w.token, 'kinote_related', args);
+  const related = async (w: AgentWorld, args: object) => {
+    const res = await callTool(app, w.token, 'kinote_related', args);
+    return { ...res, text: unwrap(res.text) };
+  };
 
   /**
    * Payments (system) is mentioned on Billing and Refunds (Open) and on Vault (Hidden). Team Atlas owns Payments

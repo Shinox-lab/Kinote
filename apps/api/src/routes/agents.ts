@@ -46,18 +46,18 @@ async function loadAgent(tx: DbTransaction, tenantId: string, agentId: string, l
   const query = tx
     .select()
     .from(agents)
-    .where(and(eq(agents.tenantId, tenantId), eq(agents.id, agentId)));
+    .where(and(eq(agents.tenantId, tenantId), eq(agents.id, agentId), eq(agents.kind, 'external')));
   const [row] = await (lock ? query.for('update') : query);
   if (!row) throw new AppError('agent_not_found');
   return row;
 }
 
-/** The admin-facing view of agents (newest first): owner, space grants and tokens (newest first). */
+/** The admin-facing view of external agents (newest first; built-in ones such as the routing engine are not listed): owner, space grants and tokens (newest first). */
 async function viewAgents(tx: DbTransaction, tenantId: string, only?: string): Promise<Agent[]> {
   const rows = await tx
     .select()
     .from(agents)
-    .where(and(eq(agents.tenantId, tenantId), only ? eq(agents.id, only) : undefined))
+    .where(and(eq(agents.tenantId, tenantId), eq(agents.kind, 'external'), only ? eq(agents.id, only) : undefined))
     .orderBy(desc(agents.createdAt), desc(agents.id));
   if (rows.length === 0) return [];
   const ids = rows.map((r) => r.id);

@@ -4,7 +4,7 @@ import { AppError } from '@kinote/contracts';
 import { NO_RELEVANT_ANSWER } from '@kinote/core';
 import { askWiki } from '../../search/askWiki.js';
 import { assertCredits, DEFAULT_AGENT_DAILY_AI_ACTIONS } from '../../usageLimits.js';
-import { pageLink, shortId } from '../format.js';
+import { dataBlock, pageLink, shortId } from '../format.js';
 import { resolveSpaceRef, ToolError } from '../refs.js';
 import { defineTool } from '../tool.js';
 
@@ -47,7 +47,9 @@ export const askTool = defineTool({
     if (!allowed) throw new AppError('ai_budget_exhausted');
 
     const res = await askWiki(actor, { question: args.question, ...(spaceIds ? { spaceIds } : {}) }, deps);
-    if (!res.foundRelevant) return res.answer || NO_RELEVANT_ANSWER;
+    if (!res.foundRelevant) {
+      return !res.answer || res.answer === NO_RELEVANT_ANSWER ? NO_RELEVANT_ANSWER : dataBlock('answer', res.answer);
+    }
     const seen = new Set<string>();
     const sources: string[] = [];
     for (const c of res.citations) {
@@ -58,6 +60,7 @@ export const askTool = defineTool({
       sources.push(`- ${c.citeAs} (${shortId(c.documentId)})${link ? `  ${link}` : ''}`);
     }
     ctx.touch([...new Set(res.citations.map((c) => c.documentId))]);
-    return sources.length > 0 ? `${res.answer}\nSources:\n${sources.join('\n')}` : res.answer;
+    // The answer is model text written from page text, and the sources are page titles: both are wiki content.
+    return dataBlock('answer', sources.length > 0 ? `${res.answer}\nSources:\n${sources.join('\n')}` : res.answer);
   },
 });

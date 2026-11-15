@@ -73,52 +73,9 @@ export async function callTool(
   name: string,
   rawArgs: unknown
 ): Promise<CallToolResult> {
-  const { actor, agent, deps, log } = ctx;
-  const tool = tools.find((t) => t.name === name);
-  if (!tool) return text(`No tool named ${name}. Call tools/list to see the tools this token can use.`, true);
-  if (!agent.scopes.includes(tool.scope)) {
-    return text(`This token cannot use ${tool.name}. Ask a workspace admin for a token with the "${tool.scope}" scope.`, true);
-  }
-
+  const { actor, agent, log } = ctx;
   const pages = new Set<string>();
-  let result: CallToolResult;
-  let error: string | null = null;
-
-  const max = tool.limit === 'ask' ? deps.limits.askPerMinute : deps.limits.searchPerMinute;
-  let limited: number | null = null;
-  try {
-    const verdict = await hitLimit(`limit:mcp-${tool.limit}:${actor.tenantId}:${agent.agentId}`, max, MINUTE_MS);
-    if (!verdict.allowed) limited = Math.max(1, Math.ceil(verdict.retryAfterMs / 1000));
-  } catch (err) {
-    log.error({ err }, `rate limit mcp-${tool.limit} unavailable; call allowed`);
-  }
-
-  if (limited !== null) {
-    error = `Too many ${tool.name} calls. Try again in ${limited} seconds.`;
-    result = text(error, true);
-  } else {
-    const parsed = z.object(tool.input).safeParse(rawArgs ?? {});
-    if (!parsed.success) {
-      const issues = parsed.error.issues.map((i) => `${i.path.join('.') || 'arguments'}: ${i.message}`).join('; ');
-      error = `Invalid arguments for ${tool.name}: ${issues}.`;
-      result = text(error, true);
-    } else {
-      try {
-        const out = await deps.meter(tool.limit === 'ask' ? 'ask' : 'index', actor, () =>
-          tool.run(parsed.data, { ...ctx, touch: (ids) => ids.forEach((id) => pages.add(id)) })
-        );
-        result = text(capResult(out));
-      } catch (err) {
-        if (err instanceof ToolError || err instanceof AppError) {
-          error = err.message;
-        } else {
-          log.error({ err, tool: tool.name }, 'mcp tool failed');
-          error = 'Something went wrong on the server. Try again in a moment.';
-        }
-        result = text(error, true);
-      }
-    }
-  }
+  const { result, error } = await runCall(tools, ctx, name, rawArgs, pages);
 
   const resultText = (result.content[0] as { text: string }).text;
   try {
@@ -131,7 +88,7 @@ export async function callTool(
         subjectType: 'agent',
         subjectId: agent.agentId,
         payload: {
-          tool: tool.name,
+          tool: name.slice(0, 100),
           args: cutArgs(rawArgs ?? {}),
           tokenId: agent.tokenId,
           pages: [...pages],
@@ -141,7 +98,50 @@ export async function callTool(
       })
     );
   } catch (err) {
-    log.error({ err, tool: tool.name }, 'mcp audit write failed');
+    log.error({ err, tool: name }, 'mcp audit write failed');
   }
   return result;
+}
+
+/** The call itself, refusals included; `error` is the refusal text the agent sees, or null. */
+async function runCall(
+  tools: readonly ToolDef[],
+  ctx: Omit<ToolContext, 'touch'>,
+  name: string,
+  rawArgs: unknown,
+  pages: Set<string>
+): Promise<{ result: CallToolResult; error: string | null }> {
+  const { actor, agent, deps, log } = ctx;
+  const refuse = (error: string) => ({ result: text(error, true), error });
+  const tool = tools.find((t) => t.name === name);
+  if (!tool) return refuse(`No tool named ${name.slice(0, 100)}. Call tools/list to see the tools this token can use.`);
+  if (!agent.scopes.includes(tool.scope)) {
+    return refuse(`This token cannot use ${tool.name}. Ask a workspace admin for a token with the "${tool.scope}" scope.`);
+  }
+
+  const max = tool.limit === 'ask' ? deps.limits.askPerMinute : deps.limits.searchPerMinute;
+  try {
+    const verdict = await hitLimit(`limit:mcp-${tool.limit}:${actor.tenantId}:${agent.agentId}`, max, MINUTE_MS);
+    if (!verdict.allowed) {
+      return refuse(`Too many ${tool.name} calls. Try again in ${Math.max(1, Math.ceil(verdict.retryAfterMs / 1000))} seconds.`);
+    }
+  } catch (err) {
+    log.error({ err }, `rate limit mcp-${tool.limit} unavailable; call allowed`);
+  }
+
+  const parsed = z.object(tool.input).safeParse(rawArgs ?? {});
+  if (!parsed.success) {
+    const issues = parsed.error.issues.map((i) => `${i.path.join('.') || 'arguments'}: ${i.message}`).join('; ');
+    return refuse(`Invalid arguments for ${tool.name}: ${issues}.`);
+  }
+  try {
+    const out = await deps.meter(tool.limit === 'ask' ? 'ask' : 'index', actor, () =>
+      tool.run(parsed.data, { ...ctx, touch: (ids) => ids.forEach((id) => pages.add(id)) })
+    );
+    return { result: text(capResult(out)), error: null };
+  } catch (err) {
+    if (err instanceof ToolError || err instanceof AppError) return refuse(err.message);
+    log.error({ err, tool: tool.name }, 'mcp tool failed');
+    return refuse('Something went wrong on the server. Try again in a moment.');
+  }
 }

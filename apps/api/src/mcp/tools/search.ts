@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { documents, pageCards, spaces, withTenantTx } from '@kinote/db';
 import type { SearchPassage } from '@kinote/contracts';
 import { getReadableSpaceIds, keywordSearchWiki, searchPageCards, searchWiki } from '@kinote/core';
-import { contentBlock, pageLink, shortId } from '../format.js';
+import { contentBlock, dataBlock, MAX_RESULT_TOKENS, pageLink, shortId } from '../format.js';
 import { resolveSpaceRef, ToolError } from '../refs.js';
 import { defineTool, type ToolContext } from '../tool.js';
 
@@ -27,9 +27,10 @@ function passageEntry(n: number, p: SearchPassage, ctx: ToolContext): string {
         ? ` › ${p.headingPath.join(' › ')}`
         : '';
   const link = pageLink(ctx.agent, ctx.deps.publicUrl, p.documentId, p.documentKind);
-  const lines = [`${n}. ${p.versionTitle}${where}  (${shortId(p.documentId)}, v${p.versionNumber}, updated ${updatedOf(p)})${link ? `  ${link}` : ''}`];
+  // The server's line holds ids, version and link; the title and headings are the page's own text.
+  const lines = [`${n}. ${shortId(p.documentId)}, v${p.versionNumber}, updated ${updatedOf(p)}${link ? `  ${link}` : ''}`];
   if (p.documentKind === 'page' && p.blockIds.length > 0) lines.push(`   blocks: ${p.blockIds.map(shortId).join(', ')}`);
-  lines.push(contentBlock(shortId(p.documentId), p.text));
+  lines.push(contentBlock(shortId(p.documentId), `# ${p.versionTitle}${where}\n\n${p.text}`));
   return lines.join('\n');
 }
 
@@ -57,9 +58,25 @@ async function findPassages(ctx: ToolContext, query: string, spaceRef: string | 
       maxVectorDistance: deps.searchMaxDistance,
     });
   });
-  ctx.touch(hits.map((h) => h.documentId));
-  const body = hits.length === 0 ? noMatch('passages', query) : hits.map((h, i) => passageEntry(i + 1, h, ctx)).join('\n\n');
-  return vector === null ? `${KEYWORD_NOTE}\n${body}` : body;
+  const lead = vector === null ? `${KEYWORD_NOTE}\n` : '';
+  if (hits.length === 0) return `${lead}${noMatch('passages', query)}`;
+  // Whole passages only: stop before the one that would pass the cap, and say how many were left out.
+  const budget = MAX_RESULT_TOKENS * 4 - lead.length - 200;
+  const entries: string[] = [];
+  let used = 0;
+  for (const [i, h] of hits.entries()) {
+    const entry = passageEntry(i + 1, h, ctx);
+    if (entries.length > 0 && used + entry.length + 2 > budget) break;
+    entries.push(entry);
+    used += entry.length + 2;
+  }
+  ctx.touch(hits.slice(0, entries.length).map((h) => h.documentId));
+  const left = hits.length - entries.length;
+  const note =
+    left > 0
+      ? `\n${left} more ${left === 1 ? 'passage' : 'passages'} left out to stay under 6,000 tokens. Lower limit or narrow the query to see them.`
+      : '';
+  return `${lead}${entries.join('\n\n')}${note}`;
 }
 
 async function findPages(ctx: ToolContext, query: string, spaceRef: string | undefined, limit: number): Promise<string> {
@@ -88,12 +105,15 @@ async function findPages(ctx: ToolContext, query: string, spaceRef: string | und
   });
   ctx.touch(rows.map((r) => r.id));
   if (rows.length === 0) return noMatch('pages', query);
-  return rows
-    .map((r, i) => {
-      const link = pageLink(ctx.agent, deps.publicUrl, r.id);
-      return `${i + 1}. ${r.title} (${shortId(r.id)}, ${r.space}) — ${r.summary.replace(/\s+/g, ' ').trim()}${link ? `  ${link}` : ''}`;
-    })
-    .join('\n');
+  return dataBlock(
+    'results',
+    rows
+      .map((r, i) => {
+        const link = pageLink(ctx.agent, deps.publicUrl, r.id);
+        return `${i + 1}. ${r.title} (${shortId(r.id)}, ${r.space}) — ${r.summary.replace(/\s+/g, ' ').trim()}${link ? `  ${link}` : ''}`;
+      })
+      .join('\n')
+  );
 }
 
 export const searchTool = defineTool({

@@ -18,19 +18,27 @@ export function refuseWhenSuspended() {
   return async (req: FastifyRequest): Promise<void> => {
     if (READ_METHODS.has(req.method)) return;
     if (req.routeOptions.config?.whenSuspended === 'allow') return;
-    const tenantId = req.actor?.tenantId ?? req.sourceActor?.tenantId;
-    if (!tenantId) return;
-    let billing: Awaited<ReturnType<typeof readBillingState>>;
-    try {
-      billing = await withTenantTx(tenantId, (tx) => readBillingState(tx, tenantId));
-    } catch (err) {
-      req.log.error({ err }, 'billing state unavailable; request allowed');
-      return;
-    }
-    if (billing.state !== 'suspended') return;
-    const admin = req.actor?.tenantRole === 'owner' || req.actor?.tenantRole === 'admin';
-    throw new AppError('workspace_suspended', undefined, admin && billing.manageUrl ? { manageUrl: billing.manageUrl } : undefined);
+    await assertNotSuspended(req);
   };
+}
+
+/**
+ * Refuses with `workspace_suspended` when the request's workspace is suspended for billing. The hook calls it
+ * for every write; a route marked `whenSuspended: 'allow'` may call it itself for the writes it does not let through.
+ */
+export async function assertNotSuspended(req: FastifyRequest): Promise<void> {
+  const tenantId = req.actor?.tenantId ?? req.sourceActor?.tenantId;
+  if (!tenantId) return;
+  let billing: Awaited<ReturnType<typeof readBillingState>>;
+  try {
+    billing = await withTenantTx(tenantId, (tx) => readBillingState(tx, tenantId));
+  } catch (err) {
+    req.log.error({ err }, 'billing state unavailable; request allowed');
+    return;
+  }
+  if (billing.state !== 'suspended') return;
+  const admin = req.actor?.tenantRole === 'owner' || req.actor?.tenantRole === 'admin';
+  throw new AppError('workspace_suspended', undefined, admin && billing.manageUrl ? { manageUrl: billing.manageUrl } : undefined);
 }
 
 /** Who a per-person limit counts: the member in this workspace, the source token, or the session user. */

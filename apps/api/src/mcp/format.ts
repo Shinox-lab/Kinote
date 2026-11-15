@@ -23,13 +23,22 @@ export function pageLink(
   return `${base}/w/${encodeURIComponent(agent.tenantSlug)}/${kind === 'file' ? 'f' : 'p'}/${pageId}`;
 }
 
+const escapeContent = (text: string) => text.replace(/<\/(kinote:content)/gi, '<\\/$1');
+
 /**
  * Page content as data: Markdown inside `<kinote:content page="…">`. A closing tag written in the page is
  * escaped (`<\/kinote:content`) so the content can never end the block early.
  */
 export function contentBlock(pageShortId: string, markdown: string): string {
-  const safe = markdown.replace(/<\/(kinote:content)/gi, '<\\/$1');
-  return `<kinote:content page="${pageShortId}">\n${safe}\n</kinote:content>`;
+  return `<kinote:content page="${pageShortId}">\n${escapeContent(markdown)}\n</kinote:content>`;
+}
+
+/**
+ * Wiki-written text that is not one page's body (a map of titles and summaries, a list of results, an answer
+ * written from pages): inside `<kinote:content source="…">`, escaped the same way.
+ */
+export function dataBlock(source: 'map' | 'results' | 'answer', text: string): string {
+  return `<kinote:content source="${source}">\n${escapeContent(text)}\n</kinote:content>`;
 }
 
 /**

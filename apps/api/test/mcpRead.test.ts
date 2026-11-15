@@ -46,13 +46,25 @@ describe('kinote_read', () => {
     assert.equal(
       res.text,
       [
-        `# Tool guide (${short(id)}) · Open · indexed v1`,
+        `Page ${short(id)} · Open · indexed v1`,
+        `<kinote:content page="${short(id)}">`,
+        '# Tool guide',
         'Intro: 6 words',
         `## Setup  [${headingId('Setup')}] 9 words`,
         `### Keys  [${headingId('Keys')}] 4 words`,
         `## Usage  [${headingId('Usage')}] 3 words`,
+        '</kinote:content>',
       ].join('\n')
     );
+  });
+
+  test('a section_id shorter than 8 characters is refused', async () => {
+    const w = await world('read-shortsection');
+    const id = await publishPage(app, w.ownerHeaders, w.open.id, 'Tool guide', PAGE);
+    const setup = (await live(w, id))!.blocks.find((b) => JSON.stringify(b.content).includes('Setup'))!;
+    const res = await read(w, { page_id: id, level: 'section', section_id: short(setup.id).slice(0, 3) });
+    assert.equal(res.isError, true);
+    assert.equal(res.text, `No section "${short(setup.id).slice(0, 3)}" on this page. Read level "outline" to find section IDs.`);
   });
 
   test('section returns only that section, nested headings included', async () => {
@@ -98,6 +110,27 @@ describe('kinote_read', () => {
     } while (cursor && calls < 20);
     assert.ok(calls >= 2, 'the page needed more than one call');
     assert.deepEqual(seen, expected);
+  });
+
+  test('a block longer than one result continues through the cursor, and the blocks after it still come', async () => {
+    const w = await world('read-giant');
+    const giant = Array.from({ length: 6000 }, (_, i) => `word${i}`).join(' ');
+    const id = await publishPage(app, w.ownerHeaders, w.open.id, 'Giant', ['Short intro.', giant, 'TAIL-MARKER after the giant.'].join('\n\n'));
+    let all = '';
+    let cursor: string | undefined;
+    let calls = 0;
+    do {
+      const res = await read(w, { page_id: id, level: 'full', ...(cursor ? { cursor } : {}) });
+      assert.equal(res.isError, false, res.text);
+      assert.ok(res.text.length <= 6000 * 4, 'under the cap');
+      assert.ok(!res.text.includes('[Result cut at'), 'paged, not cut');
+      assert.equal((res.text.match(/<kinote:content/g) ?? []).length, (res.text.match(/<\/kinote:content>/g) ?? []).length);
+      all += res.text;
+      cursor = /More: call kinote_read with cursor "([A-Za-z0-9_-]+)"\.$/.exec(res.text)?.[1];
+      calls++;
+    } while (cursor && calls < 20);
+    assert.ok(all.includes('word0 ') && all.includes('word5999'), 'the whole giant block');
+    assert.ok(all.includes('TAIL-MARKER'));
   });
 
   test('a cursor for another page or level is refused', async () => {
@@ -146,7 +179,7 @@ describe('kinote_read', () => {
     await index(w);
     const res = await read(w, { page_id: fileId, level: 'outline' });
     assert.equal(res.isError, false, res.text);
-    assert.match(res.text, new RegExp(`^# memo\\.pdf \\(${short(fileId)}\\) · Open · indexed v1`));
+    assert.match(res.text, new RegExp(`^Page ${short(fileId)} · Open · indexed v1\\n<kinote:content page="${short(fileId)}">\\n# memo\\.pdf\\n`));
     assert.ok(res.text.indexOf('Page one says hello.') < res.text.indexOf('Page two says goodbye.'));
     assert.ok(res.text.includes(`<kinote:content page="${short(fileId)}">`));
   });

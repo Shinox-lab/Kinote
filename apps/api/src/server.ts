@@ -220,7 +220,7 @@ import {
 import { authRoutes, type AuthRateLimit, type SignUpModeSetting } from './routes/auth.js';
 import { PgRateLimitStore } from './rateLimitStore.js';
 import type { Mailer } from './mail.js';
-import { aiActionsLeftOrUnknown, chargeAi, refuseWhenSuspended, requestLimit, requireCredits, uploadSlots } from './usageLimits.js';
+import { aiActionsLeftOrUnknown, assertNotSuspended, chargeAi, refuseWhenSuspended, requestLimit, requireCredits, uploadSlots } from './usageLimits.js';
 import { demoSeedRunning, demoSeedStatus, startDemoSeed } from './routes/demoSeed.js';
 import {
   invalidateActor,
@@ -745,7 +745,11 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
     return reply.status(201).send(parseReply(AgentSchema, res));
   });
 
-  app.patch('/api/v1/agents/:id', async (req, reply) => {
+  // Stopping an agent (disable, revoke) works while the workspace is suspended: a leaked token keeps reading.
+  app.patch('/api/v1/agents/:id', { config: { whenSuspended: 'allow' } }, async (req, reply) => {
+    const body = req.body as Record<string, unknown> | null;
+    const onlyDisables = !!body && typeof body === 'object' && Object.keys(body).length === 1 && body.disabled === true;
+    if (!onlyDisables) await assertNotSuspended(req);
     const res = await updateAgent(actorOf(req), (req.params as any).id, req.body);
     return reply.send(parseReply(AgentSchema, res));
   });
@@ -755,7 +759,7 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
     return reply.status(201).send(parseReply(IssueAgentTokenResponseSchema, res));
   });
 
-  app.delete('/api/v1/agents/:id/tokens/:tokenId', async (req, reply) => {
+  app.delete('/api/v1/agents/:id/tokens/:tokenId', { config: { whenSuspended: 'allow' } }, async (req, reply) => {
     const p = req.params as any;
     const res = await revokeAgentToken(actorOf(req), p.id, p.tokenId);
     return reply.send(parseReply(AgentTokenSchema, res));

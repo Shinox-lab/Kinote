@@ -144,3 +144,11 @@ export async function publishPage(
   assert.ok(snap.statusCode < 300, snap.body);
   return id;
 }
+
+/** A result with its `<kinote:content …>` and `</kinote:content>` tag lines removed (for asserting on the text). */
+export function unwrap(text: string): string {
+  return text
+    .split('\n')
+    .filter((l) => !/^<kinote:content[^>]*>$/.test(l) && l !== '</kinote:content>')
+    .join('\n');
+}
