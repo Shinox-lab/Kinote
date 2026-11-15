@@ -1,7 +1,7 @@
 import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 import rateLimit from '@fastify/rate-limit';
 import multipart from '@fastify/multipart';
-import { getDb, readAskModel, readBillingState, readStanding, rowsOf, tenants, withTenantTx } from '@kinote/db';
+import { getDb, readBillingState, readStanding, rowsOf, tenants, withTenantTx } from '@kinote/db';
 import { eq, sql } from 'drizzle-orm';
 import { DEFAULT_AUTH_RATE_LIMIT_MAX, DEFAULT_USAGE_LIMITS, type CreditRates, type ObjectStorage, type UsageLimits } from '@kinote/shared';
 import {
@@ -132,6 +132,7 @@ import { kinoteVersion as apiPackageVersion, registerInternalRoutes } from './ro
 import { createSource, issueSourceToken, listSources, revokeSourceToken, revokeTokensMadeBy, updateSource } from './routes/sources.js';
 import { createAgent, issueAgentToken, listAgents, revokeAgentToken, updateAgent } from './routes/agents.js';
 import { registerMcpRoute } from './mcp/route.js';
+import { askWiki } from './search/askWiki.js';
 import {
   createPage,
   getPageDetails,
@@ -237,7 +238,7 @@ import { invalidateTreeCache } from './treeCache.js';
 
 import { answerPassages } from './search/ask.js';
 import { getCollabTokenSecret, type CollabClient } from '@kinote/shared';
-import { collectionTables, searchWiki } from '@kinote/core';
+import { searchWiki } from '@kinote/core';
 import { fastifyLogger, type ApiLoggerOptions } from './logger.js';
 
 export interface ApiServerOptions {
@@ -727,6 +728,7 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
     ...(models ? { models } : {}),
     ...(opts.collab ? { collab: opts.collab } : {}),
     limits,
+    ...(opts.billingUrl ? { billingUrl: opts.billingUrl } : {}),
     ...(opts.publicUrl ? { publicUrl: opts.publicUrl } : {}),
     searchMaxDistance: opts.mcpSearchMaxDistance ?? 0.55,
     meter: (kind, actor, fn) =>
@@ -1335,33 +1337,11 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
     const actor = actorOf(req);
     const parsed = AskRequestSchema.parse(req.body);
     await chargeAi(req, reply, actor.tenantId, limits.tenantDailyAiActions);
-    let queryEmbedding: number[];
-    try {
-      [queryEmbedding] = await embeddingProvider.embed([parsed.question], 'query');
-    } catch {
-      throw new AppError('search_unavailable');
-    }
-
-    const { passages, tables, askModel } = await withTenantTx(actor.tenantId, async (tx) => {
-      const { readableSpaceIds, inboxSpaceId } = await getReadableSpaceIds(tx, actor);
-      const effectiveSpaces = parsed.space_ids
-        ? readableSpaceIds.filter((id) => parsed.space_ids!.includes(id))
-        : readableSpaceIds;
-      const passages = await searchWiki(
-        tx,
-        actor,
-        effectiveSpaces,
-        inboxSpaceId,
-        parsed.question,
-        queryEmbedding,
-        5,
-        embeddingProvider.model
-      );
-      // Questions across a collection ("which clients launch in December?") read its rows as a table.
-      const tables = passages.length > 0 ? await collectionTables(tx, actor, effectiveSpaces, passages) : [];
-      return { passages, tables, askModel: models ? await readAskModel(tx, actor.tenantId) : null };
-    });
-    const res = await answerPassages(parsed.question, passages, models ? models.answerFor(askModel) : answerProvider, tables);
+    const res = await askWiki(
+      actor,
+      { question: parsed.question, ...(parsed.space_ids ? { spaceIds: parsed.space_ids } : {}) },
+      { embeddingProvider, answerProvider, ...(models ? { models } : {}) }
+    );
     return reply.send(parseReply(AskResponseSchema, res));
   }));
 

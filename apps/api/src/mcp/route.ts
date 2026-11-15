@@ -17,6 +17,8 @@ export interface McpDeps {
   models?: ModelProviders;
   collab?: CollabClient;
   limits: UsageLimits;
+  /** BILLING_URL: where a credits refusal points. */
+  billingUrl?: string;
   /** PUBLIC_URL: results link pages when it is set. */
   publicUrl?: string;
   /** MCP_SEARCH_MAX_DISTANCE: vector hits farther than this cosine distance are dropped. */
