@@ -119,3 +119,28 @@ export async function listToolNames(app: FastifyInstance, token: string, path = 
   assert.equal(res.status, 200, JSON.stringify(res.body));
   return (res.body.result.tools as Array<{ name: string }>).map((t) => t.name).sort();
 }
+
+/**
+ * Creates a page in a space without review and snapshots it, so the next `indexAll` indexes it.
+ * Returns the page id.
+ */
+export async function publishPage(
+  app: FastifyInstance,
+  headers: Record<string, string>,
+  spaceId: string,
+  title: string,
+  markdown: string,
+  parentId: string | null = null
+): Promise<string> {
+  const res = await app.inject({
+    method: 'POST',
+    url: '/api/v1/pages',
+    headers,
+    payload: { space_id: spaceId, parent_id: parentId, title, slug: `${title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${++rpcId}`, markdown },
+  });
+  assert.equal(res.statusCode, 201, res.body);
+  const id = res.json().id as string;
+  const snap = await app.inject({ method: 'POST', url: `/api/v1/pages/${id}/snapshot`, headers });
+  assert.ok(snap.statusCode < 300, snap.body);
+  return id;
+}
