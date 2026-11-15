@@ -63,6 +63,20 @@ export interface DocumentRoleOptions extends SpaceRoleOptions {
   notFound?: ErrorCode;
 }
 
+/**
+ * The owner of an agent as a user actor (their tenant role now), or null for an actor without an
+ * owner. Space access and readable spaces for an agent are bounded by this actor's.
+ */
+export function ownerActorOf(actor: Actor): Actor | null {
+  if (!actor.owner) return null;
+  return {
+    tenantId: actor.tenantId,
+    principalType: 'user',
+    principalId: actor.owner.userId,
+    tenantRole: actor.owner.tenantRole,
+  };
+}
+
 /** True for a user who is a tenant owner or admin (they act as space admins everywhere). */
 export function isTenantAdmin(actor: Actor): boolean {
   return (
@@ -162,6 +176,18 @@ async function resolveSpaceAccess(
     effectiveRole = 'editor';
   }
 
+  // An agent never reaches more than its owner can now: space_not_found when the owner cannot read
+  // the space, else the lower of the two roles. The row is already locked above; never lock twice.
+  const ownerActor = ownerActorOf(actor);
+  if (ownerActor) {
+    const ownerAccess = await resolveSpaceAccess(tx, ownerActor, spaceId, {
+      ...(opts.allowArchived !== undefined ? { allowArchived: opts.allowArchived } : {}),
+    });
+    if (ROLE_RANK[ownerAccess.effectiveRole] < ROLE_RANK[effectiveRole]) {
+      effectiveRole = ownerAccess.effectiveRole;
+    }
+  }
+
   return { space, effectiveRole };
 }
 
@@ -243,7 +269,25 @@ export async function requireDocumentRole(
   return access;
 }
 
+/**
+ * The spaces the actor may read (the Inbox included) and the Inbox's id. For an agent, only the
+ * spaces its owner can also read now.
+ */
 export async function getReadableSpaceIds(
+  tx: DbTransaction,
+  actor: Actor
+): Promise<{ readableSpaceIds: string[]; inboxSpaceId: string }> {
+  const own = await readableSpaceIdsOf(tx, actor);
+  const ownerActor = ownerActorOf(actor);
+  if (!ownerActor) return own;
+  const ownerReadable = new Set((await readableSpaceIdsOf(tx, ownerActor)).readableSpaceIds);
+  return {
+    readableSpaceIds: own.readableSpaceIds.filter((id) => ownerReadable.has(id)),
+    inboxSpaceId: own.inboxSpaceId,
+  };
+}
+
+async function readableSpaceIdsOf(
   tx: DbTransaction,
   actor: Actor
 ): Promise<{ readableSpaceIds: string[]; inboxSpaceId: string }> {

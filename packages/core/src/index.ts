@@ -4,6 +4,7 @@ export {
   getReadableSpaceIds,
   assertValidUuid,
   isTenantAdmin,
+  ownerActorOf,
   type Actor,
   type SpaceRole,
   type SpaceAccess,
