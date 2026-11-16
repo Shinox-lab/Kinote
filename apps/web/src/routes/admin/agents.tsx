@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useMutation } from '@tanstack/react-query';
-import { AGENT_SCOPES, type Agent, type AgentScope, type AgentToken, type SpaceResponse } from '@kinote/contracts';
+import { type Agent, type AgentScope, type AgentToken, type SpaceResponse } from '@kinote/contracts';
 import { api, errorMessage } from '../../lib/api.js';
 import { useAgentSettings, useAgents, useRefresh, useSpaces } from '../../lib/queries.js';
+import { captureHasNowhereToFile, OFFERED_SCOPES } from '../../lib/agents.js';
 import { useFocusTrap } from '../../lib/useFocusTrap.js';
 import { useMediaQuery } from '../../lib/useMediaQuery.js';
 import { lastUsedLabel, tokenState } from '../../lib/sources.js';
@@ -14,8 +15,8 @@ import { Button, Checkbox, ErrorNote, Loading, SelectField, TextField } from '..
 const DEFAULT_DAILY_AI = 100;
 
 const SCOPE_LABELS: Record<AgentScope, { label: string; hint: string }> = {
-  read: { label: 'Read', hint: 'Browse, search, read pages, see what relates, ask questions.' },
-  capture: { label: 'Capture', hint: 'File notes and facts through routing, with a receipt and Undo; preview first if it asks.' },
+  read: { label: 'Read', hint: 'Browse, search, read pages, see what relates, ask questions, in the spaces above.' },
+  capture: { label: 'Capture', hint: 'File notes and facts through routing, with a receipt and Undo. Needs Editor access to a space above.' },
   edit: { label: 'Edit', hint: 'Change pages within its grants (arrives later).' },
 };
 
@@ -137,6 +138,15 @@ function TokenRow({ agent, token, now }: { agent: Agent; token: AgentToken; now:
   );
 }
 
+/** Capture is allowed but the agent can edit no space: every capture would be refused. */
+function NowhereToFile() {
+  return (
+    <p role="note" className="rounded-md border border-line bg-review-bg px-3 py-2 text-xs text-review-text">
+      It can't edit any space yet, so its captures would be refused. Give it Editor access to a space above.
+    </p>
+  );
+}
+
 function NewTokenForm({ agent, onIssued }: { agent: Agent; onIssued: (token: string) => void }) {
   const refresh = useRefresh();
   const [name, setName] = useState('');
@@ -178,8 +188,8 @@ function NewTokenForm({ agent, onIssued }: { agent: Agent; onIssued: (token: str
         </div>
       </div>
       <fieldset className="flex flex-col gap-1">
-        <legend className="mb-1 text-sm font-medium">What it may do</legend>
-        {AGENT_SCOPES.map((scope) => (
+        <legend className="mb-1 text-sm font-medium">What this token can do</legend>
+        {OFFERED_SCOPES.map((scope) => (
           <Checkbox
             key={scope}
             label={SCOPE_LABELS[scope].label}
@@ -189,6 +199,7 @@ function NewTokenForm({ agent, onIssued }: { agent: Agent; onIssued: (token: str
           />
         ))}
       </fieldset>
+      {captureHasNowhereToFile(agent, scopes) && <NowhereToFile />}
       <div>
         <Button type="submit" disabled={busy || name.trim() === '' || scopes.length === 0}>
           New token
@@ -271,8 +282,11 @@ function AgentPanel({ agent, spaces, onIssued }: { agent: Agent; spaces: readonl
       <StopAgent agent={agent} />
 
       <div className="flex flex-col gap-1">
-        <h3 className="text-sm font-semibold">Spaces</h3>
-        <p className="text-xs text-muted">An agent sees only the spaces granted here, and only where its owner can also go.</p>
+        <h3 className="text-sm font-semibold">Where it can go</h3>
+        <p className="text-xs text-muted">
+          Viewer: it can read the space. Editor: it can also file captures there. It never reaches more than its owner can.
+          Each token below then says which of these it may use.
+        </p>
         <ul aria-label={`Spaces of ${agent.name}`} className="divide-y divide-line">
           {grantable(spaces).map((space) => (
             <GrantRow key={space.id} agent={agent} space={space} />
@@ -282,6 +296,7 @@ function AgentPanel({ agent, spaces, onIssued }: { agent: Agent; spaces: readonl
 
       <div className="flex flex-col gap-2">
         <h3 className="text-sm font-semibold">Tokens</h3>
+        {captureHasNowhereToFile(agent) && <NowhereToFile />}
         {agent.tokens.length === 0 ? (
           <p className="text-sm text-muted">No tokens yet. An MCP client needs one to connect.</p>
         ) : (
@@ -373,10 +388,16 @@ function AgentSettingsForm() {
   });
   if (!data || mayAnswer === null) return null;
   return (
-    <div className="flex flex-col gap-1">
+    <section aria-label="Routing questions" className="flex flex-col gap-1 rounded-md border border-line p-3">
+      <h2 className="text-sm font-semibold">Routing questions</h2>
+      <p className="text-xs text-muted">
+        When routing can't tell where a fact belongs, it asks, for example "Which Acme: Acme Corp or Acme Labs?". By
+        default the question goes to the agent's owner on their Capture page, because Kinote can't tell an agent that
+        asked its user from one that guessed.
+      </p>
       <Checkbox
         label="Agents may answer routing questions"
-        hint="Off: questions go to the agent's owner on the Capture page."
+        hint="Turn on only if your agents check with a person before they answer."
         checked={mayAnswer}
         disabled={save.isPending}
         onChange={(checked) => {
@@ -385,7 +406,7 @@ function AgentSettingsForm() {
         }}
       />
       <ErrorNote error={save.error} />
-    </div>
+    </section>
   );
 }
 
@@ -433,7 +454,7 @@ export function AgentsPage() {
         </Button>
       </div>
       <p className="text-xs text-muted">
-        An agent is an AI tool, such as Claude Code, that reads this wiki over MCP with its own token, and can file what it learns through Capture, within the spaces you grant it. Members can also connect a client by signing in from it; that adds a read-only agent owned by them here.
+        An agent is an AI tool, such as Claude Code, that reads this wiki over MCP with its own token, and can file what it learns through Capture, within the spaces you grant it. Members can also connect a client by signing in from it; that adds an agent owned by them here, read-only unless they also allow it to file captures.
       </p>
       <AgentSettingsForm />
       <ErrorNote error={error} />
