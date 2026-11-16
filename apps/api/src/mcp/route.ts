@@ -9,7 +9,7 @@ import type { CollabClient, UsageLimits } from '@kinote/shared';
 import { serverInstructions } from './instructions.js';
 import { namedSpaces } from './refs.js';
 import { callTool, listTools, type ToolDef } from './tool.js';
-import { READ_TOOLS } from './tools/index.js';
+import { ALL_TOOLS } from './tools/index.js';
 
 export interface McpDeps {
   embeddingProvider: EmbeddingProvider;
@@ -50,7 +50,7 @@ export function registerMcpRoute(
   opts: { path?: string; tools?: readonly ToolDef[] } = {}
 ): void {
   const path = opts.path ?? '/mcp';
-  const tools = opts.tools ?? READ_TOOLS;
+  const tools = opts.tools ?? ALL_TOOLS;
 
   app.post(path, { config: { auth: 'agent', whenSuspended: 'allow' } }, async (req, reply) => {
     const actor = req.actor;

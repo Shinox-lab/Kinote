@@ -203,6 +203,9 @@ function AgentPanel({ agent, spaces, onIssued }: { agent: Agent; spaces: readonl
   const refresh = useRefresh();
   const [name, setName] = useState(agent.name);
   const [limit, setLimit] = useState(agent.dailyAiLimit === null ? '' : String(agent.dailyAiLimit));
+  // Shown at once when ticked; the saved value takes over when the agent is loaded again.
+  const [alwaysReview, setAlwaysReview] = useState(agent.alwaysReview);
+  useEffect(() => setAlwaysReview(agent.alwaysReview), [agent.alwaysReview]);
   const update = useMutation({
     mutationFn: (body: Parameters<typeof api.updateAgent>[1]) => api.updateAgent(agent.id, body),
     onSuccess: () => refresh('agents'),
@@ -250,9 +253,12 @@ function AgentPanel({ agent, spaces, onIssued }: { agent: Agent; spaces: readonl
       <Checkbox
         label="Always review its changes"
         hint="Its captures wait for review even in spaces without review."
-        checked={agent.alwaysReview}
+        checked={alwaysReview}
         disabled={update.isPending}
-        onChange={(checked) => update.mutate({ always_review: checked })}
+        onChange={(checked) => {
+          setAlwaysReview(checked);
+          update.mutate({ always_review: checked }, { onError: () => setAlwaysReview(agent.alwaysReview) });
+        }}
       />
 
       <div className="flex flex-wrap items-center gap-3">
@@ -294,19 +300,25 @@ function AgentPanel({ agent, spaces, onIssued }: { agent: Agent; spaces: readonl
 function AgentSettingsForm() {
   const { data } = useAgentSettings();
   const refresh = useRefresh();
+  const [mayAnswer, setMayAnswer] = useState<boolean | null>(null);
+  useEffect(() => setMayAnswer(data?.agentsMayAnswer ?? null), [data?.agentsMayAnswer]);
   const save = useMutation({
     mutationFn: (agentsMayAnswer: boolean) => api.updateAgentSettings({ agents_may_answer: agentsMayAnswer }),
     onSuccess: () => refresh('agents', 'settings'),
+    onError: () => setMayAnswer(data?.agentsMayAnswer ?? null),
   });
-  if (!data) return null;
+  if (!data || mayAnswer === null) return null;
   return (
     <div className="flex flex-col gap-1">
       <Checkbox
         label="Agents may answer routing questions"
         hint="Off: questions go to the agent's owner on the Capture page."
-        checked={save.isPending && save.variables !== undefined ? save.variables : data.agentsMayAnswer}
+        checked={mayAnswer}
         disabled={save.isPending}
-        onChange={(checked) => save.mutate(checked)}
+        onChange={(checked) => {
+          setMayAnswer(checked);
+          save.mutate(checked);
+        }}
       />
       <ErrorNote error={save.error} />
     </div>
