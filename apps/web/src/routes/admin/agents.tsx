@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { AGENT_SCOPES, type Agent, type AgentScope, type AgentToken, type SpaceResponse } from '@kinote/contracts';
 import { api, errorMessage } from '../../lib/api.js';
-import { useAgents, useRefresh, useSpaces } from '../../lib/queries.js';
+import { useAgentSettings, useAgents, useRefresh, useSpaces } from '../../lib/queries.js';
 import { useFocusTrap } from '../../lib/useFocusTrap.js';
 import { useMediaQuery } from '../../lib/useMediaQuery.js';
 import { lastUsedLabel, tokenState } from '../../lib/sources.js';
@@ -247,6 +247,14 @@ function AgentPanel({ agent, spaces, onIssued }: { agent: Agent; spaces: readonl
         </Button>
       </form>
 
+      <Checkbox
+        label="Always review its changes"
+        hint="Its captures wait for review even in spaces without review."
+        checked={agent.alwaysReview}
+        disabled={update.isPending}
+        onChange={(checked) => update.mutate({ always_review: checked })}
+      />
+
       <div className="flex flex-wrap items-center gap-3">
         <Button variant="secondary" disabled={update.isPending} onClick={() => update.mutate({ disabled: agent.disabledAt === null })}>
           {agent.disabledAt === null ? 'Disable agent' : 'Enable agent'}
@@ -279,6 +287,29 @@ function AgentPanel({ agent, spaces, onIssued }: { agent: Agent; spaces: readonl
         <NewTokenForm agent={agent} onIssued={(token) => onIssued(agent, token)} />
       </div>
     </section>
+  );
+}
+
+/** The workspace's switch for agents answering routing questions themselves. */
+function AgentSettingsForm() {
+  const { data } = useAgentSettings();
+  const refresh = useRefresh();
+  const save = useMutation({
+    mutationFn: (agentsMayAnswer: boolean) => api.updateAgentSettings({ agents_may_answer: agentsMayAnswer }),
+    onSuccess: () => refresh('agents', 'settings'),
+  });
+  if (!data) return null;
+  return (
+    <div className="flex flex-col gap-1">
+      <Checkbox
+        label="Agents may answer routing questions"
+        hint="Off: questions go to the agent's owner on the Capture page."
+        checked={save.isPending && save.variables !== undefined ? save.variables : data.agentsMayAnswer}
+        disabled={save.isPending}
+        onChange={(checked) => save.mutate(checked)}
+      />
+      <ErrorNote error={save.error} />
+    </div>
   );
 }
 
@@ -326,8 +357,9 @@ export function AgentsPage() {
         </Button>
       </div>
       <p className="text-xs text-muted">
-        An agent is an AI tool, such as Claude Code, that reads this wiki over MCP with its own token, within the spaces you grant it. Members can also connect a client by signing in from it; that adds a read-only agent owned by them here.
+        An agent is an AI tool, such as Claude Code, that reads this wiki over MCP with its own token, and can file what it learns through Capture, within the spaces you grant it. Members can also connect a client by signing in from it; that adds a read-only agent owned by them here.
       </p>
+      <AgentSettingsForm />
       <ErrorNote error={error} />
       {isPending ? (
         <Loading what="agents" />
