@@ -15,7 +15,7 @@ const DEFAULT_DAILY_AI = 100;
 
 const SCOPE_LABELS: Record<AgentScope, { label: string; hint: string }> = {
   read: { label: 'Read', hint: 'Browse, search, read pages, see what relates, ask questions.' },
-  capture: { label: 'Capture', hint: 'Send notes and facts to be placed in the wiki (arrives later).' },
+  capture: { label: 'Capture', hint: 'File notes and facts through routing, with a receipt and Undo; preview first if it asks.' },
   edit: { label: 'Edit', hint: 'Change pages within its grants (arrives later).' },
 };
 

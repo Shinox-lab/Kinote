@@ -3,11 +3,12 @@ import assert from 'node:assert/strict';
 import { and, eq } from 'drizzle-orm';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
-import { auditEvents, withTenantTx } from '@kinote/db';
+import { agents, auditEvents, withTenantTx } from '@kinote/db';
 import { defaultEmbeddingProvider } from '@kinote/core';
 import { runPendingJobsForTenant } from '../../worker/src/runner.js';
-import { buildTestApp, useTestDb } from './support/testkit.js';
-import { agentWorld, publishPage } from './support/mcpkit.js';
+import { buildTestApp, createAgent, useTestDb } from './support/testkit.js';
+import { agentWorld, issueAgentToken, publishPage } from './support/mcpkit.js';
+import { useCaptureKit } from './support/capturekit.js';
 
 const short = (id: string) => id.replaceAll('-', '').slice(0, 8);
 const textOf = (r: unknown) => ((r as { content: Array<{ text: string }> }).content ?? []).map((c) => c.text).join('\n');
@@ -60,5 +61,54 @@ describe('a real MCP client over HTTP', () => {
       tx.select().from(auditEvents).where(and(eq(auditEvents.type, 'mcp.tool_call'), eq(auditEvents.actorId, w.agentId)))
     );
     assert.equal(rows.length, 6);
+  });
+});
+
+describe('a real MCP client files a capture', () => {
+  const k = useCaptureKit();
+  let client: Client | undefined;
+  afterEach(async () => {
+    await client?.close().catch(() => undefined);
+  });
+
+  test('a real client previews, applies and undoes a capture', async () => {
+    const w = await k.world('real-capture');
+    const agentId = await createAgent(w.tenant.id, w.owner.userId, { name: 'Laptop agent' });
+    await withTenantTx(w.tenant.id, (tx) => tx.update(agents).set({ alwaysReview: false }).where(eq(agents.id, agentId)));
+    await k.post(w.headers, `/api/v1/spaces/${w.clients}/grants`, { principal_type: 'agent', principal_id: agentId, role: 'editor' });
+    const { token } = await issueAgentToken(w.tenant.id, agentId, { scopes: ['read', 'capture'] });
+    const address = await k.app.listen({ port: 0, host: '127.0.0.1' });
+    try {
+      client = new Client({ name: 'kinote-test', version: '1.0.0' });
+      await client.connect(new StreamableHTTPClientTransport(new URL(`${address}/mcp`), { requestInit: { headers: { authorization: `Bearer ${token}` } } }));
+      assert.match(client.getInstructions() ?? '', /Use kinote_capture to file new information/);
+      assert.equal((await client.listTools()).tools.length, 7);
+
+      setTimeout(() => void w.run(), 100);
+      const previewed = textOf(
+        await client.callTool({ name: 'kinote_capture', arguments: { text: 'George launch moved to December.', preview: true, wait: true } })
+      );
+      assert.match(previewed, /^Capture [0-9a-f]{8} · preview ready/);
+      const id = /^Capture ([0-9a-f]{8})/.exec(previewed)![1]!;
+      assert.equal(await k.pageText(w.tenant.id, w.george), 'George is a client. Launch is in November.');
+
+      const applied = textOf(await client.callTool({ name: 'kinote_capture_action', arguments: { capture_id: id, action: 'apply' } }));
+      assert.match(applied, /^Applying the preview/);
+      let status = '';
+      for (let i = 0; i < 20 && !/· done/.test(status.split('\n')[0] ?? ''); i++) {
+        await w.run();
+        status = textOf(await client.callTool({ name: 'kinote_capture_action', arguments: { capture_id: id, action: 'status' } }));
+      }
+      assert.match(status, /^Capture [0-9a-f]{8} · done/);
+      assert.ok((await k.pageText(w.tenant.id, w.george)).includes('December'));
+
+      const undone = textOf(await client.callTool({ name: 'kinote_capture_action', arguments: { capture_id: id, action: 'undo' } }));
+      assert.match(undone, /^Undone: 1 change;/);
+      assert.equal(await k.pageText(w.tenant.id, w.george), 'George is a client. Launch is in November.');
+    } finally {
+      await client?.close().catch(() => undefined);
+      client = undefined;
+      await k.app.close();
+    }
   });
 });

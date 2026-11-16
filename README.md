@@ -81,8 +81,9 @@ covers the secrets, connecting models, reverse proxies, storage, upgrades and ba
 
 ## Connect an agent
 
-AI tools such as Claude Code can read your wiki over MCP (Model Context Protocol). Each agent has its own tokens and
-sees only the spaces you grant it, and never more than the person who owns it can see.
+AI tools such as Claude Code can read your wiki over MCP (Model Context Protocol), and file what they learn into it
+through Capture. Each agent has its own tokens and sees only the spaces you grant it, and never more than the person
+who owns it can see.
 
 **Sign in from the client.** Any member can connect a client that supports MCP sign-in, with no token to copy. For
 Claude Code:
@@ -99,7 +100,7 @@ renews it by itself for up to 90 days after it was last used.
 **Or issue a token.** For headless agents, CI and clients without sign-in:
 
 1. In **Settings → Agents**, add an agent, choose its access to each space (Viewer or Editor), and issue a token with
-   the **Read** scope. The token is shown once.
+   the **Read** scope, plus **Capture** if it may file information. The token is shown once.
 2. Connect the client. For Claude Code:
 
    ```sh
@@ -109,7 +110,7 @@ renews it by itself for up to 90 days after it was last used.
    Any MCP client that supports Streamable HTTP works the same way: the endpoint is `/mcp` and the token is a
    Bearer header.
 
-The agent gets five read tools:
+A Read token gets five tools, and a Capture token two more:
 
 | Tool | What it does |
 | --- | --- |
@@ -118,11 +119,29 @@ The agent gets five read tools:
 | `kinote_read` | A page's outline, one section, or the whole page, with a cursor for long pages. |
 | `kinote_related` | What connects to a page or a named thing: relationships, mentions, links in. |
 | `kinote_ask` | An answer written from the wiki with its sources (costs an AI action). |
+| `kinote_capture` | Files new information through routing, with a receipt; `preview: true` shows where it would go first. |
+| `kinote_capture_action` | Status, answer a routing question, undo, move, or apply/cancel a preview. |
 
 Tokens expire after 90 days unless you choose otherwise (1 to 365), and an admin can revoke one or disable an agent at
 any time. Each agent has its own rate limits and a daily limit of AI actions (100 unless you set another), and every
-tool call is recorded in the audit log. The `capture` and `edit` scopes already exist on tokens; the tools that use
-them arrive later.
+tool call is recorded in the audit log. The `edit` scope already exists on tokens; the tool that uses it arrives later.
+
+**Capture from an agent.** An agent files information the way a person does on the Capture page: routing decides
+where each fact belongs, explains why, skips what is already known, and every change can be undone.
+
+- New agents are set to **Always review its changes**: their changes wait for review even in spaces without review.
+  Switch it off per agent in **Settings → Agents**.
+- Routing questions go to the agent's owner on their Capture page, where they also see, undo and place the agent's
+  captures. Turn on **Agents may answer routing questions** to let agents answer themselves.
+- With `preview: true` nothing changes until the agent applies the plan, so it can show its user where each fact would
+  go, skip or re-place facts, or cancel and edit by hand.
+- A `source` (a URL or ticket ID) makes a retry safe: the same source and text return the first capture.
+- **Stop and undo…** on an agent disables it and undoes what it filed since a time you choose.
+
+Notes typed into a capture, by a person or an agent, can say how to file it: "make a new page for this", "only update
+the pages", "put it under Clients/George", "keep the file as a copy" or "don't keep the file". Text inside an attached
+file never counts as an instruction. Without one, Capture decides by meaning whether an attached file is a record worth
+keeping (a contract, a report, a deck) or only carried facts, which leaves it in the Inbox.
 
 ## How it works
 
