@@ -1420,10 +1420,11 @@ export const OAuthAuthorizeCheckSchema = z.discriminatedUnion('status', [
 ]);
 export type OAuthAuthorizeCheck = z.infer<typeof OAuthAuthorizeCheckSchema>;
 
-/** POST /api/v1/oauth/authorize (in the workspace picked, x-tenant-id): the member's answer. */
+/** POST /api/v1/oauth/authorize (session only): the member's answer; Allow names the workspace picked. */
 export const OAuthDecisionSchema = z.discriminatedUnion('decision', [
   z.object({
     decision: z.literal('allow'),
+    tenant_id: z.string().uuid(),
     agent_name: AgentNameSchema,
     space_ids: z.array(z.string().uuid()).min(1).max(100),
   }),

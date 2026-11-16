@@ -31,6 +31,7 @@ import { mintAgentToken, mintOAuthCode, mintRefreshToken, parseAgentToken, parse
 import { actorForUser } from '../auth/actor.js';
 import { namedSpaces } from '../mcp/refs.js';
 import { parseReply } from '../reply.js';
+import { assertNotSuspended } from '../usageLimits.js';
 import { checkAuthorizeRequest, isAllowedRedirectUri, oauthBase, redirectWith, s256 } from './request.js';
 
 const CODE_TTL_MS = 10 * 60_000;
@@ -417,10 +418,11 @@ export async function oauthRoutes(app: FastifyInstance, opts: { publicUrl?: stri
     return reply.header('cache-control', 'no-store').send(parseReply(OAuthAuthorizeCheckSchema, body));
   });
 
-  // The member's answer, in the workspace they picked. Allow stores a one-time code; the agent comes at the exchange.
-  app.post('/api/v1/oauth/authorize', async (req, reply) => {
-    const actor = req.actor;
-    if (!actor) throw new AppError('unauthenticated');
+  // The member's answer. Cancel needs no workspace (someone in none can still send the app back); Allow names the
+  // workspace picked and stores a one-time code there. The agent comes at the exchange.
+  app.post('/api/v1/oauth/authorize', { config: { auth: 'session' } }, async (req, reply) => {
+    const session = req.authSession;
+    if (!session) throw new AppError('unauthenticated');
     const base = baseOf(req);
     const params = OAuthAuthorizeParamsSchema.parse(req.body ?? {});
     const check = await checkAuthorizeRequest(params, base);
@@ -436,6 +438,9 @@ export async function oauthRoutes(app: FastifyInstance, opts: { publicUrl?: stri
       });
       return reply.send(parseReply(OAuthDecisionResponseSchema, { to }));
     }
+    const actor = await actorForUser(decision.tenant_id.toLowerCase(), session.userId);
+    req.actor = actor;
+    await assertNotSuspended(req);
     const code = mintOAuthCode(actor.tenantId);
     await withTenantTx(actor.tenantId, async (tx) => {
       const readable = new Set((await namedSpaces(tx, actor)).map((s) => s.id));

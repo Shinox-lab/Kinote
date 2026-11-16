@@ -89,8 +89,8 @@ describe('browser sign-in with the MCP SDK client', () => {
     const allowed = await app.inject({
       method: 'POST',
       url: '/api/v1/oauth/authorize',
-      headers: { ...w.ownerHeaders, host },
-      payload: { ...params, decision: 'allow', agent_name: 'SDK agent', space_ids: [w.open.id] },
+      headers: { authorization: w.ownerHeaders.authorization!, host },
+      payload: { ...params, decision: 'allow', tenant_id: w.tenant.id, agent_name: 'SDK agent', space_ids: [w.open.id] },
     });
     assert.equal(allowed.statusCode, 200, allowed.body);
     const back = new URL(allowed.json().to);
