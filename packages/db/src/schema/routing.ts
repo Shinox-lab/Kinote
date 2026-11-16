@@ -196,6 +196,9 @@ export const suggestions = pgTable(
     conflictCitationId: uuid('conflict_citation_id'),
     captureId: uuid('capture_id').references(() => captures.id, { onDelete: 'cascade' }),
     factId: uuid('fact_id').references(() => captureFacts.id, { onDelete: 'cascade' }),
+    /** Who proposed it directly (an agent's kinote_edit); null for the engine's capture suggestions. */
+    proposedByType: text('proposed_by_type', { enum: ['user', 'agent'] }),
+    proposedBy: uuid('proposed_by'),
     status: text('status', { enum: ['open', 'accepted', 'declined', 'stale'] }).notNull().default('open'),
     resolvedBy: uuid('resolved_by'),
     resolvedAt: timestamp('resolved_at', { withTimezone: true }),

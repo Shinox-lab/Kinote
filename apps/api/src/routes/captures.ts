@@ -291,7 +291,22 @@ export async function suggestionField(tx: DbTransaction, tenantId: string, row: 
   return describeFieldChange(tx, tenantId, row.documentId, fieldId, json(row.expectedText), json(row.proposedMarkdown));
 }
 
-export function toSuggestionSummary(row: SuggestionRow, conflictWith: string | null, field: FieldChange | null = null): SuggestionSummary {
+/** Display names of the suggestions' direct proposers, keyed `type:id` (from `proposerNames`). */
+export async function proposerNames(tx: DbTransaction, tenantId: string, rows: SuggestionRow[]): Promise<Map<string, string>> {
+  const actors = rows.flatMap((r) => (r.proposedByType && r.proposedBy ? [{ type: r.proposedByType, id: r.proposedBy }] : []));
+  return actors.length > 0 ? resolveActorNames(tx, tenantId, actors) : new Map();
+}
+
+export function toSuggestionSummary(
+  row: SuggestionRow,
+  conflictWith: string | null,
+  field: FieldChange | null = null,
+  proposers: Map<string, string> = new Map()
+): SuggestionSummary {
+  const proposedBy =
+    row.proposedByType && row.proposedBy
+      ? { type: row.proposedByType, id: row.proposedBy, name: proposers.get(`${row.proposedByType}:${row.proposedBy}`) ?? '' }
+      : null;
   return {
     id: row.id,
     documentId: row.documentId,
@@ -305,6 +320,7 @@ export function toSuggestionSummary(row: SuggestionRow, conflictWith: string | n
     conflictWith,
     status: row.status,
     captureId: row.captureId,
+    proposedBy,
     createdAt: row.createdAt.toISOString(),
   };
 }

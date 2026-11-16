@@ -1,7 +1,7 @@
 import { useMutation } from '@tanstack/react-query';
 import type { SuggestionSummary } from '@kinote/contracts';
 import { api } from '../../lib/api.js';
-import { fieldChangeText, suggestionAction } from '../../lib/capture.js';
+import { fieldChangeText, suggestionAction, suggestionSource } from '../../lib/capture.js';
 import { useRefresh } from '../../lib/queries.js';
 import { Button, ErrorNote } from '../ui.js';
 
@@ -14,7 +14,7 @@ const BLOCKED_BY: Record<SuggestionSummary['blockedBy'], string> = {
 
 const KIND = { remove: 'Remove a block', replace: 'Replace a block', insert: 'Add a block', set_field: 'Change a field' } as const;
 
-/** One proposed change the routing engine was not allowed to make, with the person's choice. */
+/** One proposed change the routing engine or an agent was not allowed to make, with the person's choice. */
 export function SuggestionEntry({ suggestion, onDone }: { suggestion: SuggestionSummary; onDone: () => void }) {
   const accept = useMutation({ mutationFn: () => api.acceptSuggestion(suggestion.id), onSuccess: onDone });
   const decline = useMutation({ mutationFn: () => api.declineSuggestion(suggestion.id), onSuccess: onDone });
@@ -22,7 +22,9 @@ export function SuggestionEntry({ suggestion, onDone }: { suggestion: Suggestion
   return (
     <li className="flex flex-col gap-1.5 rounded-md border border-dashed border-[var(--routing)] bg-[var(--routing-tint)] p-3 text-sm">
       <p className="font-medium text-fg">{KIND[suggestion.kind]}</p>
-      <p className="text-xs text-muted">{BLOCKED_BY[suggestion.blockedBy]}</p>
+      <p className="text-xs text-muted">
+        {suggestionSource(suggestion)} · {BLOCKED_BY[suggestion.blockedBy]}
+      </p>
       {suggestion.conflictWith && <p className="text-xs text-warn-text">Cited by {suggestion.conflictWith}, still valid</p>}
       {suggestion.field ? (
         <p className="break-words text-fg">{fieldChangeText(suggestion.field)}</p>
@@ -51,7 +53,7 @@ export function SuggestionsPanel({ pageId, suggestions }: { pageId: string; sugg
   };
   return (
     <section aria-label="Suggestions" className="flex flex-col gap-2 rounded-lg border border-line bg-surface p-3">
-      <h2 className="text-sm font-semibold text-fg">Suggestions from the routing engine</h2>
+      <h2 className="text-sm font-semibold text-fg">Suggestions</h2>
       <ul className="flex flex-col gap-2">
         {suggestions.map((s) => (
           <SuggestionEntry key={s.id} suggestion={s} onDone={done} />

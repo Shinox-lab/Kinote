@@ -618,6 +618,8 @@ export const SuggestionSummarySchema = z.object({
   conflictWith: z.string().nullable(),
   status: z.enum(['open', 'accepted', 'declined', 'stale']),
   captureId: z.string().uuid().nullable(),
+  /** Who proposed it directly (an agent's kinote_edit); null for a capture's suggestions. */
+  proposedBy: z.object({ type: z.enum(['user', 'agent']), id: z.string().uuid(), name: z.string() }).nullable(),
   createdAt: z.string(),
 });
 export type SuggestionSummary = z.infer<typeof SuggestionSummarySchema>;

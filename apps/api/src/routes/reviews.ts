@@ -23,7 +23,7 @@ import { requireSpaceRole, assertValidUuid, isTenantAdmin, senderAccess, type Ac
 import { canApprove, type SpaceRow } from '../pages/approval.js';
 import { resolveActorNames } from '../people.js';
 import { versionSummaryColumns, toVersionSummary } from './pages.js';
-import { conflictNames, suggestionField, toSuggestionSummary } from './captures.js';
+import { conflictNames, proposerNames, suggestionField, toSuggestionSummary } from './captures.js';
 
 /**
  * The space when the actor holds `reviewer` or above in it, else null. An
@@ -172,6 +172,7 @@ export async function listReviewQueue(actor: Actor, query: unknown): Promise<Rev
     const openSuggestions = new Map<string, typeof suggestionRows>();
     for (const row of suggestionRows) openSuggestions.set(row.documentId, [...(openSuggestions.get(row.documentId) ?? []), row]);
     const names = await conflictNames(tx, actor.tenantId, suggestionRows);
+    const proposers = await proposerNames(tx, actor.tenantId, suggestionRows);
     const fields = new Map<string, FieldChange | null>();
     for (const row of suggestionRows) fields.set(row.id, await suggestionField(tx, actor.tenantId, row));
 
@@ -218,7 +219,7 @@ export async function listReviewQueue(actor: Actor, query: unknown): Promise<Rev
         ),
         capture: bundles.get(r.id) ?? null,
         suggestions: (openSuggestions.get(r.documentId) ?? []).map((row) =>
-          toSuggestionSummary(row, row.conflictCitationId ? names.get(row.conflictCitationId) ?? null : null, fields.get(row.id) ?? null)
+          toSuggestionSummary(row, row.conflictCitationId ? names.get(row.conflictCitationId) ?? null : null, fields.get(row.id) ?? null, proposers)
         ),
       };
     });

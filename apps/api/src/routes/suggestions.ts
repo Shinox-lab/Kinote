@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import {
   withTenantTx,
+  agents,
   captures,
   citations,
   documents,
@@ -22,7 +23,7 @@ import {
   type Actor,
 } from '@kinote/core';
 import { documentName, type BlockLike, type CollabClient } from '@kinote/shared';
-import { conflictNames, suggestionField, toSuggestionSummary } from './captures.js';
+import { conflictNames, proposerNames, suggestionField, toSuggestionSummary } from './captures.js';
 import { approveVersion } from './pages.js';
 
 type SuggestionRow = typeof suggestions.$inferSelect;
@@ -43,9 +44,12 @@ export async function listPageSuggestions(actor: Actor, pageId: string): Promise
       .where(and(eq(suggestions.tenantId, actor.tenantId), eq(suggestions.documentId, pageId), eq(suggestions.status, 'open')))
       .orderBy(suggestions.createdAt);
     const names = await conflictNames(tx, actor.tenantId, rows);
+    const proposers = await proposerNames(tx, actor.tenantId, rows);
     const out: SuggestionSummary[] = [];
     for (const r of rows) {
-      out.push(toSuggestionSummary(r, r.conflictCitationId ? names.get(r.conflictCitationId) ?? null : null, await suggestionField(tx, actor.tenantId, r)));
+      out.push(
+        toSuggestionSummary(r, r.conflictCitationId ? names.get(r.conflictCitationId) ?? null : null, await suggestionField(tx, actor.tenantId, r), proposers)
+      );
     }
     return out;
   });
@@ -79,6 +83,15 @@ async function decidable(tx: DbTransaction, actor: Actor, id: string) {
       .where(and(eq(captures.tenantId, actor.tenantId), eq(captures.id, row.captureId)));
     if (capture && capture.senderType === actor.principalType && capture.senderId === actor.principalId) {
       throw new AppError('self_approval', 'You sent the capture this came from, so someone else decides it.');
+    }
+  }
+  if (space.reviewRequired && !space.allowSelfApproval && row.proposedByType === 'agent' && row.proposedBy && actor.principalType === 'user') {
+    const [agent] = await tx
+      .select({ createdBy: agents.createdBy })
+      .from(agents)
+      .where(and(eq(agents.tenantId, actor.tenantId), eq(agents.id, row.proposedBy)));
+    if (agent?.createdBy === actor.principalId) {
+      throw new AppError('self_approval', 'Your agent proposed this, so someone else decides it.');
     }
   }
   return { row, doc, space };
@@ -148,7 +161,17 @@ export async function acceptSuggestion(actor: Actor, id: string, collab?: Collab
       .from(versions)
       .where(and(eq(versions.tenantId, actor.tenantId), eq(versions.documentId, doc.id), eq(versions.status, 'pending_review')))
       .limit(1);
-    return { row: claimed, space, routerId: await ensureRouterAgent(tx, actor.tenantId), hadWaiting: !!waiting };
+    // An agent's own proposal is applied as that agent while it is still enabled; anything else as the Routing engine.
+    const [proposer] =
+      claimed.proposedByType === 'agent' && claimed.proposedBy
+        ? await tx
+            .select({ id: agents.id })
+            .from(agents)
+            .where(
+              and(eq(agents.tenantId, actor.tenantId), eq(agents.id, claimed.proposedBy), eq(agents.kind, 'external'), isNull(agents.disabledAt))
+            )
+        : [];
+    return { row: claimed, space, routerId: proposer?.id ?? (await ensureRouterAgent(tx, actor.tenantId)), hadWaiting: !!waiting };
   });
 
   let added: BlockLike[];
@@ -214,7 +237,7 @@ export async function acceptSuggestion(actor: Actor, id: string, collab?: Collab
       subjectId: id,
       payload: { documentId: row.documentId, kind: row.kind, captureId: row.captureId, versionId: version?.id ?? null },
     });
-    return toSuggestionSummary(row, null, await suggestionField(tx, actor.tenantId, row));
+    return toSuggestionSummary(row, null, await suggestionField(tx, actor.tenantId, row), await proposerNames(tx, actor.tenantId, [row]));
   });
 }
 
@@ -232,6 +255,6 @@ export async function declineSuggestion(actor: Actor, id: string): Promise<Sugge
       subjectId: id,
       payload: { documentId: row.documentId, kind: row.kind, captureId: row.captureId },
     });
-    return toSuggestionSummary(row, null, await suggestionField(tx, actor.tenantId, row));
+    return toSuggestionSummary(row, null, await suggestionField(tx, actor.tenantId, row), await proposerNames(tx, actor.tenantId, [row]));
   });
 }
