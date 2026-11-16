@@ -40,6 +40,7 @@ import { AccountPage } from './routes/account.js';
 import { SpacePage } from './routes/space.js';
 import { WorkspaceHomePage } from './routes/workspace-home.js';
 import { CreateWorkspacePage } from './routes/workspaces.js';
+import { OAuthAuthorizePage } from './routes/oauth-authorize.js';
 
 // Code-based route tree. Unauthenticated visitors go to /sign-in (and come back
 // afterwards); /w/$tenantSlug resolves the workspace from the URL and pins it in
@@ -112,6 +113,17 @@ const acceptInviteRoute = createRoute({
     requireSession(location.href);
   },
   component: AcceptInvitePage,
+});
+
+// Browser sign-in for MCP clients (OAuth): the app sends the browser here; signed-out visitors sign in first and
+// come back with the query intact.
+const oauthAuthorizeRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/oauth/authorize',
+  beforeLoad: ({ location }) => {
+    requireSession(location.href);
+  },
+  component: OAuthAuthorizePage,
 });
 
 // Reached from a link in an email; the link itself is the proof, so no session is needed.
@@ -278,6 +290,7 @@ const routeTree = rootRoute.addChildren([
   resetPasswordRoute,
   forgotPasswordRoute,
   accountRoute,
+  oauthAuthorizeRoute,
   indexRoute,
   newWorkspaceRoute,
   workspaceRoute.addChildren([

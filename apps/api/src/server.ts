@@ -132,6 +132,8 @@ import { kinoteVersion as apiPackageVersion, registerInternalRoutes } from './ro
 import { createSource, issueSourceToken, listSources, revokeSourceToken, revokeTokensMadeBy, updateSource } from './routes/sources.js';
 import { createAgent, issueAgentToken, listAgents, revokeAgentToken, updateAgent } from './routes/agents.js';
 import { registerMcpRoute } from './mcp/route.js';
+import { oauthRoutes } from './oauth/routes.js';
+import { oauthBase, protectedResourceUrl } from './oauth/request.js';
 import { askWiki } from './search/askWiki.js';
 import {
   createPage,
@@ -456,7 +458,7 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
   app.decorateRequest('actor', null);
   app.decorateRequest('sourceActor', null);
   app.decorateRequest('agentAuth', null);
-  app.addHook('onRequest', async (req) => {
+  app.addHook('onRequest', async (req, reply) => {
     const mode = req.routeOptions.config?.auth ?? 'tenant';
     if (mode === 'public') return;
     if (mode === 'source') {
@@ -464,9 +466,15 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
       return;
     }
     if (mode === 'agent') {
-      const { actor, agent } = await resolveAgentActor(req);
-      req.actor = actor;
-      req.agentAuth = agent;
+      try {
+        const { actor, agent } = await resolveAgentActor(req);
+        req.actor = actor;
+        req.agentAuth = agent;
+      } catch (err) {
+        // Clients that can sign in in a browser find the way from here (MCP authorization, RFC 9728).
+        reply.header('www-authenticate', `Bearer resource_metadata="${protectedResourceUrl(oauthBase(req, opts.publicUrl))}"`);
+        throw err;
+      }
       return;
     }
     req.authSession = await requireSession(req);
@@ -489,6 +497,7 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
     signUpMode: opts.signUpMode ?? 'open',
     ...(opts.mailer ? { mailer: opts.mailer } : {}),
   });
+  app.register(oauthRoutes, opts.publicUrl ? { publicUrl: opts.publicUrl } : {});
   // One file part per request, never buffered past the limit (the parser stops at it).
   app.register(multipart, {
     limits: { fileSize: opts.maxUploadBytes ?? DEFAULT_MAX_UPLOAD_BYTES, files: 1, fields: 4, parts: 6 },

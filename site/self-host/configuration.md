@@ -128,7 +128,7 @@ and nobody can reset a forgotten password except through the operator's command 
 |---|---|---|
 | `SMTP_URL` | *(unset)* | Your mail server, such as `smtps://user:password@smtp.example.com:465`. With it set, someone who signs up without an invitation confirms their address from an emailed link, entering their password on that page; until then they can't sign in or accept invitations, and signing in with the right password emails a fresh link. Admins can email an invitation's link straight to the invitee (up to 20 invitation emails per workspace an hour; past that, or if sending fails, they copy the link as before). "Forgot your password?" emails a reset link, which also confirms the address, so the owner of an inbox can take over an account someone else registered with it. |
 | `MAIL_FROM` | *(required with `SMTP_URL`)* | The From address, such as `Kinote <wiki@example.com>`. |
-| `PUBLIC_URL` | *(required with `SMTP_URL`)* | The address people open Kinote at, such as `https://wiki.example.com`. Links in emails start with it, and so do page links in results for MCP agents (without it, those results have no links). |
+| `PUBLIC_URL` | *(required with `SMTP_URL`)* | The address people open Kinote at, such as `https://wiki.example.com`. Links in emails start with it, and so do page links in results for MCP agents (without it, those results have no links). MCP sign-in uses it as Kinote's address too; without it, sign-in uses the address each request came to, which behind a TLS proxy may start with `http://`. |
 
 ### Resetting a password without email
 

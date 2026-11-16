@@ -326,7 +326,7 @@ export function AgentsPage() {
         </Button>
       </div>
       <p className="text-xs text-muted">
-        An agent is an AI tool, such as Claude Code, that reads this wiki over MCP with its own token, within the spaces you grant it.
+        An agent is an AI tool, such as Claude Code, that reads this wiki over MCP with its own token, within the spaces you grant it. Members can also connect a client by signing in from it; that adds a read-only agent owned by them here.
       </p>
       <ErrorNote error={error} />
       {isPending ? (

@@ -137,8 +137,56 @@ export const agentTokens = pgTable(
     lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    /** Browser sign-in only: the SHA-256 of the current refresh token, rotated on every refresh. */
+    refreshTokenHash: text('refresh_token_hash'),
+    refreshExpiresAt: timestamp('refresh_expires_at', { withTimezone: true }),
+    /** Browser sign-in only: the client that signed in. */
+    oauthClientId: uuid('oauth_client_id').references(() => oauthClients.id, { onDelete: 'set null' }),
   },
-  (t) => [uniqueIndex('agent_tokens_tenant_hash_idx').on(t.tenantId, t.tokenHash)]
+  (t) => [
+    uniqueIndex('agent_tokens_tenant_hash_idx').on(t.tenantId, t.tokenHash),
+    uniqueIndex('agent_tokens_tenant_refresh_idx').on(t.tenantId, t.refreshTokenHash).where(sql`refresh_token_hash IS NOT NULL`),
+  ]
+);
+
+/**
+ * MCP clients registered for browser sign-in (RFC 7591), public clients only (PKCE, no secret). Global like
+ * `sessions`: a client registers before anyone picks a workspace. The name is the client's own claim.
+ */
+export const oauthClients = pgTable('oauth_clients', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  name: text('name').notNull(),
+  redirectUris: text('redirect_uris').array().notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** One-time authorization codes (10 minutes; only the SHA-256 is kept). The agent is created at the exchange. */
+export const oauthCodes = pgTable(
+  'oauth_codes',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    tenantId: uuid('tenant_id')
+      .notNull()
+      .references(() => tenants.id),
+    codeHash: text('code_hash').notNull(),
+    clientId: uuid('client_id')
+      .notNull()
+      .references(() => oauthClients.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    redirectUri: text('redirect_uri').notNull(),
+    codeChallenge: text('code_challenge').notNull(),
+    scopes: text('scopes').array().notNull(),
+    agentName: text('agent_name').notNull(),
+    spaceIds: uuid('space_ids').array().notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    usedAt: timestamp('used_at', { withTimezone: true }),
+    /** The token the exchange issued, so a replayed code can revoke it. */
+    tokenId: uuid('token_id').references(() => agentTokens.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex('oauth_codes_tenant_hash_idx').on(t.tenantId, t.codeHash)]
 );
 
 export const groups = pgTable(

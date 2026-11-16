@@ -84,6 +84,20 @@ covers the secrets, connecting models, reverse proxies, storage, upgrades and ba
 AI tools such as Claude Code can read your wiki over MCP (Model Context Protocol). Each agent has its own tokens and
 sees only the spaces you grant it, and never more than the person who owns it can see.
 
+**Sign in from the client.** Any member can connect a client that supports MCP sign-in, with no token to copy. For
+Claude Code:
+
+```sh
+claude mcp add --transport http kinote https://<your-kinote>/mcp
+```
+
+Then run `/mcp` in Claude Code and choose to authenticate. Your browser opens Kinote's sign-in page: pick the
+workspace, name the agent and tick the spaces it may read. Kinote creates a read-only agent owned by you; admins see
+it in **Settings → Agents**, where revoking its token disconnects the client. The token lasts an hour and the client
+renews it by itself for up to 90 days after it was last used.
+
+**Or issue a token.** For headless agents, CI and clients without sign-in:
+
 1. In **Settings → Agents**, add an agent, choose its access to each space (Viewer or Editor), and issue a token with
    the **Read** scope. The token is shown once.
 2. Connect the client. For Claude Code:

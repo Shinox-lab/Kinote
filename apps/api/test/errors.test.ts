@@ -236,6 +236,7 @@ describe('error model', () => {
       invalid_credentials: 401,
       invalid_model_settings: 422,
       validation_failed: 400,
+      oauth_request_invalid: 400,
       capture_too_long: 400,
       comment_too_long: 400,
       field_invalid_value: 400,

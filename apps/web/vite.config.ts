@@ -57,10 +57,12 @@ export default defineConfig(({ mode }) => {
     },
     server: {
       port: 5173,
-      // Same origin in dev: the console calls /api/... and /mcp/... on its own origin.
+      // Same origin in dev: the console calls /api/... and /mcp/... on its own origin. The Host is kept (as nginx
+      // does), so without PUBLIC_URL browser sign-in names this address, not the api's.
       proxy: {
-        '/api': { target: apiUrl, changeOrigin: true },
-        '/mcp': { target: apiUrl, changeOrigin: true },
+        '/api': { target: apiUrl },
+        '/mcp': { target: apiUrl },
+        '/.well-known/oauth-': { target: apiUrl },
         // The live-editing websocket (collab server), same origin too: /collab is stripped before forwarding.
         '/collab': { target: collabUrl, ws: true, changeOrigin: true, rewrite: (p) => p.replace(/^\/collab/, '') },
         // The GridCraft static editor, same origin too: /gridcraft is stripped before forwarding.
