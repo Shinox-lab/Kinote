@@ -1,7 +1,10 @@
+import { randomUUID } from 'node:crypto';
 import { and, asc, desc, eq, gte, inArray } from 'drizzle-orm';
 import {
   agents,
+  acquireRoutingLease,
   agentTokens,
+  releaseRoutingLease,
   captureFacts,
   captures,
   memberships,
@@ -289,6 +292,26 @@ export async function stopAgent(actor: Actor, agentId: string, input: unknown, c
   if (!parsed.success) throw new AppError('validation_failed');
   const since = new Date(parsed.data.since);
   const agent = await updateAgent(actor, agentId, { disabled: true });
+  // Hold the tenant's routing lease while undoing, so no routing run is part-way through one of its captures:
+  // a run that started earlier finishes first; a later one sees the agent disabled and files nothing.
+  const holder = `stop:${randomUUID()}`;
+  const until = Date.now() + STOP_WAIT_MS;
+  while (!(await withTenantTx(actor.tenantId, (tx) => acquireRoutingLease(tx, actor.tenantId, holder, STOP_LEASE_SECONDS)))) {
+    if (Date.now() > until) throw new AppError('router_unavailable', 'Routing is busy. The agent is disabled; try Stop and undo again in a minute.');
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  try {
+    return await undoAgentCaptures(actor, agent, since, collab);
+  } finally {
+    await withTenantTx(actor.tenantId, (tx) => releaseRoutingLease(tx, actor.tenantId, holder));
+  }
+}
+
+/** Waiting for a routing run to finish before stopping an agent, at most. */
+const STOP_WAIT_MS = 60_000;
+const STOP_LEASE_SECONDS = 120;
+
+async function undoAgentCaptures(actor: Actor, agent: Agent, since: Date, collab?: CollabClient): Promise<StopAgentResponse> {
   const rows = await withTenantTx(actor.tenantId, (tx) =>
     tx
       .select({ id: captures.id, status: captures.status })
@@ -306,11 +329,13 @@ export async function stopAgent(actor: Actor, agentId: string, input: unknown, c
   let undone = 0;
   let changedSince = 0;
   for (const row of rows) {
-    if (row.status === 'done' || row.status === 'waiting_for_answer') {
+    // A capture left 'routing' by a run that died may have filed part of itself: undone too, then cancelled.
+    if (row.status === 'done' || row.status === 'waiting_for_answer' || row.status === 'routing') {
       const r = await undoCapture(actor, row.id, collab);
       undone += r.undone.length;
       changedSince += r.changedSince.length;
-    } else if (row.status === 'queued' || row.status === 'routing' || row.status === 'previewed') {
+    }
+    if (row.status === 'queued' || row.status === 'routing' || row.status === 'previewed') {
       // Not filed yet: nothing to undo, and nothing of it will be (routing skips a cancelled capture).
       await withTenantTx(actor.tenantId, async (tx) => {
         await tx
@@ -320,7 +345,7 @@ export async function stopAgent(actor: Actor, agentId: string, input: unknown, c
         await tx
           .update(captures)
           .set({ status: 'cancelled', finishedAt: new Date() })
-          .where(and(eq(captures.tenantId, actor.tenantId), eq(captures.id, row.id)));
+          .where(and(eq(captures.tenantId, actor.tenantId), eq(captures.id, row.id), inArray(captures.status, ['queued', 'routing', 'previewed'])));
       });
     }
   }

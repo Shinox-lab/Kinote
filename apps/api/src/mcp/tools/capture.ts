@@ -2,7 +2,7 @@ import { and, desc, eq, inArray, ne } from 'drizzle-orm';
 import { z } from 'zod';
 import { captureChanges, captureFacts, captureMessages, captures, documents, withTenantTx, type DocumentRow } from '@kinote/db';
 import { MAX_CAPTURE_CHARS, type CaptureDetail } from '@kinote/contracts';
-import { previewOf, type Actor } from '@kinote/core';
+import { getReadableSpaceIds, previewOf, type Actor } from '@kinote/core';
 import { answerCapture, createCapture, getCapture } from '../../routes/captures.js';
 import { moveCaptureChange, undoCapture, undoCaptureChange } from '../../routes/captureChanges.js';
 import { applyCapturePreview, cancelCapturePreview } from '../../routes/capturePreview.js';
@@ -26,9 +26,15 @@ export async function renderCapture(ctx: Pick<ToolContext, 'actor' | 'agent' | '
     const [row] = await tx.select({ previewPlan: captures.previewPlan }).from(captures).where(and(eq(captures.tenantId, actor.tenantId), eq(captures.id, captureId)));
     const preview = row ? previewOf(row) : null;
     const ids = previewDocumentIds(preview);
-    const rows = ids.length
-      ? await tx.select({ id: documents.id, title: documents.title }).from(documents).where(and(eq(documents.tenantId, actor.tenantId), inArray(documents.id, ids)))
-      : [];
+    // Titles only of pages the agent can read now; any other shows as "a page".
+    const { readableSpaceIds } = await getReadableSpaceIds(tx, actor);
+    const rows =
+      ids.length && readableSpaceIds.length
+        ? await tx
+            .select({ id: documents.id, title: documents.title })
+            .from(documents)
+            .where(and(eq(documents.tenantId, actor.tenantId), inArray(documents.id, ids), inArray(documents.spaceId, readableSpaceIds)))
+        : [];
     return { preview, titles: new Map(rows.map((r) => [r.id, r.title])) };
   });
   return formatCapture(d, { agent, ...(deps.publicUrl ? { publicUrl: deps.publicUrl } : {}), preview, titles });
@@ -145,6 +151,8 @@ export const captureActionTool = defineTool({
   name: 'kinote_capture_action',
   scope: 'capture',
   limit: 'capture',
+  // Checking status reads only: it counts like a search, so polling never uses up the capture limit.
+  limitOf: (raw) => ((raw as { action?: unknown } | null)?.action === 'status' ? 'search' : 'capture'),
   description:
     'Act on a capture this agent sent: "status" (the receipt), "answer" a routing question (question_id, choice), "undo" it all or one change (change_id), ' +
     '"move" a change to another page (change_id, page_id), or, after a preview, "apply" it (skip facts, or place facts on pages you choose) or "cancel" it. IDs take 8+ characters.',

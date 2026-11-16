@@ -29,6 +29,8 @@ export interface ToolDef<S extends ZodRawShape = ZodRawShape> {
   scope: AgentScope;
   /** Which per-agent, per-minute limit the call counts against. */
   limit: 'search' | 'ask' | 'capture';
+  /** The limit a call counts against when it depends on the arguments (e.g. a read-only action); default `limit`. */
+  limitOf?: (rawArgs: unknown) => 'search' | 'ask' | 'capture';
   /** Every call writes: refused while the workspace is suspended. */
   writes?: boolean;
   description: string;
@@ -127,15 +129,15 @@ async function runCall(
     return refuse(`This token cannot use ${tool.name}. Ask a workspace admin for a token with the "${tool.scope}" scope.`);
   }
 
-  const max =
-    tool.limit === 'ask' ? deps.limits.askPerMinute : tool.limit === 'capture' ? MCP_CAPTURE_PER_MINUTE : deps.limits.searchPerMinute;
+  const limit = tool.limitOf?.(rawArgs) ?? tool.limit;
+  const max = limit === 'ask' ? deps.limits.askPerMinute : limit === 'capture' ? MCP_CAPTURE_PER_MINUTE : deps.limits.searchPerMinute;
   try {
-    const verdict = await hitLimit(`limit:mcp-${tool.limit}:${actor.tenantId}:${agent.agentId}`, max, MINUTE_MS);
+    const verdict = await hitLimit(`limit:mcp-${limit}:${actor.tenantId}:${agent.agentId}`, max, MINUTE_MS);
     if (!verdict.allowed) {
       return refuse(`Too many ${tool.name} calls. Try again in ${Math.max(1, Math.ceil(verdict.retryAfterMs / 1000))} seconds.`);
     }
   } catch (err) {
-    log.error({ err }, `rate limit mcp-${tool.limit} unavailable; call allowed`);
+    log.error({ err }, `rate limit mcp-${limit} unavailable; call allowed`);
   }
 
   const parsed = z.object(tool.input).safeParse(rawArgs ?? {});
