@@ -26,7 +26,7 @@ import {
   type SuggestionSummary,
   type FieldChange,
 } from '@kinote/contracts';
-import { assertValidUuid, describeFieldChange, fieldIdOf, isTenantAdmin, senderAccess, type Actor } from '@kinote/core';
+import { assertValidUuid, describeFieldChange, fieldIdOf, isTenantAdmin, requireDocumentRole, senderAccess, type Actor } from '@kinote/core';
 import { resolveActorNames } from '../people.js';
 
 type CaptureRow = typeof captures.$inferSelect;
@@ -445,7 +445,21 @@ export async function captureReceipt(tx: DbTransaction, viewer: Actor, captureId
     filedInDocument: facts
       .filter((f) => f.outcome === 'filed_in_document')
       .map((f) => ({ factId: f.id, statement: f.statement })),
+    file: await receiptFile(tx, viewer, capture ?? null),
   };
+}
+
+/** The attached file's line on the receipt: what became of it and where it is now (null when the viewer can't read it). */
+async function receiptFile(tx: DbTransaction, viewer: Actor, capture: CaptureRow | null): Promise<CaptureReceipt['file']> {
+  if (!capture?.fileId || !capture.fileOutcome) return null;
+  const [file] = await tx.select().from(documents).where(and(eq(documents.tenantId, viewer.tenantId), eq(documents.id, capture.fileId)));
+  if (!file || file.archivedAt) return null;
+  try {
+    await requireDocumentRole(tx, viewer, file, 'viewer');
+  } catch {
+    return null;
+  }
+  return { outcome: capture.fileOutcome, reason: capture.fileReason, fileId: file.id, parentId: file.parentId, spaceId: file.spaceId };
 }
 
 async function captureDetail(tx: DbTransaction, actor: Actor, row: CaptureRow): Promise<CaptureDetail> {

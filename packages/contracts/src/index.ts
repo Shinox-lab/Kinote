@@ -1584,6 +1584,16 @@ export const CaptureReceiptSchema = z.object({
     .nullable(),
   /** Facts kept only on the document's page. */
   filedInDocument: z.array(z.object({ factId: z.string().uuid(), statement: z.string() })),
+  /** What became of the attached file, and where it is now; null without one or before it was decided. */
+  file: z
+    .object({
+      outcome: z.enum(['with_document', 'placed', 'inbox']),
+      reason: z.string().nullable(),
+      fileId: z.string().uuid(),
+      parentId: z.string().uuid().nullable(),
+      spaceId: z.string().uuid(),
+    })
+    .nullable(),
 });
 export type CaptureReceipt = z.infer<typeof CaptureReceiptSchema>;
 

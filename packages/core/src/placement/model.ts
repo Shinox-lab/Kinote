@@ -115,6 +115,8 @@ export interface PlanEditsInput {
   writableSpaces: Array<{ id: string; name: string }>;
   /** Set when the fact comes from a document already filed as its own page: only standing changes are wanted. */
   fromDocument?: { title: string } | null;
+  /** Where the sender's note asked to file it, in their words. */
+  hint?: string | null;
 }
 /** Where a document's page goes: under `parentId` in `spaceId`, or at the top of the space. */
 export interface DocumentPlacement {
@@ -132,6 +134,8 @@ export interface PlaceDocumentInput {
   candidates: PlanCandidate[];
   examples: Array<{ statement: string; chosenTitle: string }>;
   writableSpaces: Array<{ id: string; name: string }>;
+  /** Where the sender's note asked to put it, in their words. */
+  hint?: string | null;
 }
 
 /** The model behind page cards and entity extraction. */
@@ -648,7 +652,7 @@ export class OpenAIPlacementModel implements RoutingModel {
     });
   }
 
-  planEdits({ fact, candidates, examples, writableSpaces, fromDocument }: PlanEditsInput) {
+  planEdits({ fact, candidates, examples, writableSpaces, fromDocument, hint }: PlanEditsInput) {
     const pages = candidates
       .map(
         (c) =>
@@ -686,7 +690,8 @@ export class OpenAIPlacementModel implements RoutingModel {
         'never put a fact on a page just because it is the closest one shown, and never call a fact already known because a block shares a word with it. ' +
         'Create a page only when no page fits and the fact clearly starts a topic of its own. ' +
         'Use only page and block ids shown. confidence is 0 to 1; reason is one short sentence.' +
-        documentRule,
+        documentRule +
+        (hint ? ` The sender asked to file this under ${JSON.stringify(hint)}: prefer that page when it is about the fact.` : ''),
       user:
         `Fact (${fact.kind}): ${fact.statement}\n` +
         (examples.length ? `Earlier corrections:\n${examples.map((e) => `- "${e.statement}" belongs on "${e.chosenTitle}"`).join('\n')}\n` : '') +

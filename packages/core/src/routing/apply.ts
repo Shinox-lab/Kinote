@@ -29,7 +29,7 @@ import { rowCollectionOf } from '../collections/fields.js';
 import { blockMarkdown, encodeBlocksYDoc, markdownBlocks, readLiveBlocks } from './liveBlocks.js';
 import { decideShape, planCapture, splitCaptureText, type CheckedEdit, type Gate, type PlannedFact } from './plan.js';
 import { planDocument, uniqueChildTitle } from './document.js';
-import { attachCaptureFile, fileTitle, routedText } from './captureFile.js';
+import { applyCaptureFilePlan, attachCaptureFile, fileTitle, planCaptureFile, routedText } from './captureFile.js';
 import { excerptOf, hasUnreadAbout, notify } from '../talk/notify.js';
 import { ensureRouterAgent } from './routerAgent.js';
 import { capturesAlwaysReviewed, senderActor } from './access.js';
@@ -133,6 +133,12 @@ export async function routeCapture(
     );
     await deps.hooks?.afterPlan?.();
     await applyPlannedFacts(tenantId, captureId, planned, { ...deps, guard }, fromDocument ? 'filed_in_document' : 'needs_home');
+    // An updates capture's file: kept on its own when it is a record (or the sender asked), else left in the Inbox.
+    if (capture.shape === 'updates' && capture.fileId && capture.fileOutcome === null) {
+      const filePlan = await planCaptureFile(tenantId, capture, deps);
+      await guard();
+      await applyCaptureFilePlan(tenantId, captureId, filePlan);
+    }
     return await finishCapture(tenantId, captureId);
   } finally {
     await withTenantTx(tenantId, (tx) => releaseRoutingLease(tx, tenantId, holder));

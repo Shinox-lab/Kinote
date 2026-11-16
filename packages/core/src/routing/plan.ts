@@ -101,6 +101,8 @@ export interface Context {
   editable: Set<string>;
   writableSpaces: Array<{ id: string; name: string }>;
   scopePageId: string | null;
+  /** Where the sender's note asked to file it (from the split). */
+  hint: string | null;
 }
 
 export interface Candidate {
@@ -256,6 +258,7 @@ export async function captureContext(
     editable: new Set(access.editable),
     writableSpaces: all.filter((s) => access.editable.includes(s.id)).map((s) => ({ id: s.id, name: s.name })),
     scopePageId: onlyPage ?? capture.scopePageId,
+    hint: capture.filingHint,
   };
 }
 
@@ -394,6 +397,7 @@ async function planFact(tenantId: string, ctx: Context, input: PlanFactInput, de
     examples,
     writableSpaces: ctx.writableSpaces,
     fromDocument: deps.fromDocument ? { title: deps.fromDocument.title } : null,
+    hint: ctx.hint,
   });
   // A document's facts never create pages: the document already is one.
   const edits = deps.fromDocument ? planned.edits.filter((e) => e.op.op !== 'create_page') : planned.edits;
