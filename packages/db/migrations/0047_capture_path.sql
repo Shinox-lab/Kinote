@@ -14,6 +14,8 @@ ALTER TABLE "captures" ADD COLUMN "file_reason" text;
 --> statement-breakpoint
 ALTER TABLE "captures" ADD COLUMN "filing_hint" text;
 --> statement-breakpoint
+ALTER TABLE "captures" ADD COLUMN "file_decision" jsonb;
+--> statement-breakpoint
 CREATE INDEX "captures_source_idx" ON "captures" ("tenant_id", "sender_type", "sender_id", "source_ref") WHERE "source_ref" IS NOT NULL;
 --> statement-breakpoint
 ALTER TABLE "agents" ADD COLUMN "always_review" boolean NOT NULL DEFAULT false;

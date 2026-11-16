@@ -267,6 +267,8 @@ describe('OpenAIPlacementModel routing', () => {
     expect(await m.splitCapture({ text: 'Billing moved to Adyen.' })).toEqual({
       facts: [{ statement: 'Billing moved to Adyen.', kind: 'new', names: ['Billing'], date: null }],
       shape: null,
+      keepFile: null,
+      hint: null,
     });
   });
 });

@@ -84,7 +84,7 @@ export function useCaptureKit(opts: { model?: DeterministicPlacementModel } = {}
   }
 
   /** Uploads a file to the sender's Inbox, as the Capture page's Attach does; returns its document id. */
-  async function upload(headers: Headers, inbox: string, name: string, data: string | Buffer, type?: string) {
+  async function upload(headers: Headers, inbox: string, name: string, data: string | Uint8Array, type?: string) {
     const res = await kit.app.inject(uploadRequest('/api/v1/files', headers, { name, data, type }, { space_id: inbox }));
     assert.ok(res.statusCode < 300, res.body);
     return res.json().document.id as string;

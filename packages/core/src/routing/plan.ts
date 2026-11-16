@@ -18,7 +18,7 @@ import { AppError, FIELD_BLOCK_PREFIX, drawingConfig, canonicalFieldJson, format
 import { blockFullText, type BlockLike } from '@kinote/shared';
 import type { EmbeddingProvider } from '../embedding.js';
 import type { Actor } from '../permissions.js';
-import type { CaptureFact, CaptureShape, PlanCandidate, PlanField, PlannedEdit, RoutingModel } from '../placement/model.js';
+import type { CaptureFact, CaptureShape, CaptureSplit, PlanCandidate, PlanField, PlannedEdit, RoutingModel } from '../placement/model.js';
 import { collectionFieldDefs, fieldNames, isCollection, rowCollectionOf } from '../collections/fields.js';
 import { resolveFieldValue } from '../collections/resolve.js';
 import { findEntities, pagesForEntities, searchPageCards, type PlacementFilter } from '../placement/queries.js';
@@ -209,23 +209,25 @@ export async function planCapture(
 
 /**
  * Splits a capture part by part, so a long capture never runs into the
- * per-split fact limit. The shape is the first part's: that is where a
- * document's title and structure are.
+ * per-split fact limit. The shape, file decision and hint are the first
+ * part's: that is where a document's title and structure, and the sender's
+ * note, are. The note and file name go with the first part only.
  */
 export async function splitCaptureText(
   text: string,
   model: RoutingModel,
-  guard?: () => Promise<void>
-): Promise<{ facts: CaptureFact[]; shape: CaptureShape | null }> {
+  guard?: () => Promise<void>,
+  extra: { note: string | null; fileName: string | null } = { note: null, fileName: null }
+): Promise<CaptureSplit> {
   const facts: CaptureFact[] = [];
-  let shape: CaptureShape | null = null;
+  let first: CaptureSplit | null = null;
   for (const [i, part] of captureParts(text).entries()) {
     await guard?.();
-    const out = await model.splitCapture({ text: part });
+    const out = await model.splitCapture(i === 0 ? { text: part, note: extra.note, fileName: extra.fileName } : { text: part });
     facts.push(...out.facts);
-    if (i === 0) shape = out.shape;
+    if (i === 0) first = out;
   }
-  return { facts, shape };
+  return { facts, shape: first?.shape ?? null, keepFile: first?.keepFile ?? null, hint: first?.hint ?? null };
 }
 
 /** The sender's choice wins; on auto a capture is a document only when the model is sure enough. */

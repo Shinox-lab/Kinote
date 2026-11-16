@@ -177,12 +177,16 @@ export async function ensureSplit(tenantId: string, captureId: string, deps: Rou
   if (loaded.split) return loaded.capture;
 
   const text = routedText(loaded.capture);
-  const { facts, shape } = await splitCaptureText(text, deps.model, deps.guard);
-  // A file is a document of its own unless the sender asked for updates only.
   const withFile = loaded.capture.fileId !== null;
-  const decided = withFile && loaded.capture.shapeMode === 'auto' ? 'document' : decideShape(loaded.capture.shapeMode, shape);
   // Its page is named by what was typed, else by the file.
   const fileName = withFile ? await withTenantTx(tenantId, (tx) => fileNameOf(tx, tenantId, loaded.capture.fileId!)) : null;
+  // The typed note is the sender's own words: filing instructions count only there, never in the file's text.
+  const note = loaded.capture.text.trim() ? loaded.capture.text : null;
+  const { facts, shape, keepFile, hint } = await splitCaptureText(text, deps.model, deps.guard, {
+    note,
+    fileName: fileName || null,
+  });
+  const decided = decideShape(loaded.capture.shapeMode, shape);
   const title =
     fileName !== null
       ? loaded.capture.text.trim()
@@ -212,6 +216,8 @@ export async function ensureSplit(tenantId: string, captureId: string, deps: Rou
         shape: decided,
         subject: shape?.subject ?? null,
         documentTitle: decided === 'document' ? title : null,
+        filingHint: hint,
+        fileDecision: keepFile,
       })
       .where(and(eq(captures.tenantId, tenantId), eq(captures.id, captureId)))
       .returning();

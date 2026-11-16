@@ -53,6 +53,8 @@ export const captures = pgTable(
     /** What became of the attached file: under the document's page, placed on its own, or left in the Inbox. */
     fileOutcome: text('file_outcome', { enum: ['with_document', 'placed', 'inbox'] }),
     fileReason: text('file_reason'),
+    /** The split's judgement of the file: `{ keep, confidence }` (FileDecision); null without a file. */
+    fileDecision: jsonb('file_decision'),
     /** Where the sender's note asked to put it, in their words (from the split). */
     filingHint: text('filing_hint'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
