@@ -37,7 +37,8 @@ const toToken = (r: TokenRow): AgentToken => ({
   scopes: r.scopes as AgentScope[],
   createdAt: r.createdAt.toISOString(),
   lastUsedAt: r.lastUsedAt?.toISOString() ?? null,
-  expiresAt: r.expiresAt?.toISOString() ?? null,
+  // A browser sign-in's access token lasts an hour and renews itself; the sign-in ends when its refresh does.
+  expiresAt: (r.refreshExpiresAt ?? r.expiresAt)?.toISOString() ?? null,
   revokedAt: r.revokedAt?.toISOString() ?? null,
 });
 

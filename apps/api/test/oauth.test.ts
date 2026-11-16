@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createHash, randomBytes } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
-import { agentTokens, agents, auditEvents, oauthCodes, spaceGrants, withTenantTx } from '@kinote/db';
+import { agentTokens, agents, auditEvents, oauthCodes, spaceGrants, tenantBilling, withTenantTx } from '@kinote/db';
 import { buildTestApp, signUpMember, useTestDb } from './support/testkit.js';
 import { agentWorld, listToolNames, mcpRequest, type AgentWorld } from './support/mcpkit.js';
 
@@ -48,9 +48,15 @@ async function check(app: FastifyInstance, headers: Record<string, string>, para
   return { status: res.statusCode, body: res.json() as any };
 }
 
-/** The member's decision, in the workspace they picked (x-tenant-id). */
-async function decide(app: FastifyInstance, headers: Record<string, string>, params: Record<string, string>, decision: object) {
-  const res = await app.inject({ method: 'POST', url: '/api/v1/oauth/authorize', headers, payload: { ...params, ...decision } });
+/** The member's decision (session only); Allow names the workspace picked, by default the one in `headers`. */
+async function decide(app: FastifyInstance, headers: Record<string, string>, params: Record<string, string>, decision: Record<string, unknown>) {
+  const body = decision.decision === 'allow' && !('tenant_id' in decision) ? { ...decision, tenant_id: headers['x-tenant-id'] } : decision;
+  const res = await app.inject({
+    method: 'POST',
+    url: '/api/v1/oauth/authorize',
+    headers: { authorization: headers.authorization! },
+    payload: { ...params, ...body },
+  });
   return { status: res.statusCode, body: res.json() as any };
 }
 
@@ -332,6 +338,32 @@ describe('OAuth sign-in', () => {
     assert.equal(codes.length, 0);
   });
 
+  test('cancelling needs no workspace: someone in none can still send the app back', async () => {
+    const clientId = await newClient(app);
+    const loner = await signUpMember(app, (await agentWorld(app, 'oauth-loner')).tenant.id, 'member');
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/oauth/authorize',
+      headers: { authorization: loner.headers.authorization! },
+      payload: { ...authParams(clientId, pkce().challenge), decision: 'deny' },
+    });
+    assert.equal(res.statusCode, 200, res.body);
+    assert.equal(new URL(res.json().to).searchParams.get('error'), 'access_denied');
+  });
+
+  test('allowing in a workspace the member is not in, or one suspended for billing, is refused', async () => {
+    const w = await agentWorld(app, 'oauth-tenant');
+    const other = await agentWorld(app, 'oauth-tenant-other');
+    const clientId = await newClient(app);
+    const params = authParams(clientId, pkce().challenge);
+    const foreign = await decide(app, w.ownerHeaders, params, { decision: 'allow', agent_name: 'Bot', space_ids: [other.open.id], tenant_id: other.tenant.id });
+    assert.equal(foreign.status, 404, JSON.stringify(foreign.body));
+    assert.equal(foreign.body.error, 'tenant_not_found');
+    await withTenantTx(w.tenant.id, (tx) => tx.insert(tenantBilling).values({ tenantId: w.tenant.id, state: 'suspended', manageUrl: 'https://cp.test/portal' }));
+    const suspended = await decide(app, w.ownerHeaders, params, { decision: 'allow', agent_name: 'Bot', space_ids: [w.open.id] });
+    assert.equal(suspended.body.error, 'workspace_suspended', JSON.stringify(suspended.body));
+  });
+
   test('a decision for a client and redirect that do not match is refused', async () => {
     const w = await agentWorld(app, 'oauth-decide-bad');
     const clientId = await newClient(app);
@@ -385,6 +417,12 @@ describe('OAuth tokens', () => {
     assert.equal(row!.oauthClientId, a.clientId);
     assert.ok(Math.abs(row!.expiresAt!.getTime() - (before + 3_600_000)) < 60_000);
     assert.ok(Math.abs(row!.refreshExpiresAt!.getTime() - (before + 90 * 86_400_000)) < 60_000);
+    // Admins see when the sign-in ends (its refresh), not the hourly access token's expiry.
+    const listed = (await app.inject({ method: 'GET', url: '/api/v1/agents', headers: w.ownerHeaders })).json() as Array<{
+      id: string;
+      tokens: Array<{ expiresAt: string | null }>;
+    }>;
+    assert.equal(listed.find((x) => x.id === agent.id)!.tokens[0]!.expiresAt, row!.refreshExpiresAt!.toISOString());
 
     // The token works on /mcp, and its agent reads only what it was given.
     assert.deepEqual(await listToolNames(app, res.body.access_token), ['kinote_ask', 'kinote_browse', 'kinote_read', 'kinote_related', 'kinote_search']);

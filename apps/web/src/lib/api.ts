@@ -112,6 +112,10 @@ import {
   type ChangePasswordRequest,
   type PasswordResetConfirm,
   type VerifyEmailRequest,
+  OAuthAuthorizeCheckSchema,
+  OAuthDecisionResponseSchema,
+  type OAuthAuthorizeParams,
+  type OAuthDecision,
 } from '@kinote/contracts';
 import { z } from 'zod';
 import { loadSession } from './session.js';
@@ -461,6 +465,12 @@ export const api = {
     request(`/api/v1/agents/${e(id)}/tokens`, IssueAgentTokenResponseSchema, send('POST', body)),
   revokeAgentToken: (id: string, tokenId: string) =>
     request(`/api/v1/agents/${e(id)}/tokens/${e(tokenId)}`, AgentTokenSchema, del),
+
+  // Browser sign-in for MCP clients: what the sign-in page shows, and the member's answer in the workspace picked.
+  oauthCheck: (params: OAuthAuthorizeParams) =>
+    request(`/api/v1/oauth/authorize?${new URLSearchParams(params as Record<string, string>)}`, OAuthAuthorizeCheckSchema),
+  oauthDecide: (params: OAuthAuthorizeParams, decision: OAuthDecision) =>
+    request('/api/v1/oauth/authorize', OAuthDecisionResponseSchema, send('POST', { ...params, ...decision })),
 
   // Sources (admin)
   listSources: () => request('/api/v1/sources', SourceListSchema),
