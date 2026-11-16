@@ -44,6 +44,27 @@ export function useHistoryTab(pageId: string): HistoryTab | null {
   );
 }
 
+// The page just made from a "+" starts with its title in edit mode, once. A module
+// flag keeps the address clean: a reload opens it as a normal page.
+let titleEditFor: string | null = null;
+
+/** Marks a freshly made page as the one to open with its title being edited. */
+export function startWithTitleEdit(pageId: string): void {
+  titleEditFor = pageId;
+}
+
+/** Whether this page was just made and should start with its title being edited. */
+export function startsWithTitleEdit(pageId: string): boolean {
+  return titleEditFor === pageId;
+}
+
+/** Drops the mark; returns whether it belonged to this page. */
+export function takeTitleEdit(pageId: string): boolean {
+  const fresh = titleEditFor === pageId;
+  titleEditFor = null;
+  return fresh;
+}
+
 /** The page column for each width. Tailwind sees the full class names here, so they are never purged. */
 const PAGE_WIDTH_CLASS: Record<PageWidth, string> = {
   default: 'max-w-[660px]',

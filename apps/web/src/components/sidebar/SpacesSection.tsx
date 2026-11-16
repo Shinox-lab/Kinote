@@ -10,19 +10,17 @@ import { useFile, usePage, useRefresh, useSpaceTree, useSpaces, useWorkspace } f
 import { buildTree, canCreatePages, expandedFor, pasteParent, type TreeItem } from '../../lib/wiki.js';
 import { api, errorMessage } from '../../lib/api.js';
 import { canAdminister } from '../../lib/console.js';
+import { createNamedPage } from '../../lib/newPage.js';
+import { startWithTitleEdit } from '../../lib/pageUi.js';
 import { BookIcon, ChevronDownIcon, ChevronRightIcon, InboxIcon, PageIcon, PlusIcon } from '../icons.js';
 import { AddMenu } from '../AddMenu.js';
 import { DocumentLink } from '../DocumentLink.js';
 import { Confirm } from '../lifecycle.js';
 import { AttentionDot } from './AttentionDot.js';
 import { ContextMenu, ContextMenuItem } from './ContextMenu.js';
-import { NewPageRow } from './NewPageRow.js';
 import { NewSpaceRow } from './NewSpaceRow.js';
 import { TitleInput } from './TitleInput.js';
 import { ROW, ROW_ACTIVE } from './NavRow.js';
-
-/** Where "+" was pressed: a space (top level) or a page (a child). */
-type Adding = { spaceId: string; parentId: string | null } | null;
 
 /** The row being renamed, and the name it has now. */
 type Renaming = { id: string; kind: 'page' | 'file'; title: string } | null;
@@ -50,11 +48,14 @@ function archiveText(node: MenuTarget): string {
   return `“${node.title}” leaves the tree and search.${page}`;
 }
 
-/** What is being dragged: a page or a file. */
+/** What is being dragged: one row, or every file selected when the drag started on one of them. */
 interface Dragged {
-  id: string;
+  ids: string[];
   kind: 'page' | 'file';
 }
+
+/** One row of the tree. */
+type Row = { id: string; kind: 'page' | 'file' };
 
 /** The mime type the drag carries; the browser only lets the console read its own. */
 const DRAG_TYPE = 'application/x-kinote-node';
@@ -72,7 +73,7 @@ function readDragged(e: DragEvent): Dragged | null {
   if (!raw) return null;
   try {
     const parsed = JSON.parse(raw) as Dragged;
-    return parsed && typeof parsed.id === 'string' ? parsed : null;
+    return parsed && Array.isArray(parsed.ids) && parsed.ids.every((id) => typeof id === 'string') ? parsed : null;
   } catch {
     return null;
   }
@@ -83,14 +84,20 @@ function carriesNode(e: DragEvent): boolean {
   return e.dataTransfer.types.includes(DRAG_TYPE);
 }
 
-/** What the tree does with a right-click, a drag and a rename. */
+/** What the tree does with a click, a right-click, a drag and a rename. */
 interface TreeActions {
+  /** The rows picked out by a modified click. */
+  selected: ReadonlySet<string>;
+  /** Selection on a modified click; a plain click lets the row open. */
+  click: (e: MouseEvent<HTMLAnchorElement>, node: Row) => void;
   /** The row being renamed, if any. */
   renaming: Renaming;
   /** Starts a rename, or cancels it (null). */
   setRenaming: (r: Renaming) => void;
   /** Saves a new name for a row. */
-  saveRename: (node: Dragged & { title: string }) => void;
+  saveRename: (node: Row & { title: string }) => void;
+  /** Makes a page there, named "Untitled", and opens it with its title in edit mode. */
+  createPage: (where: { spaceId: string; parentId: string | null }) => void;
   /** Opens the row's menu where the pointer was. */
   openMenu: (e: MouseEvent, node: MenuTarget) => void;
   /** Moves the dragged document under (or into) the target. */
@@ -114,8 +121,6 @@ function PageNode({
   canArchive,
   expanded,
   toggle,
-  adding,
-  setAdding,
   actions,
 }: {
   item: TreeItem;
@@ -126,15 +131,13 @@ function PageNode({
   canArchive: boolean;
   expanded: ReadonlySet<string>;
   toggle: (id: string) => void;
-  adding: Adding;
-  setAdding: (a: Adding) => void;
   actions: TreeActions;
 }) {
   const { node, children } = item;
-  const { enqueue } = useUploads();
   const open = expanded.has(node.id);
   const hasChildren = children.length > 0;
   const renaming = actions.renaming?.id === node.id;
+  const selected = node.kind === 'file' && actions.selected.has(node.id);
   // Only a page can hold children, so only a page row takes a drop.
   const takesDrop = node.kind === 'page';
   // Where files pasted on this row go: the page itself, or a file's folder.
@@ -144,6 +147,8 @@ function PageNode({
       <div
         className="group flex items-center gap-0.5"
         style={{ paddingLeft: `${depth * INDENT_PX}px` }}
+        data-file-id={node.kind === 'file' ? node.id : undefined}
+        data-selected={selected ? 'true' : undefined}
         // Firefox dispatches a paste on the body, so the focused row carries its target for the
         // document listener in SpacesSection (Chrome targets the row itself).
         data-paste-space={canAdd ? spaceId : undefined}
@@ -177,13 +182,15 @@ function PageNode({
             tenantSlug={tenantSlug}
             kind={node.kind}
             id={node.id}
-            className={`${ROW} min-w-0 flex-1`}
+            className={`${ROW} min-w-0 flex-1 ${selected ? 'bg-active' : ''}`}
             activeClassName={`${ROW_ACTIVE} min-w-0 flex-1`}
             draggable={canAdd}
             onDragStart={(e) => {
-              e.dataTransfer.setData(DRAG_TYPE, JSON.stringify({ id: node.id, kind: node.kind }));
+              const ids = node.kind === 'file' && selected ? [...actions.selected] : [node.id];
+              e.dataTransfer.setData(DRAG_TYPE, JSON.stringify({ ids, kind: node.kind }));
               e.dataTransfer.effectAllowed = 'move';
             }}
+            onClick={(e) => actions.click(e, node)}
             onContextMenu={(e) => {
               if (!canAdd && !canArchive) return;
               e.preventDefault();
@@ -212,21 +219,18 @@ function PageNode({
           </DocumentLink>
         )}
         {canAdd && node.kind === 'page' && !renaming && (
-          <AddMenu
-            label={node.title}
+          <button
+            type="button"
+            aria-label={`Add page to ${node.title}`}
+            title="New page"
             className={`${ICON_BUTTON} ${REVEAL}`}
-            onNewPage={() => {
-              if (!open) toggle(node.id);
-              setAdding({ spaceId, parentId: node.id });
-            }}
-            onFiles={(picked) => {
-              if (!open) toggle(node.id);
-              enqueue(picked, { spaceId, parentId: node.id });
-            }}
-          />
+            onClick={() => actions.createPage({ spaceId, parentId: node.id })}
+          >
+            <PlusIcon />
+          </button>
         )}
       </div>
-      {open && (hasChildren || (adding?.parentId === node.id)) && (
+      {open && hasChildren && (
         <ul className="flex flex-col gap-px">
           {children.map((child) => (
             <PageNode
@@ -239,21 +243,9 @@ function PageNode({
               canArchive={canArchive}
               expanded={expanded}
               toggle={toggle}
-              adding={adding}
-              setAdding={setAdding}
               actions={actions}
             />
           ))}
-          {adding?.parentId === node.id && (
-            <li>
-              <NewPageRow
-                spaceId={spaceId}
-                parentId={node.id}
-                depth={depth + 1}
-                onDone={() => setAdding(null)}
-              />
-            </li>
-          )}
         </ul>
       )}
     </li>
@@ -270,8 +262,6 @@ function SpaceNode({
   expanded,
   toggle,
   reveal,
-  adding,
-  setAdding,
   actions,
 }: {
   space: SpaceResponse;
@@ -284,8 +274,6 @@ function SpaceNode({
   expanded: ReadonlySet<string>;
   toggle: (id: string) => void;
   reveal: (ids: Set<string>) => void;
-  adding: Adding;
-  setAdding: (a: Adding) => void;
   actions: TreeActions;
 }) {
   // The tree is fetched only once the space is opened; the space being read also polls.
@@ -354,10 +342,7 @@ function SpaceNode({
           <AddMenu
             label={space.name}
             className={`${ICON_BUTTON} ${REVEAL}`}
-            onNewPage={() => {
-              if (!open) toggle(space.id);
-              setAdding({ spaceId: space.id, parentId: null });
-            }}
+            onNewPage={() => actions.createPage({ spaceId: space.id, parentId: null })}
             onFiles={(picked) => {
               if (!open) toggle(space.id);
               enqueue(picked, { spaceId: space.id, parentId: null });
@@ -373,7 +358,7 @@ function SpaceNode({
               {errorMessage(error)}
             </li>
           )}
-          {!isPending && !error && items.length === 0 && adding?.spaceId !== space.id && (
+          {!isPending && !error && items.length === 0 && (
             <li className="px-2 py-1 pl-8 text-xs text-muted">No pages yet</li>
           )}
           {items.map((item) => (
@@ -387,16 +372,9 @@ function SpaceNode({
               canArchive={canArchiveDocuments}
               expanded={expanded}
               toggle={toggle}
-              adding={adding}
-              setAdding={setAdding}
               actions={actions}
             />
           ))}
-          {adding?.spaceId === space.id && adding.parentId === null && (
-            <li>
-              <NewPageRow spaceId={space.id} parentId={null} depth={1} onDone={() => setAdding(null)} />
-            </li>
-          )}
         </ul>
       )}
     </li>
@@ -416,14 +394,28 @@ export function SpacesSection() {
   // The document being read, a page or a file: its space opens and its row is revealed.
   const currentDocId = pageId ?? fileId;
   const [expanded, setExpanded] = useState<Set<string>>(() => loadExpanded(tenant.id));
-  const [adding, setAdding] = useState<Adding>(null);
   const [renaming, setRenaming] = useState<Renaming>(null);
   const [menu, setMenu] = useState<Menu>(null);
   const [archiving, setArchiving] = useState<Menu>(null);
   const [creatingSpace, setCreatingSpace] = useState(false);
+  const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
+  const anchor = useRef<string | null>(null);
+  const treeList = useRef<HTMLUListElement>(null);
   const archiveDialog = useRef<HTMLDivElement>(null);
 
   useEffect(() => saveExpanded(tenant.id, expanded), [tenant.id, expanded]);
+
+  // Escape drops the selection.
+  useEffect(() => {
+    if (selected.size === 0) return;
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key !== 'Escape') return;
+      setSelected(new Set());
+      anchor.current = null;
+    }
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [selected.size]);
 
   // The archive confirmation is a modal: Escape and a click outside dismiss it, and Cancel takes the focus
   // so a stray Enter cannot delete anything.
@@ -484,9 +476,11 @@ export function SpacesSection() {
   }, [enqueue]);
 
   const move = useMutation({
-    mutationFn: (target: Dragged & { spaceId: string; parentId: string | null }) => {
+    mutationFn: async (target: Dragged & { spaceId: string; parentId: string | null }) => {
       const body = { target_space_id: target.spaceId, target_parent_id: target.parentId };
-      return target.kind === 'page' ? api.movePage(target.id, body) : api.moveFile(target.id, body);
+      for (const id of target.ids) {
+        await (target.kind === 'page' ? api.movePage(id, body) : api.moveFile(id, body));
+      }
     },
     onSuccess: () => {
       void refresh('tree');
@@ -502,13 +496,55 @@ export function SpacesSection() {
     },
   });
 
+  const createPage = useMutation({
+    mutationFn: (where: { spaceId: string; parentId: string | null }) =>
+      createNamedPage({ space_id: where.spaceId, parent_id: where.parentId, title: 'Untitled' }),
+    onSuccess: (page, where) => {
+      startWithTitleEdit(page.id);
+      void refresh('tree', where.spaceId);
+      void navigate({ to: '/w/$tenantSlug/p/$pageId', params: { tenantSlug: tenant.slug, pageId: page.id } });
+    },
+  });
+
   const actions: TreeActions = {
+    selected,
+    click: (e, node) => {
+      const modified = e.metaKey || e.ctrlKey || e.altKey || e.shiftKey;
+      // A plain click opens the row and starts over.
+      if (!modified) {
+        if (selected.size > 0) {
+          setSelected(new Set());
+          anchor.current = null;
+        }
+        return;
+      }
+      // Pages keep the browser's modifier behaviour (a new tab); only files are picked.
+      if (node.kind !== 'file') return;
+      e.preventDefault();
+      e.stopPropagation();
+      const ids = Array.from(treeList.current?.querySelectorAll<HTMLElement>('[data-file-id]') ?? []).map(
+        (row) => row.dataset.fileId!
+      );
+      const from = anchor.current === null ? -1 : ids.indexOf(anchor.current);
+      const to = ids.indexOf(node.id);
+      if (e.shiftKey && from >= 0 && to >= 0) {
+        setSelected(new Set(ids.slice(Math.min(from, to), Math.max(from, to) + 1)));
+        return;
+      }
+      setSelected((prev) => {
+        const next = new Set(prev);
+        if (!next.delete(node.id)) next.add(node.id);
+        return next;
+      });
+      anchor.current = node.id;
+    },
     renaming,
     setRenaming,
     saveRename: (node) => {
       setRenaming(null);
       rename.mutate(node);
     },
+    createPage: (where) => createPage.mutate(where),
     openMenu: (e, node) => {
       const at = e.currentTarget as HTMLElement | null;
       const box = at?.getBoundingClientRect();
@@ -546,12 +582,12 @@ export function SpacesSection() {
           </button>
         )}
       </div>
-      {(move.error ?? rename.error) && (
+      {(move.error ?? rename.error ?? createPage.error) && (
         <p role="alert" className="px-2 pb-1 text-xs text-danger">
-          {errorMessage(move.error ?? rename.error)}
+          {errorMessage(move.error ?? rename.error ?? createPage.error)}
         </p>
       )}
-      <ul className="flex flex-col gap-px">
+      <ul ref={treeList} className="flex flex-col gap-px">
         {creatingSpace && (
           <li className="px-2 py-1">
             <NewSpaceRow
@@ -574,8 +610,6 @@ export function SpacesSection() {
             expanded={expanded}
             toggle={toggle}
             reveal={setExpanded}
-            adding={adding}
-            setAdding={setAdding}
             actions={actions}
           />
         ))}

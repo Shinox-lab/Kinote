@@ -34,6 +34,7 @@ export function TitleInput({
       autoFocus
       value={value}
       aria-label="New title"
+      onFocus={(e) => e.currentTarget.select()}
       onChange={(e) => setValue(e.target.value)}
       onKeyDown={(e) => {
         if (e.key === 'Enter') {

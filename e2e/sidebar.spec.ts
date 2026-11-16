@@ -3,11 +3,14 @@ import {
   addMember,
   call,
   editorOf,
+  expandSpace,
   expectConnected,
   openAs,
   runPageAction,
   seedWorld,
+  textFile,
   typeAtEnd,
+  uploadViaApi,
   type Account,
   type World,
 } from './support.js';
@@ -117,11 +120,56 @@ test('adding a page from the sidebar opens it', async ({ browser, request }) => 
   await side.getByRole('button', { name: /^(Expand|Collapse) Docs$/ }).hover();
   await side.getByRole('button', { name: 'Add to Docs' }).click();
   await side.getByRole('menuitem', { name: 'New page' }).click();
-  await page.getByLabel('New page title').fill('Brand new page');
-  await page.keyboard.press('Enter');
+
+  // The page is made as "Untitled" and opens with its name ready to type over.
   await page.waitForURL(/\/p\/[0-9a-f-]{36}$/);
+  const name = page.getByLabel('New title');
+  await expect(name).toHaveValue('Untitled');
+  await expect(name).toBeFocused();
+  await name.fill('Brand new page');
+  await page.keyboard.press('Enter');
   await expect(side.getByRole('link', { name: 'Brand new page' })).toHaveAttribute('aria-current', 'page');
   await expect(page.getByRole('heading', { name: 'Brand new page', level: 1 })).toBeVisible();
+});
+
+test("a page's + starts a new child page without a menu", async ({ browser, request }) => {
+  const world = await seedWorld(request, { reviewRequired: false });
+  const parentId = await makePage(request, world, world.owner, 'Handbook', 'handbook');
+  const page = await openAs(browser, world, world.owner);
+  await page.goto(`/w/${world.slug}`);
+  await expandSpace(page, 'Docs');
+  const side = sidebar(page);
+  await side.getByRole('link', { name: /^Handbook/ }).hover();
+  await side.getByRole('button', { name: 'Add page to Handbook' }).click();
+
+  // No menu and no title step in the tree: the page is made and opened with
+  // its name in edit mode, already selected.
+  await page.waitForURL(/\/p\/[0-9a-f-]{36}$/);
+  const name = page.getByLabel('New title');
+  await expect(name).toHaveValue('Untitled');
+  await expect(name).toBeFocused();
+  await expect
+    .poll(() =>
+      name.evaluate((input) => {
+        const field = input as HTMLInputElement;
+        return field.selectionStart === 0 && field.selectionEnd === field.value.length;
+      })
+    )
+    .toBe(true);
+  await name.fill('Leave policy');
+  await page.keyboard.press('Enter');
+  await expect(side.getByRole('link', { name: 'Leave policy' })).toBeVisible();
+
+  await expect
+    .poll(async () => {
+      const tree = await call<{ nodes: Array<{ id: string; parentId: string | null; title: string }> }>(
+        request,
+        `/spaces/${world.spaceId}/tree`,
+        { account: world.owner, tenantId: world.tenantId }
+      );
+      return tree.nodes.find((node) => node.title === 'Leave policy')?.parentId === parentId;
+    })
+    .toBe(true);
 });
 
 test('a page is renamed from the sidebar: right-click, rename, Enter', async ({ browser, request }) => {
@@ -224,6 +272,44 @@ test('a page is dragged under another page in the tree', async ({ browser, reque
   await side.getByRole('button', { name: 'Expand Parent' }).click();
   const under = side.getByRole('link', { name: /^Parent/ }).locator('xpath=../following-sibling::ul');
   await expect(under.getByRole('link', { name: /^Child/ })).toBeVisible();
+});
+
+test('modified clicks select a range of files, and a selected file drags them all', async ({ browser, request }) => {
+  const world = await seedWorld(request, { reviewRequired: false });
+  await makePage(request, world, world.owner, 'Target', 'target');
+  const alpha = await uploadViaApi(request, world, world.owner, textFile('Alpha.txt', 'text/plain', 'Alpha.'));
+  const beta = await uploadViaApi(request, world, world.owner, textFile('Beta.txt', 'text/plain', 'Beta.'));
+
+  const page = await openAs(browser, world, world.owner);
+  await page.goto(`/w/${world.slug}`);
+  await expandSpace(page, 'Docs');
+  const selected = sidebar(page).locator('[data-file-id][data-selected="true"]');
+
+  // Shift picks every file from the anchor, without opening one.
+  await sidebar(page).getByRole('link', { name: /^Alpha\.txt/ }).click({ modifiers: ['Control'] });
+  await sidebar(page).getByRole('link', { name: /^Beta\.txt/ }).click({ modifiers: ['Shift'] });
+  await expect(selected).toHaveCount(2);
+  await expect(page).toHaveURL(new RegExp(`/w/${world.slug}$`));
+
+  await page.keyboard.press('Escape');
+  await expect(selected).toHaveCount(0);
+
+  // Dragging one of the picked files moves the whole selection.
+  await sidebar(page).getByRole('link', { name: /^Alpha\.txt/ }).click({ modifiers: ['Control'] });
+  await sidebar(page).getByRole('link', { name: /^Beta\.txt/ }).click({ modifiers: ['Control'] });
+  await sidebar(page).getByRole('link', { name: /^Alpha\.txt/ }).dragTo(sidebar(page).getByRole('link', { name: /^Target/ }));
+
+  await expect
+    .poll(async () => {
+      const tree = await call<{ nodes: Array<{ id: string; parentId: string | null; title: string }> }>(
+        request,
+        `/spaces/${world.spaceId}/tree`,
+        { account: world.owner, tenantId: world.tenantId }
+      );
+      const target = tree.nodes.find((node) => node.title === 'Target')?.id;
+      return [alpha, beta].map((id) => tree.nodes.find((node) => node.id === id)?.parentId === target);
+    })
+    .toEqual([true, true]);
 });
 
 test('updates show what others did, and your own changes read "You"; typing shows the edited dot', async ({
