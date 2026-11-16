@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { and, desc, eq, gt } from 'drizzle-orm';
 import { blockActivity, pages, spaces, users, type DbTransaction, type DocumentRow } from '@kinote/db';
-import { blockMarkdown, EDITABLE_BLOCK_TYPES, markdownBlocks, replaceInBlock, senderAccess, type Actor } from '@kinote/core';
+import { blockMarkdown, EDITABLE_BLOCK_TYPES, markdownBlocks, replaceInBlock, resolveFieldValue, rowCollectionOf, senderAccess, type Actor } from '@kinote/core';
+import { canonicalFieldJson, FIELD_BLOCK_PREFIX, type FieldDef } from '@kinote/contracts';
 import { blockFullText, type BlockLike } from '@kinote/shared';
 import type { CollabClient } from '@kinote/shared';
 import { idMatches, shortId } from '../format.js';
@@ -34,6 +35,12 @@ export interface SuggestionDraft {
   blockedBy: 'removal' | 'protection' | 'no_edit_access';
 }
 
+/** The page as the planner reads it: its top-level blocks and its field values. */
+export interface LivePage {
+  blocks: BlockLike[];
+  fields: Record<string, unknown> | null;
+}
+
 /** The edits of one call sorted: each index has an outcome, or an op to apply, or a suggestion to write. */
 export interface EditPlan {
   outcomes: Array<EditOutcome | null>;
@@ -46,14 +53,39 @@ export const GONE = 'block not found: read the page again';
 export const UNSUPPORTED = "This block can't be edited with kinote_edit; use kinote_capture to propose the change.";
 const SAME_BLOCK = 'one edit per block per call';
 const EMPTY_MARKDOWN = 'The Markdown has no blocks.';
+const NOT_A_ROW = 'This page is not a collection row';
+const REMOVAL = 'removals wait for a person';
+
+/** What a field takes, for a refused value: `Due expects a date (YYYY-MM-DD)`. */
+function expects(def: FieldDef): string {
+  const choices = (def.options.choices ?? []).map((c) => c.name).join(', ');
+  switch (def.type) {
+    case 'number':
+      return 'a number';
+    case 'date':
+      return 'a date (YYYY-MM-DD)';
+    case 'select':
+      return `one of: ${choices}`;
+    case 'multi_select':
+      return `a list of: ${choices}`;
+    case 'person':
+      return 'workspace members, by name';
+    case 'checkbox':
+      return 'true or false';
+    case 'page':
+      return 'pages in this space, by title';
+    default:
+      return 'text';
+  }
+}
 
 type Gate = 'protection' | 'no_edit_access' | null;
 
-/** "Jane edited this block just now" / "… 1 minute ago" / "… N minutes ago". */
-function editedAgo(name: string, at: Date, now: Date): string {
+/** "Jane edited this block (or field) just now" / "… 1 minute ago" / "… N minutes ago". */
+function editedAgo(name: string, at: Date, now: Date, what: 'block' | 'field'): string {
   const minutes = Math.floor((now.getTime() - at.getTime()) / 60_000);
   const when = minutes < 1 ? 'just now' : minutes === 1 ? '1 minute ago' : `${minutes} minutes ago`;
-  return `${name} edited this block ${when}`;
+  return `${name} edited this ${what} ${when}`;
 }
 
 /** The block a ref names among the page's top-level blocks, or why it can't be edited. */
@@ -69,16 +101,11 @@ function resolveBlock(blocks: BlockLike[], ref: string): { block: BlockLike } | 
  * Sorts a call's block edits against the page as it is now (`blocks`, read after a flush): refusals get their
  * outcome, edits that need a person become suggestion drafts (removals always; a block a person changed within
  * the space's protection window; any edit where the agent cannot edit the space now), the rest become collab ops
- * that check the block's text is still what was read. Field edits are left `null` for the field planner.
+ * that check the block's text is still what was read. Field edits on a collection row alike: by field name or
+ * id, the value resolved like a routed one (choice, member and page names), clearing one a removal.
  */
-export async function planBlockEdits(
-  tx: DbTransaction,
-  actor: Actor,
-  doc: DocumentRow,
-  blocks: BlockLike[],
-  edits: AgentEdit[],
-  now: Date
-): Promise<EditPlan> {
+export async function planEdits(tx: DbTransaction, actor: Actor, doc: DocumentRow, live: LivePage, edits: AgentEdit[], now: Date): Promise<EditPlan> {
+  const blocks = live.blocks;
   const plan: EditPlan = { outcomes: edits.map(() => null), apply: [], suggest: [] };
   const access = await senderAccess(tx, actor);
   const canEdit = access.editable.includes(doc.spaceId);
@@ -106,7 +133,7 @@ export async function planBlockEdits(
       )
       .orderBy(desc(blockActivity.changedAt))
       .limit(1);
-    return row ? editedAgo(row.name ?? 'Someone', row.at, now) : null;
+    return row ? editedAgo(row.name ?? 'Someone', row.at, now, blockId.startsWith(FIELD_BLOCK_PREFIX) ? 'field' : 'block') : null;
   };
   const gateFor = async (blockId: string | null): Promise<{ gate: Gate; detail: string }> => {
     if (!canEdit) return { gate: 'no_edit_access', detail: 'no edit access' };
@@ -125,8 +152,59 @@ export async function planBlockEdits(
     plan.suggest.push({ index: i, draft });
   };
 
+  let row: Awaited<ReturnType<typeof rowCollectionOf>> | undefined;
   for (const [i, edit] of edits.entries()) {
-    if ('field' in edit) continue;
+    if ('field' in edit) {
+      row ??= await rowCollectionOf(tx, doc.tenantId, doc.id);
+      if (!row) {
+        refuse(i, `field ${edit.field}`, NOT_A_ROW);
+        continue;
+      }
+      const want = edit.field.trim().toLowerCase();
+      const def = row.fields.find((d) => d.id === edit.field || d.name.trim().toLowerCase() === want);
+      if (!def) {
+        refuse(i, `field ${edit.field}`, `Unknown field "${edit.field}". Fields: ${row.fields.map((d) => d.name).join(', ')}`);
+        continue;
+      }
+      const label = `field ${def.name}`;
+      const key = `${FIELD_BLOCK_PREFIX}${def.id}`;
+      if (addressed.has(key)) {
+        refuse(i, label, SAME_BLOCK);
+        continue;
+      }
+      addressed.add(key);
+      const expected = canonicalFieldJson(live.fields?.[def.id] ?? null);
+      const draft = (value: unknown, blockedBy: SuggestionDraft['blockedBy']): SuggestionDraft => ({
+        kind: 'set_field',
+        blockId: key,
+        afterBlockId: null,
+        proposedMarkdown: canonicalFieldJson(value),
+        proposedBlocks: null,
+        expectedText: expected,
+        blockedBy,
+      });
+      if (edit.value === null) {
+        suggested(i, label, REMOVAL, draft(null, 'removal'));
+        continue;
+      }
+      const resolved = await resolveFieldValue(tx, doc.tenantId, def, edit.value, doc.spaceId);
+      if (!resolved.ok) {
+        refuse(i, label, `${def.name} expects ${expects(def)}`);
+        continue;
+      }
+      if (resolved.value === null) {
+        suggested(i, label, REMOVAL, draft(null, 'removal'));
+        continue;
+      }
+      const { gate, detail } = await gateFor(key);
+      if (gate) {
+        suggested(i, label, detail, draft(resolved.value, gate));
+        continue;
+      }
+      plan.apply.push({ index: i, op: { op: 'set_field', fieldId: def.id, value: resolved.value, expected } });
+      plan.outcomes[i] = { label, result: 'applied', detail: '' };
+      continue;
+    }
 
     if ('after_block_id' in edit) {
       let anchor: BlockLike | null = null;
@@ -181,7 +259,7 @@ export async function planBlockEdits(
     const expectedText = blockFullText(block);
 
     if ('remove_block_id' in edit) {
-      suggested(i, label, 'removals wait for a person', {
+      suggested(i, label, REMOVAL, {
         kind: 'remove',
         blockId: block.id,
         afterBlockId: null,

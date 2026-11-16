@@ -2,7 +2,7 @@ import { suggestions, withTenantTx, writeAuditEvent, type DocumentRow } from '@k
 import { AppError } from '@kinote/contracts';
 import { capturesAlwaysReviewed, readLiveBlocks, takePageSnapshot, type Actor } from '@kinote/core';
 import { documentName, type CollabClient } from '@kinote/shared';
-import { CHANGED, GONE, planBlockEdits, type AgentEdit, type EditOutcome } from './plan.js';
+import { CHANGED, GONE, planEdits, type AgentEdit, type EditOutcome } from './plan.js';
 
 /** What a suggestion's reason says when an agent proposed it. */
 const reasonOf = (agentName: string, detail: string) => `Proposed by ${agentName} with kinote_edit (${detail}).`;
@@ -25,7 +25,7 @@ export async function runAgentEdits(
   await collab.flush(documentName(tenantId, doc.id));
   const plan = await withTenantTx(tenantId, async (tx) => {
     const live = await readLiveBlocks(tx, tenantId, doc.id);
-    return planBlockEdits(tx, actor, doc, live?.blocks ?? [], edits, now);
+    return planEdits(tx, actor, doc, { blocks: live?.blocks ?? [], fields: (live?.fields as Record<string, unknown> | undefined) ?? null }, edits, now);
   });
 
   let versionId: string | null = null;
