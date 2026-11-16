@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { afterAll, afterEach, beforeAll } from 'vitest';
 import type { FastifyInstance } from 'fastify';
+import { captures, withTenantTx } from '@kinote/db';
+import { enqueueCaptureRoute } from '../../src/routes/captures.js';
 import { DeterministicEmbeddingProvider, DeterministicPlacementModel, FakeExtractor, blockText } from '@kinote/core';
 import { InMemoryObjectStorage, type BlockLike } from '@kinote/shared';
 import { collabSettle, type CollabServer } from '../../../collab/src/server.js';
@@ -92,3 +94,16 @@ export function useCaptureKit(opts: { model?: DeterministicPlacementModel } = {}
 }
 export type CaptureKit = ReturnType<typeof useCaptureKit>;
 export type CaptureWorld = Awaited<ReturnType<CaptureKit['world']>>;
+
+/** Files a capture as the agent would over MCP (the tool comes later): a row on channel mcp, and its routing job. */
+export async function agentCapture(tenantId: string, agentId: string, text: string, extra: Partial<typeof captures.$inferInsert> = {}) {
+  return withTenantTx(tenantId, async (tx) => {
+    const [row] = await tx
+      .insert(captures)
+      .values({ tenantId, senderType: 'agent', senderId: agentId, channel: 'mcp', text, ...extra })
+      .returning();
+    await enqueueCaptureRoute(tx, tenantId, row!.id);
+    return row!.id;
+  });
+}
+

@@ -1,5 +1,5 @@
 import { and, eq } from 'drizzle-orm';
-import { memberships, spaces, type DbTransaction } from '@kinote/db';
+import { agents, memberships, spaces, type DbTransaction } from '@kinote/db';
 import { AppError } from '@kinote/contracts';
 import { requireSpaceRole, type Actor } from '../permissions.js';
 
@@ -12,13 +12,28 @@ export interface SenderAccess {
 
 /**
  * The actor a capture's sender acts as: a user with their current tenant
- * role, or an agent. A user who has left the tenant is `forbidden`.
+ * role, or an agent carrying its owner (so it never reaches more than they
+ * can now). A user who has left the tenant is `forbidden`; so is an agent
+ * that is disabled, not an external agent, or whose owner has left.
  */
 export async function senderActor(
   tx: DbTransaction,
   sender: { tenantId: string; type: 'user' | 'agent'; id: string }
 ): Promise<Actor> {
-  if (sender.type === 'agent') return { tenantId: sender.tenantId, principalType: 'agent', principalId: sender.id };
+  if (sender.type === 'agent') {
+    const [agent] = await tx
+      .select({ kind: agents.kind, disabledAt: agents.disabledAt, createdBy: agents.createdBy, ownerRole: memberships.role })
+      .from(agents)
+      .leftJoin(memberships, and(eq(memberships.tenantId, agents.tenantId), eq(memberships.userId, agents.createdBy)))
+      .where(and(eq(agents.tenantId, sender.tenantId), eq(agents.id, sender.id)));
+    if (!agent || agent.kind !== 'external' || agent.disabledAt || !agent.ownerRole) throw new AppError('forbidden');
+    return {
+      tenantId: sender.tenantId,
+      principalType: 'agent',
+      principalId: sender.id,
+      owner: { userId: agent.createdBy, tenantRole: agent.ownerRole },
+    };
+  }
   const [row] = await tx
     .select({ role: memberships.role })
     .from(memberships)
@@ -49,4 +64,14 @@ export async function senderAccess(tx: DbTransaction, actor: Actor): Promise<Sen
     }
   }
   return { actor, readable, editable };
+}
+
+/** Whether a capture's changes are held for review whatever the space says: its sender is an "always review" agent. */
+export async function capturesAlwaysReviewed(tx: DbTransaction, sender: { tenantId: string; type: 'user' | 'agent'; id: string }) {
+  if (sender.type !== 'agent') return false;
+  const [agent] = await tx
+    .select({ alwaysReview: agents.alwaysReview })
+    .from(agents)
+    .where(and(eq(agents.tenantId, sender.tenantId), eq(agents.id, sender.id)));
+  return agent?.alwaysReview ?? false;
 }

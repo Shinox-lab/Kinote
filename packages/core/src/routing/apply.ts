@@ -8,6 +8,7 @@ import {
   captureChanges,
   captureFacts,
   captureMessages,
+  agents,
   captures,
   citations,
   documents,
@@ -31,6 +32,7 @@ import { planDocument, uniqueChildTitle } from './document.js';
 import { attachCaptureFile, fileTitle, routedText } from './captureFile.js';
 import { excerptOf, hasUnreadAbout, notify } from '../talk/notify.js';
 import { ensureRouterAgent } from './routerAgent.js';
+import { capturesAlwaysReviewed, senderActor } from './access.js';
 
 /** How long one routing run may hold the tenant's lease (R13). */
 export const ROUTING_LEASE_SECONDS = 300;
@@ -47,6 +49,20 @@ export interface RouteDeps {
   /** Throws when the run may no longer change anything (it lost the tenant's lease). */
   guard?: () => Promise<void>;
 }
+
+/** Whether this capture's changes wait for review whatever the space says (its sender is an "always review" agent). */
+async function forceReviewFor(tenantId: string, captureId: string): Promise<boolean> {
+  return withTenantTx(tenantId, async (tx) => {
+    const [c] = await tx
+      .select({ type: captures.senderType, id: captures.senderId })
+      .from(captures)
+      .where(and(eq(captures.tenantId, tenantId), eq(captures.id, captureId)));
+    return c ? capturesAlwaysReviewed(tx, { tenantId, type: c.type, id: c.id }) : false;
+  });
+}
+
+/** The message a capture fails with when the agent that sent it may no longer act. */
+export const AGENT_SENDER_GONE = 'The agent that sent this is disabled or its owner left the workspace.';
 
 type FactResult = { applied: Array<'indexing' | 'pending_review' | 'other'>; suggested: number };
 
@@ -72,6 +88,25 @@ export async function routeCapture(
   if (!got) return 'busy';
   const guard = leaseGuard(tenantId, holder);
   try {
+    // An agent that was disabled, or whose owner left, since it sent this: nothing of it is filed.
+    const senderGone = await withTenantTx(tenantId, async (tx) => {
+      const [c] = await tx
+        .select({ type: captures.senderType, id: captures.senderId })
+        .from(captures)
+        .where(and(eq(captures.tenantId, tenantId), eq(captures.id, captureId)));
+      if (!c || c.type !== 'agent') return false;
+      try {
+        await senderActor(tx, { tenantId, type: c.type, id: c.id });
+        return false;
+      } catch (err) {
+        if (err instanceof AppError && err.code === 'forbidden') return true;
+        throw err;
+      }
+    });
+    if (senderGone) {
+      await failCapture(tenantId, captureId, AGENT_SENDER_GONE);
+      return 'done';
+    }
     await expireQuestions(tenantId, now);
     await withTenantTx(tenantId, (tx) =>
       tx
@@ -335,12 +370,22 @@ async function notifyWaiting(tx: DbTransaction, tenantId: string, captureId: str
     .select({ senderType: captures.senderType, senderId: captures.senderId, text: captures.text, documentOutcome: captures.documentOutcome })
     .from(captures)
     .where(and(eq(captures.tenantId, tenantId), eq(captures.id, captureId)));
-  if (!capture || capture.senderType !== 'user') return;
+  if (!capture) return;
   if (!factsWait && capture.documentOutcome !== 'needs_home') return;
-  if (await hasUnreadAbout(tx, tenantId, capture.senderId, 'capture_waiting', captureId)) return;
+  // An agent's capture waits for its owner (spec: routing questions go to a person by default).
+  let recipientId = capture.senderId;
+  if (capture.senderType === 'agent') {
+    const [agent] = await tx
+      .select({ createdBy: agents.createdBy })
+      .from(agents)
+      .where(and(eq(agents.tenantId, tenantId), eq(agents.id, capture.senderId)));
+    if (!agent) return;
+    recipientId = agent.createdBy;
+  }
+  if (await hasUnreadAbout(tx, tenantId, recipientId, 'capture_waiting', captureId)) return;
   await notify(tx, tenantId, [
     {
-      recipientId: capture.senderId,
+      recipientId,
       kind: 'capture_waiting',
       actorType: 'agent',
       actorId: routerId,
@@ -641,6 +686,7 @@ async function applyToPage(
     actorType: 'agent',
     actorId: routerId,
     manual: false,
+    forceReview: await forceReviewFor(tenantId, captureId),
   });
   const state =
     version?.status === 'pending_review'
@@ -892,6 +938,7 @@ export async function createEnginePage(
     actorType: 'agent',
     actorId: ctx.routerId,
     manual: false,
+    forceReview: await forceReviewFor(tenantId, ctx.captureId),
   });
   if (version) {
     await withTenantTx(tenantId, (tx) =>

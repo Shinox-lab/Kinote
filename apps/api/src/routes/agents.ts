@@ -135,7 +135,12 @@ export async function createAgent(actor: Actor, input: unknown): Promise<Agent> 
   });
 }
 
-const snapshot = (a: AgentRow) => ({ name: a.name, disabled: a.disabledAt !== null, dailyAiLimit: a.dailyAiLimit });
+const snapshot = (a: AgentRow) => ({
+  name: a.name,
+  disabled: a.disabledAt !== null,
+  dailyAiLimit: a.dailyAiLimit,
+  alwaysReview: a.alwaysReview,
+});
 
 /** PATCH /api/v1/agents/:id (tenant admin): name, disabled, daily AI limit (null: the default). */
 export async function updateAgent(actor: Actor, agentId: string, input: unknown): Promise<Agent> {
@@ -151,6 +156,7 @@ export async function updateAgent(actor: Actor, agentId: string, input: unknown)
         ...(body.name !== undefined ? { name: body.name } : {}),
         ...(disabledAt !== undefined ? { disabledAt } : {}),
         ...(body.daily_ai_limit !== undefined ? { dailyAiLimit: body.daily_ai_limit } : {}),
+        ...(body.always_review !== undefined ? { alwaysReview: body.always_review } : {}),
       })
       .where(and(eq(agents.tenantId, actor.tenantId), eq(agents.id, before.id)))
       .returning();

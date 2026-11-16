@@ -82,6 +82,8 @@ export async function takePageSnapshot(
     actorType: 'user' | 'agent';
     actorId: string;
     manual: boolean;
+    /** Hold this version for review even in a space without review (an "always review" agent's capture). */
+    forceReview?: boolean;
   },
   hooks: TakePageSnapshotHooks = {}
 ) {
@@ -212,8 +214,8 @@ export async function takePageSnapshot(
     }
 
     const nextNumber = (latestVersion?.number ?? 0) + 1;
-    // R1: review follows the space for every edit, an agent's included.
-    const needsReview = spaceRow.reviewRequired;
+    // R1: review follows the space for every edit, an agent's included; an "always review" agent's always waits.
+    const needsReview = spaceRow.reviewRequired || params.forceReview === true;
     const initialStatus = needsReview ? 'pending_review' : 'indexing';
 
     const [newVersion] = await tx
