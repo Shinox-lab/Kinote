@@ -4,7 +4,15 @@ import { eq } from 'drizzle-orm';
 import { agentTokens, agents, withTenantTx } from '@kinote/db';
 import { sha256Hex } from '@kinote/shared';
 import { AGENT_SCOPES, DEFAULT_AGENT_TOKEN_DAYS } from '@kinote/contracts';
-import { mintAgentToken, parseAgentToken, AGENT_TOKEN_PREFIX } from '../src/auth/agentTokens.js';
+import {
+  mintAgentToken,
+  mintOAuthCode,
+  mintRefreshToken,
+  parseAgentToken,
+  parseOAuthCode,
+  parseRefreshToken,
+  AGENT_TOKEN_PREFIX,
+} from '../src/auth/agentTokens.js';
 import { mintSourceToken } from '../src/auth/sourceTokens.js';
 import { bootstrapTenant, buildTestApp, createAgent, useTestDb } from './support/testkit.js';
 
@@ -27,6 +35,23 @@ describe('agent tokens', () => {
     const good = mintAgentToken(TENANT).token;
     assert.equal(parseAgentToken(`${good} `), null);
     assert.equal(parseAgentToken(good.replace('lwagt_', 'LWAGT_')), null);
+  });
+
+  test('refresh tokens (lwagr_) and authorization codes (lwaco_) carry their tenant and are never mistaken for each other', () => {
+    const r = mintRefreshToken(TENANT);
+    assert.match(r.token, /^lwagr_0f8fad5bd9cb469fa16570867728950e\.[A-Za-z0-9_-]{43}$/);
+    assert.deepEqual(parseRefreshToken(r.token), { tenantId: TENANT, hash: sha256Hex(r.token) });
+    const c = mintOAuthCode(TENANT);
+    assert.match(c.token, /^lwaco_0f8fad5bd9cb469fa16570867728950e\.[A-Za-z0-9_-]{43}$/);
+    assert.deepEqual(parseOAuthCode(c.token), { tenantId: TENANT, hash: sha256Hex(c.token) });
+    const a = mintAgentToken(TENANT).token;
+    for (const [parse, others] of [
+      [parseAgentToken, [r.token, c.token]],
+      [parseRefreshToken, [a, c.token]],
+      [parseOAuthCode, [a, r.token]],
+    ] as const) {
+      for (const other of others) assert.equal(parse(other), null, other);
+    }
   });
 
   test('scopes and default expiry', () => {

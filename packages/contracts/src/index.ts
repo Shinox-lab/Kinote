@@ -1378,6 +1378,63 @@ export type IssueAgentTokenRequest = z.input<typeof IssueAgentTokenRequestSchema
 export const IssueAgentTokenResponseSchema = z.object({ token: z.string(), info: AgentTokenSchema });
 export type IssueAgentTokenResponse = z.infer<typeof IssueAgentTokenResponseSchema>;
 
+// ---------------------------------------------------------------------------
+// Browser sign-in for MCP clients (OAuth 2.1 authorization code with PKCE)
+// ---------------------------------------------------------------------------
+
+/** The scopes a browser sign-in can grant today; capture and edit wait for their tools. */
+export const OAUTH_SCOPES = ['read'] as const;
+/** An access token from a browser sign-in lasts an hour; its refresh token 90 days from its last use. */
+export const OAUTH_ACCESS_TOKEN_SECONDS = 3600;
+
+/** The authorization request as the client sent it (the query of /oauth/authorize), echoed back with the decision. */
+export const OAuthAuthorizeParamsSchema = z.object({
+  response_type: z.string().optional(),
+  client_id: z.string().optional(),
+  redirect_uri: z.string().optional(),
+  code_challenge: z.string().optional(),
+  code_challenge_method: z.string().optional(),
+  scope: z.string().optional(),
+  resource: z.string().optional(),
+  state: z.string().optional(),
+});
+export type OAuthAuthorizeParams = z.infer<typeof OAuthAuthorizeParamsSchema>;
+
+/** GET /api/v1/oauth/authorize: what the sign-in page shows, or where an invalid request goes back to. */
+export const OAuthAuthorizeCheckSchema = z.discriminatedUnion('status', [
+  z.object({
+    status: z.literal('ask'),
+    /** The client's name is its own claim; the redirect address is what tells clients apart. */
+    client: z.object({ name: z.string(), redirectUri: z.string() }),
+    scopes: z.array(z.enum(OAUTH_SCOPES)),
+    workspaces: z.array(
+      z.object({
+        tenantId: z.string().uuid(),
+        name: z.string(),
+        slug: z.string(),
+        spaces: z.array(z.object({ id: z.string().uuid(), name: z.string() })),
+      })
+    ),
+  }),
+  z.object({ status: z.literal('redirect'), to: z.string() }),
+]);
+export type OAuthAuthorizeCheck = z.infer<typeof OAuthAuthorizeCheckSchema>;
+
+/** POST /api/v1/oauth/authorize (in the workspace picked, x-tenant-id): the member's answer. */
+export const OAuthDecisionSchema = z.discriminatedUnion('decision', [
+  z.object({
+    decision: z.literal('allow'),
+    agent_name: AgentNameSchema,
+    space_ids: z.array(z.string().uuid()).min(1).max(100),
+  }),
+  z.object({ decision: z.literal('deny') }),
+]);
+export type OAuthDecision = z.infer<typeof OAuthDecisionSchema>;
+
+/** Where the browser goes next: the client's redirect address, with a code or an error. */
+export const OAuthDecisionResponseSchema = z.object({ to: z.string() });
+export type OAuthDecisionResponse = z.infer<typeof OAuthDecisionResponseSchema>;
+
 /** Reply of PUT /api/v1/source/files/:externalId. `created`: a new document (not just a new version). */
 export const SourcePutResponseSchema = UploadFileResponseSchema.extend({ created: z.boolean() });
 export type SourcePutResponse = z.infer<typeof SourcePutResponseSchema>;

@@ -125,7 +125,8 @@ describe('migration chain', () => {
       .sort();
     // rate_limit_counters (0038) and email_tokens (0039) are global by design: its keys name whose count it is, and it holds no tenant data.
     // tenant_defaults (0042) is one row of control-plane settings for new workspaces; model_settings (0043) likewise for the deployment's models; 0044 adds the `setup` email-token purpose.
-    assert.deepEqual(withoutTenantId, ['email_tokens', 'model_settings', 'rate_limit_counters', 'sessions', 'tenant_defaults', 'tenants', 'users']);
+    // oauth_clients (0046) are MCP clients registered for browser sign-in, before anyone picks a workspace.
+    assert.deepEqual(withoutTenantId, ['email_tokens', 'model_settings', 'oauth_clients', 'rate_limit_counters', 'sessions', 'tenant_defaults', 'tenants', 'users']);
 
     const tenants = tables.find((t) => t.relname === 'tenants')!;
     assert.equal(tenants.relrowsecurity, true, 'tenants: row level security not enabled');
