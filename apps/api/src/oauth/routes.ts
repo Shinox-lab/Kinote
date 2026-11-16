@@ -176,8 +176,8 @@ async function exchangeCode(body: Record<string, unknown>): Promise<Tokens> {
     const audit = (type: Parameters<typeof writeAuditEvent>[1]['type'], subjectType: string, subjectId: string, payload: Record<string, unknown>) =>
       writeAuditEvent(tx, { tenantId: row.tenantId, type, actorType: 'user', actorId: row.userId, subjectType, subjectId, payload });
     await audit('agent.created', 'agent', agent!.id, { name: agent!.name, dailyAiLimit: null, via: 'sign-in', client: clientName });
-    // An agent that may file captures needs to edit where it files (still never more than its owner can).
-    const grantRole = row.scopes.includes('capture') ? ('editor' as const) : ('viewer' as const);
+    // An agent that may file captures or edit needs editor access where it writes (still never more than its owner can).
+    const grantRole = row.scopes.includes('capture') || row.scopes.includes('edit') ? ('editor' as const) : ('viewer' as const);
     for (const spaceId of spaceIds) {
       await tx.insert(spaceGrants).values({ tenantId: row.tenantId, spaceId, principalType: 'agent', principalId: agent!.id, role: grantRole });
       await audit('space.grant_changed', 'space', spaceId, { principal_type: 'agent', principal_id: agent!.id, role: grantRole });
@@ -446,8 +446,11 @@ export async function oauthRoutes(app: FastifyInstance, opts: { publicUrl?: stri
     if (decision.capture && !check.scopes.includes('capture')) {
       throw new AppError('validation_failed', 'This app did not ask to file captures.');
     }
-    // Reading always; capture only when the app asked and the person ticked it.
-    const scopes = decision.capture ? ['read', 'capture'] : ['read'];
+    if (decision.edit && !check.scopes.includes('edit')) {
+      throw new AppError('validation_failed', 'This app did not ask to make edits.');
+    }
+    // Reading always; capture and edit only when the app asked and the person ticked them.
+    const scopes = ['read', ...(decision.capture ? ['capture'] : []), ...(decision.edit ? ['edit'] : [])];
     const code = mintOAuthCode(actor.tenantId);
     await withTenantTx(actor.tenantId, async (tx) => {
       const readable = new Set((await namedSpaces(tx, actor)).map((s) => s.id));

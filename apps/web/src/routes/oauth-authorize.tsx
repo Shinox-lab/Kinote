@@ -51,6 +51,9 @@ export function OAuthAuthorizePage() {
   const [spaceIds, setSpaceIds] = useState<string[]>([]);
   // Filing captures is opt-in, and offered only when the app asked for it.
   const [capture, setCapture] = useState(false);
+  // Precise edits likewise.
+  const [edit, setEdit] = useState(false);
+  const writes = capture || edit;
   useEffect(() => {
     if (!ask) return;
     const preferred = ask.workspaces.find((w) => w.tenantId === session?.tenantId) ?? ask.workspaces[0];
@@ -64,7 +67,7 @@ export function OAuthAuthorizePage() {
       api.oauthDecide(
         params,
         decision === 'allow'
-          ? { decision, tenant_id: tenantId, agent_name: agentName.trim(), space_ids: spaceIds, capture }
+          ? { decision, tenant_id: tenantId, agent_name: agentName.trim(), space_ids: spaceIds, capture, edit }
           : { decision }
       ),
     onSuccess: ({ to }) => leaveFor(to),
@@ -127,7 +130,7 @@ export function OAuthAuthorizePage() {
         }}
       >
         <p className="text-sm text-fg">
-          <strong>{ask.client.name}</strong> wants to {ask.scopes.includes('capture') ? 'read and add to' : 'read'} your Kinote
+          <strong>{ask.client.name}</strong> wants to {ask.scopes.includes('capture') || ask.scopes.includes('edit') ? 'read and add to' : 'read'} your Kinote
           wiki as an agent. Allow it only if you just started this sign-in from that app.
         </p>
         <p className="text-xs text-muted">
@@ -162,7 +165,7 @@ export function OAuthAuthorizePage() {
               hint="How the agent appears in page history, the audit log and Settings → Agents."
             />
             <fieldset className="flex flex-col gap-2">
-              <legend className="mb-1 text-sm font-medium">{capture ? 'Spaces it can read and file into' : 'Spaces it can read'}</legend>
+              <legend className="mb-1 text-sm font-medium">{writes ? 'Spaces it can read and change' : 'Spaces it can read'}</legend>
               {workspace && workspace.spaces.length > 0 ? (
                 workspace.spaces.map((s) => (
                   <Checkbox key={s.id} label={s.name} checked={spaceIds.includes(s.id)} onChange={(on) => toggle(s.id, on)} />
@@ -179,9 +182,17 @@ export function OAuthAuthorizePage() {
                 onChange={setCapture}
               />
             )}
+            {ask.scopes.includes('edit') && (
+              <Checkbox
+                label="Also let it make precise edits (Edit)"
+                hint="It fixes exact words, adds blocks and sets fields on pages it has read, as itself in page history. Removals, and blocks a person just edited, become suggestions for a person. It can edit only where you can."
+                checked={edit}
+                onChange={setEdit}
+              />
+            )}
             <p className="text-xs text-muted">
-              {capture
-                ? 'It can browse, search and read these spaces, ask questions, and file captures; it never reaches more than you can.'
+              {writes
+                ? `It can browse, search and read these spaces, ask questions, and ${capture && edit ? 'file captures and make edits' : capture ? 'file captures' : 'make edits'}; it never reaches more than you can.`
                 : "Read only: it can browse, search and read these spaces and ask questions about them, but it can't change anything, and it never sees more than you can."}{' '}
               Revoke it any time in Settings → Agents.
             </p>

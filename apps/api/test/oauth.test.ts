@@ -109,7 +109,7 @@ describe('OAuth metadata', () => {
       code_challenge_methods_supported: ['S256'],
       token_endpoint_auth_methods_supported: ['none'],
       revocation_endpoint_auth_methods_supported: ['none'],
-      scopes_supported: ['read', 'capture'],
+      scopes_supported: ['read', 'capture', 'edit'],
     });
     for (const url of ['/.well-known/oauth-protected-resource', '/.well-known/oauth-protected-resource/mcp']) {
       const pr = await app.inject({ method: 'GET', url });
@@ -117,7 +117,7 @@ describe('OAuth metadata', () => {
       assert.deepEqual(pr.json(), {
         resource: `${BASE}/mcp`,
         authorization_servers: [BASE],
-        scopes_supported: ['read', 'capture'],
+        scopes_supported: ['read', 'capture', 'edit'],
         bearer_methods_supported: ['header'],
         resource_name: 'Kinote',
       });
@@ -267,7 +267,7 @@ describe('OAuth sign-in', () => {
       [{ response_type: 'token' }, 'unsupported_response_type'],
       [{ code_challenge_method: 'plain' }, 'invalid_request'],
       [{ code_challenge: '' }, 'invalid_request'],
-      [{ scope: 'edit' }, 'invalid_scope'],
+      [{ scope: 'write' }, 'invalid_scope'],
       [{ resource: 'https://other.example/mcp' }, 'invalid_target'],
     ];
     for (const [extra, error] of cases) {
@@ -475,6 +475,33 @@ describe('OAuth tokens', () => {
     const clientId = await newClient(app);
     const params = authParams(clientId, pkce().challenge, { scope: 'read' });
     const res = await decide(app, w.ownerHeaders, params, { decision: 'allow', agent_name: 'X', space_ids: [w.open.id], capture: true });
+    assert.equal(res.status, 400, JSON.stringify(res.body));
+  });
+
+  test('allowing edit gives editor grants and a read edit token', async () => {
+    const w = await agentWorld(app, 'oauth-edit');
+    const clientId = await newClient(app);
+    const p = pkce();
+    const params = authParams(clientId, p.challenge, { scope: 'read edit' });
+    const asked = await check(app, w.ownerHeaders, params);
+    assert.deepEqual(asked.body.scopes, ['read', 'edit']);
+    const res = await decide(app, w.ownerHeaders, params, { decision: 'allow', agent_name: 'Fixer', space_ids: [w.open.id], edit: true });
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    const tok = await token(app, exchangeForm({ clientId, verifier: p.verifier, code: new URL(res.body.to).searchParams.get('code')! }));
+    assert.equal(tok.body.scope, 'read edit');
+    const [agent] = await withTenantTx(w.tenant.id, (tx) => tx.select().from(agents).where(eq(agents.name, 'Fixer')));
+    const grants = await withTenantTx(w.tenant.id, (tx) =>
+      tx.select().from(spaceGrants).where(and(eq(spaceGrants.principalType, 'agent'), eq(spaceGrants.principalId, agent!.id)))
+    );
+    assert.deepEqual(grants.map((g) => [g.spaceId, g.role]), [[w.open.id, 'editor']]);
+    assert.ok((await listToolNames(app, tok.body.access_token)).includes('kinote_edit'));
+  });
+
+  test('edit cannot be allowed when the client did not ask for it', async () => {
+    const w = await agentWorld(app, 'oauth-noedit');
+    const clientId = await newClient(app);
+    const params = authParams(clientId, pkce().challenge, { scope: 'read capture' });
+    const res = await decide(app, w.ownerHeaders, params, { decision: 'allow', agent_name: 'X', space_ids: [w.open.id], edit: true });
     assert.equal(res.status, 400, JSON.stringify(res.body));
   });
 
