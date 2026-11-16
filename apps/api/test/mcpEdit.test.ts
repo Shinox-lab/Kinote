@@ -13,6 +13,7 @@ import { createAgent, signUpMember } from './support/testkit.js';
 
 const short = (id: string) => id.replaceAll('-', '').slice(0, 8);
 const CHANGED = 'changed since you read it: read the section again';
+const NOT_FOUND = 'not found in the block: quote the words as they read, without Markdown, or read the section again if it changed';
 const UNSUPPORTED = "This block can't be edited with kinote_edit; use kinote_capture to propose the change.";
 
 describe('kinote_edit', () => {
@@ -113,6 +114,83 @@ describe('kinote_edit', () => {
     expect(await k.pageText(w.tenant.id, w.george)).toBe('George is a client. Launch is in November!');
   });
 
+  test("accepting an agent's replace suggestion keeps the block's type, props and styles", async () => {
+    const w = await k.world();
+    const s = await setup(w);
+    await k.collab.applyBlockOps({
+      tenantId: w.tenant.id,
+      pageId: w.george,
+      actor: { type: 'user', id: w.owner.userId },
+      source: 'human',
+      ops: [
+        {
+          op: 'replace',
+          blockId: s.george.id,
+          blocks: [
+            {
+              id: s.george.id,
+              type: 'paragraph',
+              props: { textAlignment: 'center', textColor: 'blue', backgroundColor: 'default' },
+              content: [
+                { type: 'text', text: '1. Launch', styles: { underline: true } },
+                { type: 'text', text: ' is in November.', styles: {} },
+              ],
+              children: [],
+            },
+          ],
+        },
+      ],
+    });
+    const res = await s.edit([{ block_id: short(s.george.id), old: 'November', new: 'December' }]);
+    expect(res.text).toContain('suggested:');
+    const [row] = await openSuggestions(w.tenant.id, w.george);
+    const accepted = await k.post(w.headers, `/api/v1/suggestions/${row!.id}/accept`);
+    expect(accepted.statusCode, accepted.body).toBe(200);
+    const [block] = await blocksOf(w.tenant.id, w.george);
+    expect(block).toMatchObject({ id: s.george.id, type: 'paragraph', props: { textAlignment: 'center', textColor: 'blue' } });
+    expect(block!.content).toEqual([
+      { type: 'text', text: '1. Launch', styles: { underline: true } },
+      { type: 'text', text: ' is in December.', styles: {} },
+    ]);
+  });
+
+  test('words quoted with the Markdown kinote_read shows still match', async () => {
+    const w = await k.world();
+    const s = await setup(w);
+    const id = 'abcdef12-3333-4333-8333-333333333333';
+    await k.collab.applyBlockOps({
+      tenantId: w.tenant.id,
+      pageId: w.george,
+      actor: { type: 'agent', id: s.agentId },
+      source: 'agent',
+      ops: [
+        {
+          op: 'insert_after',
+          after: s.george.id,
+          blocks: [
+            {
+              id,
+              type: 'paragraph',
+              props: {},
+              content: [
+                { type: 'text', text: 'Price', styles: { bold: true } },
+                { type: 'text', text: ' is ', styles: {} },
+                { type: 'link', href: 'https://x.test/p', content: [{ type: 'text', text: '$10', styles: {} }] },
+              ],
+              children: [],
+            },
+          ],
+        },
+      ],
+    });
+    const res = await s.edit([{ block_id: 'abcdef12', old: '**Price** is [$10](https://x.test/p)', new: '**Price** is $12' }]);
+    expect(res.text).toContain('• abcdef12 — applied');
+    const block = (await blocksOf(w.tenant.id, w.george)).find((b) => b.id === id)!;
+    expect(block.content).toEqual([{ type: 'text', text: 'Price is $12', styles: { bold: true } }]);
+    const missing = await s.edit([{ block_id: 'abcdef12', old: 'Cost', new: 'x' }]);
+    expect(missing.text).toContain(`• abcdef12 — refused: ${NOT_FOUND}`);
+  });
+
   test('a viewer grant makes a suggestion', async () => {
     const w = await k.world();
     const s = await setup(w, { role: 'viewer' });
@@ -148,7 +226,7 @@ describe('kinote_edit', () => {
       { block_id: 'ffffffff', old: 'a', new: 'b' },
     ]);
     expect(res.isError).toBe(true);
-    expect(res.text).toContain(`• ${id} — refused: ${CHANGED}`);
+    expect(res.text).toContain(`• ${id} — refused: ${NOT_FOUND}`);
     expect(res.text).toContain('• ffffffff — refused: block not found: read the page again');
     const twice = await s.edit([{ block_id: id, old: 'is', new: 'was' }]);
     expect(twice.text).toContain(`refused: "old" appears 2 times in block ${id}; quote more words`);

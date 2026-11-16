@@ -129,6 +129,11 @@ async function opsFor(tenantId: string, row: SuggestionRow): Promise<{ ops: Para
   }
   const expected = row.expectedText !== null ? { expectedText: row.expectedText } : {};
   if (row.kind === 'remove') return { ops: [{ op: 'remove', blockId: row.blockId!, ...expected }], added: [] };
+  // An agent's replace stores the exact edited block: re-parsing its Markdown would lose props, styles and type.
+  if (row.kind === 'replace' && row.proposedByType === 'agent' && Array.isArray(row.proposedBlocks) && row.proposedBlocks.length > 0) {
+    const blocks = (row.proposedBlocks as BlockLike[]).map((b, i) => ({ ...b, id: i === 0 ? row.blockId! : randomUUID() }));
+    return { ops: [{ op: 'replace', blockId: row.blockId!, blocks: blocks as unknown as Record<string, unknown>[], ...expected }], added: blocks };
+  }
   const blocks: BlockLike[] = (await markdownBlocks(row.proposedMarkdown ?? '')).map((b) => ({ ...b, id: randomUUID() }));
   if (blocks.length === 0) throw new AppError('suggestion_not_open');
   const raw = blocks as unknown as Record<string, unknown>[];

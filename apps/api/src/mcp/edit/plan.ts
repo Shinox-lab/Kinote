@@ -49,6 +49,18 @@ export interface EditPlan {
 }
 
 export const CHANGED = 'changed since you read it: read the section again';
+export const NOT_FOUND = 'not found in the block: quote the words as they read, without Markdown, or read the section again if it changed';
+
+/**
+ * The words of a Markdown quote as a block's text reads them: `[text](url)` becomes its text, and bold, italic,
+ * strike and code markers go. kinote_read shows blocks as Markdown; their text has none of it.
+ */
+export function plainWords(markdown: string): string {
+  return markdown
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/(\*\*|__|~~|`)/g, '')
+    .replace(/(^|[^\w*])[*_]([^*_\s][^*_]*?)[*_](?=[^\w*]|$)/g, '$1$2');
+}
 export const GONE = 'block not found: read the page again';
 export const UNSUPPORTED = "This block can't be edited with kinote_edit; use kinote_capture to propose the change.";
 const SAME_BLOCK = 'one edit per block per call';
@@ -275,9 +287,13 @@ export async function planEdits(tx: DbTransaction, actor: Actor, doc: DocumentRo
       refuse(i, label, UNSUPPORTED);
       continue;
     }
-    const replaced = replaceInBlock(block, edit.old, edit.new);
+    let replaced = replaceInBlock(block, edit.old, edit.new);
+    // Quoted as kinote_read shows it (Markdown)? Match its plain words, and write the new words plain too.
+    if (!replaced.ok && replaced.reason === 'not_found' && plainWords(edit.old) !== edit.old) {
+      replaced = replaceInBlock(block, plainWords(edit.old), plainWords(edit.new));
+    }
     if (!replaced.ok) {
-      refuse(i, label, replaced.reason === 'ambiguous' ? `"old" appears ${replaced.count} times in block ${label}; quote more words` : CHANGED);
+      refuse(i, label, replaced.reason === 'ambiguous' ? `"old" appears ${replaced.count} times in block ${label}; quote more words` : NOT_FOUND);
       continue;
     }
     // The block's own content only: collab keeps the children of a replaced block.
