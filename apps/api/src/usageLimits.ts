@@ -41,6 +41,16 @@ export async function assertNotSuspended(req: FastifyRequest): Promise<void> {
   throw new AppError('workspace_suspended', undefined, admin && billing.manageUrl ? { manageUrl: billing.manageUrl } : undefined);
 }
 
+/** Whether the workspace is suspended for billing (false when the billing state can't be read: billing never takes the product down). */
+export async function tenantSuspended(tenantId: string, log?: { error(obj: object, msg: string): void }): Promise<boolean> {
+  try {
+    return (await withTenantTx(tenantId, (tx) => readBillingState(tx, tenantId))).state === 'suspended';
+  } catch (err) {
+    log?.error({ err }, 'billing state unavailable; request allowed');
+    return false;
+  }
+}
+
 /** Who a per-person limit counts: the member in this workspace, the source token, or the session user. */
 function whoOf(req: FastifyRequest, per: 'person' | 'tenant'): string {
   if (per === 'tenant') {

@@ -58,7 +58,10 @@ export function registerMcpRoute(
     if (!actor || !agent) throw new AppError('unauthenticated');
 
     const instructions = hasInitialize(req.body)
-      ? serverInstructions((await withTenantTx(actor.tenantId, (tx) => namedSpaces(tx, actor))).map((s) => s.name))
+      ? serverInstructions(
+          (await withTenantTx(actor.tenantId, (tx) => namedSpaces(tx, actor))).map((s) => s.name),
+          agent.scopes
+        )
       : undefined;
     const server = new Server(
       { name: 'kinote', version: deps.version },

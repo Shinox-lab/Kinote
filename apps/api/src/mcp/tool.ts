@@ -6,6 +6,7 @@ import { estimateTokens, type Actor } from '@kinote/core';
 import { toJsonSchemaCompat } from '@modelcontextprotocol/sdk/server/zod-json-schema-compat.js';
 import type { CallToolResult, Tool } from '@modelcontextprotocol/sdk/types.js';
 import type { AgentAuth } from '../auth/actor.js';
+import { tenantSuspended } from '../usageLimits.js';
 import { capResult } from './format.js';
 import { ToolError } from './refs.js';
 import type { McpDeps } from './route.js';
@@ -18,6 +19,8 @@ export interface ToolContext {
   log: FastifyBaseLogger;
   /** Records the documents a result shows, for the audit row. */
   touch(pageIds: string[]): void;
+  /** Throws the suspension refusal while the workspace is suspended (for a tool whose only some actions write). */
+  assertWritable(): Promise<void>;
 }
 
 export interface ToolDef<S extends ZodRawShape = ZodRawShape> {
@@ -25,7 +28,9 @@ export interface ToolDef<S extends ZodRawShape = ZodRawShape> {
   /** The token scope the tool needs; without it the tool is not listed and a call is refused. */
   scope: AgentScope;
   /** Which per-agent, per-minute limit the call counts against. */
-  limit: 'search' | 'ask';
+  limit: 'search' | 'ask' | 'capture';
+  /** Every call writes: refused while the workspace is suspended. */
+  writes?: boolean;
   description: string;
   input: S;
   /** The result text. Throw `ToolError` (or an `AppError`) for a refusal the agent should read. */
@@ -38,6 +43,9 @@ export function defineTool<S extends ZodRawShape>(def: ToolDef<S>): ToolDef<S> {
 }
 
 const ARG_AUDIT_CHARS = 500;
+/** `kinote_capture` and `kinote_capture_action` calls a minute per agent: each capture runs a routing job on the workspace's model. */
+export const MCP_CAPTURE_PER_MINUTE = 10;
+const SUSPENDED = 'This workspace is suspended for billing; it is read-only until the plan is renewed.';
 const MINUTE_MS = 60_000;
 
 /** The `tools/list` entries this token may see. */
@@ -69,7 +77,7 @@ const text = (t: string, isError = false): CallToolResult => ({ content: [{ type
  */
 export async function callTool(
   tools: readonly ToolDef[],
-  ctx: Omit<ToolContext, 'touch'>,
+  ctx: Omit<ToolContext, 'touch' | 'assertWritable'>,
   name: string,
   rawArgs: unknown
 ): Promise<CallToolResult> {
@@ -106,7 +114,7 @@ export async function callTool(
 /** The call itself, refusals included; `error` is the refusal text the agent sees, or null. */
 async function runCall(
   tools: readonly ToolDef[],
-  ctx: Omit<ToolContext, 'touch'>,
+  ctx: Omit<ToolContext, 'touch' | 'assertWritable'>,
   name: string,
   rawArgs: unknown,
   pages: Set<string>
@@ -119,7 +127,8 @@ async function runCall(
     return refuse(`This token cannot use ${tool.name}. Ask a workspace admin for a token with the "${tool.scope}" scope.`);
   }
 
-  const max = tool.limit === 'ask' ? deps.limits.askPerMinute : deps.limits.searchPerMinute;
+  const max =
+    tool.limit === 'ask' ? deps.limits.askPerMinute : tool.limit === 'capture' ? MCP_CAPTURE_PER_MINUTE : deps.limits.searchPerMinute;
   try {
     const verdict = await hitLimit(`limit:mcp-${tool.limit}:${actor.tenantId}:${agent.agentId}`, max, MINUTE_MS);
     if (!verdict.allowed) {
@@ -134,9 +143,13 @@ async function runCall(
     const issues = parsed.error.issues.map((i) => `${i.path.join('.') || 'arguments'}: ${i.message}`).join('; ');
     return refuse(`Invalid arguments for ${tool.name}: ${issues}.`);
   }
+  const assertWritable = async () => {
+    if (await tenantSuspended(actor.tenantId, log)) throw new ToolError(SUSPENDED);
+  };
   try {
+    if (tool.writes) await assertWritable();
     const out = await deps.meter(tool.limit === 'ask' ? 'ask' : 'index', actor, () =>
-      tool.run(parsed.data, { ...ctx, touch: (ids) => ids.forEach((id) => pages.add(id)) })
+      tool.run(parsed.data, { ...ctx, touch: (ids) => ids.forEach((id) => pages.add(id)), assertWritable })
     );
     return { result: text(capResult(out)), error: null };
   } catch (err) {
