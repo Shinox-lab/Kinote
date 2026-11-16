@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { chunks, spaces, versions, withTenantTx, type DocumentRow } from '@kinote/db';
 import { blockMarkdown, blockText, readLiveBlocks } from '@kinote/core';
 import { documentName, flattenBlocks, type BlockLike } from '@kinote/shared';
-import { contentBlock, decodeCursor, encodeCursor, MAX_RESULT_TOKENS, pageLink, shortId } from '../format.js';
+import { contentBlock, decodeCursor, encodeCursor, idMatches as sameId, MAX_RESULT_TOKENS, pageLink, shortId } from '../format.js';
 import { resolvePageRef, ToolError } from '../refs.js';
 import { defineTool, type ToolContext } from '../tool.js';
 
@@ -26,11 +26,6 @@ const wordCount = (text: string) => text.split(/\s+/).filter(Boolean).length;
 const blockWords = (block: BlockLike) => wordCount(flattenBlocks([block]).map((b) => b.text).join(' '));
 const headingLevel = (block: BlockLike): number | null =>
   block.type === 'heading' ? Number((block.props as { level?: unknown } | undefined)?.level ?? 1) || 1 : null;
-/** A block id named by its full id or a prefix of 8 or more hex characters (dashes optional). */
-const sameId = (id: string, ref: string) => {
-  const want = ref.replaceAll('-', '').toLowerCase();
-  return want.length >= 8 && id.replaceAll('-', '').toLowerCase().startsWith(want);
-};
 
 /** The index after the section that starts at `start`: the next heading of the same or a higher level. */
 function sectionEnd(blocks: BlockLike[], start: number): number {

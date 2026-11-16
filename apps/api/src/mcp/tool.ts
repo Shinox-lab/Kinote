@@ -28,9 +28,9 @@ export interface ToolDef<S extends ZodRawShape = ZodRawShape> {
   /** The token scope the tool needs; without it the tool is not listed and a call is refused. */
   scope: AgentScope;
   /** Which per-agent, per-minute limit the call counts against. */
-  limit: 'search' | 'ask' | 'capture';
+  limit: 'search' | 'ask' | 'capture' | 'edit';
   /** The limit a call counts against when it depends on the arguments (e.g. a read-only action); default `limit`. */
-  limitOf?: (rawArgs: unknown) => 'search' | 'ask' | 'capture';
+  limitOf?: (rawArgs: unknown) => 'search' | 'ask' | 'capture' | 'edit';
   /** Every call writes: refused while the workspace is suspended. */
   writes?: boolean;
   description: string;
@@ -47,6 +47,8 @@ export function defineTool<S extends ZodRawShape>(def: ToolDef<S>): ToolDef<S> {
 const ARG_AUDIT_CHARS = 500;
 /** `kinote_capture` and `kinote_capture_action` calls a minute per agent: each capture runs a routing job on the workspace's model. */
 export const MCP_CAPTURE_PER_MINUTE = 10;
+/** `kinote_edit` calls a minute per agent: no model call, so more than capture. */
+export const MCP_EDIT_PER_MINUTE = 30;
 const SUSPENDED = 'This workspace is suspended for billing; it is read-only until the plan is renewed.';
 const MINUTE_MS = 60_000;
 
@@ -130,7 +132,7 @@ async function runCall(
   }
 
   const limit = tool.limitOf?.(rawArgs) ?? tool.limit;
-  const max = limit === 'ask' ? deps.limits.askPerMinute : limit === 'capture' ? MCP_CAPTURE_PER_MINUTE : deps.limits.searchPerMinute;
+  const max = limit === 'ask' ? deps.limits.askPerMinute : limit === 'capture' ? MCP_CAPTURE_PER_MINUTE : limit === 'edit' ? MCP_EDIT_PER_MINUTE : deps.limits.searchPerMinute;
   try {
     const verdict = await hitLimit(`limit:mcp-${limit}:${actor.tenantId}:${agent.agentId}`, max, MINUTE_MS);
     if (!verdict.allowed) {

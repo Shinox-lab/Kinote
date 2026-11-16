@@ -58,6 +58,7 @@ export const AuditEventTypeSchema = z.enum([
   'agent.created',
   'agent.updated',
   'agent.stopped',
+  'agent.edit',
   'agent.token_issued',
   'agent.token_revoked',
   'agent.tool_called',

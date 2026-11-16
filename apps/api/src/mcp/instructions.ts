@@ -10,6 +10,11 @@ export function serverInstructions(spaceNames: readonly string[], scopes: readon
           'Use kinote_capture to file new information; pass preview: true to show your user where it would go before anything changes. Use the source argument so a retry never files twice.',
         ]
       : []),
+    ...(scopes.includes('edit')
+      ? [
+          'Use kinote_edit for precise fixes: read the section first and quote the exact words to change. Check kinote_related so a fact written on several pages is fixed everywhere.',
+        ]
+      : []),
     `Spaces you can read: ${spaceNames.length > 0 ? spaceNames.join(', ') : 'none yet (ask a workspace admin for access)'}.`,
   ].join('\n');
 }
