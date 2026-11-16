@@ -93,6 +93,7 @@ async function viewAgents(tx: DbTransaction, tenantId: string, only?: string): P
     createdAt: a.createdAt.toISOString(),
     disabledAt: a.disabledAt?.toISOString() ?? null,
     dailyAiLimit: a.dailyAiLimit,
+    alwaysReview: a.alwaysReview,
     grants: grants
       .filter((g) => g.principalId === a.id && (g.role === 'viewer' || g.role === 'editor'))
       .map((g) => ({ spaceId: g.spaceId, spaceName: g.spaceName, role: g.role as 'viewer' | 'editor' })),

@@ -18,6 +18,8 @@ export const tenants = pgTable('tenants', {
   plan: text('plan').notNull().default('standard'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  /** "Agents may answer routing questions": off, questions go to the agent's owner on the Capture page. */
+  agentsMayAnswer: boolean('agents_may_answer').notNull().default(false),
 });
 
 export const users = pgTable('users', {
@@ -112,6 +114,8 @@ export const agents = pgTable('agents', {
   disabledAt: timestamp('disabled_at', { withTimezone: true }),
   /** AI actions (Ask) this agent may use a day; null means the default (100). */
   dailyAiLimit: integer('daily_ai_limit'),
+  /** "Always review this agent": its routed changes wait for review even in a space without review. */
+  alwaysReview: boolean('always_review').notNull().default(true),
 });
 
 export const agentTokens = pgTable(

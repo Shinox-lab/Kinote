@@ -48,6 +48,9 @@ export function toCaptureSummary(row: CaptureRow, senderName: string, file: Capt
     scopePageId: row.scopePageId,
     status: row.status,
     error: row.error,
+    preview: row.preview,
+    fileOutcome: row.fileOutcome,
+    fileReason: row.fileReason,
     shapeMode: row.shapeMode,
     shape: row.shape,
     file,
@@ -134,7 +137,7 @@ export async function createCapture(actor: Actor, body: unknown): Promise<Captur
   }
   const parsed = CreateCaptureRequestSchema.safeParse(body);
   if (!parsed.success) throw new AppError('validation_failed');
-  const { text, file_id, scope_space_id, scope_page_id, shape } = parsed.data;
+  const { text, file_id, scope_space_id, scope_page_id, shape, keep_file } = parsed.data;
 
   return withTenantTx(actor.tenantId, async (tx) => {
     const access = await senderAccess(tx, actor);
@@ -177,6 +180,7 @@ export async function createCapture(actor: Actor, body: unknown): Promise<Captur
         scopeSpaceId,
         scopePageId: scope_page_id ?? null,
         shapeMode: shape,
+        fileMode: keep_file,
         fileId: file_id ?? null,
       })
       .returning();

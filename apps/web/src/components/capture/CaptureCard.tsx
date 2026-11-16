@@ -12,8 +12,10 @@ const STATUS_TONE: Record<CaptureSummary['status'], string> = {
   queued: 'bg-hover text-muted',
   routing: 'bg-dot-review/15 text-fg',
   waiting_for_answer: 'bg-review-bg text-review-text',
+  previewed: 'bg-review-bg text-review-text',
   done: 'bg-success-bg text-success',
   failed: 'bg-danger-bg text-danger',
+  cancelled: 'bg-hover text-muted',
 };
 
 /** The engine's questions with their options, and the sender's answers. */

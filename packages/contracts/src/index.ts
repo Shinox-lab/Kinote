@@ -1342,6 +1342,8 @@ export const AgentSchema = z.object({
   disabledAt: z.string().datetime().nullable(),
   /** AI actions a day; null means the default (100). */
   dailyAiLimit: z.number().int().nullable(),
+  /** Its routed changes wait for review even in a space without review. */
+  alwaysReview: z.boolean(),
   grants: z.array(z.object({ spaceId: z.string().uuid(), spaceName: z.string(), role: z.enum(['viewer', 'editor']) })),
   tokens: z.array(AgentTokenSchema),
 });
@@ -1359,9 +1361,15 @@ export const UpdateAgentRequestSchema = z
     name: AgentNameSchema.optional(),
     disabled: z.boolean().optional(),
     daily_ai_limit: DailyAiLimitSchema.nullable().optional(),
+    always_review: z.boolean().optional(),
   })
   .refine((v) => Object.values(v).some((x) => x !== undefined), 'nothing to change');
 export type UpdateAgentRequest = z.input<typeof UpdateAgentRequestSchema>;
+
+/** Workspace settings for agents (Settings → Agents). */
+export const AgentSettingsSchema = z.object({ agentsMayAnswer: z.boolean() });
+export type AgentSettings = z.infer<typeof AgentSettingsSchema>;
+export const UpdateAgentSettingsRequestSchema = z.object({ agents_may_answer: z.boolean() });
 
 export const IssueAgentTokenRequestSchema = z.object({
   name: AgentNameSchema,
@@ -1474,8 +1482,13 @@ export const CreateCaptureRequestSchema = z
     scope_page_id: z.string().uuid().optional(),
     /** auto: the engine decides (a file is a document); document: always also a new page; updates: never a new page. */
     shape: z.enum(['auto', 'document', 'updates']).default('auto'),
+    /** The attached file: auto decides by meaning (and by the typed note); keep files it in the wiki; inbox leaves it there. */
+    keep_file: z.enum(['auto', 'keep', 'inbox']).default('auto'),
   })
   .refine((c) => c.text !== '' || c.file_id !== undefined, { message: 'Write something or attach a file.' });
+
+export const CaptureStatusSchema = z.enum(['queued', 'routing', 'waiting_for_answer', 'previewed', 'done', 'failed', 'cancelled']);
+export type CaptureStatus = z.infer<typeof CaptureStatusSchema>;
 
 export const CaptureSummarySchema = z.object({
   id: z.string().uuid(),
@@ -1487,8 +1500,13 @@ export const CaptureSummarySchema = z.object({
   text: z.string(),
   scopeSpaceId: z.string().uuid().nullable(),
   scopePageId: z.string().uuid().nullable(),
-  status: z.enum(['queued', 'routing', 'waiting_for_answer', 'done', 'failed']),
+  status: CaptureStatusSchema,
   error: z.string().nullable(),
+  /** Planned only: nothing changes until the sender applies the preview. */
+  preview: z.boolean(),
+  /** What became of the attached file; null without one, or before it was decided. */
+  fileOutcome: z.enum(['with_document', 'placed', 'inbox']).nullable(),
+  fileReason: z.string().nullable(),
   shapeMode: z.enum(['auto', 'document', 'updates']),
   /** Null until the capture is split. */
   shape: z.enum(['document', 'updates']).nullable(),
