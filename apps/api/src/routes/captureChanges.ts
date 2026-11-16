@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { and, desc, eq, inArray, isNull, ne } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, ne, or } from 'drizzle-orm';
 import {
   withTenantTx,
   captureChanges,
@@ -10,6 +10,7 @@ import {
   writeAuditEvent,
   type DbTransaction,
 } from '@kinote/db';
+import { agents, getDb } from '@kinote/db';
 import {
   AppError,
   canonicalFieldJson,
@@ -39,7 +40,7 @@ import {
   type EmbeddingProvider,
 } from '@kinote/core';
 import { blockFullText, documentName, type BlockLike, type CollabClient } from '@kinote/shared';
-import { changeField, enqueueCaptureRoute, summaries, visibleCapture } from './captures.js';
+import { changeField, enqueueCaptureRoute, isOwnerOfSender, summaries, visibleCapture } from './captures.js';
 import { archivePageTx, lockPage, movePage } from './pages.js';
 
 type ChangeRow = typeof captureChanges.$inferSelect;
@@ -48,6 +49,25 @@ type FactRow = typeof captureFacts.$inferSelect;
 
 function isSender(actor: Actor, capture: Pick<CaptureRow, 'senderType' | 'senderId'>): boolean {
   return capture.senderType === actor.principalType && capture.senderId === actor.principalId;
+}
+
+/** Captures the actor sent, or that an agent they own sent (SQL condition on `captures`). */
+function sentByOrFor(actor: Actor) {
+  const own = and(eq(captures.senderType, actor.principalType), eq(captures.senderId, actor.principalId));
+  if (actor.principalType !== 'user') return own;
+  return or(
+    own,
+    and(
+      eq(captures.senderType, 'agent'),
+      inArray(
+        captures.senderId,
+        getDb()
+          .select({ id: agents.id })
+          .from(agents)
+          .where(and(eq(agents.tenantId, actor.tenantId), eq(agents.createdBy, actor.principalId)))
+      )
+    )
+  );
 }
 
 async function captureOf(tx: DbTransaction, tenantId: string, id: string): Promise<CaptureRow> {
@@ -489,7 +509,7 @@ export async function listNeedsHome(actor: Actor) {
           eq(captureFacts.outcome, 'needs_home'),
           isTenantAdmin(actor)
             ? undefined
-            : and(eq(captures.senderType, actor.principalType), eq(captures.senderId, actor.principalId))
+            : sentByOrFor(actor)
         )
       )
       .orderBy(desc(captureFacts.createdAt))
@@ -524,7 +544,7 @@ export async function placeCaptureFact(actor: Actor, id: string, body: unknown, 
   const parsed = PlaceFactRequestSchema.safeParse(body);
   const fact = await withTenantTx(actor.tenantId, async (tx) => {
     const { fact, capture } = await needsHomeFact(tx, actor, id);
-    const sender = isSender(actor, capture);
+    const sender = isSender(actor, capture) || (await isOwnerOfSender(tx, actor, capture));
     if (!parsed.success) throw new AppError('validation_failed');
     await targetPage(tx, actor, parsed.data.document_id, sender ? 'viewer' : 'editor');
     if (fact.outcome !== 'needs_home') throw new AppError('fact_not_open');
@@ -557,7 +577,9 @@ export async function placeCaptureFact(actor: Actor, id: string, body: unknown, 
 export async function dismissCaptureFact(actor: Actor, id: string) {
   return withTenantTx(actor.tenantId, async (tx) => {
     const { fact, capture } = await needsHomeFact(tx, actor, id);
-    if (!isSender(actor, capture) && !isTenantAdmin(actor)) throw new AppError('capture_not_found');
+    if (!isSender(actor, capture) && !(await isOwnerOfSender(tx, actor, capture)) && !isTenantAdmin(actor)) {
+      throw new AppError('capture_not_found');
+    }
     if (fact.outcome !== 'needs_home') throw new AppError('fact_not_open');
     await tx
       .update(captureFacts)
@@ -633,7 +655,7 @@ export async function listNeedsHomeDocuments(actor: Actor): Promise<NeedsHomeDoc
           eq(captures.documentOutcome, 'needs_home'),
           isTenantAdmin(actor)
             ? undefined
-            : and(eq(captures.senderType, actor.principalType), eq(captures.senderId, actor.principalId))
+            : sentByOrFor(actor)
         )
       )
       .orderBy(desc(captures.createdAt))

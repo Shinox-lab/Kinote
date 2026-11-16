@@ -5,6 +5,7 @@ import {
   memberships,
   spaceGrants,
   spaces,
+  tenants,
   users,
   withTenantTx,
   writeAuditEvent,
@@ -16,7 +17,9 @@ import {
   DEFAULT_AGENT_TOKEN_DAYS,
   IssueAgentTokenRequestSchema,
   UpdateAgentRequestSchema,
+  UpdateAgentSettingsRequestSchema,
   type Agent,
+  type AgentSettings,
   type AgentScope,
   type AgentToken,
   type IssueAgentTokenResponse,
@@ -234,5 +237,38 @@ export async function revokeAgentToken(actor: Actor, agentId: string, tokenId: s
       payload: { tokenId: token.id, name: token.name },
     });
     return toToken(revoked!);
+  });
+}
+
+/** GET /api/v1/agents/settings: the workspace's settings for agents (tenant admins). */
+export async function getAgentSettings(actor: Actor): Promise<AgentSettings> {
+  requireTenantAdmin(actor);
+  return withTenantTx(actor.tenantId, async (tx) => {
+    const [row] = await tx.select({ agentsMayAnswer: tenants.agentsMayAnswer }).from(tenants).where(eq(tenants.id, actor.tenantId));
+    return { agentsMayAnswer: row?.agentsMayAnswer ?? false };
+  });
+}
+
+/** PATCH /api/v1/agents/settings: whether agents may answer routing questions themselves. */
+export async function updateAgentSettings(actor: Actor, input: unknown): Promise<AgentSettings> {
+  requireTenantAdmin(actor);
+  const parsed = UpdateAgentSettingsRequestSchema.safeParse(input);
+  if (!parsed.success) throw new AppError('validation_failed');
+  return withTenantTx(actor.tenantId, async (tx) => {
+    const [row] = await tx
+      .update(tenants)
+      .set({ agentsMayAnswer: parsed.data.agents_may_answer })
+      .where(eq(tenants.id, actor.tenantId))
+      .returning({ agentsMayAnswer: tenants.agentsMayAnswer });
+    await writeAuditEvent(tx, {
+      tenantId: actor.tenantId,
+      type: 'agent.updated',
+      actorType: actor.principalType,
+      actorId: actor.principalId,
+      subjectType: 'tenant',
+      subjectId: actor.tenantId,
+      payload: { agentsMayAnswer: row!.agentsMayAnswer },
+    });
+    return { agentsMayAnswer: row!.agentsMayAnswer };
   });
 }
