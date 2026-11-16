@@ -1,7 +1,7 @@
 import { sql } from 'drizzle-orm';
 import { normalizeEntityName, rowsOf, type DbTransaction } from '@kinote/db';
 import { ENTITY_MATCH } from './entities.js';
-import type { EntityKind } from './model.js';
+import type { EdgeType, EntityKind } from './model.js';
 
 /**
  * Who may be placed into or found through: the actor's readable spaces with
@@ -158,4 +158,73 @@ export async function pagesForEntities(
     hops: r.hops as 0 | 1 | 2,
     viaEntityIds: Array.isArray(r.via) ? r.via : String(r.via).replace(/^\{|\}$/g, '').split(',').filter(Boolean),
   }));
+}
+
+/** The most used readable spelling of each entity (only mentions in the filter's spaces count). */
+export async function entityDisplayNames(
+  tx: DbTransaction,
+  f: PlacementFilter,
+  entityIds: string[]
+): Promise<Map<string, string>> {
+  if (entityIds.length === 0 || f.spaceIds.length === 0) return new Map();
+  const rows = rowsOf<{ entity_id: string; surface: string }>(
+    await tx.execute(sql`
+      SELECT DISTINCT ON (entity_id) entity_id, surface
+        FROM (
+          SELECT m.entity_id, u.surface, count(*) AS uses
+            FROM entity_mentions m, unnest(m.surfaces) AS u(surface)
+           WHERE m.tenant_id = ${f.tenantId}::uuid
+             AND m.space_id = ANY(${sql.param(f.spaceIds)}::uuid[])
+             AND m.entity_id = ANY(${sql.param(entityIds)}::uuid[])
+           GROUP BY m.entity_id, u.surface
+        ) s
+       ORDER BY entity_id, uses DESC, surface`)
+  );
+  return new Map(rows.map((r) => [r.entity_id, r.surface]));
+}
+
+export interface EntityRelation {
+  type: EdgeType;
+  /** 'out': this entity is the edge's subject (`this type other`); 'in': the other is. */
+  direction: 'out' | 'in';
+  otherEntityId: string;
+  otherName: string;
+  /** The page the relationship was read from. */
+  documentId: string;
+}
+
+/**
+ * Relationships touching an entity, read from pages in the filter's spaces (archived pages left out). The
+ * other entity is named by its most used readable spelling; one with no readable mention is left out, so a
+ * name known only from a space the actor cannot read never surfaces. One row per (type, direction, other).
+ */
+export async function entityRelations(
+  tx: DbTransaction,
+  f: PlacementFilter,
+  entityId: string,
+  limit = 20
+): Promise<EntityRelation[]> {
+  if (f.spaceIds.length === 0) return [];
+  const spaces = sql.param(f.spaceIds);
+  const rows = rowsOf<{ type: EdgeType; direction: 'out' | 'in'; other_id: string; document_id: string }>(
+    await tx.execute(sql`
+      SELECT DISTINCT ON (g.type, direction, other_id) g.type, direction, other_id, g.document_id
+        FROM (
+          SELECT g.*,
+                 CASE WHEN g.from_entity_id = ${entityId}::uuid THEN 'out' ELSE 'in' END AS direction,
+                 CASE WHEN g.from_entity_id = ${entityId}::uuid THEN g.to_entity_id ELSE g.from_entity_id END AS other_id
+            FROM entity_edges g
+           WHERE g.tenant_id = ${f.tenantId}::uuid
+             AND g.space_id = ANY(${spaces}::uuid[])
+             AND (g.from_entity_id = ${entityId}::uuid OR g.to_entity_id = ${entityId}::uuid)
+             AND g.from_entity_id <> g.to_entity_id
+        ) g
+        JOIN documents d ON d.tenant_id = g.tenant_id AND d.id = g.document_id AND d.archived_at IS NULL
+       ORDER BY g.type, direction, other_id, g.document_id`)
+  );
+  const names = await entityDisplayNames(tx, f, [...new Set(rows.map((r) => r.other_id))]);
+  return rows
+    .filter((r) => names.has(r.other_id))
+    .slice(0, limit)
+    .map((r) => ({ type: r.type, direction: r.direction, otherEntityId: r.other_id, otherName: names.get(r.other_id)!, documentId: r.document_id }));
 }

@@ -56,8 +56,11 @@ export const AuditEventTypeSchema = z.enum([
   'member.removed',
   'member.left',
   'agent.created',
+  'agent.updated',
   'agent.token_issued',
+  'agent.token_revoked',
   'agent.tool_called',
+  'mcp.tool_call',
   'space.created',
   'space.settings_changed',
   'space.grant_changed',
@@ -897,6 +900,8 @@ export const SearchPassageSchema = z.object({
   pageTo: z.number().int().nullable(),
   citeAs: z.string(),
   rrfScore: z.number(),
+  /** Cosine distance from the query; null when only the keyword branch found the passage. */
+  vectorDistance: z.number().nullable(),
 });
 export type SearchPassage = z.infer<typeof SearchPassageSchema>;
 
@@ -1302,6 +1307,76 @@ export const CreateSourceTokenResponseSchema = z.object({
   info: SourceTokenSchema,
 });
 export type CreateSourceTokenResponse = z.infer<typeof CreateSourceTokenResponseSchema>;
+
+// --- Agents (MCP) -----------------------------------------------------------
+
+/** What an agent token may do: `read` (browse, search, read, related, ask), `capture`, `edit`. */
+export const AGENT_SCOPES = ['read', 'capture', 'edit'] as const;
+export const AgentScopeSchema = z.enum(AGENT_SCOPES);
+export type AgentScope = z.infer<typeof AgentScopeSchema>;
+/** An agent token's life when the request doesn't say. */
+export const DEFAULT_AGENT_TOKEN_DAYS = 90;
+
+const AgentNameSchema = z.string().trim().min(1).max(80);
+const DailyAiLimitSchema = z.number().int().min(1).max(100_000);
+
+/** An agent token as listed: never its secret or hash, only the first 8 characters of the secret. */
+export const AgentTokenSchema = z.object({
+  id: z.string().uuid(),
+  name: z.string(),
+  prefix: z.string(),
+  scopes: z.array(AgentScopeSchema),
+  createdAt: z.string().datetime(),
+  lastUsedAt: z.string().datetime().nullable(),
+  expiresAt: z.string().datetime().nullable(),
+  revokedAt: z.string().datetime().nullable(),
+});
+export type AgentToken = z.infer<typeof AgentTokenSchema>;
+
+export const AgentSchema = z.object({
+  id: z.string().uuid(),
+  name: z.string(),
+  /** The user the agent belongs to; it never reaches more than they can. `role` is null once they have left. */
+  owner: z.object({ id: z.string().uuid(), name: z.string(), role: TenantRoleSchema.nullable() }),
+  createdAt: z.string().datetime(),
+  disabledAt: z.string().datetime().nullable(),
+  /** AI actions a day; null means the default (100). */
+  dailyAiLimit: z.number().int().nullable(),
+  grants: z.array(z.object({ spaceId: z.string().uuid(), spaceName: z.string(), role: z.enum(['viewer', 'editor']) })),
+  tokens: z.array(AgentTokenSchema),
+});
+export type Agent = z.infer<typeof AgentSchema>;
+export const AgentListSchema = z.array(AgentSchema);
+
+export const CreateAgentRequestSchema = z.object({
+  name: AgentNameSchema,
+  daily_ai_limit: DailyAiLimitSchema.optional(),
+});
+export type CreateAgentRequest = z.input<typeof CreateAgentRequestSchema>;
+
+export const UpdateAgentRequestSchema = z
+  .object({
+    name: AgentNameSchema.optional(),
+    disabled: z.boolean().optional(),
+    daily_ai_limit: DailyAiLimitSchema.nullable().optional(),
+  })
+  .refine((v) => Object.values(v).some((x) => x !== undefined), 'nothing to change');
+export type UpdateAgentRequest = z.input<typeof UpdateAgentRequestSchema>;
+
+export const IssueAgentTokenRequestSchema = z.object({
+  name: AgentNameSchema,
+  scopes: z
+    .array(AgentScopeSchema)
+    .min(1)
+    .refine((v) => new Set(v).size === v.length, 'scopes must not repeat'),
+  /** Days the token works (1 to 365); 90 when left out. */
+  expires_in_days: z.number().int().min(1).max(365).optional(),
+});
+export type IssueAgentTokenRequest = z.input<typeof IssueAgentTokenRequestSchema>;
+
+/** Reply of POST /api/v1/agents/:id/tokens: the only time the secret is shown. */
+export const IssueAgentTokenResponseSchema = z.object({ token: z.string(), info: AgentTokenSchema });
+export type IssueAgentTokenResponse = z.infer<typeof IssueAgentTokenResponseSchema>;
 
 /** Reply of PUT /api/v1/source/files/:externalId. `created`: a new document (not just a new version). */
 export const SourcePutResponseSchema = UploadFileResponseSchema.extend({ created: z.boolean() });

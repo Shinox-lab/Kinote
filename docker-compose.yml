@@ -38,6 +38,8 @@ x-app-env: &app-env
   CAPTURE_RATE_LIMIT_PER_MIN: ${CAPTURE_RATE_LIMIT_PER_MIN:-20}
   UPLOAD_RATE_LIMIT_PER_MIN: ${UPLOAD_RATE_LIMIT_PER_MIN:-30}
   MAX_TENANTS_PER_USER: ${MAX_TENANTS_PER_USER:-5}
+  # MCP search: a meaning-only hit farther than this cosine distance is dropped (0 to 2).
+  MCP_SEARCH_MAX_DISTANCE: ${MCP_SEARCH_MAX_DISTANCE:-0.55}
   # Who may create an account: auto (open until the first account, then by
   # invitation only), open, invite or closed.
   SIGNUP_MODE: ${SIGNUP_MODE:-auto}

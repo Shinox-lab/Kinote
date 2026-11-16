@@ -62,7 +62,7 @@ Being built now:
 
 - **WhatsApp groups as a source** (In development)
 - **Google Drive sync** (In development)
-- **MCP for external AI agents** (In development)
+- **MCP for external AI agents**: reading is ready (see below); capture and editing are in development
 - **Self-maintaining wiki** (In development): follows changed sources, catches broken links and contradictions
 - **Space export to Markdown** (In development)
 
@@ -78,6 +78,37 @@ docker compose up -d
 
 Open `http://localhost:8081` and sign up. The [self-hosting guide](https://shinox-lab.github.io/Kinote/self-host/)
 covers the secrets, connecting models, reverse proxies, storage, upgrades and backups.
+
+## Connect an agent
+
+AI tools such as Claude Code can read your wiki over MCP (Model Context Protocol). Each agent has its own tokens and
+sees only the spaces you grant it, and never more than the person who owns it can see.
+
+1. In **Settings → Agents**, add an agent, choose its access to each space (Viewer or Editor), and issue a token with
+   the **Read** scope. The token is shown once.
+2. Connect the client. For Claude Code:
+
+   ```sh
+   claude mcp add --transport http kinote https://<your-kinote>/mcp --header "Authorization: Bearer <token>"
+   ```
+
+   Any MCP client that supports Streamable HTTP works the same way: the endpoint is `/mcp` and the token is a
+   Bearer header.
+
+The agent gets five read tools:
+
+| Tool | What it does |
+| --- | --- |
+| `kinote_browse` | The map: spaces and their page trees with a one-line summary per page. |
+| `kinote_search` | Passages that match a query, with their page, section and block IDs, or the pages about it. |
+| `kinote_read` | A page's outline, one section, or the whole page, with a cursor for long pages. |
+| `kinote_related` | What connects to a page or a named thing: relationships, mentions, links in. |
+| `kinote_ask` | An answer written from the wiki with its sources (costs an AI action). |
+
+Tokens expire after 90 days unless you choose otherwise (1 to 365), and an admin can revoke one or disable an agent at
+any time. Each agent has its own rate limits and a daily limit of AI actions (100 unless you set another), and every
+tool call is recorded in the audit log. The `capture` and `edit` scopes already exist on tokens; the tools that use
+them arrive later.
 
 ## How it works
 

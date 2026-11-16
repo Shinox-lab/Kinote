@@ -1,7 +1,7 @@
 import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 import rateLimit from '@fastify/rate-limit';
 import multipart from '@fastify/multipart';
-import { getDb, readAskModel, readBillingState, readStanding, rowsOf, tenants, withTenantTx } from '@kinote/db';
+import { getDb, readBillingState, readStanding, rowsOf, tenants, withTenantTx } from '@kinote/db';
 import { eq, sql } from 'drizzle-orm';
 import { DEFAULT_AUTH_RATE_LIMIT_MAX, DEFAULT_USAGE_LIMITS, type CreditRates, type ObjectStorage, type UsageLimits } from '@kinote/shared';
 import {
@@ -36,6 +36,10 @@ import {
   GroupListSchema,
   GroupMemberListSchema,
   SourceListSchema,
+  AgentListSchema,
+  AgentSchema,
+  AgentTokenSchema,
+  IssueAgentTokenResponseSchema,
   SourceSchema,
   SourceTokenSchema,
   RevokeSourceTokensResponseSchema,
@@ -124,8 +128,11 @@ import {
   deleteSpaceGrant,
 } from './routes/admin.js';
 import { deleteSourceFile, putSourceFile } from './routes/sourceFiles.js';
-import { registerInternalRoutes } from './routes/internal.js';
+import { kinoteVersion as apiPackageVersion, registerInternalRoutes } from './routes/internal.js';
 import { createSource, issueSourceToken, listSources, revokeSourceToken, revokeTokensMadeBy, updateSource } from './routes/sources.js';
+import { createAgent, issueAgentToken, listAgents, revokeAgentToken, updateAgent } from './routes/agents.js';
+import { registerMcpRoute } from './mcp/route.js';
+import { askWiki } from './search/askWiki.js';
 import {
   createPage,
   getPageDetails,
@@ -213,7 +220,7 @@ import {
 import { authRoutes, type AuthRateLimit, type SignUpModeSetting } from './routes/auth.js';
 import { PgRateLimitStore } from './rateLimitStore.js';
 import type { Mailer } from './mail.js';
-import { aiActionsLeftOrUnknown, chargeAi, refuseWhenSuspended, requestLimit, requireCredits, uploadSlots } from './usageLimits.js';
+import { aiActionsLeftOrUnknown, assertNotSuspended, chargeAi, refuseWhenSuspended, requestLimit, requireCredits, uploadSlots } from './usageLimits.js';
 import { demoSeedRunning, demoSeedStatus, startDemoSeed } from './routes/demoSeed.js';
 import {
   invalidateActor,
@@ -221,6 +228,7 @@ import {
   requireSession,
   resolveActor,
   resolveSourceActor,
+  resolveAgentActor,
   type AuthSession,
   type SourceActor,
 } from './auth/actor.js';
@@ -230,7 +238,7 @@ import { invalidateTreeCache } from './treeCache.js';
 
 import { answerPassages } from './search/ask.js';
 import { getCollabTokenSecret, type CollabClient } from '@kinote/shared';
-import { collectionTables, searchWiki } from '@kinote/core';
+import { searchWiki } from '@kinote/core';
 import { fastifyLogger, type ApiLoggerOptions } from './logger.js';
 
 export interface ApiServerOptions {
@@ -301,8 +309,10 @@ export interface ApiServerOptions {
   kinoteVersion?: string;
   /** KINOTE_DEPLOY_ID: echoed by /internal/v1/info as deployId. */
   deployId?: string;
-  /** PUBLIC_URL: where people open Kinote (the setup link of POST /internal/v1/bootstrap). */
+  /** PUBLIC_URL: where people open Kinote (the setup link of POST /internal/v1/bootstrap; page links in MCP results). */
   publicUrl?: string;
+  /** MCP_SEARCH_MAX_DISTANCE: the cosine distance past which MCP search drops a vector-only hit (default 0.55). */
+  mcpSearchMaxDistance?: number;
 }
 
 const DEFAULT_MAX_UPLOAD_BYTES = 52_428_800;
@@ -439,17 +449,24 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
 
   // Identity comes only from the session token and, for tenant routes, the
   // membership row of the session user in x-tenant-id. Routes declare
-  // config.auth ('public' | 'session' | 'tenant'); undeclared means 'tenant'.
+  // config.auth ('public' | 'session' | 'tenant' | 'source' | 'agent'); undeclared means 'tenant'.
   // Checked in onRequest, before the body is read or parsed: an
   // unauthenticated request never gets as far as the JSON parser.
   app.decorateRequest('authSession', null);
   app.decorateRequest('actor', null);
   app.decorateRequest('sourceActor', null);
+  app.decorateRequest('agentAuth', null);
   app.addHook('onRequest', async (req) => {
     const mode = req.routeOptions.config?.auth ?? 'tenant';
     if (mode === 'public') return;
     if (mode === 'source') {
       req.sourceActor = await resolveSourceActor(req);
+      return;
+    }
+    if (mode === 'agent') {
+      const { actor, agent } = await resolveAgentActor(req);
+      req.actor = actor;
+      req.agentAuth = agent;
       return;
     }
     req.authSession = await requireSession(req);
@@ -703,6 +720,49 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
     const p = req.params as any;
     const res = await revokeSourceToken(actorOf(req), p.id, p.tokenId);
     return reply.send(parseReply(SourceTokenSchema, res));
+  });
+
+  registerMcpRoute(app, {
+    embeddingProvider,
+    answerProvider,
+    ...(models ? { models } : {}),
+    ...(opts.collab ? { collab: opts.collab } : {}),
+    limits,
+    ...(opts.billingUrl ? { billingUrl: opts.billingUrl } : {}),
+    ...(opts.publicUrl ? { publicUrl: opts.publicUrl } : {}),
+    searchMaxDistance: opts.mcpSearchMaxDistance ?? 0.55,
+    meter: (kind, actor, fn) =>
+      withUsageScope({ tenantId: actor.tenantId, kind, principalId: actor.principalId }, models ? models.cache.current().creditRates : creditRates, fn),
+    version: opts.kinoteVersion ?? apiPackageVersion(),
+  });
+
+  app.get('/api/v1/agents', async (req, reply) => {
+    return reply.send(parseReply(AgentListSchema, await listAgents(actorOf(req))));
+  });
+
+  app.post('/api/v1/agents', async (req, reply) => {
+    const res = await createAgent(actorOf(req), req.body);
+    return reply.status(201).send(parseReply(AgentSchema, res));
+  });
+
+  // Stopping an agent (disable, revoke) works while the workspace is suspended: a leaked token keeps reading.
+  app.patch('/api/v1/agents/:id', { config: { whenSuspended: 'allow' } }, async (req, reply) => {
+    const body = req.body as Record<string, unknown> | null;
+    const onlyDisables = !!body && typeof body === 'object' && Object.keys(body).length === 1 && body.disabled === true;
+    if (!onlyDisables) await assertNotSuspended(req);
+    const res = await updateAgent(actorOf(req), (req.params as any).id, req.body);
+    return reply.send(parseReply(AgentSchema, res));
+  });
+
+  app.post('/api/v1/agents/:id/tokens', async (req, reply) => {
+    const res = await issueAgentToken(actorOf(req), (req.params as any).id, req.body);
+    return reply.status(201).send(parseReply(IssueAgentTokenResponseSchema, res));
+  });
+
+  app.delete('/api/v1/agents/:id/tokens/:tokenId', { config: { whenSuspended: 'allow' } }, async (req, reply) => {
+    const p = req.params as any;
+    const res = await revokeAgentToken(actorOf(req), p.id, p.tokenId);
+    return reply.send(parseReply(AgentTokenSchema, res));
   });
 
   app.post('/api/v1/pages', async (req, reply) => {
@@ -1281,33 +1341,11 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
     const actor = actorOf(req);
     const parsed = AskRequestSchema.parse(req.body);
     await chargeAi(req, reply, actor.tenantId, limits.tenantDailyAiActions);
-    let queryEmbedding: number[];
-    try {
-      [queryEmbedding] = await embeddingProvider.embed([parsed.question], 'query');
-    } catch {
-      throw new AppError('search_unavailable');
-    }
-
-    const { passages, tables, askModel } = await withTenantTx(actor.tenantId, async (tx) => {
-      const { readableSpaceIds, inboxSpaceId } = await getReadableSpaceIds(tx, actor);
-      const effectiveSpaces = parsed.space_ids
-        ? readableSpaceIds.filter((id) => parsed.space_ids!.includes(id))
-        : readableSpaceIds;
-      const passages = await searchWiki(
-        tx,
-        actor,
-        effectiveSpaces,
-        inboxSpaceId,
-        parsed.question,
-        queryEmbedding,
-        5,
-        embeddingProvider.model
-      );
-      // Questions across a collection ("which clients launch in December?") read its rows as a table.
-      const tables = passages.length > 0 ? await collectionTables(tx, actor, effectiveSpaces, passages) : [];
-      return { passages, tables, askModel: models ? await readAskModel(tx, actor.tenantId) : null };
-    });
-    const res = await answerPassages(parsed.question, passages, models ? models.answerFor(askModel) : answerProvider, tables);
+    const res = await askWiki(
+      actor,
+      { question: parsed.question, ...(parsed.space_ids ? { spaceIds: parsed.space_ids } : {}) },
+      { embeddingProvider, answerProvider, ...(models ? { models } : {}) }
+    );
     return reply.send(parseReply(AskResponseSchema, res));
   }));
 

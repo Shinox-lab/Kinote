@@ -260,6 +260,10 @@ export function useVersionChunks(versionId: string, enabled: boolean) {
 }
 
 /** The workspace's sources (admins only, so `enabled` follows the role). */
+export function useAgents(enabled = true) {
+  return useQuery({ queryKey: useTenantKey('agents'), queryFn: () => api.listAgents(), enabled });
+}
+
 export function useSources(enabled = true) {
   return useQuery({ queryKey: useTenantKey('sources'), queryFn: () => api.listSources(), enabled });
 }

@@ -76,36 +76,20 @@ export function ftsBranchSql(f: ChunkFilter, queryText: string, limit = BRANCH_L
     LIMIT ${limit}`;
 }
 
-/**
- * Hybrid search: both branches rank permitted chunks only, reciprocal rank
- * fusion (k = 60) merges them, and `versions` is joined for the final top
- * rows alone (title, number and date for `citeAs`).
- */
-export function searchSql(
-  f: ChunkFilter,
-  queryText: string,
-  vectorLiteral: string,
-  limit: number
-): SQL {
+/** Optional narrowing of hybrid search results; unset options keep the plain hybrid ranking. */
+export interface SearchOptions {
+  /** At most this many passages from one document (its best ones). */
+  maxPerDocument?: number;
+  /**
+   * Drop a hit that only the vector branch found when its cosine distance from the query is above this, so an
+   * off-topic query returns nothing instead of the nearest unrelated chunks. Keyword hits are always kept.
+   */
+  maxVectorDistance?: number;
+}
+
+/** The output columns for the final `top (chunk_id, rrf_score, vector_distance)` rows, newest version data joined. */
+function passagesFrom(f: ChunkFilter): SQL {
   return sql`
-    WITH vector_hits AS (${vectorBranchSql(f, vectorLiteral)}),
-    vector_ranked AS (
-      SELECT id, ROW_NUMBER() OVER (ORDER BY distance, id) AS rank_v FROM vector_hits
-    ),
-    fts_hits AS (${ftsBranchSql(f, queryText)}),
-    fts_ranked AS (
-      SELECT id, ROW_NUMBER() OVER (ORDER BY score DESC, id) AS rank_f FROM fts_hits
-    ),
-    rrf AS (
-      SELECT
-        COALESCE(v.id, ft.id) AS chunk_id,
-        COALESCE(1.0 / (${RRF_K} + v.rank_v), 0.0) + COALESCE(1.0 / (${RRF_K} + ft.rank_f), 0.0) AS rrf_score
-      FROM vector_ranked v
-      FULL OUTER JOIN fts_ranked ft ON v.id = ft.id
-    ),
-    top AS (
-      SELECT chunk_id, rrf_score FROM rrf ORDER BY rrf_score DESC, chunk_id LIMIT ${limit}
-    )
     SELECT
       c.id AS chunk_id,
       c.document_id,
@@ -121,12 +105,95 @@ export function searchSql(
       ver.title AS version_title,
       ver.number AS version_number,
       to_char(ver.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS updated_date,
-      top.rrf_score
+      top.rrf_score,
+      top.vector_distance
     FROM top
     JOIN chunks c ON c.id = top.chunk_id AND c.tenant_id = NULLIF(${f.tenantId}, '')::uuid
     JOIN versions ver ON ver.id = c.version_id AND ver.tenant_id = c.tenant_id
     JOIN documents d ON d.id = c.document_id AND d.tenant_id = c.tenant_id
-    ORDER BY top.rrf_score DESC, c.id
+    ORDER BY top.rrf_score DESC, c.id`;
+}
+
+/**
+ * The `top` CTE body over a ranked CTE `name (chunk_id, rrf_score, vector_distance)`: with `maxPerDocument`,
+ * each document's rows are ranked by score and only its first N kept, before the final LIMIT.
+ */
+function topOf(f: ChunkFilter, name: SQL, limit: number, maxPerDocument: number | undefined): SQL {
+  if (maxPerDocument === undefined) {
+    return sql`SELECT chunk_id, rrf_score, vector_distance FROM ${name} ORDER BY rrf_score DESC, chunk_id LIMIT ${limit}`;
+  }
+  return sql`SELECT chunk_id, rrf_score, vector_distance FROM (
+      SELECT r.chunk_id, r.rrf_score, r.vector_distance,
+        ROW_NUMBER() OVER (PARTITION BY c.document_id ORDER BY r.rrf_score DESC, r.chunk_id) AS doc_rank
+      FROM ${name} r
+      JOIN chunks c ON c.id = r.chunk_id AND c.tenant_id = NULLIF(${f.tenantId}, '')::uuid
+    ) per_doc
+    WHERE doc_rank <= ${maxPerDocument}
+    ORDER BY rrf_score DESC, chunk_id
+    LIMIT ${limit}`;
+}
+
+/**
+ * Hybrid search: both branches rank permitted chunks only, reciprocal rank
+ * fusion (k = 60) merges them, and `versions` is joined for the final top
+ * rows alone (title, number and date for `citeAs`). `opts` can drop distant
+ * vector-only hits and cap passages per document.
+ */
+export function searchSql(
+  f: ChunkFilter,
+  queryText: string,
+  vectorLiteral: string,
+  limit: number,
+  opts: SearchOptions = {}
+): SQL {
+  const cutoff =
+    opts.maxVectorDistance === undefined
+      ? sql``
+      : sql` WHERE keyword_hit OR vector_distance <= ${opts.maxVectorDistance}`;
+  return sql`
+    WITH vector_hits AS (${vectorBranchSql(f, vectorLiteral)}),
+    vector_ranked AS (
+      SELECT id, distance, ROW_NUMBER() OVER (ORDER BY distance, id) AS rank_v FROM vector_hits
+    ),
+    fts_hits AS (${ftsBranchSql(f, queryText)}),
+    fts_ranked AS (
+      SELECT id, ROW_NUMBER() OVER (ORDER BY score DESC, id) AS rank_f FROM fts_hits
+    ),
+    rrf AS (
+      SELECT
+        COALESCE(v.id, ft.id) AS chunk_id,
+        COALESCE(1.0 / (${RRF_K} + v.rank_v), 0.0) + COALESCE(1.0 / (${RRF_K} + ft.rank_f), 0.0) AS rrf_score,
+        v.distance::float8 AS vector_distance,
+        (ft.id IS NOT NULL) AS keyword_hit
+      FROM vector_ranked v
+      FULL OUTER JOIN fts_ranked ft ON v.id = ft.id
+    ),
+    kept AS (SELECT * FROM rrf${cutoff}),
+    top AS (${topOf(f, sql`kept`, limit, opts.maxPerDocument)})
+    ${passagesFrom(f)}
+  `;
+}
+
+/**
+ * The keyword branch alone, ranked by ts_rank_cd: for when the query cannot be embedded. Scores are the
+ * branch's reciprocal-rank share (1 / (60 + rank)) so they read like hybrid scores; no vector distance.
+ */
+export function keywordSearchSql(
+  f: ChunkFilter,
+  queryText: string,
+  limit: number,
+  opts: Pick<SearchOptions, 'maxPerDocument'> = {}
+): SQL {
+  return sql`
+    WITH fts_hits AS (${ftsBranchSql(f, queryText)}),
+    ranked AS (
+      SELECT id AS chunk_id,
+        1.0 / (${RRF_K} + ROW_NUMBER() OVER (ORDER BY score DESC, id)) AS rrf_score,
+        NULL::float8 AS vector_distance
+      FROM fts_hits
+    ),
+    top AS (${topOf(f, sql`ranked`, limit, opts.maxPerDocument)})
+    ${passagesFrom(f)}
   `;
 }
 
@@ -135,27 +202,8 @@ export function citeAs(title: string, number: number, updatedDate: string): stri
   return `${title} (v${number}, updated ${updatedDate})`;
 }
 
-export async function searchWiki(
-  tx: DbTransaction,
-  actor: Actor,
-  readableSpaceIds: string[],
-  inboxSpaceId: string,
-  queryText: string,
-  queryEmbedding: number[],
-  limit = 10,
-  embeddingModel?: string
-): Promise<SearchPassage[]> {
-  if (readableSpaceIds.length === 0) return [];
-
-  const filter = { ...chunkFilterFor(actor, readableSpaceIds, inboxSpaceId), ...(embeddingModel !== undefined ? { embeddingModel } : {}) };
-  const vectorLiteral = `[${queryEmbedding.join(',')}]`;
-
-  // Enable pgvector 0.8 iterative index scans so filtered queries do not under-return rows
-  await tx.execute(sql`SET LOCAL hnsw.iterative_scan = relaxed_order`);
-
-  const rows = await tx.execute(searchSql(filter, queryText, vectorLiteral, limit));
-
-  return rowsOf<any>(rows).map((r) => ({
+function toPassage(r: any): SearchPassage {
+  return {
     chunkId: r.chunk_id,
     documentId: r.document_id,
     versionId: r.version_id,
@@ -171,5 +219,45 @@ export async function searchWiki(
     pageTo: r.page_to === null ? null : Number(r.page_to),
     citeAs: citeAs(r.version_title, r.version_number, r.updated_date),
     rrfScore: Number(r.rrf_score),
-  }));
+    vectorDistance: r.vector_distance === null || r.vector_distance === undefined ? null : Number(r.vector_distance),
+  };
+}
+
+export async function searchWiki(
+  tx: DbTransaction,
+  actor: Actor,
+  readableSpaceIds: string[],
+  inboxSpaceId: string,
+  queryText: string,
+  queryEmbedding: number[],
+  limit = 10,
+  embeddingModel?: string,
+  opts: SearchOptions = {}
+): Promise<SearchPassage[]> {
+  if (readableSpaceIds.length === 0) return [];
+
+  const filter = { ...chunkFilterFor(actor, readableSpaceIds, inboxSpaceId), ...(embeddingModel !== undefined ? { embeddingModel } : {}) };
+  const vectorLiteral = `[${queryEmbedding.join(',')}]`;
+
+  // Enable pgvector 0.8 iterative index scans so filtered queries do not under-return rows
+  await tx.execute(sql`SET LOCAL hnsw.iterative_scan = relaxed_order`);
+
+  const rows = await tx.execute(searchSql(filter, queryText, vectorLiteral, limit, opts));
+  return rowsOf<any>(rows).map(toPassage);
+}
+
+/** Keyword-only search with the same permissions and output as `searchWiki` (`vectorDistance` is null). */
+export async function keywordSearchWiki(
+  tx: DbTransaction,
+  actor: Actor,
+  readableSpaceIds: string[],
+  inboxSpaceId: string,
+  queryText: string,
+  limit: number,
+  opts: Pick<SearchOptions, 'maxPerDocument'> = {}
+): Promise<SearchPassage[]> {
+  if (readableSpaceIds.length === 0) return [];
+  const filter = chunkFilterFor(actor, readableSpaceIds, inboxSpaceId);
+  const rows = await tx.execute(keywordSearchSql(filter, queryText, limit, opts));
+  return rowsOf<any>(rows).map(toPassage);
 }

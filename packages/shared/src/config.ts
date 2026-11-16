@@ -119,6 +119,12 @@ export const ConfigSchema = z.object({
   MAIL_FROM: z.string().min(3).optional(),
   /** The console's public address (https://wiki.example.com), for links in emails; required with SMTP_URL. */
   PUBLIC_URL: z.string().url().optional(),
+  /**
+   * MCP passage search: a vector hit farther than this cosine distance from the query is dropped unless the
+   * keyword branch also found it, so an off-topic question returns nothing rather than the nearest noise.
+   * 0.55 is a starting value to tune against real questions.
+   */
+  MCP_SEARCH_MAX_DISTANCE: z.coerce.number().min(0).max(2).default(0.55),
   /** Workspaces one person may own. */
   MAX_TENANTS_PER_USER: z.coerce.number().int().positive().max(10_000).default(DEFAULT_USAGE_LIMITS.maxTenantsPerUser),
   /** AI actions per workspace per UTC day; 0 turns the allowance off. */

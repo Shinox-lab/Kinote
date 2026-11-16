@@ -110,23 +110,36 @@ export const agents = pgTable('agents', {
   createdBy: uuid('created_by').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   disabledAt: timestamp('disabled_at', { withTimezone: true }),
+  /** AI actions (Ask) this agent may use a day; null means the default (100). */
+  dailyAiLimit: integer('daily_ai_limit'),
 });
 
-export const agentTokens = pgTable('agent_tokens', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  tenantId: uuid('tenant_id')
-    .notNull()
-    .references(() => tenants.id),
-  agentId: uuid('agent_id')
-    .notNull()
-    .references(() => agents.id, { onDelete: 'cascade' }),
-  tokenHash: text('token_hash').notNull(),
-  scopes: text('scopes').array().notNull(),
-  expiresAt: timestamp('expires_at', { withTimezone: true }),
-  lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
-  revokedAt: timestamp('revoked_at', { withTimezone: true }),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-});
+export const agentTokens = pgTable(
+  'agent_tokens',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    tenantId: uuid('tenant_id')
+      .notNull()
+      .references(() => tenants.id),
+    agentId: uuid('agent_id')
+      .notNull()
+      .references(() => agents.id, { onDelete: 'cascade' }),
+    tokenHash: text('token_hash').notNull(),
+    /** At least one of read, capture, edit (agent_tokens_scopes_check). */
+    scopes: text('scopes').array().notNull(),
+    /** What the admin called it, e.g. "Claude Code on my laptop". */
+    name: text('name').notNull().default(''),
+    /** The first 8 characters of the secret, shown so tokens can be told apart. */
+    tokenPrefix: text('token_prefix').notNull().default(''),
+    /** The user who issued it. */
+    createdBy: uuid('created_by'),
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
+    lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex('agent_tokens_tenant_hash_idx').on(t.tenantId, t.tokenHash)]
+);
 
 export const groups = pgTable(
   'groups',

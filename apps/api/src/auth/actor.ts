@@ -1,13 +1,14 @@
 import type { FastifyRequest } from 'fastify';
 import { and, eq, isNull, lt, or } from 'drizzle-orm';
-import { withTenantTx, memberships, sources, sourceTokens, tenants } from '@kinote/db';
-import { AppError } from '@kinote/contracts';
+import { withTenantTx, agents, agentTokens, memberships, sources, sourceTokens, tenants } from '@kinote/db';
+import { AppError, AGENT_SCOPES, type AgentScope } from '@kinote/contracts';
 import type { Actor } from '@kinote/core';
 import { TtlCache } from '../cache.js';
 import { resolveSession } from './sessions.js';
 import { parseSourceToken } from './sourceTokens.js';
+import { parseAgentToken } from './agentTokens.js';
 
-export type AuthMode = 'public' | 'session' | 'tenant' | 'source';
+export type AuthMode = 'public' | 'session' | 'tenant' | 'source' | 'agent';
 
 /**
  * Positive membership lookups only. A role change invalidates this process's
@@ -51,9 +52,26 @@ export interface SourceActor {
   targetSpaceId: string;
 }
 
+/**
+ * The agent behind a request's bearer agent token (`auth: 'agent'` routes). The request's `actor` is
+ * the agent itself (principal `agent`, with its owner); this carries what the token adds.
+ */
+export interface AgentAuth {
+  agentId: string;
+  agentName: string;
+  tokenId: string;
+  scopes: AgentScope[];
+  tenantSlug: string;
+  /** AI actions a day; null means the default. */
+  dailyAiLimit: number | null;
+}
+
 declare module 'fastify' {
   interface FastifyContextConfig {
-    /** Who may call the route. Default: 'tenant'. 'source' is a bearer source token, never a session. */
+    /**
+     * Who may call the route. Default: 'tenant'. 'source' is a bearer source token and 'agent' a bearer
+     * agent token, never a session.
+     */
     auth?: AuthMode;
     /** 'allow': a POST that only reads (search, a collab token) still works while the workspace is suspended. */
     whenSuspended?: 'allow';
@@ -61,8 +79,13 @@ declare module 'fastify' {
   interface FastifyRequest {
     /** Set for 'session' and 'tenant' routes. */
     authSession: AuthSession | null;
-    /** Set for 'tenant' routes; derived from the session and the membership row only. */
+    /**
+     * Set for 'tenant' routes (derived from the session and the membership row only) and for 'agent'
+     * routes (the agent, carrying its owner).
+     */
     actor: Actor | null;
+    /** Set for 'agent' routes; derived from the agent token only. */
+    agentAuth: AgentAuth | null;
     /** Set for 'source' routes; derived from the source token only. */
     sourceActor: SourceActor | null;
   }
@@ -188,5 +211,69 @@ export async function resolveSourceActor(req: FastifyRequest): Promise<SourceAct
     sourceName: found.name,
     trusted: found.trusted,
     targetSpaceId: found.targetSpaceId,
+  };
+}
+
+/**
+ * The agent behind a request's bearer agent token, as an actor that carries its owner. The token
+ * carries its tenant id, so the lookup runs inside that tenant's transaction (row level security
+ * stays on). Every failure is the same 401: a malformed token, an unknown tenant or hash, a revoked
+ * or expired token, a disabled agent, an owner who is no longer a member, a deleted tenant. The
+ * owner's role is read on every call, never cached, so a demotion takes effect on the next call.
+ * `last_used_at` is moved at most once a minute.
+ */
+export async function resolveAgentActor(req: FastifyRequest): Promise<{ actor: Actor; agent: AgentAuth }> {
+  const raw = bearerToken(req);
+  const parsed = raw ? parseAgentToken(raw) : null;
+  if (!parsed) throw new AppError('unauthenticated');
+  const now = new Date();
+  const found = await withTenantTx(parsed.tenantId, async (tx) => {
+    const [row] = await tx
+      .select({ token: agentTokens, agent: agents, slug: tenants.slug, ownerRole: memberships.role })
+      .from(agentTokens)
+      .innerJoin(agents, and(eq(agents.tenantId, agentTokens.tenantId), eq(agents.id, agentTokens.agentId)))
+      .innerJoin(tenants, eq(tenants.id, agentTokens.tenantId))
+      .leftJoin(memberships, and(eq(memberships.tenantId, agents.tenantId), eq(memberships.userId, agents.createdBy)))
+      .where(
+        and(
+          eq(agentTokens.tenantId, parsed.tenantId),
+          eq(agentTokens.tokenHash, parsed.hash),
+          isNull(tenants.deletedAt)
+        )
+      );
+    if (!row) return null;
+    const { token, agent, ownerRole } = row;
+    if (token.revokedAt || (token.expiresAt && token.expiresAt <= now) || agent.disabledAt || !ownerRole) {
+      return null;
+    }
+    await tx
+      .update(agentTokens)
+      .set({ lastUsedAt: now })
+      .where(
+        and(
+          eq(agentTokens.tenantId, parsed.tenantId),
+          eq(agentTokens.id, token.id),
+          or(isNull(agentTokens.lastUsedAt), lt(agentTokens.lastUsedAt, new Date(now.getTime() - LAST_USED_EVERY_MS)))
+        )
+      );
+    return { ...row, ownerRole };
+  });
+  if (!found) throw new AppError('unauthenticated');
+  const known = new Set<string>(AGENT_SCOPES);
+  return {
+    actor: {
+      tenantId: parsed.tenantId,
+      principalType: 'agent',
+      principalId: found.agent.id,
+      owner: { userId: found.agent.createdBy, tenantRole: found.ownerRole },
+    },
+    agent: {
+      agentId: found.agent.id,
+      agentName: found.agent.name,
+      tokenId: found.token.id,
+      scopes: found.token.scopes.filter((s): s is AgentScope => known.has(s)),
+      tenantSlug: found.slug,
+      dailyAiLimit: found.agent.dailyAiLimit,
+    },
   };
 }

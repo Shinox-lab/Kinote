@@ -4,6 +4,7 @@ export {
   getReadableSpaceIds,
   assertValidUuid,
   isTenantAdmin,
+  ownerActorOf,
   type Actor,
   type SpaceRole,
   type SpaceAccess,
@@ -108,6 +109,9 @@ export {
   searchPageCards,
   findEntities,
   pagesForEntities,
+  entityRelations,
+  entityDisplayNames,
+  type EntityRelation,
   type PlacementFilter,
   type CardHit,
   type EntityHit,
@@ -120,7 +124,10 @@ export {
   ftsBranchSql,
   searchSql,
   searchWiki,
+  keywordSearchSql,
+  keywordSearchWiki,
   type ChunkFilter,
+  type SearchOptions,
 } from './search/hybridSearch.js';
 export { senderActor, senderAccess, type SenderAccess } from './routing/access.js';
 export { readLiveBlocks, blockText, blockMarkdown, markdownBlocks, encodeBlocksYDoc } from './routing/liveBlocks.js';

@@ -264,6 +264,12 @@ const sourcesRoute = createRoute({
   component: lazyRouteComponent(() => import('./routes/admin/sources.js'), 'SourcesPage'),
 });
 
+const agentsRoute = createRoute({
+  getParentRoute: () => adminRoute,
+  path: 'agents',
+  component: lazyRouteComponent(() => import('./routes/admin/agents.js'), 'AgentsPage'),
+});
+
 const routeTree = rootRoute.addChildren([
   signInRoute,
   signUpRoute,
@@ -283,7 +289,7 @@ const routeTree = rootRoute.addChildren([
     notificationsRoute,
     captureRoute,
     searchRoute,
-    adminRoute.addChildren([adminIndexRoute, membersRoute, groupsRoute, spacesRoute, sourcesRoute, rolesRoute, usageRoute, workspaceSettingsRoute]),
+    adminRoute.addChildren([adminIndexRoute, membersRoute, groupsRoute, spacesRoute, sourcesRoute, agentsRoute, rolesRoute, usageRoute, workspaceSettingsRoute]),
   ]),
 ]);
 

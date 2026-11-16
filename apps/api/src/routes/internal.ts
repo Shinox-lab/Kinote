@@ -55,7 +55,8 @@ import { createTenantWithInbox } from './foundations.js';
 /** Audit rows from the control plane: a system actor with this id and `by: 'control_plane'`. */
 const CONTROL_PLANE_ACTOR_ID = '00000000-0000-0000-0000-000000000000';
 
-function kinoteVersion(): string {
+/** The api package's version (what /internal/v1/info and the MCP server report without KINOTE_VERSION). */
+export function kinoteVersion(): string {
   try {
     return (createRequire(import.meta.url)('../../package.json') as { version: string }).version;
   } catch {

@@ -16,6 +16,7 @@ export interface AdminScreen {
     | '/w/$tenantSlug/admin/groups'
     | '/w/$tenantSlug/admin/spaces'
     | '/w/$tenantSlug/admin/sources'
+    | '/w/$tenantSlug/admin/agents'
     | '/w/$tenantSlug/admin/roles'
     | '/w/$tenantSlug/admin/usage'
     | '/w/$tenantSlug/admin/workspace';
@@ -27,6 +28,7 @@ const ADMIN_SCREENS: AdminScreen[] = [
   { to: '/w/$tenantSlug/admin/groups', label: 'Groups' },
   { to: '/w/$tenantSlug/admin/spaces', label: 'Spaces' },
   { to: '/w/$tenantSlug/admin/sources', label: 'Sources' },
+  { to: '/w/$tenantSlug/admin/agents', label: 'Agents' },
   { to: '/w/$tenantSlug/admin/roles', label: 'Roles' },
   { to: '/w/$tenantSlug/admin/usage', label: 'Usage' },
 ];

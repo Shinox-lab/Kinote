@@ -22,7 +22,7 @@ export function sourceStatusLabel(source: Pick<Source, 'status'>): string {
 }
 
 /** A revoked token stays revoked even once its expiry has passed. */
-export function tokenState(token: SourceToken, now: Date): 'active' | 'revoked' | 'expired' {
+export function tokenState(token: Pick<SourceToken, 'revokedAt' | 'expiresAt'>, now: Date): 'active' | 'revoked' | 'expired' {
   if (token.revokedAt !== null) return 'revoked';
   if (token.expiresAt !== null && Date.parse(token.expiresAt) <= now.getTime()) return 'expired';
   return 'active';
