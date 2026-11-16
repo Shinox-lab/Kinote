@@ -1,4 +1,4 @@
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { withTenantTx, captures, documents, rowsOf, spaces, type DbTransaction } from '@kinote/db';
 import { AppError } from '@kinote/contracts';
 import type { EmbeddingProvider } from '../embedding.js';
@@ -26,7 +26,7 @@ const MAX_OPTIONS = 3;
  * among the parent's live children.
  */
 export async function planDocument(
-  params: { tenantId: string; captureId: string; title: string; subject: string | null; names: string[] },
+  params: { tenantId: string; captureId: string; title: string; subject: string | null; names: string[]; hint?: string | null },
   deps: { model: RoutingModel; embedder: EmbeddingProvider }
 ): Promise<DocumentPlan> {
   const { tenantId, captureId, title, subject, names } = params;
@@ -54,6 +54,20 @@ export async function planDocument(
     });
   }
 
+  // A space scope limits where the page may go, not only what is searched.
+  const scope = capture.scopeSpaceId;
+  const allowed = (spaceId: string) => ctx.editable.has(spaceId) && (!scope || spaceId === scope);
+
+  // The sender named the place: it wins when it names exactly one page (or space) they may add to.
+  const hint = params.hint === undefined ? capture.filingHint : params.hint;
+  if (hint) {
+    const hinted = await withTenantTx(tenantId, async (tx) => {
+      const at = await resolveHint(tx, tenantId, hint, allowed);
+      return at ? { ...at, title: await uniqueChildTitle(tx, tenantId, at.spaceId, at.parentId, title) } : null;
+    });
+    if (hinted) return { status: 'place', ...hinted, confidence: 1, reason: 'The sender asked for it here.' };
+  }
+
   // Candidates for the whole note; a name two entities fit equally is skipped, never asked about.
   const text = captureParts(capture.text)[0] ?? capture.text;
   const resolved: string[] = [];
@@ -71,9 +85,6 @@ export async function planDocument(
     };
   });
 
-  // A space scope limits where the page may go, not only what is searched.
-  const scope = capture.scopeSpaceId;
-  const allowed = (spaceId: string) => ctx.editable.has(spaceId) && (!scope || spaceId === scope);
   const writableSpaces = ctx.writableSpaces.filter((w) => allowed(w.id));
 
   // The best match by retrieval (the subject's page first) decides, not the
@@ -123,6 +134,47 @@ export async function planDocument(
       reason: top.reason,
     };
   });
+}
+
+/**
+ * The place a filing hint names ("29Sep", "Clients/George", "Clients"): the one live page with that title (its
+ * last part) in a space `allowed`, within the space its first part names when there are two parts; else the
+ * space with that name, at its top. Null when nothing, or more than one page, fits.
+ */
+export async function resolveHint(
+  tx: DbTransaction,
+  tenantId: string,
+  hint: string,
+  allowed: (spaceId: string) => boolean
+): Promise<{ spaceId: string; parentId: string | null } | null> {
+  const parts = hint
+    .split(/\s*[/>›]\s*/)
+    .map((p) => p.trim().replace(/^["'“”]+|["'“”]+$/g, '').replace(/^the\s+/i, ''))
+    .filter(Boolean);
+  const last = parts.at(-1);
+  if (!last) return null;
+  const spaceRows = (await tx.select({ id: spaces.id, name: spaces.name, kind: spaces.kind }).from(spaces).where(eq(spaces.tenantId, tenantId)))
+    .filter((r) => r.kind === 'normal' && allowed(r.id));
+  const named = (name: string) => spaceRows.filter((r) => r.name.toLowerCase() === name.toLowerCase());
+  const within = parts.length > 1 ? named(parts[0]!).map((r) => r.id) : spaceRows.map((r) => r.id);
+  if (within.length > 0) {
+    const pages = await tx
+      .select({ id: documents.id, spaceId: documents.spaceId })
+      .from(documents)
+      .where(
+        and(
+          eq(documents.tenantId, tenantId),
+          eq(documents.kind, 'page'),
+          isNull(documents.archivedAt),
+          inArray(documents.spaceId, within),
+          sql`lower(${documents.title}) = ${last.toLowerCase()}`
+        )
+      );
+    if (pages.length === 1) return { spaceId: pages[0]!.spaceId, parentId: pages[0]!.id };
+    if (pages.length > 1) return null;
+  }
+  const space = named(last);
+  return space.length === 1 ? { spaceId: space[0]!.id, parentId: null } : null;
 }
 
 /** A live page outside the Inbox, in `spaceId`. */

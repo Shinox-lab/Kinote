@@ -37,7 +37,7 @@ export function contentBlock(pageShortId: string, markdown: string): string {
  * Wiki-written text that is not one page's body (a map of titles and summaries, a list of results, an answer
  * written from pages): inside `<kinote:content source="…">`, escaped the same way.
  */
-export function dataBlock(source: 'map' | 'results' | 'answer', text: string): string {
+export function dataBlock(source: 'map' | 'results' | 'answer' | 'receipt' | 'preview', text: string): string {
   return `<kinote:content source="${source}">\n${escapeContent(text)}\n</kinote:content>`;
 }
 

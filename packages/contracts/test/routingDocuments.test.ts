@@ -42,6 +42,7 @@ describe('routing documents contracts', () => {
       needsHome: [],
       document: { pageId: id, title: '14Oct', outcome: 'created', parentTitle: 'Client - George', spaceName: 'Clients', reason: null, changeIds: [id] },
       filedInDocument: [{ factId: id, statement: 'Shop the look.' }],
+      file: null,
     });
     expect(receipt.document?.parentTitle).toBe('Client - George');
     const list = NeedsHomeDocumentListSchema.parse([

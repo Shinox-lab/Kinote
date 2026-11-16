@@ -26,8 +26,10 @@ const STATUS: Record<CaptureSummary['status'], string> = {
   queued: 'Waiting to route',
   routing: 'Routing…',
   waiting_for_answer: 'Needs your answer',
+  previewed: 'Preview — waiting for the agent',
   done: 'Done',
   failed: 'Routing failed',
+  cancelled: 'Cancelled',
 };
 
 export function captureStatusLabel(status: CaptureSummary['status']): string {

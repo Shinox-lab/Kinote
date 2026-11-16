@@ -89,6 +89,9 @@ export {
   type PlannedEdit,
   type PlanEditsInput,
   type CaptureShape,
+  type CaptureSplit,
+  type FileDecision,
+  type SplitCaptureInput,
   type DocumentPlacement,
   type PlaceDocumentInput,
   type EntityKind,
@@ -143,6 +146,7 @@ export {
   type PlanDeps,
   type PlanFactInput,
   type PlannedFact,
+  type PlanAlternative,
 } from './routing/plan.js';
 export { ensureRouterAgent } from './routing/routerAgent.js';
 export {
@@ -155,6 +159,7 @@ export {
   type RouteDeps,
 } from './routing/apply.js';
 export { placeFact, recordRoutingExample } from './routing/place.js';
+export { previewOf, buildCapturePreview, type CapturePreview } from './routing/preview.js';
 export { planDocument, uniqueChildTitle, similarDocumentExamples, type DocumentPlan } from './routing/document.js';
 export {
   notify,

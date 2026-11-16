@@ -293,6 +293,7 @@ describe('error model', () => {
       'not_removed',
       'source_name_taken',
       'capture_not_waiting',
+      'capture_not_previewed',
       'document_not_waiting',
       'capture_file_in_use',
       'field_name_taken',

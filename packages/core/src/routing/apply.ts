@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { and, eq, gt, inArray, isNotNull, isNull, lt, sql } from 'drizzle-orm';
+import { and, eq, gt, inArray, isNotNull, isNull, lt, ne, sql } from 'drizzle-orm';
 import {
   withTenantTx,
   acquireRoutingLease,
@@ -8,6 +8,7 @@ import {
   captureChanges,
   captureFacts,
   captureMessages,
+  agents,
   captures,
   citations,
   documents,
@@ -26,11 +27,13 @@ import type { RoutingModel } from '../placement/model.js';
 import { takePageSnapshot } from '../snapshot.js';
 import { rowCollectionOf } from '../collections/fields.js';
 import { blockMarkdown, encodeBlocksYDoc, markdownBlocks, readLiveBlocks } from './liveBlocks.js';
-import { decideShape, planCapture, splitCaptureText, type CheckedEdit, type Gate, type PlannedFact } from './plan.js';
+import { captureContext, decideShape, planCapture, splitCaptureText, type CheckedEdit, type Gate, type PlannedFact } from './plan.js';
 import { planDocument, uniqueChildTitle } from './document.js';
-import { attachCaptureFile, fileTitle, routedText } from './captureFile.js';
+import { applyCaptureFilePlan, attachCaptureFile, CAPTURE_FILE_REASONS, fileTitle, planCaptureFile, routedText } from './captureFile.js';
+import { buildCapturePreview, previewOf, type CapturePreview } from './preview.js';
 import { excerptOf, hasUnreadAbout, notify } from '../talk/notify.js';
 import { ensureRouterAgent } from './routerAgent.js';
+import { capturesAlwaysReviewed, senderActor } from './access.js';
 
 /** How long one routing run may hold the tenant's lease (R13). */
 export const ROUTING_LEASE_SECONDS = 300;
@@ -47,6 +50,78 @@ export interface RouteDeps {
   /** Throws when the run may no longer change anything (it lost the tenant's lease). */
   guard?: () => Promise<void>;
 }
+
+/** Whether this capture's changes wait for review whatever the space says (its sender is an "always review" agent). */
+async function forceReviewFor(tenantId: string, captureId: string): Promise<boolean> {
+  return withTenantTx(tenantId, async (tx) => {
+    const [c] = await tx
+      .select({ type: captures.senderType, id: captures.senderId })
+      .from(captures)
+      .where(and(eq(captures.tenantId, tenantId), eq(captures.id, captureId)));
+    return c ? capturesAlwaysReviewed(tx, { tenantId, type: c.type, id: c.id }) : false;
+  });
+}
+
+/** The capture's facts still open to routing: pending, not waiting on a question, not placed by a person. */
+async function openFactIds(tenantId: string, captureId: string): Promise<Map<string, string[]>> {
+  const rows = await withTenantTx(tenantId, (tx) =>
+    tx
+      .select({
+        id: captureFacts.id,
+        outcome: captureFacts.outcome,
+        waiting: captureFacts.waitingQuestionId,
+        placedBy: captureFacts.placedBy,
+        pins: captureFacts.pinnedEntityIds,
+      })
+      .from(captureFacts)
+      .where(and(eq(captureFacts.tenantId, tenantId), eq(captureFacts.captureId, captureId)))
+  );
+  return new Map(rows.filter((r) => r.outcome === 'pending' && r.waiting === null && r.placedBy === null).map((r) => [r.id, r.pins]));
+}
+
+async function isCancelled(tenantId: string, captureId: string): Promise<boolean> {
+  const [c] = await withTenantTx(tenantId, (tx) =>
+    tx.select({ status: captures.status }).from(captures).where(and(eq(captures.tenantId, tenantId), eq(captures.id, captureId)))
+  );
+  return c?.status === 'cancelled';
+}
+
+/**
+ * A stored preview cut to what its sender may reach now: edits in spaces they can no longer read are dropped,
+ * edits where they can no longer edit become suggestions, and new pages, the document's place and the file's
+ * place need a space they can still edit (a document that can't go there waits for a person).
+ */
+async function withinReachNow(tenantId: string, capture: CaptureRow, preview: CapturePreview): Promise<CapturePreview> {
+  return withTenantTx(tenantId, async (tx) => {
+    const ctx = await captureContext(tx, tenantId, capture);
+    const readable = new Set(ctx.filter.spaceIds);
+    const allowed = (spaceId: string) => ctx.editable.has(spaceId) && (!capture.scopeSpaceId || spaceId === capture.scopeSpaceId);
+    const facts = preview.facts.map((f): PlannedFact => {
+      if (f.plan.status !== 'planned') return f;
+      const edits = f.plan.edits.flatMap((e) => {
+        if (e.edit.op.op === 'create_page') return allowed(e.spaceId) ? [e] : [];
+        if (!readable.has(e.spaceId)) return [];
+        if (!ctx.editable.has(e.spaceId) && e.gate === null) return [{ ...e, gate: 'no_edit_access' as const }];
+        return [e];
+      });
+      return edits.length > 0
+        ? { ...f, plan: { ...f.plan, edits } }
+        : { ...f, plan: { status: 'needs_home', reason: 'You can no longer edit where this was planned.' } };
+    });
+    let document = preview.document;
+    if (document?.status === 'place' && !allowed(document.spaceId)) {
+      document = { status: 'needs_home', reason: 'You can no longer add pages where this was planned.', options: [] };
+    }
+    let file = preview.file;
+    if (file?.outcome === 'placed' && (!file.spaceId || !ctx.editable.has(file.spaceId))) {
+      file = { outcome: 'inbox', parentId: null, spaceId: null, reason: CAPTURE_FILE_REASONS.noPlace };
+    }
+    return { ...preview, facts, document, file };
+  });
+}
+
+/** The message a capture fails with when the agent that sent it may no longer act. */
+export const AGENT_SENDER_GONE = 'The agent that sent this is disabled or its owner left the workspace.';
 
 type FactResult = { applied: Array<'indexing' | 'pending_review' | 'other'>; suggested: number };
 
@@ -72,14 +147,73 @@ export async function routeCapture(
   if (!got) return 'busy';
   const guard = leaseGuard(tenantId, holder);
   try {
+    // An agent that was disabled, or whose owner left, since it sent this: nothing of it is filed.
+    const senderGone = await withTenantTx(tenantId, async (tx) => {
+      const [c] = await tx
+        .select({ type: captures.senderType, id: captures.senderId, status: captures.status })
+        .from(captures)
+        .where(and(eq(captures.tenantId, tenantId), eq(captures.id, captureId)));
+      // Cancelled (its agent was stopped, or its preview dropped): never routed.
+      if (c?.status === 'cancelled') return 'cancelled' as const;
+      if (!c || c.type !== 'agent') return false;
+      try {
+        await senderActor(tx, { tenantId, type: c.type, id: c.id });
+        return false;
+      } catch (err) {
+        if (err instanceof AppError && err.code === 'forbidden') return true;
+        throw err;
+      }
+    });
+    if (senderGone === 'cancelled') return 'done';
+    if (senderGone) {
+      await failCapture(tenantId, captureId, AGENT_SENDER_GONE);
+      return 'done';
+    }
     await expireQuestions(tenantId, now);
     await withTenantTx(tenantId, (tx) =>
       tx
         .update(captures)
         .set({ status: 'routing', error: null })
-        .where(and(eq(captures.tenantId, tenantId), eq(captures.id, captureId)))
+        .where(and(eq(captures.tenantId, tenantId), eq(captures.id, captureId), ne(captures.status, 'cancelled')))
     );
     let capture = await ensureSplit(tenantId, captureId, { ...deps, guard });
+    // A preview plans and stores the plan; nothing changes until the sender applies it.
+    if (capture.preview) {
+      const preview = await buildCapturePreview(tenantId, capture, { model: deps.model, embedder: deps.embedder, now, guard });
+      await guard();
+      await withTenantTx(tenantId, (tx) =>
+        tx
+          .update(captures)
+          .set({ previewPlan: preview, status: 'previewed', finishedAt: sql`now()` })
+          .where(and(eq(captures.tenantId, tenantId), eq(captures.id, captureId), ne(captures.status, 'cancelled')))
+      );
+      return 'done';
+    }
+    // An applied preview files what was planned, with no model call (a fact asking a question is planned again),
+    // limited to what the sender may reach now. It is used by this one run and then dropped: a later run (after a
+    // person places the page or answers a question) plans from what is true then.
+    const raw = previewOf(capture);
+    const stored = raw ? await withinReachNow(tenantId, capture, raw) : null;
+    if (raw) {
+      await withTenantTx(tenantId, (tx) =>
+        tx.update(captures).set({ previewPlan: null }).where(and(eq(captures.tenantId, tenantId), eq(captures.id, captureId)))
+      );
+    }
+    if (stored && capture.shape === 'document' && capture.documentOutcome === null) {
+      const doc = stored.document;
+      capture = await withTenantTx(tenantId, async (tx) => {
+        const [row] = await tx
+          .update(captures)
+          .set(
+            doc?.status === 'place'
+              ? { documentParentChoice: doc.parentId, documentSpaceChoice: doc.spaceId }
+              : { documentOutcome: 'needs_home', documentReason: doc?.reason ?? 'No place fits this page well enough.', documentOptions: doc?.options ?? [] }
+          )
+          .where(and(eq(captures.tenantId, tenantId), eq(captures.id, captureId)))
+          .returning();
+        return row!;
+      });
+    }
     if (capture.shape === 'document') {
       // Waiting for a person to choose where the page goes: the facts wait with it.
       if (capture.documentOutcome === 'needs_home') return await finishCapture(tenantId, captureId);
@@ -92,12 +226,44 @@ export async function routeCapture(
       capture.shape === 'document' && capture.documentPageId
         ? { pageId: capture.documentPageId, title: capture.documentTitle ?? '' }
         : undefined;
-    const planned = await planCapture(
-      { tenantId, captureId },
-      { model: deps.model, embedder: deps.embedder, now, guard, fromDocument }
-    );
+    let planned: PlannedFact[];
+    if (stored) {
+      const open = await openFactIds(tenantId, captureId);
+      const kept = stored.facts.filter((f) => f.factId && open.has(f.factId));
+      // Pins come from the fact as it is now (answers since the preview add to them).
+      const again = kept.filter((f) => f.plan.status === 'question');
+      planned = kept.filter((f) => f.plan.status !== 'question');
+      if (again.length > 0) {
+        planned.push(
+          ...(await planCapture(
+            { tenantId, captureId },
+            {
+              model: deps.model,
+              embedder: deps.embedder,
+              now,
+              guard,
+              fromDocument,
+              facts: again.map(({ ordinal, factId, fact }) => ({ ordinal, factId, fact, pinnedEntityIds: open.get(factId!) ?? [] })),
+            }
+          ))
+        );
+      }
+    } else {
+      planned = await planCapture({ tenantId, captureId }, { model: deps.model, embedder: deps.embedder, now, guard, fromDocument });
+    }
     await deps.hooks?.afterPlan?.();
+    // Cancelled while it was planned (its agent was stopped): nothing of it is filed.
+    if (await isCancelled(tenantId, captureId)) return 'done';
     await applyPlannedFacts(tenantId, captureId, planned, { ...deps, guard }, fromDocument ? 'filed_in_document' : 'needs_home');
+    // An updates capture's file: kept on its own when it is a record (or the sender asked), else left in the Inbox.
+    if (capture.shape === 'updates' && capture.fileId && capture.fileOutcome === null) {
+      const filePlan =
+        stored?.file && stored.file.outcome !== 'with_document'
+          ? { outcome: stored.file.outcome, spaceId: stored.file.spaceId, parentId: stored.file.parentId, reason: stored.file.reason }
+          : await planCaptureFile(tenantId, capture, deps);
+      await guard();
+      await applyCaptureFilePlan(tenantId, captureId, filePlan);
+    }
     return await finishCapture(tenantId, captureId);
   } finally {
     await withTenantTx(tenantId, (tx) => releaseRoutingLease(tx, tenantId, holder));
@@ -142,12 +308,16 @@ export async function ensureSplit(tenantId: string, captureId: string, deps: Rou
   if (loaded.split) return loaded.capture;
 
   const text = routedText(loaded.capture);
-  const { facts, shape } = await splitCaptureText(text, deps.model, deps.guard);
-  // A file is a document of its own unless the sender asked for updates only.
   const withFile = loaded.capture.fileId !== null;
-  const decided = withFile && loaded.capture.shapeMode === 'auto' ? 'document' : decideShape(loaded.capture.shapeMode, shape);
   // Its page is named by what was typed, else by the file.
   const fileName = withFile ? await withTenantTx(tenantId, (tx) => fileNameOf(tx, tenantId, loaded.capture.fileId!)) : null;
+  // The typed note is the sender's own words: filing instructions count only there, never in the file's text.
+  const note = loaded.capture.text.trim() ? loaded.capture.text : null;
+  const { facts, shape, keepFile, hint } = await splitCaptureText(text, deps.model, deps.guard, {
+    note,
+    fileName: fileName || null,
+  });
+  const decided = decideShape(loaded.capture.shapeMode, shape);
   const title =
     fileName !== null
       ? loaded.capture.text.trim()
@@ -177,6 +347,8 @@ export async function ensureSplit(tenantId: string, captureId: string, deps: Rou
         shape: decided,
         subject: shape?.subject ?? null,
         documentTitle: decided === 'document' ? title : null,
+        filingHint: hint,
+        fileDecision: keepFile,
       })
       .where(and(eq(captures.tenantId, tenantId), eq(captures.id, captureId)))
       .returning();
@@ -322,7 +494,8 @@ async function settleStatus(tx: DbTransaction, tenantId: string, captureId: stri
   await tx
     .update(captures)
     .set({ status, finishedAt: status === 'done' ? new Date() : null })
-    .where(and(eq(captures.tenantId, tenantId), eq(captures.id, captureId)));
+    // A capture cancelled meanwhile (its agent was stopped) stays cancelled.
+    .where(and(eq(captures.tenantId, tenantId), eq(captures.id, captureId), ne(captures.status, 'cancelled')));
   return status;
 }
 
@@ -335,12 +508,22 @@ async function notifyWaiting(tx: DbTransaction, tenantId: string, captureId: str
     .select({ senderType: captures.senderType, senderId: captures.senderId, text: captures.text, documentOutcome: captures.documentOutcome })
     .from(captures)
     .where(and(eq(captures.tenantId, tenantId), eq(captures.id, captureId)));
-  if (!capture || capture.senderType !== 'user') return;
+  if (!capture) return;
   if (!factsWait && capture.documentOutcome !== 'needs_home') return;
-  if (await hasUnreadAbout(tx, tenantId, capture.senderId, 'capture_waiting', captureId)) return;
+  // An agent's capture waits for its owner (spec: routing questions go to a person by default).
+  let recipientId = capture.senderId;
+  if (capture.senderType === 'agent') {
+    const [agent] = await tx
+      .select({ createdBy: agents.createdBy })
+      .from(agents)
+      .where(and(eq(agents.tenantId, tenantId), eq(agents.id, capture.senderId)));
+    if (!agent) return;
+    recipientId = agent.createdBy;
+  }
+  if (await hasUnreadAbout(tx, tenantId, recipientId, 'capture_waiting', captureId)) return;
   await notify(tx, tenantId, [
     {
-      recipientId: capture.senderId,
+      recipientId,
       kind: 'capture_waiting',
       actorType: 'agent',
       actorId: routerId,
@@ -641,6 +824,7 @@ async function applyToPage(
     actorType: 'agent',
     actorId: routerId,
     manual: false,
+    forceReview: await forceReviewFor(tenantId, captureId),
   });
   const state =
     version?.status === 'pending_review'
@@ -892,6 +1076,7 @@ export async function createEnginePage(
     actorType: 'agent',
     actorId: ctx.routerId,
     manual: false,
+    forceReview: await forceReviewFor(tenantId, ctx.captureId),
   });
   if (version) {
     await withTenantTx(tenantId, (tx) =>

@@ -264,6 +264,10 @@ export function useAgents(enabled = true) {
   return useQuery({ queryKey: useTenantKey('agents'), queryFn: () => api.listAgents(), enabled });
 }
 
+export function useAgentSettings(enabled = true) {
+  return useQuery({ queryKey: useTenantKey('agents', 'settings'), queryFn: () => api.agentSettings(), enabled });
+}
+
 export function useSources(enabled = true) {
   return useQuery({ queryKey: useTenantKey('sources'), queryFn: () => api.listSources(), enabled });
 }

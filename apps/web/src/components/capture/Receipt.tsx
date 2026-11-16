@@ -222,6 +222,19 @@ function DocumentLead({
 }
 
 /** What a capture did, grouped by space and page; pages in spaces the viewer cannot read are only counted. */
+/** What became of the attached file, linked to it where it is now. */
+function FileLine({ file }: { file: NonNullable<CaptureReceipt['file']> }) {
+  const { tenant } = useWorkspace();
+  return (
+    <p className="text-sm text-muted">
+      <Link to="/w/$tenantSlug/f/$fileId" params={{ tenantSlug: tenant.slug, fileId: file.fileId }} className="font-medium text-fg hover:underline">
+        The file
+      </Link>
+      {file.reason ? `: ${file.reason}` : ''}
+    </p>
+  );
+}
+
 export function Receipt({ captureId, receipt }: { captureId: string; receipt: CaptureReceipt }) {
   const [notice, setNotice] = useState<string | null>(null);
   // Changes an Undo left alone because someone changed their block since: named on their rows.
@@ -250,11 +263,13 @@ export function Receipt({ captureId, receipt }: { captureId: string; receipt: Ca
     receipt.spaces.length === 0 &&
     !hidden &&
     receipt.alreadyKnown.length === 0 &&
-    receipt.needsHome.length === 0;
+    receipt.needsHome.length === 0 &&
+    !receipt.file;
   if (empty) return null;
   const undoable = applied.length + (document && document.changeIds.length > 0 ? 1 : 0);
   return (
     <section aria-label="Receipt" className="flex flex-col gap-3">
+      {receipt.file && <FileLine file={receipt.file} />}
       {document && (
         <DocumentLead
           captureId={captureId}

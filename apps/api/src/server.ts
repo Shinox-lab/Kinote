@@ -38,6 +38,7 @@ import {
   SourceListSchema,
   AgentListSchema,
   AgentSchema,
+  StopAgentResponseSchema,
   AgentTokenSchema,
   IssueAgentTokenResponseSchema,
   SourceSchema,
@@ -130,7 +131,16 @@ import {
 import { deleteSourceFile, putSourceFile } from './routes/sourceFiles.js';
 import { kinoteVersion as apiPackageVersion, registerInternalRoutes } from './routes/internal.js';
 import { createSource, issueSourceToken, listSources, revokeSourceToken, revokeTokensMadeBy, updateSource } from './routes/sources.js';
-import { createAgent, issueAgentToken, listAgents, revokeAgentToken, updateAgent } from './routes/agents.js';
+import {
+  createAgent,
+  getAgentSettings,
+  issueAgentToken,
+  listAgents,
+  revokeAgentToken,
+  stopAgent,
+  updateAgent,
+  updateAgentSettings,
+} from './routes/agents.js';
 import { registerMcpRoute } from './mcp/route.js';
 import { oauthRoutes } from './oauth/routes.js';
 import { oauthBase, protectedResourceUrl } from './oauth/request.js';
@@ -745,6 +755,12 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
     version: opts.kinoteVersion ?? apiPackageVersion(),
   });
 
+  app.get('/api/v1/agents/settings', async (req, reply) => {
+    return reply.send(await getAgentSettings(req.actor!));
+  });
+  app.patch('/api/v1/agents/settings', async (req, reply) => {
+    return reply.send(await updateAgentSettings(req.actor!, req.body));
+  });
   app.get('/api/v1/agents', async (req, reply) => {
     return reply.send(parseReply(AgentListSchema, await listAgents(actorOf(req))));
   });
@@ -755,6 +771,11 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
   });
 
   // Stopping an agent (disable, revoke) works while the workspace is suspended: a leaked token keeps reading.
+  // Stopping a leaking agent must work while the workspace is suspended.
+  app.post('/api/v1/agents/:id/stop', { config: { whenSuspended: 'allow' } }, async (req, reply) => {
+    const res = await stopAgent(actorOf(req), (req.params as { id: string }).id, req.body, opts.collab);
+    return reply.send(parseReply(StopAgentResponseSchema, res));
+  });
   app.patch('/api/v1/agents/:id', { config: { whenSuspended: 'allow' } }, async (req, reply) => {
     const body = req.body as Record<string, unknown> | null;
     const onlyDisables = !!body && typeof body === 'object' && Object.keys(body).length === 1 && body.disabled === true;

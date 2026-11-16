@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { AGENT_SCOPES, type Agent, type AgentScope, type AgentToken, type SpaceResponse } from '@kinote/contracts';
 import { api, errorMessage } from '../../lib/api.js';
-import { useAgents, useRefresh, useSpaces } from '../../lib/queries.js';
+import { useAgentSettings, useAgents, useRefresh, useSpaces } from '../../lib/queries.js';
 import { useFocusTrap } from '../../lib/useFocusTrap.js';
 import { useMediaQuery } from '../../lib/useMediaQuery.js';
 import { lastUsedLabel, tokenState } from '../../lib/sources.js';
@@ -15,7 +15,7 @@ const DEFAULT_DAILY_AI = 100;
 
 const SCOPE_LABELS: Record<AgentScope, { label: string; hint: string }> = {
   read: { label: 'Read', hint: 'Browse, search, read pages, see what relates, ask questions.' },
-  capture: { label: 'Capture', hint: 'Send notes and facts to be placed in the wiki (arrives later).' },
+  capture: { label: 'Capture', hint: 'File notes and facts through routing, with a receipt and Undo; preview first if it asks.' },
   edit: { label: 'Edit', hint: 'Change pages within its grants (arrives later).' },
 };
 
@@ -203,6 +203,9 @@ function AgentPanel({ agent, spaces, onIssued }: { agent: Agent; spaces: readonl
   const refresh = useRefresh();
   const [name, setName] = useState(agent.name);
   const [limit, setLimit] = useState(agent.dailyAiLimit === null ? '' : String(agent.dailyAiLimit));
+  // Shown at once when ticked; the saved value takes over when the agent is loaded again.
+  const [alwaysReview, setAlwaysReview] = useState(agent.alwaysReview);
+  useEffect(() => setAlwaysReview(agent.alwaysReview), [agent.alwaysReview]);
   const update = useMutation({
     mutationFn: (body: Parameters<typeof api.updateAgent>[1]) => api.updateAgent(agent.id, body),
     onSuccess: () => refresh('agents'),
@@ -247,6 +250,17 @@ function AgentPanel({ agent, spaces, onIssued }: { agent: Agent; spaces: readonl
         </Button>
       </form>
 
+      <Checkbox
+        label="Always review its changes"
+        hint="Its captures wait for review even in spaces without review."
+        checked={alwaysReview}
+        disabled={update.isPending}
+        onChange={(checked) => {
+          setAlwaysReview(checked);
+          update.mutate({ always_review: checked }, { onError: () => setAlwaysReview(agent.alwaysReview) });
+        }}
+      />
+
       <div className="flex flex-wrap items-center gap-3">
         <Button variant="secondary" disabled={update.isPending} onClick={() => update.mutate({ disabled: agent.disabledAt === null })}>
           {agent.disabledAt === null ? 'Disable agent' : 'Enable agent'}
@@ -254,6 +268,7 @@ function AgentPanel({ agent, spaces, onIssued }: { agent: Agent; spaces: readonl
         {agent.disabledAt !== null && <span className="text-sm text-muted">A disabled agent's tokens cannot sign in.</span>}
       </div>
       <ErrorNote error={update.error} />
+      <StopAgent agent={agent} />
 
       <div className="flex flex-col gap-1">
         <h3 className="text-sm font-semibold">Spaces</h3>
@@ -279,6 +294,98 @@ function AgentPanel({ agent, spaces, onIssued }: { agent: Agent; spaces: readonl
         <NewTokenForm agent={agent} onIssued={(token) => onIssued(agent, token)} />
       </div>
     </section>
+  );
+}
+
+const STOP_SINCE = [
+  { label: 'the last hour', ms: 3_600_000 },
+  { label: 'the last 24 hours', ms: 86_400_000 },
+  { label: 'the last 7 days', ms: 7 * 86_400_000 },
+  { label: 'everything it filed', ms: null },
+] as const;
+
+/** "Stop and undo": disables the agent and undoes its captures since a chosen time, after a confirm. */
+function StopAgent({ agent }: { agent: Agent }) {
+  const refresh = useRefresh();
+  const [open, setOpen] = useState(false);
+  const [since, setSince] = useState<string>('0');
+  const [result, setResult] = useState<string | null>(null);
+  const stop = useMutation({
+    mutationFn: () => {
+      const choice = STOP_SINCE[Number(since)]!;
+      const from = choice.ms === null ? new Date(0) : new Date(Date.now() - choice.ms);
+      return api.stopAgent(agent.id, from.toISOString());
+    },
+    onSuccess: (r) => {
+      setOpen(false);
+      setResult(
+        `Stopped. ${r.undone} ${r.undone === 1 ? 'change' : 'changes'} undone from ${r.captures} ${r.captures === 1 ? 'capture' : 'captures'}` +
+          (r.changedSince > 0 ? `; ${r.changedSince} left because someone edited them since.` : '.')
+      );
+      void refresh('agents');
+      void refresh('captures');
+    },
+  });
+  return (
+    <div className="flex flex-col gap-2">
+      {open ? (
+        <div className="flex flex-wrap items-end gap-3 rounded-md border border-line p-3">
+          <div className="w-56">
+            <SelectField
+              label="Undo its captures from"
+              value={since}
+              onChange={setSince}
+              options={STOP_SINCE.map((o, i) => ({ value: String(i), label: o.label }))}
+            />
+          </div>
+          <Button variant="danger" disabled={stop.isPending} onClick={() => stop.mutate()}>
+            Stop and undo
+          </Button>
+          <Button variant="secondary" disabled={stop.isPending} onClick={() => setOpen(false)}>
+            Cancel
+          </Button>
+        </div>
+      ) : (
+        <Button variant="secondary" className="self-start" onClick={() => setOpen(true)}>
+          Stop and undo…
+        </Button>
+      )}
+      {result && (
+        <p role="status" className="text-sm text-muted">
+          {result}
+        </p>
+      )}
+      <ErrorNote error={stop.error} />
+    </div>
+  );
+}
+
+/** The workspace's switch for agents answering routing questions themselves. */
+function AgentSettingsForm() {
+  const { data } = useAgentSettings();
+  const refresh = useRefresh();
+  const [mayAnswer, setMayAnswer] = useState<boolean | null>(null);
+  useEffect(() => setMayAnswer(data?.agentsMayAnswer ?? null), [data?.agentsMayAnswer]);
+  const save = useMutation({
+    mutationFn: (agentsMayAnswer: boolean) => api.updateAgentSettings({ agents_may_answer: agentsMayAnswer }),
+    onSuccess: () => refresh('agents', 'settings'),
+    onError: () => setMayAnswer(data?.agentsMayAnswer ?? null),
+  });
+  if (!data || mayAnswer === null) return null;
+  return (
+    <div className="flex flex-col gap-1">
+      <Checkbox
+        label="Agents may answer routing questions"
+        hint="Off: questions go to the agent's owner on the Capture page."
+        checked={mayAnswer}
+        disabled={save.isPending}
+        onChange={(checked) => {
+          setMayAnswer(checked);
+          save.mutate(checked);
+        }}
+      />
+      <ErrorNote error={save.error} />
+    </div>
   );
 }
 
@@ -326,8 +433,9 @@ export function AgentsPage() {
         </Button>
       </div>
       <p className="text-xs text-muted">
-        An agent is an AI tool, such as Claude Code, that reads this wiki over MCP with its own token, within the spaces you grant it. Members can also connect a client by signing in from it; that adds a read-only agent owned by them here.
+        An agent is an AI tool, such as Claude Code, that reads this wiki over MCP with its own token, and can file what it learns through Capture, within the spaces you grant it. Members can also connect a client by signing in from it; that adds a read-only agent owned by them here.
       </p>
+      <AgentSettingsForm />
       <ErrorNote error={error} />
       {isPending ? (
         <Loading what="agents" />

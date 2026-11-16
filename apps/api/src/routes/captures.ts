@@ -1,6 +1,8 @@
-import { and, desc, eq, inArray, lt, ne, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, lt, ne, or, sql } from 'drizzle-orm';
 import {
   withTenantTx,
+  agents,
+  tenants,
   captures,
   captureMessages,
   captureFacts,
@@ -26,13 +28,16 @@ import {
   type SuggestionSummary,
   type FieldChange,
 } from '@kinote/contracts';
-import { assertValidUuid, describeFieldChange, fieldIdOf, isTenantAdmin, senderAccess, type Actor } from '@kinote/core';
+import { assertValidUuid, describeFieldChange, fieldIdOf, isTenantAdmin, requireDocumentRole, senderAccess, type Actor } from '@kinote/core';
 import { resolveActorNames } from '../people.js';
 
 type CaptureRow = typeof captures.$inferSelect;
 type SuggestionRow = typeof suggestions.$inferSelect;
 
 const LIST_LIMIT = 50;
+
+/** Why an agent may not answer a routing question (the workspace setting "agents may answer" is off). */
+export const AGENTS_MAY_NOT_ANSWER = "In this workspace only people answer routing questions; the question is on your owner's Capture page.";
 
 type CaptureFile = CaptureSummary['file'];
 
@@ -48,6 +53,9 @@ export function toCaptureSummary(row: CaptureRow, senderName: string, file: Capt
     scopePageId: row.scopePageId,
     status: row.status,
     error: row.error,
+    preview: row.preview,
+    fileOutcome: row.fileOutcome,
+    fileReason: row.fileReason,
     shapeMode: row.shapeMode,
     shape: row.shape,
     file,
@@ -112,6 +120,16 @@ function isSender(actor: Actor, row: CaptureRow): boolean {
   return row.senderType === actor.principalType && row.senderId === actor.principalId;
 }
 
+/** Whether the actor is the person who owns the agent that sent this capture. */
+export async function isOwnerOfSender(tx: DbTransaction, actor: Actor, row: CaptureRow): Promise<boolean> {
+  if (actor.principalType !== 'user' || row.senderType !== 'agent') return false;
+  const [agent] = await tx
+    .select({ createdBy: agents.createdBy })
+    .from(agents)
+    .where(and(eq(agents.tenantId, actor.tenantId), eq(agents.id, row.senderId)));
+  return agent?.createdBy === actor.principalId;
+}
+
 /** Puts the capture in line for routing (one at a time per tenant, R13). */
 export async function enqueueCaptureRoute(tx: DbTransaction, tenantId: string, captureId: string) {
   await enqueueJob(tx, {
@@ -127,14 +145,18 @@ export async function enqueueCaptureRoute(tx: DbTransaction, tenantId: string, c
  * must be able to edit at least one space outside the Inbox (403 otherwise);
  * a scope the sender cannot read, or the Inbox, is 404.
  */
-export async function createCapture(actor: Actor, body: unknown): Promise<CaptureSummary> {
+export async function createCapture(
+  actor: Actor,
+  body: unknown,
+  opts: { channel?: 'console' | 'mcp'; sourceRef?: string | null; preview?: boolean } = {}
+): Promise<CaptureSummary> {
   const raw = (body as { text?: unknown } | null)?.text;
   if (typeof raw === 'string' && raw.trim().length > MAX_CAPTURE_CHARS) {
     throw new AppError('capture_too_long');
   }
   const parsed = CreateCaptureRequestSchema.safeParse(body);
   if (!parsed.success) throw new AppError('validation_failed');
-  const { text, file_id, scope_space_id, scope_page_id, shape } = parsed.data;
+  const { text, file_id, scope_space_id, scope_page_id, shape, keep_file } = parsed.data;
 
   return withTenantTx(actor.tenantId, async (tx) => {
     const access = await senderAccess(tx, actor);
@@ -172,11 +194,14 @@ export async function createCapture(actor: Actor, body: unknown): Promise<Captur
         tenantId: actor.tenantId,
         senderType: actor.principalType,
         senderId: actor.principalId,
-        channel: 'console',
+        channel: opts.channel ?? 'console',
         text,
+        sourceRef: opts.sourceRef ?? null,
+        preview: opts.preview ?? false,
         scopeSpaceId,
         scopePageId: scope_page_id ?? null,
         shapeMode: shape,
+        fileMode: keep_file,
         fileId: file_id ?? null,
       })
       .returning();
@@ -194,7 +219,7 @@ export async function createCapture(actor: Actor, body: unknown): Promise<Captur
   });
 }
 
-/** GET /api/v1/captures: the actor's own captures, newest first. */
+/** GET /api/v1/captures: the actor's own captures and those of agents they own, newest first. */
 export async function listCaptures(actor: Actor, query: unknown): Promise<CaptureSummary[]> {
   const parsed = CaptureListQuerySchema.safeParse(query ?? {});
   if (!parsed.success) throw new AppError('validation_failed');
@@ -205,8 +230,18 @@ export async function listCaptures(actor: Actor, query: unknown): Promise<Captur
       .where(
         and(
           eq(captures.tenantId, actor.tenantId),
-          eq(captures.senderType, actor.principalType),
-          eq(captures.senderId, actor.principalId),
+          or(
+            and(eq(captures.senderType, actor.principalType), eq(captures.senderId, actor.principalId)),
+            actor.principalType === 'user'
+              ? and(
+                  eq(captures.senderType, 'agent'),
+                  inArray(
+                    captures.senderId,
+                    tx.select({ id: agents.id }).from(agents).where(and(eq(agents.tenantId, actor.tenantId), eq(agents.createdBy, actor.principalId)))
+                  )
+                )
+              : undefined
+          ),
           parsed.data.before ? lt(captures.createdAt, new Date(parsed.data.before)) : undefined
         )
       )
@@ -216,7 +251,10 @@ export async function listCaptures(actor: Actor, query: unknown): Promise<Captur
   });
 }
 
-/** The capture when the actor is its sender (or, unless `senderOnly`, a tenant admin); else 404. */
+/**
+ * The capture when the actor is its sender or the owner of the agent that sent it (or, unless `senderOnly`, a
+ * tenant admin); else 404.
+ */
 export async function visibleCapture(
   tx: DbTransaction,
   actor: Actor,
@@ -230,9 +268,8 @@ export async function visibleCapture(
     .where(and(eq(captures.tenantId, actor.tenantId), eq(captures.id, id)));
   const [row] = opts.lock ? await query.for('update') : await query;
   if (!row) throw new AppError('capture_not_found');
-  if (!isSender(actor, row) && (opts.senderOnly || !isTenantAdmin(actor))) {
-    throw new AppError('capture_not_found');
-  }
+  if (isSender(actor, row) || (await isOwnerOfSender(tx, actor, row))) return row;
+  if (opts.senderOnly || !isTenantAdmin(actor)) throw new AppError('capture_not_found');
   return row;
 }
 
@@ -441,10 +478,24 @@ export async function captureReceipt(tx: DbTransaction, viewer: Actor, captureId
     filedInDocument: facts
       .filter((f) => f.outcome === 'filed_in_document')
       .map((f) => ({ factId: f.id, statement: f.statement })),
+    file: await receiptFile(tx, viewer, capture ?? null),
   };
 }
 
-async function captureDetail(tx: DbTransaction, actor: Actor, row: CaptureRow): Promise<CaptureDetail> {
+/** The attached file's line on the receipt: what became of it and where it is now (null when the viewer can't read it). */
+async function receiptFile(tx: DbTransaction, viewer: Actor, capture: CaptureRow | null): Promise<CaptureReceipt['file']> {
+  if (!capture?.fileId || !capture.fileOutcome) return null;
+  const [file] = await tx.select().from(documents).where(and(eq(documents.tenantId, viewer.tenantId), eq(documents.id, capture.fileId)));
+  if (!file || file.archivedAt) return null;
+  try {
+    await requireDocumentRole(tx, viewer, file, 'viewer');
+  } catch {
+    return null;
+  }
+  return { outcome: capture.fileOutcome, reason: capture.fileReason, fileId: file.id, parentId: file.parentId, spaceId: file.spaceId };
+}
+
+export async function captureDetail(tx: DbTransaction, actor: Actor, row: CaptureRow): Promise<CaptureDetail> {
   const thread = await tx
     .select()
     .from(captureMessages)
@@ -480,6 +531,10 @@ export async function answerCapture(actor: Actor, id: string, body: unknown): Pr
   const parsed = AnswerCaptureRequestSchema.safeParse(body);
   return withTenantTx(actor.tenantId, async (tx) => {
     const row = await visibleCapture(tx, actor, id, { senderOnly: true, lock: true });
+    if (actor.principalType === 'agent') {
+      const [tenant] = await tx.select({ agentsMayAnswer: tenants.agentsMayAnswer }).from(tenants).where(eq(tenants.id, actor.tenantId));
+      if (!tenant?.agentsMayAnswer) throw new AppError('forbidden', AGENTS_MAY_NOT_ANSWER);
+    }
     if (!parsed.success) throw new AppError('validation_failed');
     const { message_id, choice } = parsed.data;
 

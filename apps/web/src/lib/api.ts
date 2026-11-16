@@ -60,6 +60,8 @@ import {
   SearchResponseSchema,
   SourceListSchema,
   AgentListSchema,
+  AgentSettingsSchema,
+  StopAgentResponseSchema,
   AgentSchema,
   AgentTokenSchema,
   IssueAgentTokenResponseSchema,
@@ -459,6 +461,10 @@ export const api = {
 
   // Agents (admin)
   listAgents: () => request('/api/v1/agents', AgentListSchema),
+  stopAgent: (id: string, since: string) => request(`/api/v1/agents/${e(id)}/stop`, StopAgentResponseSchema, send('POST', { since })),
+  agentSettings: () => request('/api/v1/agents/settings', AgentSettingsSchema),
+  updateAgentSettings: (body: { agents_may_answer: boolean }) =>
+    request('/api/v1/agents/settings', AgentSettingsSchema, send('PATCH', body)),
   createAgent: (body: CreateAgentRequest) => request('/api/v1/agents', AgentSchema, send('POST', body)),
   updateAgent: (id: string, body: UpdateAgentRequest) => request(`/api/v1/agents/${e(id)}`, AgentSchema, send('PATCH', body)),
   issueAgentToken: (id: string, body: IssueAgentTokenRequest) =>

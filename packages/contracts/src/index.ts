@@ -57,6 +57,7 @@ export const AuditEventTypeSchema = z.enum([
   'member.left',
   'agent.created',
   'agent.updated',
+  'agent.stopped',
   'agent.token_issued',
   'agent.token_revoked',
   'agent.tool_called',
@@ -84,6 +85,8 @@ export const AuditEventTypeSchema = z.enum([
   'capture.change_undone',
   'capture.change_moved',
   'capture.fact_placed',
+  'capture.preview_applied',
+  'capture.preview_cancelled',
   'capture.document_created',
   'capture.document_placed',
   'capture.document_moved',
@@ -1342,6 +1345,8 @@ export const AgentSchema = z.object({
   disabledAt: z.string().datetime().nullable(),
   /** AI actions a day; null means the default (100). */
   dailyAiLimit: z.number().int().nullable(),
+  /** Its routed changes wait for review even in a space without review. */
+  alwaysReview: z.boolean(),
   grants: z.array(z.object({ spaceId: z.string().uuid(), spaceName: z.string(), role: z.enum(['viewer', 'editor']) })),
   tokens: z.array(AgentTokenSchema),
 });
@@ -1359,9 +1364,25 @@ export const UpdateAgentRequestSchema = z
     name: AgentNameSchema.optional(),
     disabled: z.boolean().optional(),
     daily_ai_limit: DailyAiLimitSchema.nullable().optional(),
+    always_review: z.boolean().optional(),
   })
   .refine((v) => Object.values(v).some((x) => x !== undefined), 'nothing to change');
 export type UpdateAgentRequest = z.input<typeof UpdateAgentRequestSchema>;
+
+/** Stop an agent: disable it and undo what it captured since `since`. */
+export const StopAgentRequestSchema = z.object({ since: z.string().datetime() });
+export const StopAgentResponseSchema = z.object({
+  agent: AgentSchema,
+  undone: z.number().int(),
+  changedSince: z.number().int(),
+  captures: z.number().int(),
+});
+export type StopAgentResponse = z.infer<typeof StopAgentResponseSchema>;
+
+/** Workspace settings for agents (Settings → Agents). */
+export const AgentSettingsSchema = z.object({ agentsMayAnswer: z.boolean() });
+export type AgentSettings = z.infer<typeof AgentSettingsSchema>;
+export const UpdateAgentSettingsRequestSchema = z.object({ agents_may_answer: z.boolean() });
 
 export const IssueAgentTokenRequestSchema = z.object({
   name: AgentNameSchema,
@@ -1474,8 +1495,13 @@ export const CreateCaptureRequestSchema = z
     scope_page_id: z.string().uuid().optional(),
     /** auto: the engine decides (a file is a document); document: always also a new page; updates: never a new page. */
     shape: z.enum(['auto', 'document', 'updates']).default('auto'),
+    /** The attached file: auto decides by meaning (and by the typed note); keep files it in the wiki; inbox leaves it there. */
+    keep_file: z.enum(['auto', 'keep', 'inbox']).default('auto'),
   })
   .refine((c) => c.text !== '' || c.file_id !== undefined, { message: 'Write something or attach a file.' });
+
+export const CaptureStatusSchema = z.enum(['queued', 'routing', 'waiting_for_answer', 'previewed', 'done', 'failed', 'cancelled']);
+export type CaptureStatus = z.infer<typeof CaptureStatusSchema>;
 
 export const CaptureSummarySchema = z.object({
   id: z.string().uuid(),
@@ -1487,8 +1513,13 @@ export const CaptureSummarySchema = z.object({
   text: z.string(),
   scopeSpaceId: z.string().uuid().nullable(),
   scopePageId: z.string().uuid().nullable(),
-  status: z.enum(['queued', 'routing', 'waiting_for_answer', 'done', 'failed']),
+  status: CaptureStatusSchema,
   error: z.string().nullable(),
+  /** Planned only: nothing changes until the sender applies the preview. */
+  preview: z.boolean(),
+  /** What became of the attached file; null without one, or before it was decided. */
+  fileOutcome: z.enum(['with_document', 'placed', 'inbox']).nullable(),
+  fileReason: z.string().nullable(),
   shapeMode: z.enum(['auto', 'document', 'updates']),
   /** Null until the capture is split. */
   shape: z.enum(['document', 'updates']).nullable(),
@@ -1566,6 +1597,16 @@ export const CaptureReceiptSchema = z.object({
     .nullable(),
   /** Facts kept only on the document's page. */
   filedInDocument: z.array(z.object({ factId: z.string().uuid(), statement: z.string() })),
+  /** What became of the attached file, and where it is now; null without one or before it was decided. */
+  file: z
+    .object({
+      outcome: z.enum(['with_document', 'placed', 'inbox']),
+      reason: z.string().nullable(),
+      fileId: z.string().uuid(),
+      parentId: z.string().uuid().nullable(),
+      spaceId: z.string().uuid(),
+    })
+    .nullable(),
 });
 export type CaptureReceipt = z.infer<typeof CaptureReceiptSchema>;
 
@@ -1575,6 +1616,13 @@ export const CaptureDetailSchema = z.object({
   receipt: CaptureReceiptSchema,
 });
 export type CaptureDetail = z.infer<typeof CaptureDetailSchema>;
+
+/** Apply a previewed capture: drop some facts, file some on a page of the sender's choosing, the rest as planned. */
+export const ApplyCapturePreviewRequestSchema = z.object({
+  skip: z.array(z.string().uuid()).max(100).default([]),
+  place: z.array(z.object({ fact_id: z.string().uuid(), document_id: z.string().uuid() })).max(100).default([]),
+});
+export type ApplyCapturePreviewRequest = z.input<typeof ApplyCapturePreviewRequestSchema>;
 
 export const AnswerCaptureRequestSchema = z.object({
   message_id: z.string().uuid(),

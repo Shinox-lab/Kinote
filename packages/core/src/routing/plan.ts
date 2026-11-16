@@ -18,7 +18,7 @@ import { AppError, FIELD_BLOCK_PREFIX, drawingConfig, canonicalFieldJson, format
 import { blockFullText, type BlockLike } from '@kinote/shared';
 import type { EmbeddingProvider } from '../embedding.js';
 import type { Actor } from '../permissions.js';
-import type { CaptureFact, CaptureShape, PlanCandidate, PlanField, PlannedEdit, RoutingModel } from '../placement/model.js';
+import type { CaptureFact, CaptureShape, CaptureSplit, PlanCandidate, PlanField, PlannedEdit, RoutingModel } from '../placement/model.js';
 import { collectionFieldDefs, fieldNames, isCollection, rowCollectionOf } from '../collections/fields.js';
 import { resolveFieldValue } from '../collections/resolve.js';
 import { findEntities, pagesForEntities, searchPageCards, type PlacementFilter } from '../placement/queries.js';
@@ -72,8 +72,17 @@ export interface PlanFactInput {
   pinnedEntityIds: string[];
 }
 
+/** A page the planner considered for a fact. */
+export interface PlanAlternative {
+  documentId: string;
+  title: string;
+  spaceId: string;
+}
+
 export interface PlannedFact extends PlanFactInput {
   plan: FactPlan;
+  /** Up to 3 pages considered and not edited, best first (shown in a preview). */
+  alternatives?: PlanAlternative[];
 }
 
 export interface PlanDeps {
@@ -92,6 +101,8 @@ export interface PlanDeps {
    * is created, and anything unsure is filed on the document's page.
    */
   fromDocument?: { pageId: string | null; title: string };
+  /** Called with the candidate pages a fact was planned against, best first. */
+  onCandidates?: (ordinal: number, pages: PlanAlternative[]) => void;
 }
 
 export interface Context {
@@ -101,6 +112,8 @@ export interface Context {
   editable: Set<string>;
   writableSpaces: Array<{ id: string; name: string }>;
   scopePageId: string | null;
+  /** Where the sender's note asked to file it (from the split). */
+  hint: string | null;
 }
 
 export interface Candidate {
@@ -200,32 +213,43 @@ export async function planCapture(
   const out: PlannedFact[] = [];
   for (const input of facts) {
     await deps.guard?.();
-    let plan = await planFact(tenantId, loaded.context, input, deps);
+    let considered: PlanAlternative[] = [];
+    let plan = await planFact(tenantId, loaded.context, input, {
+      ...deps,
+      onCandidates: (ordinal, pages) => {
+        considered = pages;
+        deps.onCandidates?.(ordinal, pages);
+      },
+    });
     if (deps.fromDocument && plan.status === 'needs_home') plan = { status: 'filed_in_document', reason: plan.reason };
-    out.push({ ...input, plan });
+    const edited = new Set(plan.status === 'planned' ? plan.edits.map((e) => ('documentId' in e.edit.op ? e.edit.op.documentId : null)) : []);
+    if (plan.status === 'already_known') edited.add(plan.documentId);
+    out.push({ ...input, plan, alternatives: considered.filter((c) => !edited.has(c.documentId)).slice(0, 3) });
   }
   return out;
 }
 
 /**
  * Splits a capture part by part, so a long capture never runs into the
- * per-split fact limit. The shape is the first part's: that is where a
- * document's title and structure are.
+ * per-split fact limit. The shape, file decision and hint are the first
+ * part's: that is where a document's title and structure, and the sender's
+ * note, are. The note and file name go with the first part only.
  */
 export async function splitCaptureText(
   text: string,
   model: RoutingModel,
-  guard?: () => Promise<void>
-): Promise<{ facts: CaptureFact[]; shape: CaptureShape | null }> {
+  guard?: () => Promise<void>,
+  extra: { note: string | null; fileName: string | null } = { note: null, fileName: null }
+): Promise<CaptureSplit> {
   const facts: CaptureFact[] = [];
-  let shape: CaptureShape | null = null;
+  let first: CaptureSplit | null = null;
   for (const [i, part] of captureParts(text).entries()) {
     await guard?.();
-    const out = await model.splitCapture({ text: part });
+    const out = await model.splitCapture(i === 0 ? { text: part, note: extra.note, fileName: extra.fileName } : { text: part });
     facts.push(...out.facts);
-    if (i === 0) shape = out.shape;
+    if (i === 0) first = out;
   }
-  return { facts, shape };
+  return { facts, shape: first?.shape ?? null, keepFile: first?.keepFile ?? null, hint: first?.hint ?? null };
 }
 
 /** The sender's choice wins; on auto a capture is a document only when the model is sure enough. */
@@ -254,6 +278,7 @@ export async function captureContext(
     editable: new Set(access.editable),
     writableSpaces: all.filter((s) => access.editable.includes(s.id)).map((s) => ({ id: s.id, name: s.name })),
     scopePageId: onlyPage ?? capture.scopePageId,
+    hint: capture.filingHint,
   };
 }
 
@@ -383,6 +408,10 @@ async function planFact(tenantId: string, ctx: Context, input: PlanFactInput, de
     const spaceIds = [...new Set([...candidates.values()].map((c) => c.spaceId))];
     return { candidates, examples: await similarExamples(tx, tenantId, spaceIds, vector!) };
   });
+  deps.onCandidates?.(
+    input.ordinal,
+    [...candidates.values()].map((c) => ({ documentId: c.card.documentId, title: c.card.title, spaceId: c.spaceId }))
+  );
   if (candidates.size === 0) return { status: 'needs_home', reason: 'No page you can read is about this.' };
 
   // 3. Plan, shown how people corrected similar facts in these spaces (R11).
@@ -392,6 +421,7 @@ async function planFact(tenantId: string, ctx: Context, input: PlanFactInput, de
     examples,
     writableSpaces: ctx.writableSpaces,
     fromDocument: deps.fromDocument ? { title: deps.fromDocument.title } : null,
+    hint: ctx.hint,
   });
   // A document's facts never create pages: the document already is one.
   const edits = deps.fromDocument ? planned.edits.filter((e) => e.op.op !== 'create_page') : planned.edits;

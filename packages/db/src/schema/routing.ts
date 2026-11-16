@@ -1,4 +1,5 @@
-import { pgTable, uuid, text, timestamp, jsonb, integer, real, uniqueIndex, index } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
+import { pgTable, uuid, text, timestamp, jsonb, integer, real, uniqueIndex, index, boolean } from 'drizzle-orm/pg-core';
 import { tenants, spaces } from './foundations.js';
 import { documents, versions, chunks, halfvec } from './pages_and_index.js';
 
@@ -20,7 +21,7 @@ export const captures = pgTable(
     sourceRef: text('source_ref'),
     scopeSpaceId: uuid('scope_space_id').references(() => spaces.id, { onDelete: 'set null' }),
     scopePageId: uuid('scope_page_id').references(() => documents.id, { onDelete: 'set null' }),
-    status: text('status', { enum: ['queued', 'routing', 'waiting_for_answer', 'done', 'failed'] })
+    status: text('status', { enum: ['queued', 'routing', 'waiting_for_answer', 'previewed', 'done', 'failed', 'cancelled'] })
       .notNull()
       .default('queued'),
     error: text('error'),
@@ -43,10 +44,26 @@ export const captures = pgTable(
     /** Where a person chose to put the waiting document: a parent page, or the top of a space. */
     documentParentChoice: uuid('document_parent_choice'),
     documentSpaceChoice: uuid('document_space_choice'),
+    /** Plan only: the plan is stored in `previewPlan` and nothing changes until the sender applies it. */
+    preview: boolean('preview').notNull().default(false),
+    /** The stored plan of a previewed capture (`CapturePreview`, packages/core/src/routing/preview.ts). */
+    previewPlan: jsonb('preview_plan'),
+    /** What the sender asked for the attached file: decide by meaning, keep it in the wiki, or leave it in the Inbox. */
+    fileMode: text('file_mode', { enum: ['auto', 'keep', 'inbox'] }).notNull().default('auto'),
+    /** What became of the attached file: under the document's page, placed on its own, or left in the Inbox. */
+    fileOutcome: text('file_outcome', { enum: ['with_document', 'placed', 'inbox'] }),
+    fileReason: text('file_reason'),
+    /** The split's judgement of the file: `{ keep, confidence }` (FileDecision); null without a file. */
+    fileDecision: jsonb('file_decision'),
+    /** Where the sender's note asked to put it, in their words (from the split). */
+    filingHint: text('filing_hint'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     finishedAt: timestamp('finished_at', { withTimezone: true }),
   },
-  (t) => [index('captures_sender_idx').on(t.tenantId, t.senderType, t.senderId, t.createdAt)]
+  (t) => [
+    index('captures_sender_idx').on(t.tenantId, t.senderType, t.senderId, t.createdAt),
+    index('captures_source_idx').on(t.tenantId, t.senderType, t.senderId, t.sourceRef).where(sql`source_ref IS NOT NULL`),
+  ]
 );
 
 /** The thread under a capture: the engine's questions and the sender's answers. */

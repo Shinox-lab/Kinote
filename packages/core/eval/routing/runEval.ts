@@ -259,7 +259,7 @@ export async function runRoutingEval(
     );
     try {
       // One split per capture: its shape decides the path, its facts are planned.
-      const split = await splitCaptureText(item.text, recorder);
+      const split = await splitCaptureText(item.text, recorder, undefined, { note: item.text, fileName: null });
       const shape = decideShape('auto', split.shape);
       const facts = split.facts.map((fact, ordinal) => ({ ordinal, factId: null, fact, pinnedEntityIds: [] }));
 

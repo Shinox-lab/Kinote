@@ -12,8 +12,10 @@ const STATUS_TONE: Record<CaptureSummary['status'], string> = {
   queued: 'bg-hover text-muted',
   routing: 'bg-dot-review/15 text-fg',
   waiting_for_answer: 'bg-review-bg text-review-text',
+  previewed: 'bg-review-bg text-review-text',
   done: 'bg-success-bg text-success',
   failed: 'bg-danger-bg text-danger',
+  cancelled: 'bg-hover text-muted',
 };
 
 /** The engine's questions with their options, and the sender's answers. */
@@ -95,7 +97,10 @@ export function CaptureCard({ capture, defaultOpen }: { capture: CaptureSummary;
         <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${STATUS_TONE[status]}`}>
           {captureWaitingOnFile({ status, file: capture.file }) ? 'Reading the file…' : captureStatusLabel(status)}
         </span>
-        <span className="text-xs text-muted">{relativeTime(capture.createdAt)}</span>
+        <span className="text-xs text-muted">
+          {capture.senderType === 'agent' ? `via ${capture.senderName} · ` : ''}
+          {relativeTime(capture.createdAt)}
+        </span>
       </div>
       {capture.text && <p className="whitespace-pre-wrap break-words text-sm text-fg">{capture.text}</p>}
       {capture.file && (
