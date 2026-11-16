@@ -84,6 +84,8 @@ export const AuditEventTypeSchema = z.enum([
   'capture.change_undone',
   'capture.change_moved',
   'capture.fact_placed',
+  'capture.preview_applied',
+  'capture.preview_cancelled',
   'capture.document_created',
   'capture.document_placed',
   'capture.document_moved',
@@ -1603,6 +1605,13 @@ export const CaptureDetailSchema = z.object({
   receipt: CaptureReceiptSchema,
 });
 export type CaptureDetail = z.infer<typeof CaptureDetailSchema>;
+
+/** Apply a previewed capture: drop some facts, file some on a page of the sender's choosing, the rest as planned. */
+export const ApplyCapturePreviewRequestSchema = z.object({
+  skip: z.array(z.string().uuid()).max(100).default([]),
+  place: z.array(z.object({ fact_id: z.string().uuid(), document_id: z.string().uuid() })).max(100).default([]),
+});
+export type ApplyCapturePreviewRequest = z.input<typeof ApplyCapturePreviewRequestSchema>;
 
 export const AnswerCaptureRequestSchema = z.object({
   message_id: z.string().uuid(),

@@ -30,6 +30,7 @@ import { blockMarkdown, encodeBlocksYDoc, markdownBlocks, readLiveBlocks } from 
 import { decideShape, planCapture, splitCaptureText, type CheckedEdit, type Gate, type PlannedFact } from './plan.js';
 import { planDocument, uniqueChildTitle } from './document.js';
 import { applyCaptureFilePlan, attachCaptureFile, fileTitle, planCaptureFile, routedText } from './captureFile.js';
+import { buildCapturePreview, previewOf } from './preview.js';
 import { excerptOf, hasUnreadAbout, notify } from '../talk/notify.js';
 import { ensureRouterAgent } from './routerAgent.js';
 import { capturesAlwaysReviewed, senderActor } from './access.js';
@@ -59,6 +60,17 @@ async function forceReviewFor(tenantId: string, captureId: string): Promise<bool
       .where(and(eq(captures.tenantId, tenantId), eq(captures.id, captureId)));
     return c ? capturesAlwaysReviewed(tx, { tenantId, type: c.type, id: c.id }) : false;
   });
+}
+
+/** The capture's facts still open to routing: pending, not waiting on a question, not placed by a person. */
+async function openFactIds(tenantId: string, captureId: string): Promise<Set<string>> {
+  const rows = await withTenantTx(tenantId, (tx) =>
+    tx
+      .select({ id: captureFacts.id, outcome: captureFacts.outcome, waiting: captureFacts.waitingQuestionId, placedBy: captureFacts.placedBy })
+      .from(captureFacts)
+      .where(and(eq(captureFacts.tenantId, tenantId), eq(captureFacts.captureId, captureId)))
+  );
+  return new Set(rows.filter((r) => r.outcome === 'pending' && r.waiting === null && r.placedBy === null).map((r) => r.id));
 }
 
 /** The message a capture fails with when the agent that sent it may no longer act. */
@@ -115,6 +127,35 @@ export async function routeCapture(
         .where(and(eq(captures.tenantId, tenantId), eq(captures.id, captureId)))
     );
     let capture = await ensureSplit(tenantId, captureId, { ...deps, guard });
+    // A preview plans and stores the plan; nothing changes until the sender applies it.
+    if (capture.preview) {
+      const preview = await buildCapturePreview(tenantId, capture, { model: deps.model, embedder: deps.embedder, now, guard });
+      await guard();
+      await withTenantTx(tenantId, (tx) =>
+        tx
+          .update(captures)
+          .set({ previewPlan: preview, status: 'previewed', finishedAt: sql`now()` })
+          .where(and(eq(captures.tenantId, tenantId), eq(captures.id, captureId)))
+      );
+      return 'done';
+    }
+    // An applied preview files what was planned, with no model call (a fact asking a question is planned again).
+    const stored = previewOf(capture);
+    if (stored && capture.shape === 'document' && capture.documentOutcome !== 'created' && capture.documentOutcome !== 'needs_home') {
+      const doc = stored.document;
+      capture = await withTenantTx(tenantId, async (tx) => {
+        const [row] = await tx
+          .update(captures)
+          .set(
+            doc?.status === 'place'
+              ? { documentParentChoice: doc.parentId, documentSpaceChoice: doc.spaceId }
+              : { documentOutcome: 'needs_home', documentReason: doc?.reason ?? 'No place fits this page well enough.', documentOptions: doc?.options ?? [] }
+          )
+          .where(and(eq(captures.tenantId, tenantId), eq(captures.id, captureId)))
+          .returning();
+        return row!;
+      });
+    }
     if (capture.shape === 'document') {
       // Waiting for a person to choose where the page goes: the facts wait with it.
       if (capture.documentOutcome === 'needs_home') return await finishCapture(tenantId, captureId);
@@ -127,15 +168,38 @@ export async function routeCapture(
       capture.shape === 'document' && capture.documentPageId
         ? { pageId: capture.documentPageId, title: capture.documentTitle ?? '' }
         : undefined;
-    const planned = await planCapture(
-      { tenantId, captureId },
-      { model: deps.model, embedder: deps.embedder, now, guard, fromDocument }
-    );
+    let planned: PlannedFact[];
+    if (stored) {
+      const open = await openFactIds(tenantId, captureId);
+      const kept = stored.facts.filter((f) => f.factId && open.has(f.factId));
+      const again = kept.filter((f) => f.plan.status === 'question');
+      planned = kept.filter((f) => f.plan.status !== 'question');
+      if (again.length > 0) {
+        planned.push(
+          ...(await planCapture(
+            { tenantId, captureId },
+            {
+              model: deps.model,
+              embedder: deps.embedder,
+              now,
+              guard,
+              fromDocument,
+              facts: again.map(({ ordinal, factId, fact, pinnedEntityIds }) => ({ ordinal, factId, fact, pinnedEntityIds })),
+            }
+          ))
+        );
+      }
+    } else {
+      planned = await planCapture({ tenantId, captureId }, { model: deps.model, embedder: deps.embedder, now, guard, fromDocument });
+    }
     await deps.hooks?.afterPlan?.();
     await applyPlannedFacts(tenantId, captureId, planned, { ...deps, guard }, fromDocument ? 'filed_in_document' : 'needs_home');
     // An updates capture's file: kept on its own when it is a record (or the sender asked), else left in the Inbox.
     if (capture.shape === 'updates' && capture.fileId && capture.fileOutcome === null) {
-      const filePlan = await planCaptureFile(tenantId, capture, deps);
+      const filePlan =
+        stored?.file && stored.file.outcome !== 'with_document'
+          ? { outcome: stored.file.outcome, spaceId: stored.file.spaceId, parentId: stored.file.parentId, reason: stored.file.reason }
+          : await planCaptureFile(tenantId, capture, deps);
       await guard();
       await applyCaptureFilePlan(tenantId, captureId, filePlan);
     }

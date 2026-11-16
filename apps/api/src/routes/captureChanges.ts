@@ -383,7 +383,7 @@ export async function undoCapture(actor: Actor, id: string, collab?: CollabClien
 }
 
 /** A page the engine may file into for `actor`: live, a page, outside the Inbox, at `role` or above. */
-async function targetPage(tx: DbTransaction, actor: Actor, pageId: string, role: 'viewer' | 'editor') {
+export async function targetPage(tx: DbTransaction, actor: Actor, pageId: string, role: 'viewer' | 'editor') {
   assertValidUuid(pageId, 'page_not_found');
   const doc = await documentOf(tx, actor.tenantId, pageId);
   if (!doc || doc.kind !== 'page' || doc.archivedAt) throw new AppError('page_not_found');
@@ -392,7 +392,7 @@ async function targetPage(tx: DbTransaction, actor: Actor, pageId: string, role:
   return doc;
 }
 
-async function enqueuePlace(tx: DbTransaction, tenantId: string, factId: string, documentId: string) {
+export async function enqueuePlace(tx: DbTransaction, tenantId: string, factId: string, documentId: string) {
   await enqueueJob(tx, {
     tenantId,
     queue: 'capture.place',

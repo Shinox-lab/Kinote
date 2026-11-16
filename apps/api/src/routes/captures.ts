@@ -130,7 +130,11 @@ export async function enqueueCaptureRoute(tx: DbTransaction, tenantId: string, c
  * must be able to edit at least one space outside the Inbox (403 otherwise);
  * a scope the sender cannot read, or the Inbox, is 404.
  */
-export async function createCapture(actor: Actor, body: unknown): Promise<CaptureSummary> {
+export async function createCapture(
+  actor: Actor,
+  body: unknown,
+  opts: { channel?: 'console' | 'mcp'; sourceRef?: string | null; preview?: boolean } = {}
+): Promise<CaptureSummary> {
   const raw = (body as { text?: unknown } | null)?.text;
   if (typeof raw === 'string' && raw.trim().length > MAX_CAPTURE_CHARS) {
     throw new AppError('capture_too_long');
@@ -175,8 +179,10 @@ export async function createCapture(actor: Actor, body: unknown): Promise<Captur
         tenantId: actor.tenantId,
         senderType: actor.principalType,
         senderId: actor.principalId,
-        channel: 'console',
+        channel: opts.channel ?? 'console',
         text,
+        sourceRef: opts.sourceRef ?? null,
+        preview: opts.preview ?? false,
         scopeSpaceId,
         scopePageId: scope_page_id ?? null,
         shapeMode: shape,
@@ -462,7 +468,7 @@ async function receiptFile(tx: DbTransaction, viewer: Actor, capture: CaptureRow
   return { outcome: capture.fileOutcome, reason: capture.fileReason, fileId: file.id, parentId: file.parentId, spaceId: file.spaceId };
 }
 
-async function captureDetail(tx: DbTransaction, actor: Actor, row: CaptureRow): Promise<CaptureDetail> {
+export async function captureDetail(tx: DbTransaction, actor: Actor, row: CaptureRow): Promise<CaptureDetail> {
   const thread = await tx
     .select()
     .from(captureMessages)

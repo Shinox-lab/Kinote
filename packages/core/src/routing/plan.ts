@@ -72,8 +72,17 @@ export interface PlanFactInput {
   pinnedEntityIds: string[];
 }
 
+/** A page the planner considered for a fact. */
+export interface PlanAlternative {
+  documentId: string;
+  title: string;
+  spaceId: string;
+}
+
 export interface PlannedFact extends PlanFactInput {
   plan: FactPlan;
+  /** Up to 3 pages considered and not edited, best first (shown in a preview). */
+  alternatives?: PlanAlternative[];
 }
 
 export interface PlanDeps {
@@ -92,6 +101,8 @@ export interface PlanDeps {
    * is created, and anything unsure is filed on the document's page.
    */
   fromDocument?: { pageId: string | null; title: string };
+  /** Called with the candidate pages a fact was planned against, best first. */
+  onCandidates?: (ordinal: number, pages: PlanAlternative[]) => void;
 }
 
 export interface Context {
@@ -202,9 +213,18 @@ export async function planCapture(
   const out: PlannedFact[] = [];
   for (const input of facts) {
     await deps.guard?.();
-    let plan = await planFact(tenantId, loaded.context, input, deps);
+    let considered: PlanAlternative[] = [];
+    let plan = await planFact(tenantId, loaded.context, input, {
+      ...deps,
+      onCandidates: (ordinal, pages) => {
+        considered = pages;
+        deps.onCandidates?.(ordinal, pages);
+      },
+    });
     if (deps.fromDocument && plan.status === 'needs_home') plan = { status: 'filed_in_document', reason: plan.reason };
-    out.push({ ...input, plan });
+    const edited = new Set(plan.status === 'planned' ? plan.edits.map((e) => ('documentId' in e.edit.op ? e.edit.op.documentId : null)) : []);
+    if (plan.status === 'already_known') edited.add(plan.documentId);
+    out.push({ ...input, plan, alternatives: considered.filter((c) => !edited.has(c.documentId)).slice(0, 3) });
   }
   return out;
 }
@@ -388,6 +408,10 @@ async function planFact(tenantId: string, ctx: Context, input: PlanFactInput, de
     const spaceIds = [...new Set([...candidates.values()].map((c) => c.spaceId))];
     return { candidates, examples: await similarExamples(tx, tenantId, spaceIds, vector!) };
   });
+  deps.onCandidates?.(
+    input.ordinal,
+    [...candidates.values()].map((c) => ({ documentId: c.card.documentId, title: c.card.title, spaceId: c.spaceId }))
+  );
   if (candidates.size === 0) return { status: 'needs_home', reason: 'No page you can read is about this.' };
 
   // 3. Plan, shown how people corrected similar facts in these spaces (R11).
