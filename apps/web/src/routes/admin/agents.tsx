@@ -188,7 +188,11 @@ function NewTokenForm({ agent, onIssued }: { agent: Agent; onIssued: (token: str
         </div>
       </div>
       <fieldset className="flex flex-col gap-1">
-        <legend className="mb-1 text-sm font-medium">What this token can do</legend>
+        <legend className="mb-1 text-sm font-medium">What the new token can do</legend>
+        <p className="mb-1 text-xs text-muted">
+          Applies to the token you make with New token. A token's access can't change later: to give a client more, make a new token
+          (or reconnect it) and revoke the old one.
+        </p>
         {OFFERED_SCOPES.map((scope) => (
           <Checkbox
             key={scope}
