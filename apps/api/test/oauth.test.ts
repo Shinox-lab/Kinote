@@ -109,7 +109,7 @@ describe('OAuth metadata', () => {
       code_challenge_methods_supported: ['S256'],
       token_endpoint_auth_methods_supported: ['none'],
       revocation_endpoint_auth_methods_supported: ['none'],
-      scopes_supported: ['read'],
+      scopes_supported: ['read', 'capture'],
     });
     for (const url of ['/.well-known/oauth-protected-resource', '/.well-known/oauth-protected-resource/mcp']) {
       const pr = await app.inject({ method: 'GET', url });
@@ -117,7 +117,7 @@ describe('OAuth metadata', () => {
       assert.deepEqual(pr.json(), {
         resource: `${BASE}/mcp`,
         authorization_servers: [BASE],
-        scopes_supported: ['read'],
+        scopes_supported: ['read', 'capture'],
         bearer_methods_supported: ['header'],
         resource_name: 'Kinote',
       });
@@ -440,6 +440,42 @@ describe('OAuth tokens', () => {
     assert.equal(created?.actorId, w.owner.userId);
     assert.deepEqual(created?.payload, { name: 'My laptop', dailyAiLimit: null, via: 'sign-in', client: 'Claude Code' });
     assert.ok(audit.some((e) => e.type === 'agent.token_issued'));
+  });
+
+  test('allowing capture gives editor grants and a read capture token; capture is opt-in', async () => {
+    const w = await agentWorld(app, 'oauth-capture');
+    const clientId = await newClient(app);
+    const p = pkce();
+    const params = authParams(clientId, p.challenge, { scope: 'read capture' });
+    const asked = await check(app, w.ownerHeaders, params);
+    assert.deepEqual(asked.body.scopes, ['read', 'capture']);
+    const res = await decide(app, w.ownerHeaders, params, { decision: 'allow', agent_name: 'Filer', space_ids: [w.open.id], capture: true });
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    const code = new URL(res.body.to).searchParams.get('code')!;
+    const tok = await token(app, exchangeForm({ clientId, verifier: p.verifier, code }));
+    assert.equal(tok.body.scope, 'read capture');
+    const [agent] = await withTenantTx(w.tenant.id, (tx) => tx.select().from(agents).where(eq(agents.name, 'Filer')));
+    assert.equal(agent!.alwaysReview, true);
+    const grants = await withTenantTx(w.tenant.id, (tx) =>
+      tx.select().from(spaceGrants).where(and(eq(spaceGrants.principalType, 'agent'), eq(spaceGrants.principalId, agent!.id)))
+    );
+    assert.deepEqual(grants.map((g) => [g.spaceId, g.role]), [[w.open.id, 'editor']]);
+    assert.ok((await listToolNames(app, tok.body.access_token)).includes('kinote_capture'));
+
+    // Not ticked: read only, viewer grants, even when the client asked for capture.
+    const p2 = pkce();
+    const params2 = authParams(clientId, p2.challenge, { scope: 'read capture' });
+    const res2 = await decide(app, w.ownerHeaders, params2, { decision: 'allow', agent_name: 'Reader', space_ids: [w.open.id] });
+    const tok2 = await token(app, exchangeForm({ clientId, verifier: p2.verifier, code: new URL(res2.body.to).searchParams.get('code')! }));
+    assert.equal(tok2.body.scope, 'read');
+  });
+
+  test('capture cannot be allowed when the client did not ask for it', async () => {
+    const w = await agentWorld(app, 'oauth-nocap');
+    const clientId = await newClient(app);
+    const params = authParams(clientId, pkce().challenge, { scope: 'read' });
+    const res = await decide(app, w.ownerHeaders, params, { decision: 'allow', agent_name: 'X', space_ids: [w.open.id], capture: true });
+    assert.equal(res.status, 400, JSON.stringify(res.body));
   });
 
   test('JSON bodies work too', async () => {

@@ -49,6 +49,8 @@ export function OAuthAuthorizePage() {
   const [tenantId, setTenantId] = useState('');
   const [agentName, setAgentName] = useState('');
   const [spaceIds, setSpaceIds] = useState<string[]>([]);
+  // Filing captures is opt-in, and offered only when the app asked for it.
+  const [capture, setCapture] = useState(false);
   useEffect(() => {
     if (!ask) return;
     const preferred = ask.workspaces.find((w) => w.tenantId === session?.tenantId) ?? ask.workspaces[0];
@@ -61,7 +63,9 @@ export function OAuthAuthorizePage() {
     mutationFn: (decision: 'allow' | 'deny') =>
       api.oauthDecide(
         params,
-        decision === 'allow' ? { decision, tenant_id: tenantId, agent_name: agentName.trim(), space_ids: spaceIds } : { decision }
+        decision === 'allow'
+          ? { decision, tenant_id: tenantId, agent_name: agentName.trim(), space_ids: spaceIds, capture }
+          : { decision }
       ),
     onSuccess: ({ to }) => leaveFor(to),
   });
@@ -123,8 +127,8 @@ export function OAuthAuthorizePage() {
         }}
       >
         <p className="text-sm text-fg">
-          <strong>{ask.client.name}</strong> wants to read your Kinote wiki as an agent. Allow it only if you just
-          started this sign-in from that app.
+          <strong>{ask.client.name}</strong> wants to {ask.scopes.includes('capture') ? 'read and add to' : 'read'} your Kinote
+          wiki as an agent. Allow it only if you just started this sign-in from that app.
         </p>
         <p className="text-xs text-muted">
           The app chose its own name; Kinote has not checked it. After you answer, your browser returns to{' '}
@@ -158,7 +162,7 @@ export function OAuthAuthorizePage() {
               hint="How the agent appears in page history, the audit log and Settings → Agents."
             />
             <fieldset className="flex flex-col gap-2">
-              <legend className="mb-1 text-sm font-medium">Spaces it can read</legend>
+              <legend className="mb-1 text-sm font-medium">{capture ? 'Spaces it can read and file into' : 'Spaces it can read'}</legend>
               {workspace && workspace.spaces.length > 0 ? (
                 workspace.spaces.map((s) => (
                   <Checkbox key={s.id} label={s.name} checked={spaceIds.includes(s.id)} onChange={(on) => toggle(s.id, on)} />
@@ -167,9 +171,19 @@ export function OAuthAuthorizePage() {
                 <p className="text-sm text-muted">You can't read any spaces in this workspace.</p>
               )}
             </fieldset>
+            {ask.scopes.includes('capture') && (
+              <Checkbox
+                label="Also let it file what it learns (Capture)"
+                hint="It sends notes and facts that routing files into these spaces, with a receipt and Undo. Its changes wait for review until an admin switches that off. It can file only where you can edit."
+                checked={capture}
+                onChange={setCapture}
+              />
+            )}
             <p className="text-xs text-muted">
-              Read only: it can browse, search and read these spaces and ask questions about them, but it can't change
-              anything, and it never sees more than you can. Revoke it any time in Settings → Agents.
+              {capture
+                ? 'It can browse, search and read these spaces, ask questions, and file captures; it never reaches more than you can.'
+                : "Read only: it can browse, search and read these spaces and ask questions about them, but it can't change anything, and it never sees more than you can."}{' '}
+              Revoke it any time in Settings → Agents.
             </p>
           </>
         )}

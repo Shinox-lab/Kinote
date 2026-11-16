@@ -176,9 +176,11 @@ async function exchangeCode(body: Record<string, unknown>): Promise<Tokens> {
     const audit = (type: Parameters<typeof writeAuditEvent>[1]['type'], subjectType: string, subjectId: string, payload: Record<string, unknown>) =>
       writeAuditEvent(tx, { tenantId: row.tenantId, type, actorType: 'user', actorId: row.userId, subjectType, subjectId, payload });
     await audit('agent.created', 'agent', agent!.id, { name: agent!.name, dailyAiLimit: null, via: 'sign-in', client: clientName });
+    // An agent that may file captures needs to edit where it files (still never more than its owner can).
+    const grantRole = row.scopes.includes('capture') ? ('editor' as const) : ('viewer' as const);
     for (const spaceId of spaceIds) {
-      await tx.insert(spaceGrants).values({ tenantId: row.tenantId, spaceId, principalType: 'agent', principalId: agent!.id, role: 'viewer' });
-      await audit('space.grant_changed', 'space', spaceId, { principal_type: 'agent', principal_id: agent!.id, role: 'viewer' });
+      await tx.insert(spaceGrants).values({ tenantId: row.tenantId, spaceId, principalType: 'agent', principalId: agent!.id, role: grantRole });
+      await audit('space.grant_changed', 'space', spaceId, { principal_type: 'agent', principal_id: agent!.id, role: grantRole });
     }
     const pair = mintPair(row.tenantId, now);
     const [token] = await tx
@@ -441,6 +443,11 @@ export async function oauthRoutes(app: FastifyInstance, opts: { publicUrl?: stri
     const actor = await actorForUser(decision.tenant_id.toLowerCase(), session.userId);
     req.actor = actor;
     await assertNotSuspended(req);
+    if (decision.capture && !check.scopes.includes('capture')) {
+      throw new AppError('validation_failed', 'This app did not ask to file captures.');
+    }
+    // Reading always; capture only when the app asked and the person ticked it.
+    const scopes = decision.capture ? ['read', 'capture'] : ['read'];
     const code = mintOAuthCode(actor.tenantId);
     await withTenantTx(actor.tenantId, async (tx) => {
       const readable = new Set((await namedSpaces(tx, actor)).map((s) => s.id));
@@ -457,7 +464,7 @@ export async function oauthRoutes(app: FastifyInstance, opts: { publicUrl?: stri
         userId: actor.principalId,
         redirectUri: check.redirectUri,
         codeChallenge: check.codeChallenge,
-        scopes: check.scopes,
+        scopes,
         agentName: decision.agent_name,
         spaceIds,
         expiresAt: new Date(Date.now() + CODE_TTL_MS),

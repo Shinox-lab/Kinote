@@ -93,14 +93,18 @@ claude mcp add --transport http kinote https://<your-kinote>/mcp
 ```
 
 Then run `/mcp` in Claude Code and choose to authenticate. Your browser opens Kinote's sign-in page: pick the
-workspace, name the agent and tick the spaces it may read. Kinote creates a read-only agent owned by you; admins see
-it in **Settings → Agents**, where revoking its token disconnects the client. The token lasts an hour and the client
+workspace, name the agent and tick the spaces it may read. If the client asks to file captures too, you can also tick
+**Also let it file what it learns**: the agent then gets Editor access to those spaces (never more than you have), and
+its changes wait for review until an admin switches that off. Without it, the agent is read-only. Admins see it in
+**Settings → Agents**, where revoking its token disconnects the client. The token lasts an hour and the client
 renews it by itself for up to 90 days after it was last used.
 
 **Or issue a token.** For headless agents, CI and clients without sign-in:
 
-1. In **Settings → Agents**, add an agent, choose its access to each space (Viewer or Editor), and issue a token with
-   the **Read** scope, plus **Capture** if it may file information. The token is shown once.
+1. In **Settings → Agents**, add an agent and choose **where it can go**: Viewer (read) or Editor (read and file
+   captures) for each space. Then issue a token and choose **what this token can do**: **Read**, plus **Capture** if it
+   may file information (it needs Editor access to at least one space). An agent can hold several tokens, for example
+   one with Capture for your laptop and a read-only one for CI. The token is shown once.
 2. Connect the client. For Claude Code:
 
    ```sh

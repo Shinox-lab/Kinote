@@ -17,6 +17,7 @@ export function DocumentLink({
   draggable,
   onDragStart,
   onContextMenu,
+  onClick,
   children,
 }: {
   tenantSlug: string;
@@ -31,6 +32,7 @@ export function DocumentLink({
   draggable?: boolean;
   onDragStart?: (e: DragEvent<HTMLAnchorElement>) => void;
   onContextMenu?: (e: MouseEvent<HTMLAnchorElement>) => void;
+  onClick?: (e: MouseEvent<HTMLAnchorElement>) => void;
   children: ReactNode;
 }) {
   const activeProps = activeClassName ? { className: activeClassName } : undefined;
@@ -42,6 +44,7 @@ export function DocumentLink({
         params={{ tenantSlug, pageId: id }}
         className={className}
         activeProps={activeProps}
+        onClick={onClick}
         {...rest}
       >
         {children}
@@ -55,6 +58,7 @@ export function DocumentLink({
       search={{ ...(typeof page === 'number' && Number.isInteger(page) && page > 0 ? { page } : {}), ...(version ? { v: version } : {}) }}
       className={className}
       activeProps={activeProps}
+      onClick={onClick}
       {...rest}
     >
       {children}

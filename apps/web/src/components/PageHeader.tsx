@@ -1,7 +1,8 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import type { PageDetails } from '@kinote/contracts';
 import { api } from '../lib/api.js';
+import { startsWithTitleEdit, takeTitleEdit } from '../lib/pageUi.js';
 import { PageIconPicker } from './PageIconPicker.js';
 import { TitleInput } from './sidebar/TitleInput.js';
 import { ErrorNote } from './ui.js';
@@ -23,7 +24,8 @@ export function PageHeader({
   meta?: ReactNode;
   onRenamed: () => void;
 }) {
-  const [renaming, setRenaming] = useState(false);
+  const [renaming, setRenaming] = useState(() => startsWithTitleEdit(page.id));
+  const shownPage = useRef(page.id);
   const rename = useMutation({
     mutationFn: (title: string) => api.renamePage(page.id, title),
     onSuccess: () => {
@@ -34,10 +36,19 @@ export function PageHeader({
     onError: () => setRenaming(false),
   });
 
+  // The fresh-page edit is one-shot: saving, cancelling or leaving drops it.
   useEffect(() => {
-    setRenaming(false);
+    if (!renaming) takeTitleEdit(page.id);
+  }, [renaming, page.id]);
+
+  useEffect(() => {
+    // A different page starts with its own title, not the one being edited; a
+    // page just made starts with its title in edit mode. The mount read the
+    // mark above already, which also keeps the StrictMode double mount quiet.
+    if (shownPage.current === page.id) return;
+    shownPage.current = page.id;
+    setRenaming(takeTitleEdit(page.id));
     rename.reset();
-    // A different page starts with its own title, not the one being edited.
   }, [page.id]);
 
   return (

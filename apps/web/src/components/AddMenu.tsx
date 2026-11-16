@@ -4,7 +4,7 @@ import { PlusIcon } from './icons.js';
 const ITEM = 'block w-full rounded px-2 py-1.5 text-left text-sm text-fg hover:bg-hover focus-visible:bg-hover';
 
 /**
- * The "+" of a space or page row: add a new page there, or upload files into it.
+ * The "+" of a space row: add a new page there, or upload files into it.
  * Escape closes it and returns focus to the button; the file picker is a hidden input.
  */
 export function AddMenu({

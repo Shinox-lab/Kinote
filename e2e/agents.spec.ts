@@ -29,6 +29,12 @@ test('an owner creates an agent, grants it a space, issues a Read token once, th
 
   await panel.getByLabel('Token name').fill('Claude Code');
   await expect(panel.getByLabel('Read')).toBeChecked();
+  await expect(panel.getByLabel('Edit')).toHaveCount(0);
+  // Capture with only Viewer access would be refused: the form says so.
+  await panel.getByLabel('Capture').check();
+  await expect(panel.getByRole('note')).toContainText("It can't edit any space yet");
+  await panel.getByLabel('Capture').uncheck();
+  await expect(panel.getByRole('note')).toHaveCount(0);
   await panel.getByRole('button', { name: 'New token' }).click();
   const dialog = page.getByRole('dialog', { name: 'Token for Docs bot' });
   await expect(dialog).toContainText('This token is shown once. Store it now.');
