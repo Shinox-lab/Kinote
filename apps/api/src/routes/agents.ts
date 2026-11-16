@@ -1,7 +1,9 @@
-import { and, desc, eq, inArray } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray } from 'drizzle-orm';
 import {
   agents,
   agentTokens,
+  captureFacts,
+  captures,
   memberships,
   spaceGrants,
   spaces,
@@ -18,6 +20,8 @@ import {
   IssueAgentTokenRequestSchema,
   UpdateAgentRequestSchema,
   UpdateAgentSettingsRequestSchema,
+  StopAgentRequestSchema,
+  type StopAgentResponse,
   type Agent,
   type AgentSettings,
   type AgentScope,
@@ -27,6 +31,8 @@ import {
 import { assertValidUuid, type Actor } from '@kinote/core';
 import { mintAgentToken } from '../auth/agentTokens.js';
 import { requireTenantAdmin } from './admin.js';
+import { undoCapture } from './captureChanges.js';
+import type { CollabClient } from '@kinote/shared';
 
 type AgentRow = typeof agents.$inferSelect;
 type TokenRow = typeof agentTokens.$inferSelect;
@@ -271,4 +277,63 @@ export async function updateAgentSettings(actor: Actor, input: unknown): Promise
     });
     return { agentsMayAnswer: row!.agentsMayAnswer };
   });
+}
+
+/**
+ * POST /api/v1/agents/:id/stop: disables the agent, then, oldest first, undoes every capture it sent at or after
+ * `since` (changes a person edited since are left), and cancels its previews and captures not yet routed.
+ */
+export async function stopAgent(actor: Actor, agentId: string, input: unknown, collab?: CollabClient): Promise<StopAgentResponse> {
+  requireTenantAdmin(actor);
+  const parsed = StopAgentRequestSchema.safeParse(input);
+  if (!parsed.success) throw new AppError('validation_failed');
+  const since = new Date(parsed.data.since);
+  const agent = await updateAgent(actor, agentId, { disabled: true });
+  const rows = await withTenantTx(actor.tenantId, (tx) =>
+    tx
+      .select({ id: captures.id, status: captures.status })
+      .from(captures)
+      .where(
+        and(
+          eq(captures.tenantId, actor.tenantId),
+          eq(captures.senderType, 'agent'),
+          eq(captures.senderId, agent.id),
+          gte(captures.createdAt, since)
+        )
+      )
+      .orderBy(asc(captures.createdAt))
+  );
+  let undone = 0;
+  let changedSince = 0;
+  for (const row of rows) {
+    if (row.status === 'done' || row.status === 'waiting_for_answer') {
+      const r = await undoCapture(actor, row.id, collab);
+      undone += r.undone.length;
+      changedSince += r.changedSince.length;
+    } else if (row.status === 'queued' || row.status === 'routing' || row.status === 'previewed') {
+      // Not filed yet: nothing to undo, and nothing of it will be (routing skips a cancelled capture).
+      await withTenantTx(actor.tenantId, async (tx) => {
+        await tx
+          .update(captureFacts)
+          .set({ outcome: 'dismissed', reason: 'The agent was stopped.' })
+          .where(and(eq(captureFacts.tenantId, actor.tenantId), eq(captureFacts.captureId, row.id), eq(captureFacts.outcome, 'pending')));
+        await tx
+          .update(captures)
+          .set({ status: 'cancelled', finishedAt: new Date() })
+          .where(and(eq(captures.tenantId, actor.tenantId), eq(captures.id, row.id)));
+      });
+    }
+  }
+  await withTenantTx(actor.tenantId, (tx) =>
+    writeAuditEvent(tx, {
+      tenantId: actor.tenantId,
+      type: 'agent.stopped',
+      actorType: actor.principalType,
+      actorId: actor.principalId,
+      subjectType: 'agent',
+      subjectId: agent.id,
+      payload: { since: since.toISOString(), captures: rows.length, undone, changedSince },
+    })
+  );
+  return { agent, undone, changedSince, captures: rows.length };
 }

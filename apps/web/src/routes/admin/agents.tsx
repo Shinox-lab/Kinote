@@ -268,6 +268,7 @@ function AgentPanel({ agent, spaces, onIssued }: { agent: Agent; spaces: readonl
         {agent.disabledAt !== null && <span className="text-sm text-muted">A disabled agent's tokens cannot sign in.</span>}
       </div>
       <ErrorNote error={update.error} />
+      <StopAgent agent={agent} />
 
       <div className="flex flex-col gap-1">
         <h3 className="text-sm font-semibold">Spaces</h3>
@@ -293,6 +294,69 @@ function AgentPanel({ agent, spaces, onIssued }: { agent: Agent; spaces: readonl
         <NewTokenForm agent={agent} onIssued={(token) => onIssued(agent, token)} />
       </div>
     </section>
+  );
+}
+
+const STOP_SINCE = [
+  { label: 'the last hour', ms: 3_600_000 },
+  { label: 'the last 24 hours', ms: 86_400_000 },
+  { label: 'the last 7 days', ms: 7 * 86_400_000 },
+  { label: 'everything it filed', ms: null },
+] as const;
+
+/** "Stop and undo": disables the agent and undoes its captures since a chosen time, after a confirm. */
+function StopAgent({ agent }: { agent: Agent }) {
+  const refresh = useRefresh();
+  const [open, setOpen] = useState(false);
+  const [since, setSince] = useState<string>('0');
+  const [result, setResult] = useState<string | null>(null);
+  const stop = useMutation({
+    mutationFn: () => {
+      const choice = STOP_SINCE[Number(since)]!;
+      const from = choice.ms === null ? new Date(0) : new Date(Date.now() - choice.ms);
+      return api.stopAgent(agent.id, from.toISOString());
+    },
+    onSuccess: (r) => {
+      setOpen(false);
+      setResult(
+        `Stopped. ${r.undone} ${r.undone === 1 ? 'change' : 'changes'} undone from ${r.captures} ${r.captures === 1 ? 'capture' : 'captures'}` +
+          (r.changedSince > 0 ? `; ${r.changedSince} left because someone edited them since.` : '.')
+      );
+      void refresh('agents');
+      void refresh('captures');
+    },
+  });
+  return (
+    <div className="flex flex-col gap-2">
+      {open ? (
+        <div className="flex flex-wrap items-end gap-3 rounded-md border border-line p-3">
+          <div className="w-56">
+            <SelectField
+              label="Undo its captures from"
+              value={since}
+              onChange={setSince}
+              options={STOP_SINCE.map((o, i) => ({ value: String(i), label: o.label }))}
+            />
+          </div>
+          <Button variant="danger" disabled={stop.isPending} onClick={() => stop.mutate()}>
+            Stop and undo
+          </Button>
+          <Button variant="secondary" disabled={stop.isPending} onClick={() => setOpen(false)}>
+            Cancel
+          </Button>
+        </div>
+      ) : (
+        <Button variant="secondary" className="self-start" onClick={() => setOpen(true)}>
+          Stop and undo…
+        </Button>
+      )}
+      {result && (
+        <p role="status" className="text-sm text-muted">
+          {result}
+        </p>
+      )}
+      <ErrorNote error={stop.error} />
+    </div>
   );
 }
 

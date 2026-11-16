@@ -57,6 +57,7 @@ export const AuditEventTypeSchema = z.enum([
   'member.left',
   'agent.created',
   'agent.updated',
+  'agent.stopped',
   'agent.token_issued',
   'agent.token_revoked',
   'agent.tool_called',
@@ -1367,6 +1368,16 @@ export const UpdateAgentRequestSchema = z
   })
   .refine((v) => Object.values(v).some((x) => x !== undefined), 'nothing to change');
 export type UpdateAgentRequest = z.input<typeof UpdateAgentRequestSchema>;
+
+/** Stop an agent: disable it and undo what it captured since `since`. */
+export const StopAgentRequestSchema = z.object({ since: z.string().datetime() });
+export const StopAgentResponseSchema = z.object({
+  agent: AgentSchema,
+  undone: z.number().int(),
+  changedSince: z.number().int(),
+  captures: z.number().int(),
+});
+export type StopAgentResponse = z.infer<typeof StopAgentResponseSchema>;
 
 /** Workspace settings for agents (Settings → Agents). */
 export const AgentSettingsSchema = z.object({ agentsMayAnswer: z.boolean() });

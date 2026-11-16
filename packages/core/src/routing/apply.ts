@@ -103,9 +103,11 @@ export async function routeCapture(
     // An agent that was disabled, or whose owner left, since it sent this: nothing of it is filed.
     const senderGone = await withTenantTx(tenantId, async (tx) => {
       const [c] = await tx
-        .select({ type: captures.senderType, id: captures.senderId })
+        .select({ type: captures.senderType, id: captures.senderId, status: captures.status })
         .from(captures)
         .where(and(eq(captures.tenantId, tenantId), eq(captures.id, captureId)));
+      // Cancelled (its agent was stopped, or its preview dropped): never routed.
+      if (c?.status === 'cancelled') return 'cancelled' as const;
       if (!c || c.type !== 'agent') return false;
       try {
         await senderActor(tx, { tenantId, type: c.type, id: c.id });
@@ -115,6 +117,7 @@ export async function routeCapture(
         throw err;
       }
     });
+    if (senderGone === 'cancelled') return 'done';
     if (senderGone) {
       await failCapture(tenantId, captureId, AGENT_SENDER_GONE);
       return 'done';

@@ -38,6 +38,7 @@ import {
   SourceListSchema,
   AgentListSchema,
   AgentSchema,
+  StopAgentResponseSchema,
   AgentTokenSchema,
   IssueAgentTokenResponseSchema,
   SourceSchema,
@@ -136,6 +137,7 @@ import {
   issueAgentToken,
   listAgents,
   revokeAgentToken,
+  stopAgent,
   updateAgent,
   updateAgentSettings,
 } from './routes/agents.js';
@@ -769,6 +771,11 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
   });
 
   // Stopping an agent (disable, revoke) works while the workspace is suspended: a leaked token keeps reading.
+  // Stopping a leaking agent must work while the workspace is suspended.
+  app.post('/api/v1/agents/:id/stop', { config: { whenSuspended: 'allow' } }, async (req, reply) => {
+    const res = await stopAgent(actorOf(req), (req.params as { id: string }).id, req.body, opts.collab);
+    return reply.send(parseReply(StopAgentResponseSchema, res));
+  });
   app.patch('/api/v1/agents/:id', { config: { whenSuspended: 'allow' } }, async (req, reply) => {
     const body = req.body as Record<string, unknown> | null;
     const onlyDisables = !!body && typeof body === 'object' && Object.keys(body).length === 1 && body.disabled === true;
