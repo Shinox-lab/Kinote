@@ -11,6 +11,12 @@ export function shortId(uuid: string): string {
   return uuid.replaceAll('-', '').slice(0, 8).toLowerCase();
 }
 
+/** Whether `ref` names `id`: its full id or a prefix of 8 or more hex characters (dashes optional). */
+export function idMatches(id: string, ref: string): boolean {
+  const want = ref.replaceAll('-', '').toLowerCase();
+  return want.length >= 8 && id.replaceAll('-', '').toLowerCase().startsWith(want);
+}
+
 /** A link to the page (or file) in the console when PUBLIC_URL is set; null without it. */
 export function pageLink(
   agent: Pick<AgentAuth, 'tenantSlug'>,
@@ -37,7 +43,7 @@ export function contentBlock(pageShortId: string, markdown: string): string {
  * Wiki-written text that is not one page's body (a map of titles and summaries, a list of results, an answer
  * written from pages): inside `<kinote:content source="…">`, escaped the same way.
  */
-export function dataBlock(source: 'map' | 'results' | 'answer' | 'receipt' | 'preview', text: string): string {
+export function dataBlock(source: 'map' | 'results' | 'answer' | 'receipt' | 'preview' | 'edit', text: string): string {
   return `<kinote:content source="${source}">\n${escapeContent(text)}\n</kinote:content>`;
 }
 

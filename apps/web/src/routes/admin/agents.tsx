@@ -3,7 +3,7 @@ import { useMutation } from '@tanstack/react-query';
 import { type Agent, type AgentScope, type AgentToken, type SpaceResponse } from '@kinote/contracts';
 import { api, errorMessage } from '../../lib/api.js';
 import { useAgentSettings, useAgents, useRefresh, useSpaces } from '../../lib/queries.js';
-import { captureHasNowhereToFile, OFFERED_SCOPES } from '../../lib/agents.js';
+import { OFFERED_SCOPES, writesHaveNowhereToGo } from '../../lib/agents.js';
 import { useFocusTrap } from '../../lib/useFocusTrap.js';
 import { useMediaQuery } from '../../lib/useMediaQuery.js';
 import { lastUsedLabel, tokenState } from '../../lib/sources.js';
@@ -17,7 +17,7 @@ const DEFAULT_DAILY_AI = 100;
 const SCOPE_LABELS: Record<AgentScope, { label: string; hint: string }> = {
   read: { label: 'Read', hint: 'Browse, search, read pages, see what relates, ask questions, in the spaces above.' },
   capture: { label: 'Capture', hint: 'File notes and facts through routing, with a receipt and Undo. Needs Editor access to a space above.' },
-  edit: { label: 'Edit', hint: 'Change pages within its grants (arrives later).' },
+  edit: { label: 'Edit', hint: 'Fix exact words, add blocks and set fields on pages it has read. Removals, and blocks a person just edited, become suggestions. Needs Editor access to a space above.' },
 };
 
 /** Spaces an agent may be granted: not the Inbox and not archived. */
@@ -138,11 +138,18 @@ function TokenRow({ agent, token, now }: { agent: Agent; token: AgentToken; now:
   );
 }
 
-/** Capture is allowed but the agent can edit no space: every capture would be refused. */
-function NowhereToFile() {
+/** Capture or Edit is allowed but the agent can edit no space: captures would be refused, edits only suggested. */
+function NowhereToWrite({ capture, edit }: { capture: boolean; edit: boolean }) {
+  if (!capture && !edit) return null;
+  const what =
+    capture && edit
+      ? 'its captures would be refused and its edits would only be suggestions'
+      : capture
+        ? 'its captures would be refused'
+        : 'its edits would only be suggestions';
   return (
     <p role="note" className="rounded-md border border-line bg-review-bg px-3 py-2 text-xs text-review-text">
-      It can't edit any space yet, so its captures would be refused. Give it Editor access to a space above.
+      It can't edit any space yet, so {what}. Give it Editor access to a space above.
     </p>
   );
 }
@@ -203,7 +210,7 @@ function NewTokenForm({ agent, onIssued }: { agent: Agent; onIssued: (token: str
           />
         ))}
       </fieldset>
-      {captureHasNowhereToFile(agent, scopes) && <NowhereToFile />}
+      <NowhereToWrite {...writesHaveNowhereToGo(agent, scopes)} />
       <div>
         <Button type="submit" disabled={busy || name.trim() === '' || scopes.length === 0}>
           New token
@@ -300,7 +307,7 @@ function AgentPanel({ agent, spaces, onIssued }: { agent: Agent; spaces: readonl
 
       <div className="flex flex-col gap-2">
         <h3 className="text-sm font-semibold">Tokens</h3>
-        {captureHasNowhereToFile(agent) && <NowhereToFile />}
+        <NowhereToWrite {...writesHaveNowhereToGo(agent)} />
         {agent.tokens.length === 0 ? (
           <p className="text-sm text-muted">No tokens yet. An MCP client needs one to connect.</p>
         ) : (

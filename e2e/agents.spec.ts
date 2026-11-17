@@ -29,7 +29,9 @@ test('an owner creates an agent, grants it a space, issues a Read token once, th
 
   await panel.getByLabel('Token name').fill('Claude Code');
   await expect(panel.getByLabel('Read')).toBeChecked();
-  await expect(panel.getByLabel('Edit')).toHaveCount(0);
+  await panel.getByLabel('Edit').check();
+  await expect(panel.getByRole('note')).toContainText('its edits would only be suggestions');
+  await panel.getByLabel('Edit').uncheck();
   // Capture with only Viewer access would be refused: the form says so.
   await panel.getByLabel('Capture').check();
   await expect(panel.getByRole('note')).toContainText("It can't edit any space yet");

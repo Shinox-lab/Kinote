@@ -139,6 +139,11 @@ export function suggestionAction(s: Pick<SuggestionSummary, 'kind' | 'proposedMa
   return s.kind === 'remove' || (s.kind === 'set_field' && s.proposedMarkdown === 'null') ? 'Approve removal' : 'Accept';
 }
 
+/** Who proposed a suggestion: the agent (kinote_edit), else the routing engine. */
+export function suggestionSource(s: Pick<SuggestionSummary, 'proposedBy'>): string {
+  return s.proposedBy ? `Suggested by ${s.proposedBy.name}` : 'Suggested by the routing engine';
+}
+
 /** A routed field change in one line: `Launch date: 2026-11-15 → 2026-12-01`. */
 export function fieldChangeText(field: FieldChange): string {
   return `${field.name ?? 'Removed field'}: ${field.before ?? 'empty'} → ${field.after ?? 'empty'}`;

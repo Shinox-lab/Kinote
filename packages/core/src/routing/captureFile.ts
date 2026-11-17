@@ -1,5 +1,5 @@
 import { and, eq } from 'drizzle-orm';
-import { captureFacts, captures, documents, spaces, versions, withTenantTx, type DbTransaction } from '@kinote/db';
+import { agents, captureFacts, captures, documents, spaces, versions, withTenantTx, type DbTransaction } from '@kinote/db';
 import { ExtractedDocumentSchema } from '@kinote/contracts';
 import type { ObjectStorage } from '@kinote/shared';
 import { requireSpaceRole } from '../permissions.js';
@@ -77,9 +77,21 @@ export function fileTitle(name: string): string {
 
 /** Whether the file is still where the capture left it: live, in its sender's Inbox, made by the sender. */
 async function stillInSendersInbox(tx: DbTransaction, tenantId: string, capture: CaptureRow, file: typeof documents.$inferSelect) {
-  if (file.archivedAt || file.createdByType !== capture.senderType || file.createdBy !== capture.senderId) return false;
+  if (file.archivedAt) return false;
+  const sent = file.createdByType === capture.senderType && file.createdBy === capture.senderId;
+  if (!sent && !(await isSendersOwnerFile(tx, tenantId, capture, file))) return false;
   const [space] = await tx.select({ kind: spaces.kind }).from(spaces).where(and(eq(spaces.tenantId, tenantId), eq(spaces.id, file.spaceId)));
   return space?.kind === 'inbox';
+}
+
+/**
+ * An agent's capture of a file its owner uploaded (the MCP file panel: the person dropped it, so it is stored as
+ * theirs). Only that path attaches such a file; this lets routing move it like the agent's own.
+ */
+async function isSendersOwnerFile(tx: DbTransaction, tenantId: string, capture: CaptureRow, file: typeof documents.$inferSelect) {
+  if (capture.senderType !== 'agent' || file.createdByType !== 'user') return false;
+  const [agent] = await tx.select({ createdBy: agents.createdBy }).from(agents).where(and(eq(agents.tenantId, tenantId), eq(agents.id, capture.senderId)));
+  return agent?.createdBy === file.createdBy;
 }
 
 type CaptureRow = typeof captures.$inferSelect;

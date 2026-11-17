@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import type { Agent } from '@kinote/contracts';
-import { captureHasNowhereToFile, OFFERED_SCOPES } from '../src/lib/agents.js';
+import { OFFERED_SCOPES, writesHaveNowhereToGo } from '../src/lib/agents.js';
 
 const agent = (grants: Array<'viewer' | 'editor'>, tokenScopes: Array<Array<'read' | 'capture' | 'edit'>> = []): Agent => ({
   id: '00000000-0000-4000-8000-000000000001',
@@ -24,19 +24,19 @@ const agent = (grants: Array<'viewer' | 'editor'>, tokenScopes: Array<Array<'rea
 });
 
 describe('agents page helpers', () => {
-  test('capture with no editor space has nowhere to file', () => {
-    expect(captureHasNowhereToFile(agent(['viewer']), ['read', 'capture'])).toBe(true);
-    expect(captureHasNowhereToFile(agent([]), ['capture'])).toBe(true);
-    expect(captureHasNowhereToFile(agent(['viewer', 'editor']), ['read', 'capture'])).toBe(false);
-    expect(captureHasNowhereToFile(agent(['viewer']), ['read'])).toBe(false);
+  test('writes with no editor space have nowhere to go', () => {
+    expect(writesHaveNowhereToGo(agent(['viewer']), ['read', 'capture'])).toEqual({ capture: true, edit: false });
+    expect(writesHaveNowhereToGo(agent([]), ['edit'])).toEqual({ capture: false, edit: true });
+    expect(writesHaveNowhereToGo(agent(['viewer', 'editor']), ['read', 'capture', 'edit'])).toEqual({ capture: false, edit: false });
+    expect(writesHaveNowhereToGo(agent(['viewer']), ['read'])).toEqual({ capture: false, edit: false });
   });
 
   test('without scopes it looks at the live tokens', () => {
-    expect(captureHasNowhereToFile(agent(['viewer'], [['read', 'capture']]))).toBe(true);
-    expect(captureHasNowhereToFile(agent(['viewer'], [['read']]))).toBe(false);
+    expect(writesHaveNowhereToGo(agent(['viewer'], [['read', 'capture'], ['edit']]))).toEqual({ capture: true, edit: true });
+    expect(writesHaveNowhereToGo(agent(['viewer'], [['read']]))).toEqual({ capture: false, edit: false });
   });
 
-  test('Edit is not offered until a tool uses it', () => {
-    expect(OFFERED_SCOPES).toEqual(['read', 'capture']);
+  test('every scope is offered', () => {
+    expect(OFFERED_SCOPES).toEqual(['read', 'capture', 'edit']);
   });
 });

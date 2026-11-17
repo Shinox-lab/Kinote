@@ -132,7 +132,7 @@ export {
   type ChunkFilter,
   type SearchOptions,
 } from './search/hybridSearch.js';
-export { senderActor, senderAccess, type SenderAccess } from './routing/access.js';
+export { capturesAlwaysReviewed, senderActor, senderAccess, type SenderAccess } from './routing/access.js';
 export { readLiveBlocks, blockText, blockMarkdown, markdownBlocks, encodeBlocksYDoc } from './routing/liveBlocks.js';
 export {
   planCapture,
@@ -206,3 +206,4 @@ export {
   type ProviderKind,
 } from './models/settings.js';
 export { delegating, modelFactoriesFrom, ModelProviders, type ModelFactories } from './models/providers.js';
+export { EDITABLE_BLOCK_TYPES, replaceInBlock } from './edit/replaceInBlock.js';

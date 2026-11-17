@@ -82,7 +82,7 @@ describe('a real MCP client files a capture', () => {
       client = new Client({ name: 'kinote-test', version: '1.0.0' });
       await client.connect(new StreamableHTTPClientTransport(new URL(`${address}/mcp`), { requestInit: { headers: { authorization: `Bearer ${token}` } } }));
       assert.match(client.getInstructions() ?? '', /Use kinote_capture to file new information/);
-      assert.equal((await client.listTools()).tools.length, 7);
+      assert.equal((await client.listTools()).tools.length, 12);
 
       setTimeout(() => void w.run(), 100);
       const previewed = textOf(
@@ -105,6 +105,38 @@ describe('a real MCP client files a capture', () => {
       const undone = textOf(await client.callTool({ name: 'kinote_capture_action', arguments: { capture_id: id, action: 'undo' } }));
       assert.match(undone, /^Undone: 1 change;/);
       assert.equal(await k.pageText(w.tenant.id, w.george), 'George is a client. Launch is in November.');
+    } finally {
+      await client?.close().catch(() => undefined);
+      client = undefined;
+      await k.app.close();
+    }
+  });
+
+});
+
+describe('a real MCP client edits', () => {
+  const k = useCaptureKit();
+  let client: Client | undefined;
+
+  test('a real client reads a block id and edits the page', async () => {
+    const w = await k.world('real-edit');
+    const agentId = await createAgent(w.tenant.id, w.owner.userId, { name: 'Fixer' });
+    await withTenantTx(w.tenant.id, (tx) => tx.update(agents).set({ alwaysReview: false }).where(eq(agents.id, agentId)));
+    await k.post(w.headers, `/api/v1/spaces/${w.clients}/grants`, { principal_type: 'agent', principal_id: agentId, role: 'editor' });
+    const { token } = await issueAgentToken(w.tenant.id, agentId, { scopes: ['read', 'edit'] });
+    const address = await k.app.listen({ port: 0, host: '127.0.0.1' });
+    try {
+      client = new Client({ name: 'kinote-test', version: '1.0.0' });
+      await client.connect(new StreamableHTTPClientTransport(new URL(`${address}/mcp`), { requestInit: { headers: { authorization: `Bearer ${token}` } } }));
+      assert.match(client.getInstructions() ?? '', /Use kinote_edit for precise fixes/);
+      assert.ok((await client.listTools()).tools.some((t) => t.name === 'kinote_edit'));
+      const read = textOf(await client.callTool({ name: 'kinote_read', arguments: { page_id: short(w.george), level: 'full' } }));
+      const blockId = /\[([0-9a-f]{8})\] George is a client/.exec(read)![1]!;
+      const edited = textOf(
+        await client.callTool({ name: 'kinote_edit', arguments: { page_id: short(w.george), edits: [{ block_id: blockId, old: 'November', new: 'December' }] } })
+      );
+      assert.match(edited, new RegExp(`• ${blockId} — applied · indexing`));
+      assert.equal(await k.pageText(w.tenant.id, w.george), 'George is a client. Launch is in December.');
     } finally {
       await client?.close().catch(() => undefined);
       client = undefined;

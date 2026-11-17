@@ -1,9 +1,9 @@
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { chunks, spaces, versions, withTenantTx, type DocumentRow } from '@kinote/db';
-import { blockMarkdown, blockText, readLiveBlocks } from '@kinote/core';
+import { blockMarkdown, blockText, pageFieldEntries, readLiveBlocks } from '@kinote/core';
 import { documentName, flattenBlocks, type BlockLike } from '@kinote/shared';
-import { contentBlock, decodeCursor, encodeCursor, MAX_RESULT_TOKENS, pageLink, shortId } from '../format.js';
+import { contentBlock, decodeCursor, encodeCursor, idMatches as sameId, MAX_RESULT_TOKENS, pageLink, shortId } from '../format.js';
 import { resolvePageRef, ToolError } from '../refs.js';
 import { defineTool, type ToolContext } from '../tool.js';
 
@@ -26,11 +26,6 @@ const wordCount = (text: string) => text.split(/\s+/).filter(Boolean).length;
 const blockWords = (block: BlockLike) => wordCount(flattenBlocks([block]).map((b) => b.text).join(' '));
 const headingLevel = (block: BlockLike): number | null =>
   block.type === 'heading' ? Number((block.props as { level?: unknown } | undefined)?.level ?? 1) || 1 : null;
-/** A block id named by its full id or a prefix of 8 or more hex characters (dashes optional). */
-const sameId = (id: string, ref: string) => {
-  const want = ref.replaceAll('-', '').toLowerCase();
-  return want.length >= 8 && id.replaceAll('-', '').toLowerCase().startsWith(want);
-};
 
 /** The index after the section that starts at `start`: the next heading of the same or a higher level. */
 function sectionEnd(blocks: BlockLike[], start: number): number {
@@ -96,10 +91,11 @@ function paged(
   units: string[],
   start: number,
   offset: number,
-  cursorAt: (next: number, offset?: number) => ReadCursor
+  cursorAt: (next: number, offset?: number) => ReadCursor,
+  fieldsLine: string | null = null
 ): string {
   const top = head.join('\n');
-  const titleLine = `# ${title}`;
+  const titleLine = `# ${title}${fieldsLine ? `\n${fieldsLine}` : ''}`;
   const budget = MAX_RESULT_TOKENS * 4 - top.length - titleLine.length - RESERVE_CHARS;
   const parts: string[] = [];
   let used = 0;
@@ -144,21 +140,27 @@ async function readFile(ctx: ToolContext, doc: DocumentRow, start: number, offse
   return paged(head, doc.title, doc.id, rows.map((r) => r.text), start, offset, (i, o) => ({ p: doc.id, l: 'file', i, ...(o ? { o } : {}) }));
 }
 
-async function liveBlocksOf(ctx: ToolContext, doc: DocumentRow): Promise<{ title: string; blocks: BlockLike[] }> {
+async function liveBlocksOf(ctx: ToolContext, doc: DocumentRow): Promise<{ title: string; blocks: BlockLike[]; fields: unknown }> {
   const live = await withTenantTx(ctx.actor.tenantId, (tx) => readLiveBlocks(tx, ctx.actor.tenantId, doc.id));
-  if (live) return { title: live.title || doc.title, blocks: live.blocks };
-  if (!doc.latestVersionId) return { title: doc.title, blocks: [] };
+  if (live) return { title: live.title || doc.title, blocks: live.blocks, fields: live.fields };
+  if (!doc.latestVersionId) return { title: doc.title, blocks: [], fields: null };
   const [v] = await withTenantTx(ctx.actor.tenantId, (tx) =>
     tx
-      .select({ title: versions.title, blocks: versions.blocks })
+      .select({ title: versions.title, blocks: versions.blocks, fields: versions.fields })
       .from(versions)
       .where(and(eq(versions.tenantId, ctx.actor.tenantId), eq(versions.id, doc.latestVersionId!)))
   );
-  return { title: v?.title ?? doc.title, blocks: Array.isArray(v?.blocks) ? (v!.blocks as BlockLike[]) : [] };
+  return { title: v?.title ?? doc.title, blocks: Array.isArray(v?.blocks) ? (v!.blocks as BlockLike[]) : [], fields: v?.fields ?? null };
 }
 
-function outline(head: string[], title: string, docId: string, blocks: BlockLike[]): string {
-  const lines = [`# ${title}`];
+/** A collection row's field values in one line (`Fields: Status: Done · Owner: Jane`); null for any other page. */
+async function fieldsLineOf(ctx: ToolContext, doc: DocumentRow, fields: unknown): Promise<string | null> {
+  const entries = await withTenantTx(ctx.actor.tenantId, (tx) => pageFieldEntries(tx, ctx.actor.tenantId, doc.id, fields));
+  return entries.length > 0 ? `Fields: ${entries.map((e) => e.text).join(' · ')}` : null;
+}
+
+function outline(head: string[], title: string, docId: string, blocks: BlockLike[], fieldsLine: string | null): string {
+  const lines = [`# ${title}`, ...(fieldsLine ? [fieldsLine] : [])];
   const firstHeading = blocks.findIndex((b) => headingLevel(b) !== null);
   const introEnd = firstHeading === -1 ? blocks.length : firstHeading;
   if (introEnd > 0) lines.push(`Intro: ${blocks.slice(0, introEnd).reduce((n, b) => n + blockWords(b), 0)} words`);
@@ -211,9 +213,10 @@ export const readTool = defineTool({
         ctx.log.warn({ err, pageId: doc.id }, 'mcp read: collab flush failed; reading the stored state');
       }
     }
-    const { title, blocks } = await liveBlocksOf(ctx, doc);
+    const { title, blocks, fields } = await liveBlocksOf(ctx, doc);
     const head = await header(ctx, doc);
-    if (level === 'outline') return outline(head, title, doc.id, blocks);
+    const fieldsLine = await fieldsLineOf(ctx, doc, fields);
+    if (level === 'outline') return outline(head, title, doc.id, blocks, fieldsLine);
 
     let from = 0;
     let to = blocks.length;
@@ -238,6 +241,6 @@ export const readTool = defineTool({
       ...(sectionId ? { s: sectionId } : {}),
       i,
       ...(o ? { o } : {}),
-    }));
+    }), fieldsLine);
   },
 });

@@ -16,6 +16,7 @@ import {
   parseCaptureSearch,
   parsePageCaptureSearch,
   suggestionAction,
+  suggestionSource,
   suggestionMarkerCss,
   undoNotice,
   fieldChangeText,
@@ -53,6 +54,7 @@ const suggestion = (over: Partial<SuggestionSummary>): SuggestionSummary => ({
   conflictWith: null,
   status: 'open',
   captureId: null,
+  proposedBy: null,
   createdAt: '2026-10-26T00:00:00.000Z',
   ...over,
 });
@@ -142,6 +144,11 @@ describe('capture helpers', () => {
     expect(suggestionAction(suggestion({ kind: 'remove' }))).toBe('Approve removal');
     expect(suggestionAction(suggestion({ kind: 'replace' }))).toBe('Accept');
     expect(suggestionAction(suggestion({ kind: 'insert' }))).toBe('Accept');
+  });
+
+  test('suggestionSource names the agent that proposed it, else the routing engine', () => {
+    expect(suggestionSource(suggestion({ proposedBy: { type: 'agent', id: ID2, name: 'Docs bot' } }))).toBe('Suggested by Docs bot');
+    expect(suggestionSource(suggestion({ proposedBy: null }))).toBe('Suggested by the routing engine');
   });
 
   test('documentHeadline words where the page went, or that it waits', () => {

@@ -70,7 +70,15 @@ describe('the /mcp endpoint', () => {
     const w = await agentWorld(app, 'mcp-scope');
     const capture = await issueAgentToken(w.tenant.id, w.agentId, { scopes: ['capture'] });
     assert.deepEqual(await listToolNames(app, capture.token, TEST_PATH), ['kinote_capture_echo']);
-    assert.deepEqual(await listToolNames(app, capture.token), ['kinote_capture', 'kinote_capture_action']);
+    assert.deepEqual(await listToolNames(app, capture.token), [
+      'kinote_capture',
+      'kinote_capture_action',
+      'kinote_capture_file',
+      'kinote_upload_begin',
+      'kinote_upload_cancel',
+      'kinote_upload_chunk',
+      'kinote_upload_finish',
+    ]);
     const real = await callTool(app, capture.token, 'kinote_search', { query: 'x' });
     assert.equal(real.text, 'This token cannot use kinote_search. Ask a workspace admin for a token with the "read" scope.');
     const res = await callTool(app, capture.token, 'kinote_echo', { text: 'hi' }, TEST_PATH);

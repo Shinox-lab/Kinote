@@ -203,7 +203,7 @@ function ReviewDetail({
 
       {item.suggestions.length > 0 && (
         <section aria-label="Suggestions" className="flex flex-col gap-2">
-          <h2 className="text-sm font-semibold text-fg">Suggestions from the routing engine</h2>
+          <h2 className="text-sm font-semibold text-fg">Suggestions</h2>
           <ul className="flex flex-col gap-2">
             {item.suggestions.map((s) => (
               <SuggestionEntry key={s.id} suggestion={s} onDone={settle} />

@@ -93,8 +93,10 @@ export async function summaries(tx: DbTransaction, tenantId: string, rows: Captu
 /**
  * The file a sender attaches: a live file in their own Inbox (404 otherwise,
  * as for any document they can't see), of a type whose text can be read.
+ * With `ownerFile` (the MCP file panel only: the person dropped the file and it
+ * was stored as their upload) an agent may attach its owner's Inbox file.
  */
-async function captureFile(tx: DbTransaction, actor: Actor, fileId: string) {
+async function captureFile(tx: DbTransaction, actor: Actor, fileId: string, ownerFile = false) {
   const [row] = await tx
     .select({ doc: documents, spaceKind: spaces.kind, mimeType: versions.mimeType })
     .from(documents)
@@ -106,8 +108,8 @@ async function captureFile(tx: DbTransaction, actor: Actor, fileId: string) {
     row.doc.kind === 'file' &&
     row.doc.archivedAt === null &&
     row.spaceKind === 'inbox' &&
-    row.doc.createdByType === actor.principalType &&
-    row.doc.createdBy === actor.principalId;
+    ((row.doc.createdByType === actor.principalType && row.doc.createdBy === actor.principalId) ||
+      (ownerFile && actor.principalType === 'agent' && actor.owner !== undefined && row.doc.createdByType === 'user' && row.doc.createdBy === actor.owner.userId));
   if (!mine) throw new AppError('document_not_found');
   // Audio and video are only stored: there is no text to read yet.
   if (row.mimeType && /^(audio|video)\//.test(row.mimeType)) {
@@ -148,7 +150,13 @@ export async function enqueueCaptureRoute(tx: DbTransaction, tenantId: string, c
 export async function createCapture(
   actor: Actor,
   body: unknown,
-  opts: { channel?: 'console' | 'mcp'; sourceRef?: string | null; preview?: boolean } = {}
+  opts: {
+    channel?: 'console' | 'mcp';
+    sourceRef?: string | null;
+    preview?: boolean;
+    /** Internal (the MCP file panel): the agent attaches a file its owner just uploaded. Never from a request body. */
+    ownerFile?: boolean;
+  } = {}
 ): Promise<CaptureSummary> {
   const raw = (body as { text?: unknown } | null)?.text;
   if (typeof raw === 'string' && raw.trim().length > MAX_CAPTURE_CHARS) {
@@ -178,7 +186,7 @@ export async function createCapture(
     }
 
     if (file_id) {
-      await captureFile(tx, actor, file_id);
+      await captureFile(tx, actor, file_id, opts.ownerFile === true);
       // One capture per file: a second would take the file from the first one's page.
       const [taken] = await tx
         .select({ id: captures.id })
@@ -291,7 +299,22 @@ export async function suggestionField(tx: DbTransaction, tenantId: string, row: 
   return describeFieldChange(tx, tenantId, row.documentId, fieldId, json(row.expectedText), json(row.proposedMarkdown));
 }
 
-export function toSuggestionSummary(row: SuggestionRow, conflictWith: string | null, field: FieldChange | null = null): SuggestionSummary {
+/** Display names of the suggestions' direct proposers, keyed `type:id` (from `proposerNames`). */
+export async function proposerNames(tx: DbTransaction, tenantId: string, rows: SuggestionRow[]): Promise<Map<string, string>> {
+  const actors = rows.flatMap((r) => (r.proposedByType && r.proposedBy ? [{ type: r.proposedByType, id: r.proposedBy }] : []));
+  return actors.length > 0 ? resolveActorNames(tx, tenantId, actors) : new Map();
+}
+
+export function toSuggestionSummary(
+  row: SuggestionRow,
+  conflictWith: string | null,
+  field: FieldChange | null = null,
+  proposers: Map<string, string> = new Map()
+): SuggestionSummary {
+  const proposedBy =
+    row.proposedByType && row.proposedBy
+      ? { type: row.proposedByType, id: row.proposedBy, name: proposers.get(`${row.proposedByType}:${row.proposedBy}`) ?? '' }
+      : null;
   return {
     id: row.id,
     documentId: row.documentId,
@@ -305,6 +328,7 @@ export function toSuggestionSummary(row: SuggestionRow, conflictWith: string | n
     conflictWith,
     status: row.status,
     captureId: row.captureId,
+    proposedBy,
     createdAt: row.createdAt.toISOString(),
   };
 }

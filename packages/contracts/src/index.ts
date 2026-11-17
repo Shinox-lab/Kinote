@@ -58,6 +58,7 @@ export const AuditEventTypeSchema = z.enum([
   'agent.created',
   'agent.updated',
   'agent.stopped',
+  'agent.edit',
   'agent.token_issued',
   'agent.token_revoked',
   'agent.tool_called',
@@ -618,6 +619,8 @@ export const SuggestionSummarySchema = z.object({
   conflictWith: z.string().nullable(),
   status: z.enum(['open', 'accepted', 'declined', 'stale']),
   captureId: z.string().uuid().nullable(),
+  /** Who proposed it directly (an agent's kinote_edit); null for a capture's suggestions. */
+  proposedBy: z.object({ type: z.enum(['user', 'agent']), id: z.string().uuid(), name: z.string() }).nullable(),
   createdAt: z.string(),
 });
 export type SuggestionSummary = z.infer<typeof SuggestionSummarySchema>;
@@ -1405,7 +1408,7 @@ export type IssueAgentTokenResponse = z.infer<typeof IssueAgentTokenResponseSche
 
 /** The scopes a browser sign-in can grant today; capture and edit wait for their tools. */
 /** What a browser sign-in may allow: reading always; filing captures when the client asks and the person ticks it. */
-export const OAUTH_SCOPES = ['read', 'capture'] as const;
+export const OAUTH_SCOPES = ['read', 'capture', 'edit'] as const;
 /** An access token from a browser sign-in lasts an hour; its refresh token 90 days from its last use. */
 export const OAUTH_ACCESS_TOKEN_SECONDS = 3600;
 
@@ -1451,6 +1454,8 @@ export const OAuthDecisionSchema = z.discriminatedUnion('decision', [
     space_ids: z.array(z.string().uuid()).min(1).max(100),
     /** Also let it file captures (only when the client asked for the capture scope): editor access to the spaces. */
     capture: z.boolean().default(false),
+    /** Also let it make precise edits (only when the client asked for the edit scope): editor access to the spaces. */
+    edit: z.boolean().default(false),
   }),
   z.object({ decision: z.literal('deny') }),
 ]);

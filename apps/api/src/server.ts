@@ -753,6 +753,9 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
     meter: (kind, actor, fn) =>
       withUsageScope({ tenantId: actor.tenantId, kind, principalId: actor.principalId }, models ? models.cache.current().creditRates : creditRates, fn),
     version: opts.kinoteVersion ?? apiPackageVersion(),
+    ...(opts.storage ? { storage: opts.storage } : {}),
+    maxUploadBytes: opts.maxUploadBytes ?? DEFAULT_MAX_UPLOAD_BYTES,
+    ...(opts.uploadTmpDir ? { uploadTmpDir: opts.uploadTmpDir } : {}),
   });
 
   app.get('/api/v1/agents/settings', async (req, reply) => {

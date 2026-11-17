@@ -81,8 +81,8 @@ covers the secrets, connecting models, reverse proxies, storage, upgrades and ba
 
 ## Connect an agent
 
-AI tools such as Claude Code can read your wiki over MCP (Model Context Protocol), and file what they learn into it
-through Capture. Each agent has its own tokens and sees only the spaces you grant it, and never more than the person
+AI tools such as Claude Code can read your wiki over MCP (Model Context Protocol), file what they learn into it
+through Capture, and fix exact words on a page with Edit. Each agent has its own tokens and sees only the spaces you grant it, and never more than the person
 who owns it can see.
 
 **Sign in from the client.** Any member can connect a client that supports MCP sign-in, with no token to copy. For
@@ -93,17 +93,18 @@ claude mcp add --transport http kinote https://<your-kinote>/mcp
 ```
 
 Then run `/mcp` in Claude Code and choose to authenticate. Your browser opens Kinote's sign-in page: pick the
-workspace, name the agent and tick the spaces it may read. If the client asks to file captures too, you can also tick
-**Also let it file what it learns**: the agent then gets Editor access to those spaces (never more than you have), and
-its changes wait for review until an admin switches that off. Without it, the agent is read-only. Admins see it in
+workspace, name the agent and tick the spaces it may read. If the client asks to file captures or make edits too, you
+can also tick **Also let it file what it learns** or **Also let it make precise edits**: the agent then gets Editor
+access to those spaces (never more than you have), and its changes wait for review until an admin switches that off. Without it, the agent is read-only. Admins see it in
 **Settings → Agents**, where revoking its token disconnects the client. The token lasts an hour and the client
 renews it by itself for up to 90 days after it was last used.
 
 **Or issue a token.** For headless agents, CI and clients without sign-in:
 
-1. In **Settings → Agents**, add an agent and choose **where it can go**: Viewer (read) or Editor (read and file
-   captures) for each space. Then issue a token and choose **what this token can do**: **Read**, plus **Capture** if it
-   may file information (it needs Editor access to at least one space). An agent can hold several tokens, for example
+1. In **Settings → Agents**, add an agent and choose **where it can go**: Viewer (read) or Editor (read and change)
+   for each space. Then issue a token and choose **what this token can do**: **Read**, plus **Capture** if it may file
+   information and **Edit** if it may fix pages directly (both need Editor access to at least one space; without it,
+   captures are refused and edits only become suggestions). An agent can hold several tokens, for example
    one with Capture for your laptop and a read-only one for CI. The token is shown once.
 2. Connect the client. For Claude Code:
 
@@ -114,7 +115,7 @@ renews it by itself for up to 90 days after it was last used.
    Any MCP client that supports Streamable HTTP works the same way: the endpoint is `/mcp` and the token is a
    Bearer header.
 
-A Read token gets five tools, and a Capture token two more:
+A Read token gets five tools, a Capture token three more, and an Edit token one more:
 
 | Tool | What it does |
 | --- | --- |
@@ -125,10 +126,12 @@ A Read token gets five tools, and a Capture token two more:
 | `kinote_ask` | An answer written from the wiki with its sources (costs an AI action). |
 | `kinote_capture` | Files new information through routing, with a receipt; `preview: true` shows where it would go first. |
 | `kinote_capture_action` | Status, answer a routing question, undo, move, or apply/cancel a preview. |
+| `kinote_capture_file` | Shows a Kinote panel in clients with MCP Apps (claude.ai, Claude Desktop, VS Code Copilot…): your user drops the original file, which is kept and its text filed. |
+| `kinote_edit` | Replaces exact words in a block, adds blocks after one, or sets a collection field, as the agent. Removals, blocks a person edited within the space's protection window, and spaces it can only read become suggestions on the page. |
 
 Tokens expire after 90 days unless you choose otherwise (1 to 365), and an admin can revoke one or disable an agent at
 any time. Each agent has its own rate limits and a daily limit of AI actions (100 unless you set another), and every
-tool call is recorded in the audit log. The `edit` scope already exists on tokens; the tool that uses it arrives later.
+tool call is recorded in the audit log.
 
 **Capture from an agent.** An agent files information the way a person does on the Capture page: routing decides
 where each fact belongs, explains why, skips what is already known, and every change can be undone.
@@ -141,6 +144,12 @@ where each fact belongs, explains why, skips what is already known, and every ch
   go, skip or re-place facts, or cancel and edit by hand.
 - A `source` (a URL or ticket ID) makes a retry safe: the same source and text return the first capture.
 - **Stop and undo…** on an agent disables it and undoes what it filed since a time you choose.
+- **Whole files.** A client can't hand a tool the original of a file you attached in the chat, only its text. When you
+  want the file itself in Kinote, the agent calls `kinote_capture_file` and a Kinote panel opens in the conversation:
+  drop the file there (up to the upload limit, 50 MB by default) and press **Capture**. The panel uploads it as your
+  own Inbox upload, captures it with the agent's notes, and shows the receipt, which the agent also sees. The panel
+  needs a client that shows MCP Apps; in others, attach the file on the Capture page. Capture tokens also list four
+  `kinote_upload_*` tools that only the panel uses.
 
 Notes typed into a capture, by a person or an agent, can say how to file it: "make a new page for this", "only update
 the pages", "put it under Clients/George", "keep the file as a copy" or "don't keep the file". Text inside an attached
