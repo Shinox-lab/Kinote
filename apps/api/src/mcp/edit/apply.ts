@@ -2,6 +2,7 @@ import { suggestions, withTenantTx, writeAuditEvent, type DocumentRow } from '@k
 import { AppError } from '@kinote/contracts';
 import { capturesAlwaysReviewed, readLiveBlocks, takePageSnapshot, type Actor } from '@kinote/core';
 import { documentName, type CollabClient } from '@kinote/shared';
+import { renamePage } from '../../routes/pages.js';
 import { CHANGED, GONE, planEdits, type AgentEdit, type EditOutcome } from './plan.js';
 
 /** What a suggestion's reason says when an agent proposed it. */
@@ -28,6 +29,19 @@ export async function runAgentEdits(
     return planEdits(tx, actor, doc, { blocks: live?.blocks ?? [], fields: (live?.fields as Record<string, unknown> | undefined) ?? null }, edits, now);
   });
 
+  /** Indexes whose change reached the page, so the snapshot's outcome is theirs. */
+  const changed: number[] = [];
+  if (plan.rename) {
+    const { index, title } = plan.rename;
+    try {
+      await renamePage(actor, doc.id, { title }, collab);
+      changed.push(index);
+    } catch (err) {
+      if (!(err instanceof AppError)) throw err;
+      plan.outcomes[index] = { ...plan.outcomes[index]!, result: 'refused', detail: err.code === 'page_archived' ? 'the page is archived' : 'no edit access: a person can rename it' };
+    }
+  }
+
   let versionId: string | null = null;
   if (plan.apply.length > 0) {
     let refusedAll: string | null = null;
@@ -42,13 +56,16 @@ export async function runAgentEdits(
     if (refusedAll) {
       for (const { index } of plan.apply) plan.outcomes[index] = { ...plan.outcomes[index]!, result: 'refused', detail: refusedAll };
     } else {
-      await collab.flush(documentName(tenantId, doc.id));
-      const forceReview = await withTenantTx(tenantId, (tx) => capturesAlwaysReviewed(tx, { tenantId, type: 'agent', id: agentId }));
-      const version = await takePageSnapshot({ tenantId, pageId: doc.id, reason: 'agent', actorType: 'agent', actorId: agentId, manual: false, forceReview });
-      versionId = version?.id ?? null;
-      const detail = version?.status === 'pending_review' ? 'waiting for review' : 'indexing';
-      for (const { index } of plan.apply) plan.outcomes[index] = { ...plan.outcomes[index]!, detail };
+      changed.push(...plan.apply.map((a) => a.index));
     }
+  }
+  if (changed.length > 0) {
+    await collab.flush(documentName(tenantId, doc.id));
+    const forceReview = await withTenantTx(tenantId, (tx) => capturesAlwaysReviewed(tx, { tenantId, type: 'agent', id: agentId }));
+    const version = await takePageSnapshot({ tenantId, pageId: doc.id, reason: 'agent', actorType: 'agent', actorId: agentId, manual: false, forceReview });
+    versionId = version?.id ?? null;
+    const detail = version?.status === 'pending_review' ? 'waiting for review' : 'indexing';
+    for (const index of changed) plan.outcomes[index] = { ...plan.outcomes[index]!, detail };
   }
 
   const outcomes = plan.outcomes.map((o, i) => o ?? { label: `edit ${i + 1}`, result: 'refused' as const, detail: 'not understood' });

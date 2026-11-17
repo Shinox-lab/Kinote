@@ -18,6 +18,7 @@ const editSchema = z.union([
   z.object({ after_block_id: blockId.nullable(), markdown: z.string().min(1).max(MAX_EDIT_MARKDOWN) }).strict(),
   z.object({ remove_block_id: blockId }).strict(),
   z.object({ field: z.string().min(1).max(200), value: z.unknown() }).strict(),
+  z.object({ title: z.string().max(1000) }).strict(),
 ]);
 
 /** One reply line: `• <label> — applied · indexing`, `— suggested: <why>`, `— refused: <why>`. */
@@ -32,7 +33,7 @@ export const editTool = defineTool({
   limit: 'edit',
   writes: true,
   description:
-    'Make precise edits to a page you have read: replace exact words in a block ({block_id, old, new}; quote the words as they read, Markdown syntax is ignored, and new is plain text), insert Markdown after a block ({after_block_id, markdown}; null for the top), propose removing a block ({remove_block_id}), or set a collection field ({field, value}). Block ids come from kinote_read. Edits a person made recently, removals, and spaces you can only read become suggestions for a person.',
+    'Make precise edits to a page you have read: replace exact words in a block ({block_id, old, new}; quote the words as they read, Markdown syntax is ignored, and new is plain text), insert Markdown after a block ({after_block_id, markdown}; null for the top), propose removing a block ({remove_block_id}), set a collection field ({field, value}), or rename the page ({title}). Block ids come from kinote_read. Edits a person made recently, removals, and spaces you can only read become suggestions for a person; a rename needs edit access.',
   input: {
     page_id: z.string().min(1).max(64),
     edits: z.array(editSchema).min(1).max(MAX_EDITS),
