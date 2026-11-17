@@ -156,6 +156,8 @@ export async function createCapture(
     preview?: boolean;
     /** Internal (the MCP file panel): the agent attaches a file its owner just uploaded. Never from a request body. */
     ownerFile?: boolean;
+    /** Internal (MCP kinote_upload): the file is placed on its own; `text` describes it and no page is made. */
+    fileOnly?: boolean;
   } = {}
 ): Promise<CaptureSummary> {
   const raw = (body as { text?: unknown } | null)?.text;
@@ -211,6 +213,7 @@ export async function createCapture(
         shapeMode: shape,
         fileMode: keep_file,
         fileId: file_id ?? null,
+        fileOnly: opts.fileOnly === true && !!file_id,
       })
       .returning();
     await enqueueCaptureRoute(tx, actor.tenantId, row!.id);

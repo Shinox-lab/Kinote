@@ -1,5 +1,5 @@
 /**
- * The capture-file panel's logic, free of the DOM and the host bridge so it can be tested in Node: it uploads a
+ * The file panel's logic, free of the DOM and the host bridge so it can be tested in Node: it uploads a
  * chosen file through the app-only tools (begin, chunks, finish) the host proxies to Kinote.
  */
 
@@ -20,9 +20,10 @@ export interface PanelFile {
 }
 
 export interface PanelForm {
-  notes: string;
-  file_as: 'auto' | 'document' | 'updates';
-  limit_to?: string | undefined;
+  /** What the file is, from the agent: Kinote places the file by it. */
+  about: string;
+  /** A page id, or a space name or id, the agent named. */
+  place_under?: string | undefined;
 }
 
 export type UploadOutcome = { ok: true; receipt: string } | { ok: false; stage: 'begin' | 'upload' | 'finish'; message: string };
@@ -44,7 +45,7 @@ export function toBase64(bytes: Uint8Array): string {
 
 const textOf = (r: ToolReply) => r.content.map((c) => c.text ?? '').join('\n').trim();
 
-/** Uploads `file` and captures it with `form`; `onProgress` gets bytes sent so far. Stops early when `signal` aborts. */
+/** Uploads `file` and files it as `form` says; `onProgress` gets bytes sent so far. Stops early when `signal` aborts. */
 export async function uploadFile(
   file: PanelFile,
   call: CallServerTool,
@@ -100,9 +101,8 @@ export async function uploadFile(
   try {
     finish = await call('kinote_upload_finish', {
       upload_id: uploadId,
-      notes: form.notes,
-      file_as: form.file_as,
-      ...(form.limit_to ? { limit_to: form.limit_to } : {}),
+      about: form.about,
+      ...(form.place_under ? { place_under: form.place_under } : {}),
     });
   } catch {
     return { ok: false, stage: 'finish', message: STOPPED };

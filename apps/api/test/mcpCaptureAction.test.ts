@@ -39,7 +39,7 @@ describe('kinote_capture_action', () => {
       'kinote_ask',
       'kinote_capture',
       'kinote_capture_action',
-      'kinote_capture_file',
+      'kinote_upload',
     ]);
     const total = tools.reduce((n, t) => n + estimateTokens(JSON.stringify(t)), 0);
     expect(total).toBeLessThan(2000);

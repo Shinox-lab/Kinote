@@ -210,15 +210,19 @@ export async function planCaptureFile(
     deps
   );
   if (plan.status !== 'place') return inbox(CAPTURE_FILE_REASONS.noPlace);
-  const where = await withTenantTx(tenantId, async (tx) => {
-    if (plan.parentId) {
-      const [parent] = await tx.select({ title: documents.title }).from(documents).where(and(eq(documents.tenantId, tenantId), eq(documents.id, plan.parentId)));
+  return { outcome: 'placed', spaceId: plan.spaceId, parentId: plan.parentId, reason: await placedReason(tenantId, plan) };
+}
+
+/** The receipt's words for a placed file: `Filed under "<parent>".` or `Filed at the top of <space>.` */
+export async function placedReason(tenantId: string, at: { spaceId: string; parentId: string | null }): Promise<string> {
+  return withTenantTx(tenantId, async (tx) => {
+    if (at.parentId) {
+      const [parent] = await tx.select({ title: documents.title }).from(documents).where(and(eq(documents.tenantId, tenantId), eq(documents.id, at.parentId)));
       return `Filed under "${parent?.title ?? ''}".`;
     }
-    const [space] = await tx.select({ name: spaces.name }).from(spaces).where(and(eq(spaces.tenantId, tenantId), eq(spaces.id, plan.spaceId)));
+    const [space] = await tx.select({ name: spaces.name }).from(spaces).where(and(eq(spaces.tenantId, tenantId), eq(spaces.id, at.spaceId)));
     return `Filed at the top of ${space?.name ?? 'the space'}.`;
   });
-  return { outcome: 'placed', spaceId: plan.spaceId, parentId: plan.parentId, reason: where };
 }
 
 /** Carries out a file plan and records the outcome; a place the file can no longer go leaves it in the Inbox. */

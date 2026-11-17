@@ -73,7 +73,7 @@ describe('the /mcp endpoint', () => {
     assert.deepEqual(await listToolNames(app, capture.token), [
       'kinote_capture',
       'kinote_capture_action',
-      'kinote_capture_file',
+      'kinote_upload',
       'kinote_upload_begin',
       'kinote_upload_cancel',
       'kinote_upload_chunk',

@@ -52,7 +52,7 @@ frame.srcdoc = PANEL;
 </script></body></html>`;
 }
 
-test('a person drops a file into the Kinote panel and it is filed with its page', async ({ browser, request, baseURL }) => {
+test('a person drops a file into the Kinote panel and it is filed where the agent said', async ({ browser, request, baseURL }) => {
   const world = await seedWorld(request, { reviewRequired: false });
   const as = { account: world.owner, tenantId: world.tenantId };
   const agent = await call<{ id: string }>(request, '/agents', { ...as, method: 'POST', data: { name: 'Docs bot' } });
@@ -64,18 +64,19 @@ test('a person drops a file into the Kinote panel and it is filed with its page'
     data: { name: 'Laptop', scopes: ['read', 'capture'] },
   });
 
-  const opened = await mcp(request, token, 'tools/call', { name: 'kinote_capture_file', arguments: { notes: 'put it with the office notes' } });
+  const about = 'The office move plan';
+  const opened = await mcp(request, token, 'tools/call', { name: 'kinote_upload', arguments: { about, place_under: world.spaceId } });
   expect(opened.isError ?? false).toBe(false);
-  const panelHtml = (await mcp(request, token, 'resources/read', { uri: 'ui://kinote/capture-file' })).contents[0].text as string;
+  const panelHtml = (await mcp(request, token, 'resources/read', { uri: 'ui://kinote/upload' })).contents[0].text as string;
 
   const page = await browser.newPage();
   await page.route(`${baseURL}/__stub-host`, (route) =>
-    route.fulfill({ contentType: 'text/html', body: stubHost(panelHtml, token, { notes: 'put it with the office notes', file_as: 'auto' }) })
+    route.fulfill({ contentType: 'text/html', body: stubHost(panelHtml, token, { about, place_under: world.spaceId }) })
   );
   await page.goto('/__stub-host');
   const panel = page.frameLocator('#panel');
-  await expect(panel.getByText('put it with the office notes')).toBeVisible();
-  await expect(panel.getByRole('button', { name: 'Capture' })).toBeDisabled();
+  await expect(panel.getByText(about)).toBeVisible();
+  await expect(panel.getByRole('button', { name: 'Upload' })).toBeDisabled();
 
   await panel.locator('input[type=file]').setInputFiles({
     name: 'office-move.txt',
@@ -83,7 +84,7 @@ test('a person drops a file into the Kinote panel and it is filed with its page'
     buffer: Buffer.from('Office move\n\nThe office moves to Leeds in May. Desks are packed the week before.'),
   });
   await expect(panel.getByText('office-move.txt')).toBeVisible();
-  await panel.getByRole('button', { name: 'Capture' }).click();
+  await panel.getByRole('button', { name: 'Upload' }).click();
   await expect(panel.getByText(/Capture [0-9a-f]{8} · /)).toBeVisible({ timeout: 45_000 });
   await expect.poll(() => page.evaluate(() => (window as any).__context.length)).toBeGreaterThan(0);
 
@@ -95,6 +96,7 @@ test('a person drops a file into the Kinote panel and it is filed with its page'
     .toBe('done');
   const detail = await call<{ capture: { file: { id: string; name: string } | null; fileOutcome: string | null } }>(request, `/captures/${captureId}`, as);
   expect(detail.capture.file?.name).toBe('office-move.txt');
+  expect(detail.capture.fileOutcome).toBe('placed');
   const owner = await openAs(browser, world, world.owner);
   await owner.goto(`/w/${world.slug}/f/${detail.capture.file!.id}`);
   await expect(owner.getByText('office-move.txt').first()).toBeVisible();

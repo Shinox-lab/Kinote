@@ -7,7 +7,7 @@ import { chunkCount, linkify, toBase64, uploadFile, type CallServerTool, type To
 import { capturePanelHtml } from '../src/mcp/app/panelHtml.js';
 
 const MiB = 1_048_576;
-const form = { notes: 'put it under Clients', file_as: 'auto' as const, limit_to: undefined };
+const form = { about: 'The signed contract', place_under: undefined };
 
 function fakeFile(size: number) {
   const bytes = randomBytes(size);
@@ -40,7 +40,7 @@ function fakeHost(o: { failChunk?: (i: number) => number; begin?: { isError: boo
   return { calls, call };
 }
 
-describe('the capture-file panel logic', () => {
+describe('the file panel logic', () => {
   test('chunkCount rounds up', () => {
     assert.equal(chunkCount(0, MiB), 0);
     assert.equal(chunkCount(1, MiB), 1);
@@ -70,7 +70,7 @@ describe('the capture-file panel logic', () => {
       ]
     );
     assert.deepEqual(host.calls[0]!.args, { name: 'q3.pdf', size: 2.5 * MiB, mime: 'application/pdf' });
-    assert.deepEqual(host.calls[4]!.args, { upload_id: 'u1', notes: 'put it under Clients', file_as: 'auto' });
+    assert.deepEqual(host.calls[4]!.args, { upload_id: 'u1', about: 'The signed contract' });
     assert.equal(progress.at(-1), 2.5 * MiB);
   });
 
@@ -111,7 +111,7 @@ describe('the capture-file panel logic', () => {
   });
 });
 
-describe('the capture-file panel resource', () => {
+describe('the file panel resource', () => {
   useTestDb();
   test('resources/read on /mcp serves the panel HTML with the MCP App mime type', async () => {
     const app = buildTestApp();
@@ -119,9 +119,9 @@ describe('the capture-file panel resource', () => {
     const list = await mcpRequest(app, w.token, 'resources/list');
     assert.deepEqual(
       (list.body.result.resources as Array<{ uri: string; mimeType: string }>).map((r) => [r.uri, r.mimeType]),
-      [['ui://kinote/capture-file', 'text/html;profile=mcp-app']]
+      [['ui://kinote/upload', 'text/html;profile=mcp-app']]
     );
-    const read = await mcpRequest(app, w.token, 'resources/read', { uri: 'ui://kinote/capture-file' });
+    const read = await mcpRequest(app, w.token, 'resources/read', { uri: 'ui://kinote/upload' });
     const content = read.body.result.contents[0];
     assert.equal(content.mimeType, 'text/html;profile=mcp-app');
     assert.equal(content.text, await capturePanelHtml());

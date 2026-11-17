@@ -1,7 +1,7 @@
 /**
- * The Kinote file panel (MCP App `ui://kinote/capture-file`), bundled by esbuild into one inline script. The host
- * shows it for `kinote_capture_file`: the person drops the original file, it is uploaded through the app-only
- * tools, and the receipt is shown here and shared with the model.
+ * The Kinote file panel (MCP App `ui://kinote/upload`), bundled by esbuild into one inline script. The host
+ * shows it for `kinote_upload`: the person drops the original file, it is uploaded through the app-only tools and
+ * filed by the agent's description, and the receipt is shown here and shared with the model.
  */
 import { App, applyDocumentTheme, applyHostStyleVariables, type McpUiHostContext } from '@modelcontextprotocol/ext-apps';
 import { linkify, uploadFile, type PanelForm, type ToolReply } from './panelLogic.js';
@@ -15,7 +15,7 @@ type State =
 
 const app = new App({ name: 'Kinote file panel', version: '1' }, {});
 const root = document.getElementById('root')!;
-const form: PanelForm = { notes: '', file_as: 'auto' };
+const form: PanelForm = { about: '' };
 let fileHint: string | null = null;
 let state: State = { kind: 'waiting' };
 
@@ -102,7 +102,8 @@ function receiptView(text: string): HTMLElement {
 
 function render() {
   const body: Array<Node | string> = [el('h1', {}, 'Add a file to Kinote')];
-  if (form.notes) body.push(el('p', { class: 'notes' }, el('strong', {}, 'Notes: '), form.notes));
+  if (form.about) body.push(el('p', { class: 'notes' }, el('strong', {}, 'About: '), form.about));
+  if (form.place_under) body.push(el('p', { class: 'notes' }, el('strong', {}, 'Goes under: '), form.place_under));
 
   if (state.kind === 'waiting' || state.kind === 'chosen' || state.kind === 'refused') {
     const zone = el('div', { class: 'drop', id: 'drop' });
@@ -123,7 +124,7 @@ function render() {
     });
     if (state.kind === 'refused') body.push(el('p', { class: 'error', role: 'alert' }, state.message));
     body.push(zone);
-    const go = el('button', { type: 'button', class: 'primary', id: 'capture' }, 'Capture') as HTMLButtonElement;
+    const go = el('button', { type: 'button', class: 'primary', id: 'capture' }, 'Upload') as HTMLButtonElement;
     go.disabled = state.kind !== 'chosen';
     if (state.kind === 'chosen') {
       const file = state.file;
@@ -154,14 +155,13 @@ function applyContext(ctx: McpUiHostContext | undefined) {
 
 app.ontoolinput = (params) => {
   const args = (params.arguments ?? {}) as Record<string, unknown>;
-  if (typeof args.notes === 'string') form.notes = args.notes;
-  if (args.file_as === 'document' || args.file_as === 'updates' || args.file_as === 'auto') form.file_as = args.file_as;
-  if (typeof args.limit_to === 'string' && args.limit_to) form.limit_to = args.limit_to;
+  if (typeof args.about === 'string') form.about = args.about;
+  if (typeof args.place_under === 'string' && args.place_under) form.place_under = args.place_under;
   if (typeof args.file_name === 'string' && args.file_name) fileHint = args.file_name;
   render();
 };
 app.ontoolresult = (params) => {
-  // A refusal from kinote_capture_file (no credits, no space to edit): show it instead of the drop zone.
+  // A refusal from kinote_upload (no credits, no space to edit): show it instead of the drop zone.
   if (params.isError && state.kind === 'waiting') {
     const text = (params.content ?? []).map((c) => ('text' in c ? c.text : '')).join('\n');
     setState({ kind: 'refused', message: text || 'Kinote could not open the file panel.' });

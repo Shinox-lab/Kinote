@@ -12,11 +12,12 @@ export type AgentEdit =
   | { block_id: string; old: string; new: string }
   | { after_block_id: string | null; markdown: string }
   | { remove_block_id: string }
-  | { field: string; value: unknown };
+  | { field: string; value: unknown }
+  | { title: string };
 
 /** What became of one edit, in the reply's words. */
 export interface EditOutcome {
-  /** How the reply names the edit: a block's short id, `after <id>`, `top`, or `field <name>`. */
+  /** How the reply names the edit: a block's short id, `after <id>`, `top`, `field <name>`, or `title`. */
   label: string;
   result: 'applied' | 'suggested' | 'refused';
   detail: string;
@@ -46,6 +47,8 @@ export interface EditPlan {
   outcomes: Array<EditOutcome | null>;
   apply: Array<{ index: number; op: CollabOp }>;
   suggest: Array<{ index: number; draft: SuggestionDraft }>;
+  /** The page's new title, when the call renames it (applied apart from the block ops). */
+  rename: { index: number; title: string } | null;
 }
 
 export const CHANGED = 'changed since you read it: read the section again';
@@ -67,6 +70,9 @@ const SAME_BLOCK = 'one edit per block per call';
 const EMPTY_MARKDOWN = 'The Markdown has no blocks.';
 const NOT_A_ROW = 'This page is not a collection row';
 const REMOVAL = 'removals wait for a person';
+const BAD_TITLE = 'A title needs 1 to 200 characters';
+const ONE_TITLE = 'one title edit per call';
+const NO_RENAME = 'no edit access: a person can rename it';
 
 /** What a field takes, for a refused value: `Due expects a date (YYYY-MM-DD)`. */
 function expects(def: FieldDef): string {
@@ -118,7 +124,7 @@ function resolveBlock(blocks: BlockLike[], ref: string): { block: BlockLike } | 
  */
 export async function planEdits(tx: DbTransaction, actor: Actor, doc: DocumentRow, live: LivePage, edits: AgentEdit[], now: Date): Promise<EditPlan> {
   const blocks = live.blocks;
-  const plan: EditPlan = { outcomes: edits.map(() => null), apply: [], suggest: [] };
+  const plan: EditPlan = { outcomes: edits.map(() => null), apply: [], suggest: [], rename: null };
   const access = await senderAccess(tx, actor);
   const canEdit = access.editable.includes(doc.spaceId);
   const [space] = await tx
@@ -165,7 +171,20 @@ export async function planEdits(tx: DbTransaction, actor: Actor, doc: DocumentRo
   };
 
   let row: Awaited<ReturnType<typeof rowCollectionOf>> | undefined;
+  let titled = false;
   for (const [i, edit] of edits.entries()) {
+    if ('title' in edit) {
+      const title = edit.title.trim();
+      if (titled) refuse(i, 'title', ONE_TITLE);
+      else if (title.length < 1 || title.length > 200) refuse(i, 'title', BAD_TITLE);
+      else if (!canEdit) refuse(i, 'title', NO_RENAME);
+      else {
+        plan.rename = { index: i, title };
+        plan.outcomes[i] = { label: 'title', result: 'applied', detail: '' };
+      }
+      titled = true;
+      continue;
+    }
     if ('field' in edit) {
       row ??= await rowCollectionOf(tx, doc.tenantId, doc.id);
       if (!row) {
