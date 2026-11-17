@@ -161,6 +161,7 @@ export {
 export { placeFact, recordRoutingExample } from './routing/place.js';
 export { previewOf, buildCapturePreview, type CapturePreview } from './routing/preview.js';
 export { planDocument, uniqueChildTitle, similarDocumentExamples, type DocumentPlan } from './routing/document.js';
+export { routeFileOnlyCapture, FILE_ONLY_NOT_EDITABLE } from './routing/fileOnly.js';
 export {
   notify,
   excerptOf,

@@ -5,21 +5,21 @@ import { ownerActorOf, senderAccess } from '@kinote/core';
 import { createCapture } from '../../routes/captures.js';
 import { uploadFile } from '../../routes/files.js';
 import { assertCredits } from '../../usageLimits.js';
+import { shortId } from '../format.js';
 import { ToolError } from '../refs.js';
 import { defineTool, type ToolContext } from '../tool.js';
 import { beginUpload, cancelUpload, putChunk, takeUpload } from '../upload/store.js';
 import { renderCapture, scopeOf, waitForCapture } from './capture.js';
 
-/** The panel `kinote_capture_file` shows. */
-export const CAPTURE_FILE_RESOURCE = 'ui://kinote/capture-file';
+/** The panel `kinote_upload` shows. */
+export const UPLOAD_RESOURCE = 'ui://kinote/upload';
 const APP_ONLY = { ui: { visibility: ['app' as const] } };
 const PANEL = 'Used by the Kinote file panel.';
 /** base64 of one 1 MiB chunk is 1 398 104 characters. */
 const MAX_CHUNK_CHARS = 1_500_000;
 
-const fileAs = z.enum(['auto', 'document', 'updates']).default('auto');
-const notes = z.string().max(MAX_CAPTURE_CHARS).default('');
-const limitTo = z.string().max(200).optional();
+const about = z.string().trim().min(1).max(MAX_CAPTURE_CHARS);
+const placeUnder = z.string().max(200).optional();
 const uploadId = z.string().min(1).max(64);
 
 /** Refuses a capture the workspace or the agent could not make, before the panel or an upload starts. */
@@ -30,30 +30,30 @@ async function assertCanCapture(ctx: ToolContext): Promise<void> {
   if (access.editable.length === 0) throw new ToolError('You need to be able to edit at least one space to capture.');
 }
 
-export const captureFileTool = defineTool({
-  name: 'kinote_capture_file',
+export const uploadTool = defineTool({
+  name: 'kinote_upload',
   scope: 'capture',
   limit: 'capture',
   writes: true,
-  meta: { ui: { resourceUri: CAPTURE_FILE_RESOURCE } },
+  meta: { ui: { resourceUri: UPLOAD_RESOURCE } },
   description:
-    'Add a file itself (a PDF, document or spreadsheet your user has) to the wiki: Kinote shows a panel where your user drops the original; Kinote keeps the file and files what it says, like kinote_capture. ' +
-    'Put filing instructions in notes ("put it under Clients"). Use kinote_capture instead when only the text matters.',
+    'Add a file itself (a PDF, image, document or spreadsheet your user has) to the wiki: Kinote shows a panel where your user drops the original, and files it where it belongs. ' +
+    'No page is made and the file needs no readable text. Say what the file is in about; Kinote places it by that and its name, or under place_under. ' +
+    'To put what the file says on a page, write that page with kinote_capture.',
   input: {
-    notes: notes.describe('Filing instructions, shown in the panel and sent with the file'),
-    file_as: fileAs.describe('auto, document (always a new page) or updates (only change pages)'),
-    limit_to: limitTo.describe('A space name or ID, or a page ID, to file within'),
+    about: about.describe('What the file is, in a sentence: Kinote places it by this. Shown in the panel'),
+    place_under: placeUnder.describe('A page ID to put the file under, or a space name or ID to put it at the top of. Leave out to let Kinote choose'),
     file_name: z.string().max(255).optional().describe('The name of the file your user means, shown in the panel'),
   },
   async run(args, ctx) {
     await assertCanCapture(ctx);
-    const scope = args.limit_to ? await scopeOf(ctx.actor, args.limit_to) : null;
+    const scope = args.place_under ? await scopeOf(ctx.actor, args.place_under) : null;
     const where = ctx.deps.publicUrl ? `${ctx.deps.publicUrl.replace(/\/$/, '')}/w/${ctx.agent.tenantSlug}/capture` : 'the Capture page in Kinote';
     const text =
       'Kinote opened a panel for your user to drop the file. When they press Capture, the receipt appears there and is shared with you. ' +
       `If no panel is shown (this client can't show MCP Apps), ask them to attach the file on the Capture page: ${where}`;
-    const limit = scope ? (scope.scope_page_id ? { page_id: scope.scope_page_id } : { space_id: scope.scope_space_id! }) : null;
-    return { text, structured: { notes: args.notes, file_as: args.file_as, limit_to: limit, file_name: args.file_name ?? null } };
+    const place = scope ? (scope.scope_page_id ? { page_id: scope.scope_page_id } : { space_id: scope.scope_space_id! }) : null;
+    return { text, structured: { about: args.about, place_under: place, file_name: args.file_name ?? null } };
   },
 });
 
@@ -92,14 +92,14 @@ export const uploadFinishTool = defineTool({
   limit: 'capture',
   writes: true,
   meta: APP_ONLY,
-  description: `${PANEL} Finishes the upload: Kinote keeps the file in your user's Inbox and captures it with the notes.`,
-  input: { upload_id: uploadId, notes, file_as: fileAs, limit_to: limitTo },
+  description: `${PANEL} Finishes the upload: Kinote keeps the file as your user's and files it by its description.`,
+  input: { upload_id: uploadId, about, place_under: placeUnder },
   async run(args, ctx) {
     const { actor, deps } = ctx;
     const owner = ownerActorOf(actor);
     if (!owner || !deps.storage) throw new ToolError('File uploads are not set up on this Kinote server.');
     await assertCanCapture(ctx);
-    const scope = args.limit_to ? await scopeOf(actor, args.limit_to) : {};
+    const scope = args.place_under ? await scopeOf(actor, args.place_under) : {};
     const { file } = await takeUpload(deps, actor, ctx.agent.agentId, args.upload_id);
     let fileId: string;
     try {
@@ -109,13 +109,14 @@ export const uploadFinishTool = defineTool({
     } finally {
       await file.dispose();
     }
-    const made = await createCapture(
-      actor,
-      { text: args.notes.trim(), shape: args.file_as, file_id: fileId, ...scope },
-      { channel: 'mcp', ownerFile: true }
-    );
-    const receipt = await renderCapture(ctx, made.id, await waitForCapture(actor, made.id));
-    return { text: receipt, structured: { capture_id: made.id, status: made.status, receipt } };
+    // A file-only capture: the worker places the file by `about` and makes no page.
+    const made = await createCapture(actor, { text: args.about, file_id: fileId, ...scope }, { channel: 'mcp', ownerFile: true, fileOnly: true });
+    const detail = await waitForCapture(actor, made.id);
+    let receipt = await renderCapture(ctx, made.id, detail);
+    // A file left in the Inbox is the owner's, which the agent can't read, so the receipt has no line for it.
+    const reason = detail.capture.fileReason;
+    if (reason && !receipt.includes(reason)) receipt = `${receipt}\nfile (${shortId(fileId)}): ${reason}`;
+    return { text: receipt, structured: { capture_id: made.id, file_id: fileId, status: detail.capture.status, receipt } };
   },
 });
 
@@ -134,4 +135,4 @@ export const uploadCancelTool = defineTool({
 });
 
 /** The file panel's tools: the one the model calls, then the panel's own. */
-export const CAPTURE_FILE_TOOLS = [captureFileTool, uploadBeginTool, uploadChunkTool, uploadFinishTool, uploadCancelTool];
+export const UPLOAD_TOOLS = [uploadTool, uploadBeginTool, uploadChunkTool, uploadFinishTool, uploadCancelTool];

@@ -7,10 +7,10 @@ import { createAgent, signUpMember } from './support/testkit.js';
 
 const MiB = 1_048_576;
 const INSTRUCTION =
-  "When your user wants a file itself added, call kinote_capture_file: they drop the original in Kinote's panel, which keeps the file and files its text.";
+  "When your user wants a file itself added, call kinote_upload with what the file is: they drop the original in Kinote's panel and Kinote files it where it belongs. To put what it says on a page, write that page with kinote_capture.";
 
 // finish waits up to 30 s for routing, as kinote_capture with wait does: more than the default test timeout under load.
-describe('kinote_capture_file and the file panel upload tools', { timeout: 60_000 }, () => {
+describe('kinote_upload and the file panel upload tools', { timeout: 60_000 }, () => {
   const k = useCaptureKit();
 
   async function agentWith(w: CaptureWorld, scopes: Array<'read' | 'capture'> = ['read', 'capture'], grant = true) {
@@ -49,12 +49,39 @@ describe('kinote_capture_file and the file panel upload tools', { timeout: 60_00
     return id;
   }
 
-  test('tools/list shows the panel tool with its resource and the upload tools as app-only; a read token sees none', async () => {
+  /** Finishes an upload while the worker keeps running, as it does beside the panel. */
+  async function finish(w: CaptureWorld, token: string, args: object) {
+    let finished = false;
+    const worker = (async () => {
+      while (!finished) {
+        await new Promise((r) => setTimeout(r, 150));
+        await w.run();
+      }
+    })();
+    try {
+      return await call(token, 'kinote_upload_finish', args);
+    } finally {
+      finished = true;
+      await worker;
+    }
+  }
+
+  async function fileOf(w: CaptureWorld, captureId: string) {
+    const [row] = await withTenantTx(w.tenant.id, (tx) => tx.select().from(captures).where(eq(captures.id, captureId)));
+    const [file] = await withTenantTx(w.tenant.id, (tx) => tx.select().from(documents).where(eq(documents.id, row!.fileId!)));
+    return { capture: row!, file: file! };
+  }
+
+  /** A PNG with no text in it: nothing can be read from it, and it is still filed. */
+  const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
+
+  test('tools/list shows kinote_upload with its panel and the upload tools as app-only; a read token sees none', async () => {
     const w = await k.world();
     const a = await agentWith(w);
     const tools = (await mcpRequest(k.app, a.token, 'tools/list')).body.result.tools as Array<{ name: string; _meta?: any; description: string }>;
     const byName = new Map(tools.map((t) => [t.name, t]));
-    expect(byName.get('kinote_capture_file')!._meta).toEqual({ ui: { resourceUri: 'ui://kinote/capture-file' } });
+    expect(byName.get('kinote_upload')!._meta).toEqual({ ui: { resourceUri: 'ui://kinote/upload' } });
+    expect(byName.has('kinote_capture_file')).toBe(false);
     for (const name of ['kinote_upload_begin', 'kinote_upload_chunk', 'kinote_upload_finish', 'kinote_upload_cancel']) {
       expect(byName.get(name)!._meta).toEqual({ ui: { visibility: ['app'] } });
       expect(byName.get(name)!.description.startsWith('Used by the Kinote file panel.')).toBe(true);
@@ -63,49 +90,70 @@ describe('kinote_capture_file and the file panel upload tools', { timeout: 60_00
     expect(JSON.stringify(capture)).not.toContain('file_id');
     const reader = await agentWith(w, ['read']);
     const readerTools = ((await mcpRequest(k.app, reader.token, 'tools/list')).body.result.tools as Array<{ name: string }>).map((t) => t.name);
-    expect(readerTools.filter((n) => n.includes('upload') || n === 'kinote_capture_file')).toEqual([]);
+    expect(readerTools.filter((n) => n.includes('upload'))).toEqual([]);
   });
 
-  test('kinote_capture_file opens the panel and hands it the notes; a bad limit_to is refused first', async () => {
+  test('kinote_upload opens the panel and hands it the description and place; a bad place_under is refused first', async () => {
     const w = await k.world();
     const a = await agentWith(w);
-    const res = await call(a.token, 'kinote_capture_file', { notes: 'put it under Clients', file_name: 'Q3.pdf' });
+    const res = await call(a.token, 'kinote_upload', { about: 'Signed contract with George', file_name: 'contract.pdf' });
     expect(res.isError, res.text).toBe(false);
     expect(res.text).toContain('opened a panel');
-    expect(res.structured).toEqual({ notes: 'put it under Clients', file_as: 'auto', limit_to: null, file_name: 'Q3.pdf' });
-    const scoped = await call(a.token, 'kinote_capture_file', { limit_to: 'Clients' });
-    expect(scoped.structured!.limit_to).toEqual({ space_id: w.clients });
-    expect((await call(a.token, 'kinote_capture_file', { limit_to: 'Nope' })).isError).toBe(true);
+    expect(res.structured).toEqual({ about: 'Signed contract with George', place_under: null, file_name: 'contract.pdf' });
+    const scoped = await call(a.token, 'kinote_upload', { about: 'x', place_under: 'Clients' });
+    expect(scoped.structured!.place_under).toEqual({ space_id: w.clients });
+    expect((await call(a.token, 'kinote_upload', { about: 'x', place_under: 'Nope' })).isError).toBe(true);
+    expect((await call(a.token, 'kinote_upload', {})).isError).toBe(true);
   });
 
   test('an agent with no space it can edit is refused before the panel shows', async () => {
     const w = await k.world();
     const a = await agentWith(w, ['read', 'capture'], false);
-    const res = await call(a.token, 'kinote_capture_file', {});
+    const res = await call(a.token, 'kinote_upload', { about: 'x' });
     expect(res).toMatchObject({ isError: true, text: 'You need to be able to edit at least one space to capture.' });
   });
 
-  test("the uploaded file is stored as the owner's upload, captured, and filed with its page", async () => {
+  test('a file with no text is placed by its description, as the owner\'s file, and no page is made', async () => {
     const w = await k.world();
     const a = await agentWith(w);
-    const id = await uploadAll(a.token, 'notes.txt', Buffer.from('George renewed in December.'));
-    setTimeout(() => void w.run(), 100);
-    const done = await call(a.token, 'kinote_upload_finish', { upload_id: id, notes: '', file_as: 'auto' });
+    const pagesBefore = await withTenantTx(w.tenant.id, (tx) => tx.select({ id: documents.id }).from(documents).where(eq(documents.kind, 'page')));
+    const id = await uploadAll(a.token, 'scan.png', PNG);
+    const done = await finish(w, a.token, { upload_id: id, about: 'A photo of the signed contract for Client - George' });
     expect(done.isError, done.text).toBe(false);
     expect(done.structured!.capture_id).toMatch(/^[0-9a-f-]{36}$/);
-    expect(done.structured!.receipt).toBe(done.text);
+    expect(done.structured!.file_id).toMatch(/^[0-9a-f-]{36}$/);
     expect(done.text.split('\n')[0]).toContain('· done');
+    expect(done.text).toContain('Filed under "Client - George".');
 
-    const [row] = await withTenantTx(w.tenant.id, (tx) => tx.select().from(captures).where(eq(captures.id, done.structured!.capture_id)));
-    expect(row).toMatchObject({ senderType: 'agent', senderId: a.agentId, channel: 'mcp' });
-    expect(row!.fileId).toBeTruthy();
-    const [file] = await withTenantTx(w.tenant.id, (tx) => tx.select().from(documents).where(eq(documents.id, row!.fileId!)));
-    expect(file).toMatchObject({ kind: 'file', createdByType: 'user', createdBy: w.owner.userId });
+    const { capture, file } = await fileOf(w, done.structured!.capture_id);
+    expect(capture).toMatchObject({ senderType: 'agent', senderId: a.agentId, channel: 'mcp', status: 'done', fileOutcome: 'placed' });
+    expect(file).toMatchObject({ kind: 'file', createdByType: 'user', createdBy: w.owner.userId, spaceId: w.clients, parentId: w.george });
+    const pagesAfter = await withTenantTx(w.tenant.id, (tx) => tx.select({ id: documents.id }).from(documents).where(eq(documents.kind, 'page')));
+    expect(pagesAfter.length).toBe(pagesBefore.length);
+  });
 
-    // A file alone becomes its own page, and the file moves under it, as on the Capture page.
-    expect(file!.spaceId).toBe(w.clients);
-    expect(done.text).toContain('Filed with its page.');
-    expect((await k.get(w.headers, `/api/v1/files/${file!.id}`)).statusCode).toBe(200);
+  test('place_under a page puts the file under that page; a space puts it at its top', async () => {
+    const w = await k.world();
+    const a = await agentWith(w);
+    const underPage = await finish(w, a.token, { upload_id: await uploadAll(a.token, 'hero.png', PNG), about: 'Hero shot', place_under: w.sep29 });
+    expect(underPage.isError, underPage.text).toBe(false);
+    expect(underPage.text).toContain('Filed under "29Sep".');
+    expect((await fileOf(w, underPage.structured!.capture_id)).file).toMatchObject({ spaceId: w.clients, parentId: w.sep29 });
+
+    const top = await finish(w, a.token, { upload_id: await uploadAll(a.token, 'logo.png', PNG), about: 'Logo', place_under: 'Clients' });
+    expect(top.text).toContain('Filed at the top of Clients.');
+    expect((await fileOf(w, top.structured!.capture_id)).file).toMatchObject({ spaceId: w.clients, parentId: null });
+  });
+
+  test("a place the agent can't add to keeps the file in the Inbox, and says why", async () => {
+    const w = await k.world();
+    const a = await agentWith(w);
+    const other = (await k.post(w.headers, '/api/v1/spaces', { name: 'Finance', slug: 'finance' })).json().id as string;
+    await k.post(w.headers, `/api/v1/spaces/${other}/grants`, { principal_type: 'agent', principal_id: a.agentId, role: 'viewer' });
+    const done = await finish(w, a.token, { upload_id: await uploadAll(a.token, 'q3.png', PNG), about: 'Q3 numbers', place_under: 'Finance' });
+    expect(done.isError, done.text).toBe(false);
+    expect(done.text).toContain("Kept in your Inbox: you can't add files there.");
+    expect((await fileOf(w, done.structured!.capture_id)).file.spaceId).toBe(w.inbox);
   });
 
   test("the same bytes as an uncaptured file in the owner's Inbox make a new file; the existing one is untouched", async () => {
@@ -114,8 +162,7 @@ describe('kinote_capture_file and the file panel upload tools', { timeout: 60_00
     const bytes = 'George renewed in December.';
     const existing = await k.upload(w.headers, w.inbox, 'private.txt', bytes);
     const id = await uploadAll(a.token, 'notes.txt', Buffer.from(bytes));
-    setTimeout(() => void w.run(), 100);
-    const done = await call(a.token, 'kinote_upload_finish', { upload_id: id, notes: '', file_as: 'auto' });
+    const done = await finish(w, a.token, { upload_id: id, about: 'George renewal notes' });
     expect(done.isError, done.text).toBe(false);
     const [row] = await withTenantTx(w.tenant.id, (tx) => tx.select().from(captures).where(eq(captures.id, done.structured!.capture_id)));
     expect(row!.fileId).not.toBe(existing);
@@ -131,7 +178,7 @@ describe('kinote_capture_file and the file panel upload tools', { timeout: 60_00
     expect(begin.isError, begin.text).toBe(false);
     const id = begin.structured!.upload_id as string;
     await call(a.token, 'kinote_upload_chunk', { upload_id: id, index: 0, data: mp3.toString('base64') });
-    const done = await call(a.token, 'kinote_upload_finish', { upload_id: id, notes: '', file_as: 'auto' });
+    const done = await call(a.token, 'kinote_upload_finish', { upload_id: id, about: 'A clip' });
     // Detection follows the name, and begin refuses audio and video names, so audio never reaches the Inbox.
     expect(done).toMatchObject({ isError: true, text: 'This file type is not supported for security reasons.' });
     const live = await withTenantTx(w.tenant.id, (tx) => tx.select().from(documents).where(eq(documents.title, 'clip')));
@@ -149,11 +196,11 @@ describe('kinote_capture_file and the file panel upload tools', { timeout: 60_00
   test('finish refuses an unknown upload and an incomplete one', async () => {
     const w = await k.world();
     const a = await agentWith(w);
-    const unknown = await call(a.token, 'kinote_upload_finish', { upload_id: '11111111-1111-4111-8111-111111111111', notes: '', file_as: 'auto' });
+    const unknown = await call(a.token, 'kinote_upload_finish', { upload_id: '11111111-1111-4111-8111-111111111111', about: 'x' });
     expect(unknown).toMatchObject({ isError: true, text: 'Upload not found' });
     const begin = await call(a.token, 'kinote_upload_begin', { name: 'big.txt', size: MiB + 1, mime: 'text/plain' });
     await call(a.token, 'kinote_upload_chunk', { upload_id: begin.structured!.upload_id, index: 0, data: Buffer.alloc(MiB, 97).toString('base64') });
-    const partial = await call(a.token, 'kinote_upload_finish', { upload_id: begin.structured!.upload_id, notes: '', file_as: 'auto' });
+    const partial = await call(a.token, 'kinote_upload_finish', { upload_id: begin.structured!.upload_id, about: 'x' });
     expect(partial).toMatchObject({ isError: true, text: 'The upload is incomplete: 1048576 of 1048577 bytes.' });
     const cancel = await call(a.token, 'kinote_upload_cancel', { upload_id: begin.structured!.upload_id });
     expect(cancel.structured).toEqual({ cancelled: true });
@@ -169,7 +216,7 @@ describe('kinote_capture_file and the file panel upload tools', { timeout: 60_00
     expect(res).toMatchObject({ isError: true, text: 'This workspace is suspended for billing; it is read-only until the plan is renewed.' });
   });
 
-  test('a capture token is told to use kinote_capture_file for a file itself', async () => {
+  test('a capture token is told to use kinote_upload for a file itself', async () => {
     const w = await k.world();
     const a = await agentWith(w);
     const init = await mcpRequest(k.app, a.token, 'initialize', {

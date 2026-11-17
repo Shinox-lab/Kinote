@@ -55,6 +55,8 @@ export const captures = pgTable(
     fileReason: text('file_reason'),
     /** The split's judgement of the file: `{ keep, confidence }` (FileDecision); null without a file. */
     fileDecision: jsonb('file_decision'),
+    /** A file to file on its own (MCP kinote_upload): no page is made and its text is not needed; `text` describes it. */
+    fileOnly: boolean('file_only').notNull().default(false),
     /** Where the sender's note asked to put it, in their words (from the split). */
     filingHint: text('filing_hint'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

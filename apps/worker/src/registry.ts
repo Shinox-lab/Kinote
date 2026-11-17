@@ -12,6 +12,7 @@ import {
   placeFact,
   failCapture,
   prepareCaptureFile,
+  routeFileOnlyCapture,
   type EmbeddingProvider,
   type Extractor,
   type RoutingModel,
@@ -148,6 +149,8 @@ export const handlers: Record<string, JobHandler> = {
     usesAi: true,
     async run(job, ctx) {
       const captureId = captureIdOf(job);
+      // A file-only capture (MCP kinote_upload) places its file and makes no page: its text is never needed.
+      if (await routeFileOnlyCapture(job.tenantId, captureId, { model: ctx.placementModel, embedder: ctx.embeddingProvider })) return;
       // A capture with a file routes once the file has been read (the upload's own job reads it).
       const file = await prepareCaptureFile(job.tenantId, captureId, ctx.storage);
       if (file.state === 'reading') return requeueLater(job);
