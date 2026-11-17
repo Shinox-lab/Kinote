@@ -115,7 +115,7 @@ renews it by itself for up to 90 days after it was last used.
    Any MCP client that supports Streamable HTTP works the same way: the endpoint is `/mcp` and the token is a
    Bearer header.
 
-A Read token gets five tools, a Capture token two more, and an Edit token one more:
+A Read token gets five tools, a Capture token three more, and an Edit token one more:
 
 | Tool | What it does |
 | --- | --- |
@@ -126,6 +126,7 @@ A Read token gets five tools, a Capture token two more, and an Edit token one mo
 | `kinote_ask` | An answer written from the wiki with its sources (costs an AI action). |
 | `kinote_capture` | Files new information through routing, with a receipt; `preview: true` shows where it would go first. |
 | `kinote_capture_action` | Status, answer a routing question, undo, move, or apply/cancel a preview. |
+| `kinote_capture_file` | Shows a Kinote panel in clients with MCP Apps (claude.ai, Claude Desktop, VS Code Copilot…): your user drops the original file, which is kept and its text filed. |
 | `kinote_edit` | Replaces exact words in a block, adds blocks after one, or sets a collection field, as the agent. Removals, blocks a person edited within the space's protection window, and spaces it can only read become suggestions on the page. |
 
 Tokens expire after 90 days unless you choose otherwise (1 to 365), and an admin can revoke one or disable an agent at
@@ -143,6 +144,12 @@ where each fact belongs, explains why, skips what is already known, and every ch
   go, skip or re-place facts, or cancel and edit by hand.
 - A `source` (a URL or ticket ID) makes a retry safe: the same source and text return the first capture.
 - **Stop and undo…** on an agent disables it and undoes what it filed since a time you choose.
+- **Whole files.** A client can't hand a tool the original of a file you attached in the chat, only its text. When you
+  want the file itself in Kinote, the agent calls `kinote_capture_file` and a Kinote panel opens in the conversation:
+  drop the file there (up to the upload limit, 50 MB by default) and press **Capture**. The panel uploads it as your
+  own Inbox upload, captures it with the agent's notes, and shows the receipt, which the agent also sees. The panel
+  needs a client that shows MCP Apps; in others, attach the file on the Capture page. Capture tokens also list four
+  `kinote_upload_*` tools that only the panel uses.
 
 Notes typed into a capture, by a person or an agent, can say how to file it: "make a new page for this", "only update
 the pages", "put it under Clients/George", "keep the file as a copy" or "don't keep the file". Text inside an attached

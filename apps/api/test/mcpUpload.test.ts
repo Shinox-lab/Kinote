@@ -9,7 +9,8 @@ const MiB = 1_048_576;
 const INSTRUCTION =
   "When your user wants a file itself added, call kinote_capture_file: they drop the original in Kinote's panel, which keeps the file and files its text.";
 
-describe('kinote_capture_file and the file panel upload tools', () => {
+// finish waits up to 30 s for routing, as kinote_capture with wait does: more than the default test timeout under load.
+describe('kinote_capture_file and the file panel upload tools', { timeout: 60_000 }, () => {
   const k = useCaptureKit();
 
   async function agentWith(w: CaptureWorld, scopes: Array<'read' | 'capture'> = ['read', 'capture'], grant = true) {
