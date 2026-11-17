@@ -1,6 +1,6 @@
 import { sql } from 'drizzle-orm';
-import { pgTable, uuid, text, timestamp, jsonb, integer, real, uniqueIndex, index, boolean } from 'drizzle-orm/pg-core';
-import { tenants, spaces } from './foundations.js';
+import { pgTable, uuid, text, timestamp, jsonb, integer, real, uniqueIndex, index, boolean, bigint } from 'drizzle-orm/pg-core';
+import { tenants, spaces, agents } from './foundations.js';
 import { documents, versions, chunks, halfvec } from './pages_and_index.js';
 
 /**
@@ -273,3 +273,29 @@ export const routingLeases = pgTable('routing_leases', {
   holder: text('holder').notNull(),
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
 });
+
+/**
+ * One file the Kinote file panel (an MCP App) is uploading in chunks for an agent, until it is finished,
+ * cancelled or expired. The chunks are objects under `uploads/<id>/<index>` in the tenant's storage.
+ */
+export const mcpUploads = pgTable(
+  'mcp_uploads',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    tenantId: uuid('tenant_id')
+      .notNull()
+      .references(() => tenants.id, { onDelete: 'cascade' }),
+    agentId: uuid('agent_id')
+      .notNull()
+      .references(() => agents.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    mime: text('mime').notNull(),
+    size: bigint('size', { mode: 'number' }).notNull(),
+    receivedBytes: bigint('received_bytes', { mode: 'number' }).notNull().default(0),
+    nextIndex: integer('next_index').notNull().default(0),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  },
+  (t) => [index('mcp_uploads_tenant_agent_idx').on(t.tenantId, t.agentId)]
+);
+export type McpUploadRow = typeof mcpUploads.$inferSelect;
