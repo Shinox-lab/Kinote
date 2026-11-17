@@ -103,8 +103,9 @@ export const uploadFinishTool = defineTool({
     const { file } = await takeUpload(deps, actor, ctx.agent.agentId, args.upload_id);
     let fileId: string;
     try {
-      // Stored as the owner's upload: they dropped it, and an Inbox file is visible only to its creator.
-      fileId = (await uploadFile(owner, { fields: {}, file }, { storage: deps.storage })).response.document.id;
+      // Stored as the owner's upload: they dropped it, and an Inbox file is visible only to its creator. Always a
+      // new document (copy): de-duplication would hand the agent an existing Inbox file the panel never uploaded.
+      fileId = (await uploadFile(owner, { fields: { copy: 'true' }, file }, { storage: deps.storage })).response.document.id;
     } finally {
       await file.dispose();
     }

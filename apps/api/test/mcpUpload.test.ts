@@ -108,26 +108,34 @@ describe('kinote_capture_file and the file panel upload tools', { timeout: 60_00
     expect((await k.get(w.headers, `/api/v1/files/${file!.id}`)).statusCode).toBe(200);
   });
 
-  test('the same file again, still in the Inbox with its capture, is refused like the Capture page does', async () => {
+  test("the same bytes as an uncaptured file in the owner's Inbox make a new file; the existing one is untouched", async () => {
     const w = await k.world();
     const a = await agentWith(w);
-    const bytes = Buffer.from('Notes nobody routes anywhere.');
-    const firstId = await uploadAll(a.token, 'n.txt', bytes);
+    const bytes = 'George renewed in December.';
+    const existing = await k.upload(w.headers, w.inbox, 'private.txt', bytes);
+    const id = await uploadAll(a.token, 'notes.txt', Buffer.from(bytes));
     setTimeout(() => void w.run(), 100);
-    const first = await call(a.token, 'kinote_upload_finish', { upload_id: firstId, notes: '', file_as: 'auto' });
-    expect(first.isError, first.text).toBe(false);
-    const [row] = await withTenantTx(w.tenant.id, (tx) => tx.select().from(captures).where(eq(captures.id, first.structured!.capture_id)));
-    const [file] = await withTenantTx(w.tenant.id, (tx) => tx.select().from(documents).where(eq(documents.id, row!.fileId!)));
-    const secondId = await uploadAll(a.token, 'n.txt', bytes);
-    setTimeout(() => void w.run(), 100);
-    const second = await call(a.token, 'kinote_upload_finish', { upload_id: secondId, notes: '', file_as: 'auto' });
-    if (file!.spaceId === w.inbox) {
-      // Still in the Inbox: the same bytes are that file, which already has its capture.
-      expect(second).toMatchObject({ isError: true, text: 'This file was already sent with another capture.' });
-    } else {
-      // Kept under a page: the Inbox has no copy, so this is a new file and a new capture.
-      expect(second.isError, second.text).toBe(false);
-    }
+    const done = await call(a.token, 'kinote_upload_finish', { upload_id: id, notes: '', file_as: 'auto' });
+    expect(done.isError, done.text).toBe(false);
+    const [row] = await withTenantTx(w.tenant.id, (tx) => tx.select().from(captures).where(eq(captures.id, done.structured!.capture_id)));
+    expect(row!.fileId).not.toBe(existing);
+    const [kept] = await withTenantTx(w.tenant.id, (tx) => tx.select().from(documents).where(eq(documents.id, existing)));
+    expect(kept).toMatchObject({ spaceId: w.inbox, title: 'private.txt', archivedAt: null });
+  });
+
+  test('audio under a neutral name is refused before anything is stored', async () => {
+    const w = await k.world();
+    const a = await agentWith(w);
+    const mp3 = Buffer.concat([Buffer.from('ID3'), Buffer.alloc(200, 1)]);
+    const begin = await call(a.token, 'kinote_upload_begin', { name: 'clip', size: mp3.byteLength, mime: 'application/octet-stream' });
+    expect(begin.isError, begin.text).toBe(false);
+    const id = begin.structured!.upload_id as string;
+    await call(a.token, 'kinote_upload_chunk', { upload_id: id, index: 0, data: mp3.toString('base64') });
+    const done = await call(a.token, 'kinote_upload_finish', { upload_id: id, notes: '', file_as: 'auto' });
+    // Detection follows the name, and begin refuses audio and video names, so audio never reaches the Inbox.
+    expect(done).toMatchObject({ isError: true, text: 'This file type is not supported for security reasons.' });
+    const live = await withTenantTx(w.tenant.id, (tx) => tx.select().from(documents).where(eq(documents.title, 'clip')));
+    expect(live.filter((d) => d.archivedAt === null)).toEqual([]);
   });
 
   test("a member's own Inbox file cannot be captured by sending ownerFile in the HTTP body", async () => {
