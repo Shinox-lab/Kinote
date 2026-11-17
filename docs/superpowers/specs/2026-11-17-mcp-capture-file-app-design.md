@@ -11,7 +11,8 @@ drops the original file, which is uploaded through app-only tools and captured w
 - A new model-visible tool, `kinote_capture_file`, shows the panel; `kinote_capture` stays text-only.
 - No web link: the bytes travel as base64 chunks through app-only tools the host proxies over the agent's
   MCP connection.
-- The file lands in the agent owner's Inbox, created by the agent; capture accepts it from there.
+- The file lands in the agent owner's Inbox, stored as the owner's upload (Inbox items are visible only to
+  their creator); capture accepts it from there for that agent.
 
 ## 1. Tools
 
@@ -67,13 +68,16 @@ equal the next expected index; an `index` already received is a no-op returning 
 declared `size` → refused and the upload is cancelled. Bad base64 → refused.
 
 **finish**: `received_bytes` must equal `size` ("The upload is incomplete: <a> of <b> bytes."). Then, in
-order: stream the parts as one `UploadedFile` (hash computed while streaming), store it through the same path
-as `POST /api/v1/files` into the owner's Inbox with `createdByType 'agent'`, `createdBy agentId`
-(de-duplication by content hash within that Inbox applies), delete the parts and the upload row, then
-`createCapture(actor, {text: notes, shape: file_as, file_id, ...scope}, {channel: 'mcp'})`. If capture
-creation fails after the file was stored, the file stays in the Inbox and the error is returned. The reply
-is the same text `kinote_capture` renders, plus `structuredContent: {capture_id, status, receipt}` for the
-panel. Counts against the `capture` limit.
+order: stream the parts as one `UploadedFile` (hash computed while streaming), store it through `uploadFile`
+(the same path as `POST /api/v1/files`) **as the agent's owner** into the Inbox — the person dropped the file,
+and Inbox items are visible only to their creator, so the owner must be the creator to see it
+(de-duplication by content hash among the owner's Inbox files applies) — delete the parts and the upload
+row, then `createCapture(actor, {text: notes, shape: file_as, file_id, ...scope}, {channel: 'mcp',
+ownerFile: true})` as the agent. The `mcp.tool_call` audit row records the agent. If capture creation fails
+after the file was stored, the file stays in the owner's Inbox and the error is returned. finish then waits
+for routing like `kinote_capture` with `wait: true` (up to 30 s), so the receipt can say where the file went.
+The reply is the same text `kinote_capture` renders, plus `structuredContent: {capture_id, status,
+receipt}` (receipt = that text) for the panel. Counts against the `capture` limit.
 
 **cancel**: deletes the parts and row; unknown id is a no-op returning `{cancelled: true}`.
 
@@ -93,11 +97,12 @@ count as not found for chunk/finish.
 
 ## 3. Capture accepts the agent's file
 
-`captureFile` in `apps/api/src/routes/captures.ts` accepts a file document that is an unarchived file in an
-Inbox space and either (a) created by the actor, as now, or (b) the actor is an agent, the file was created
-by that agent, and the Inbox belongs to the agent's owner (`agents.createdBy`). Everything after — keep or
-move the file, receipt, undo — is unchanged. The agent still cannot read the Inbox (search, read, browse).
-The owner sees the file in their Inbox like any upload.
+Kinote has one Inbox space per workspace; an Inbox item is visible only to its creator (and tenant admins).
+`captureFile` in `apps/api/src/routes/captures.ts` accepts an unarchived Inbox file created by the actor, as
+now, or — only when `createCapture` is called with the internal option `ownerFile: true` (never reachable
+from the HTTP body or a model-visible tool) — one created by the agent actor's owner (`actor.owner.userId`).
+Everything after — keep or move the file, receipt, undo — is unchanged. The agent still cannot read the
+Inbox (search, read, browse). The owner sees the file in their Inbox like any upload of theirs.
 
 ## 4. Limits
 
@@ -109,9 +114,11 @@ The owner sees the file in their Inbox like any upload.
 ## 5. The panel
 
 One HTML file, `ui://kinote/capture-file`, served by `resources/read` with mime `text/html;profile=mcp-app`
-and `_meta.ui.prefersBorder: true`; no CSP domains (everything inline). Built from
-`apps/api/src/mcp/app/` (vanilla TypeScript using `@modelcontextprotocol/ext-apps`' `App` class, bundled with
-Vite into a single file at build time and embedded in the API build). The MCP server adds the `resources`
+and `_meta.ui.prefersBorder: true`; no CSP domains (everything inline). Written in
+`apps/api/src/mcp/app/` (vanilla TypeScript using `@modelcontextprotocol/ext-apps@1.7.5`' `App` class — the
+2.x line needs zod 4 and MCP SDK v2, the repo has zod 3 and SDK 1.32). The API runs from source with tsx and
+has no build step, so the panel is bundled with esbuild (already installed with tsx and Vite; declared as an
+API dependency) on first `resources/read` and cached in memory. The MCP server adds the `resources`
 capability with list/read handlers for this one resource; tool `_meta` is included in `tools/list`.
 
 States:
@@ -136,15 +143,17 @@ Follows the host's light/dark theme through the host context; usable at narrow w
 
 ## Testing
 
-1. **Probe in claude.ai first** (before the rest): a throwaway build of the panel and chunk tool confirms
-   that a ~1.4 MB `tools/call` from the app passes the host's proxy and that a file input works inside its
-   sandbox. If either fails, reduce `chunk_bytes` (or revisit) before building on it.
+1. **claude.ai check** (a stop for the user once the panel works locally, before e2e and docs): the user
+   deploys the branch and confirms in claude.ai that a ~1.4 MB `tools/call` from the app passes the host's
+   proxy and that a file input works inside its sandbox. If either fails, reduce `chunk_bytes` (one constant)
+   or revisit before finishing.
 2. **API tests** (`apps/api/test/mcpUpload.test.ts`): begin → chunks → finish creates a capture with the
-   file and the file lands in the owner's Inbox created by the agent; routing moves it to its page; repeated
+   file and the file lands in the Inbox created by the agent's owner; routing moves it to its page; repeated
    chunk index is a no-op; gap refused; overflow cancels; size mismatch at finish; expired upload not found;
    another agent's upload not found; read-only token refused; suspended agent refused; too large, audio and
    credits refused at begin; 4th open upload refused; cancel removes parts; expired uploads cleaned at begin.
-   `captureFile` accepts the agent's file in its owner's Inbox and refuses it in anyone else's.
+   `createCapture` with `ownerFile` accepts the owner's Inbox file for the agent; without it (and for another
+   member's file) it is `document_not_found`; the HTTP body cannot set it.
 3. **Real MCP client test**: `tools/list` carries `_meta.ui` on `kinote_capture_file` and
    `visibility: ["app"]` on the upload tools; `resources/read` returns the panel HTML with the app mime type.
 4. **Panel e2e** (`e2e/capture-file-app.spec.ts`): the built panel loaded in a page with a stub host that
