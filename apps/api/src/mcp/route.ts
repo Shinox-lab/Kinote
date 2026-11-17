@@ -1,12 +1,18 @@
 import type { FastifyInstance } from 'fastify';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import {
+  CallToolRequestSchema,
+  ListResourcesRequestSchema,
+  ListToolsRequestSchema,
+  ReadResourceRequestSchema,
+} from '@modelcontextprotocol/sdk/types.js';
 import { withTenantTx } from '@kinote/db';
 import { AppError } from '@kinote/contracts';
 import type { Actor, AnswerProvider, EmbeddingProvider, ModelProviders } from '@kinote/core';
-import type { CollabClient, UsageLimits } from '@kinote/shared';
+import type { CollabClient, ObjectStorage, UsageLimits } from '@kinote/shared';
 import { serverInstructions } from './instructions.js';
+import { APP_RESOURCES, listAppResources, readAppResource, type AppResource } from './resources.js';
 import { namedSpaces } from './refs.js';
 import { callTool, listTools, type ToolDef } from './tool.js';
 import { ALL_TOOLS } from './tools/index.js';
@@ -27,6 +33,12 @@ export interface McpDeps {
   meter<T>(kind: 'ask' | 'index', actor: Actor, fn: () => Promise<T>): Promise<T>;
   /** Reported as serverInfo.version. */
   version: string;
+  /** Where the file panel's upload parts and files are kept; without it the upload tools refuse. */
+  storage?: ObjectStorage;
+  /** MAX_UPLOAD_BYTES: the largest file the panel may upload (default 50 MB). */
+  maxUploadBytes?: number;
+  /** Where an assembled upload is spooled before it is stored (default the OS temp directory). */
+  uploadTmpDir?: string;
 }
 
 /** Whether a JSON-RPC body (one message or a batch) contains an `initialize` request. */
@@ -47,10 +59,11 @@ function hasInitialize(body: unknown): boolean {
 export function registerMcpRoute(
   app: FastifyInstance,
   deps: McpDeps,
-  opts: { path?: string; tools?: readonly ToolDef[] } = {}
+  opts: { path?: string; tools?: readonly ToolDef[]; resources?: readonly AppResource[] } = {}
 ): void {
   const path = opts.path ?? '/mcp';
   const tools = opts.tools ?? ALL_TOOLS;
+  const resources = opts.resources ?? APP_RESOURCES;
 
   app.post(path, { config: { auth: 'agent', whenSuspended: 'allow' } }, async (req, reply) => {
     const actor = req.actor;
@@ -65,9 +78,11 @@ export function registerMcpRoute(
       : undefined;
     const server = new Server(
       { name: 'kinote', version: deps.version },
-      { capabilities: { tools: {} }, ...(instructions !== undefined ? { instructions } : {}) }
+      { capabilities: { tools: {}, resources: {} }, ...(instructions !== undefined ? { instructions } : {}) }
     );
     server.setRequestHandler(ListToolsRequestSchema, () => ({ tools: listTools(tools, agent) }));
+    server.setRequestHandler(ListResourcesRequestSchema, () => ({ resources: listAppResources(resources) }));
+    server.setRequestHandler(ReadResourceRequestSchema, (request) => readAppResource(resources, request.params.uri));
     server.setRequestHandler(CallToolRequestSchema, (request) =>
       callTool(tools, { actor, agent, deps, log: req.log }, request.params.name, request.params.arguments)
     );

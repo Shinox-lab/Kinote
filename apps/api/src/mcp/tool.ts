@@ -28,16 +28,27 @@ export interface ToolDef<S extends ZodRawShape = ZodRawShape> {
   /** The token scope the tool needs; without it the tool is not listed and a call is refused. */
   scope: AgentScope;
   /** Which per-agent, per-minute limit the call counts against. */
-  limit: 'search' | 'ask' | 'capture' | 'edit';
+  limit: ToolLimit;
   /** The limit a call counts against when it depends on the arguments (e.g. a read-only action); default `limit`. */
-  limitOf?: (rawArgs: unknown) => 'search' | 'ask' | 'capture' | 'edit';
+  limitOf?: (rawArgs: unknown) => ToolLimit;
+  /** MCP Apps: the panel a tool shows (`ui.resourceUri`) and who may call it (`ui.visibility`); sent as `_meta`. */
+  meta?: ToolMeta;
   /** Every call writes: refused while the workspace is suspended. */
   writes?: boolean;
   description: string;
   input: S;
-  /** The result text. Throw `ToolError` (or an `AppError`) for a refusal the agent should read. */
-  run(args: z.infer<z.ZodObject<S>>, ctx: ToolContext): Promise<string>;
+  /**
+   * The result text, or text plus `structuredContent` (read by an MCP App panel). Throw `ToolError` (or an
+   * `AppError`) for a refusal the agent should read.
+   */
+  run(args: z.infer<z.ZodObject<S>>, ctx: ToolContext): Promise<ToolOutput>;
 }
+
+export type ToolLimit = 'search' | 'ask' | 'capture' | 'edit' | 'upload';
+export interface ToolMeta {
+  ui?: { resourceUri?: string; visibility?: Array<'model' | 'app'> };
+}
+export type ToolOutput = string | { text: string; structured: Record<string, unknown> };
 
 /** Declares a tool (typing only: the route lists and calls it). */
 export function defineTool<S extends ZodRawShape>(def: ToolDef<S>): ToolDef<S> {
@@ -49,6 +60,8 @@ const ARG_AUDIT_CHARS = 500;
 export const MCP_CAPTURE_PER_MINUTE = 10;
 /** `kinote_edit` calls a minute per agent: no model call, so more than capture. */
 export const MCP_EDIT_PER_MINUTE = 30;
+/** File-panel upload calls (begin, chunk, cancel) a minute per agent: a 50 MB file is 50 one-MiB chunks. */
+export const MCP_UPLOAD_PER_MINUTE = 120;
 const SUSPENDED = 'This workspace is suspended for billing; it is read-only until the plan is renewed.';
 const MINUTE_MS = 60_000;
 
@@ -60,6 +73,7 @@ export function listTools(tools: readonly ToolDef[], agent: AgentAuth): Tool[] {
       name: t.name,
       description: t.description,
       inputSchema: toJsonSchemaCompat(z.object(t.input), { strictUnions: true, pipeStrategy: 'input' }) as Tool['inputSchema'],
+      ...(t.meta ? { _meta: { ...t.meta } } : {}),
     }));
 }
 
@@ -132,7 +146,16 @@ async function runCall(
   }
 
   const limit = tool.limitOf?.(rawArgs) ?? tool.limit;
-  const max = limit === 'ask' ? deps.limits.askPerMinute : limit === 'capture' ? MCP_CAPTURE_PER_MINUTE : limit === 'edit' ? MCP_EDIT_PER_MINUTE : deps.limits.searchPerMinute;
+  const max =
+    limit === 'ask'
+      ? deps.limits.askPerMinute
+      : limit === 'capture'
+        ? MCP_CAPTURE_PER_MINUTE
+        : limit === 'edit'
+          ? MCP_EDIT_PER_MINUTE
+          : limit === 'upload'
+            ? MCP_UPLOAD_PER_MINUTE
+            : deps.limits.searchPerMinute;
   try {
     const verdict = await hitLimit(`limit:mcp-${limit}:${actor.tenantId}:${agent.agentId}`, max, MINUTE_MS);
     if (!verdict.allowed) {
@@ -155,7 +178,8 @@ async function runCall(
     const out = await deps.meter(tool.limit === 'ask' ? 'ask' : 'index', actor, () =>
       tool.run(parsed.data, { ...ctx, touch: (ids) => ids.forEach((id) => pages.add(id)), assertWritable })
     );
-    return { result: text(capResult(out)), error: null };
+    if (typeof out === 'string') return { result: text(capResult(out)), error: null };
+    return { result: { ...text(capResult(out.text)), structuredContent: out.structured }, error: null };
   } catch (err) {
     if (err instanceof ToolError || err instanceof AppError) return refuse(err.message);
     log.error({ err, tool: tool.name }, 'mcp tool failed');
