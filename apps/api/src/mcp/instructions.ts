@@ -8,6 +8,7 @@ export function serverInstructions(spaceNames: readonly string[], scopes: readon
     ...(scopes.includes('capture')
       ? [
           'Use kinote_capture to file new information; pass preview: true to show your user where it would go before anything changes. Use the source argument so a retry never files twice.',
+          "When your user wants a file itself added, call kinote_capture_file: they drop the original in Kinote's panel, which keeps the file and files its text.",
         ]
       : []),
     ...(scopes.includes('edit')

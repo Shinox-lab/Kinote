@@ -52,7 +52,7 @@ export async function waitForCapture(actor: Actor, captureId: string): Promise<C
 }
 
 /** `limit_to`: a page (by id or an 8+ hex prefix) first, then a space by name or id. */
-async function scopeOf(actor: Actor, ref: string): Promise<{ scope_space_id?: string; scope_page_id?: string }> {
+export async function scopeOf(actor: Actor, ref: string): Promise<{ scope_space_id?: string; scope_page_id?: string }> {
   return withTenantTx(actor.tenantId, async (tx) => {
     if (/^[0-9a-f-]{8,36}$/i.test(ref.trim())) {
       let page: DocumentRow | null = null;

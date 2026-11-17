@@ -82,7 +82,7 @@ describe('a real MCP client files a capture', () => {
       client = new Client({ name: 'kinote-test', version: '1.0.0' });
       await client.connect(new StreamableHTTPClientTransport(new URL(`${address}/mcp`), { requestInit: { headers: { authorization: `Bearer ${token}` } } }));
       assert.match(client.getInstructions() ?? '', /Use kinote_capture to file new information/);
-      assert.equal((await client.listTools()).tools.length, 7);
+      assert.equal((await client.listTools()).tools.length, 12);
 
       setTimeout(() => void w.run(), 100);
       const previewed = textOf(

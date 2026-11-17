@@ -24,11 +24,13 @@ describe('kinote_capture_action', () => {
   const factsOf = (tenantId: string, captureId: string) =>
     withTenantTx(tenantId, (tx) => tx.select().from(captureFacts).where(eq(captureFacts.captureId, captureId)).orderBy(captureFacts.ordinal));
 
-  test('a read and capture token lists seven tools within 2,000 tokens', async () => {
+  test('a read and capture token shows the model eight tools within 2,000 tokens', async () => {
     const w = await k.world();
     const a = await agentWith(w);
     const res = await mcpRequest(k.app, a.token, 'tools/list');
-    const tools = res.body.result.tools as Array<{ name: string }>;
+    const all = res.body.result.tools as Array<{ name: string; _meta?: { ui?: { visibility?: string[] } } }>;
+    // The file panel's own tools are app-only: an MCP Apps host does not show them to the model.
+    const tools = all.filter((t) => !(t._meta?.ui?.visibility && !t._meta.ui.visibility.includes('model')));
     expect(tools.map((t) => t.name)).toEqual([
       'kinote_browse',
       'kinote_search',
@@ -37,6 +39,7 @@ describe('kinote_capture_action', () => {
       'kinote_ask',
       'kinote_capture',
       'kinote_capture_action',
+      'kinote_capture_file',
     ]);
     const total = tools.reduce((n, t) => n + estimateTokens(JSON.stringify(t)), 0);
     expect(total).toBeLessThan(2000);

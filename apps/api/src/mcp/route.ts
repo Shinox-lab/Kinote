@@ -41,6 +41,9 @@ export interface McpDeps {
   uploadTmpDir?: string;
 }
 
+/** Largest `/mcp` request body: a file-panel chunk is 1 MiB as base64 (about 1.4 MB) plus its JSON-RPC envelope. */
+export const MCP_BODY_LIMIT = 4 * 1_048_576;
+
 /** Whether a JSON-RPC body (one message or a batch) contains an `initialize` request. */
 function hasInitialize(body: unknown): boolean {
   const messages = Array.isArray(body) ? body : [body];
@@ -65,7 +68,7 @@ export function registerMcpRoute(
   const tools = opts.tools ?? ALL_TOOLS;
   const resources = opts.resources ?? APP_RESOURCES;
 
-  app.post(path, { config: { auth: 'agent', whenSuspended: 'allow' } }, async (req, reply) => {
+  app.post(path, { bodyLimit: MCP_BODY_LIMIT, config: { auth: 'agent', whenSuspended: 'allow' } }, async (req, reply) => {
     const actor = req.actor;
     const agent = req.agentAuth;
     if (!actor || !agent) throw new AppError('unauthenticated');
