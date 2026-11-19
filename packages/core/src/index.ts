@@ -156,6 +156,7 @@ export {
   failCapture,
   ROUTING_LEASE_SECONDS,
   QUESTION_TTL_DAYS,
+  pageSlug,
   type RouteDeps,
 } from './routing/apply.js';
 export { placeFact, recordRoutingExample } from './routing/place.js';

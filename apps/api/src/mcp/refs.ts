@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import { documents, spaces, type DbTransaction, type DocumentRow } from '@kinote/db';
 import { AppError } from '@kinote/contracts';
 import { getReadableSpaceIds, requireDocumentRole, type Actor } from '@kinote/core';
@@ -20,10 +20,16 @@ const pageNotFound = (ref: string) =>
 
 /**
  * The live document an agent names by a full id or a prefix of 8 or more hex characters (dashes optional).
- * Only documents it can read count: in its readable spaces, not archived, and passing the Inbox rule. A page
+ * Only documents it can read count: in its readable spaces, not archived (with `archived`: only archived ones),
+ * and passing the Inbox rule. A page
  * that exists but is not readable gives exactly the same text as one that does not exist.
  */
-export async function resolvePageRef(tx: DbTransaction, actor: Actor, rawRef: string): Promise<DocumentRow> {
+export async function resolvePageRef(
+  tx: DbTransaction,
+  actor: Actor,
+  rawRef: string,
+  opts: { archived?: boolean } = {}
+): Promise<DocumentRow> {
   const ref = rawRef.trim();
   const norm = ref.toLowerCase();
   const hex = norm.replaceAll('-', '');
@@ -39,7 +45,7 @@ export async function resolvePageRef(tx: DbTransaction, actor: Actor, rawRef: st
       and(
         eq(documents.tenantId, actor.tenantId),
         inArray(documents.spaceId, readableSpaceIds),
-        isNull(documents.archivedAt),
+        opts.archived ? isNotNull(documents.archivedAt) : isNull(documents.archivedAt),
         isFull ? eq(documents.id, norm) : sql`replace(${documents.id}::text, '-', '') LIKE ${hex + '%'}`
       )
     )
