@@ -72,6 +72,16 @@ describe('captures sent by agents', () => {
     expect(await k.pageText(w.tenant.id, w.george)).toContain('December');
   });
 
+  test('approve_in_client defaults to true and can be turned off', async () => {
+    const w = await k.world();
+    const agentId = await agentOf(w, w.owner.userId);
+    const listed = (await k.get(w.headers, '/api/v1/agents')).json() as Array<{ id: string; approveInClient: boolean }>;
+    expect(listed.find((a) => a.id === agentId)?.approveInClient).toBe(true);
+    const res = await k.patch(w.headers, `/api/v1/agents/${agentId}`, { approve_in_client: false });
+    expect(res.statusCode, res.body).toBe(200);
+    expect(res.json().approveInClient).toBe(false);
+  });
+
   test("a capture of an agent's waiting for a person notifies its owner", async () => {
     const w = await k.world();
     const agentId = await agentOf(w, w.owner.userId, 'editor', false);

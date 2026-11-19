@@ -10,6 +10,7 @@ const agent = (grants: Array<'viewer' | 'editor'>, tokenScopes: Array<Array<'rea
   disabledAt: null,
   dailyAiLimit: null,
   alwaysReview: true,
+  approveInClient: true,
   grants: grants.map((role, i) => ({ spaceId: `00000000-0000-4000-8000-00000000001${i}`, spaceName: `S${i}`, role })),
   tokens: tokenScopes.map((scopes, i) => ({
     id: `00000000-0000-4000-8000-00000000002${i}`,

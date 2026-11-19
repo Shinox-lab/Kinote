@@ -607,7 +607,7 @@ export const ReviewQuerySchema = z.object({
 export const SuggestionSummarySchema = z.object({
   id: z.string().uuid(),
   documentId: z.string().uuid(),
-  kind: z.enum(['remove', 'replace', 'insert', 'set_field']),
+  kind: z.enum(['remove', 'replace', 'insert', 'set_field', 'archive']),
   blockId: z.string().nullable(),
   afterBlockId: z.string().nullable(),
   proposedMarkdown: z.string().nullable(),
@@ -1350,6 +1350,7 @@ export const AgentSchema = z.object({
   dailyAiLimit: z.number().int().nullable(),
   /** Its routed changes wait for review even in a space without review. */
   alwaysReview: z.boolean(),
+  approveInClient: z.boolean(),
   grants: z.array(z.object({ spaceId: z.string().uuid(), spaceName: z.string(), role: z.enum(['viewer', 'editor']) })),
   tokens: z.array(AgentTokenSchema),
 });
@@ -1368,6 +1369,7 @@ export const UpdateAgentRequestSchema = z
     disabled: z.boolean().optional(),
     daily_ai_limit: DailyAiLimitSchema.nullable().optional(),
     always_review: z.boolean().optional(),
+    approve_in_client: z.boolean().optional(),
   })
   .refine((v) => Object.values(v).some((x) => x !== undefined), 'nothing to change');
 export type UpdateAgentRequest = z.input<typeof UpdateAgentRequestSchema>;

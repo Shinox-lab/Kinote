@@ -188,7 +188,7 @@ export const suggestions = pgTable(
     blockId: text('block_id'),
     /** Where an insert goes; null inserts at the start. */
     afterBlockId: text('after_block_id'),
-    kind: text('kind', { enum: ['remove', 'replace', 'insert', 'set_field'] }).notNull(),
+    kind: text('kind', { enum: ['remove', 'replace', 'insert', 'set_field', 'archive'] }).notNull(),
     proposedMarkdown: text('proposed_markdown'),
     proposedBlocks: jsonb('proposed_blocks'),
     /** The addressed block's text with its children when proposed; accepting a changed block makes it stale. */

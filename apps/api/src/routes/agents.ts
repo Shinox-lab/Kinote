@@ -106,6 +106,7 @@ async function viewAgents(tx: DbTransaction, tenantId: string, only?: string): P
     disabledAt: a.disabledAt?.toISOString() ?? null,
     dailyAiLimit: a.dailyAiLimit,
     alwaysReview: a.alwaysReview,
+    approveInClient: a.approveInClient,
     grants: grants
       .filter((g) => g.principalId === a.id && (g.role === 'viewer' || g.role === 'editor'))
       .map((g) => ({ spaceId: g.spaceId, spaceName: g.spaceName, role: g.role as 'viewer' | 'editor' })),
@@ -152,6 +153,7 @@ const snapshot = (a: AgentRow) => ({
   disabled: a.disabledAt !== null,
   dailyAiLimit: a.dailyAiLimit,
   alwaysReview: a.alwaysReview,
+  approveInClient: a.approveInClient,
 });
 
 /** PATCH /api/v1/agents/:id (tenant admin): name, disabled, daily AI limit (null: the default). */
@@ -169,6 +171,7 @@ export async function updateAgent(actor: Actor, agentId: string, input: unknown)
         ...(disabledAt !== undefined ? { disabledAt } : {}),
         ...(body.daily_ai_limit !== undefined ? { dailyAiLimit: body.daily_ai_limit } : {}),
         ...(body.always_review !== undefined ? { alwaysReview: body.always_review } : {}),
+        ...(body.approve_in_client !== undefined ? { approveInClient: body.approve_in_client } : {}),
       })
       .where(and(eq(agents.tenantId, actor.tenantId), eq(agents.id, before.id)))
       .returning();
