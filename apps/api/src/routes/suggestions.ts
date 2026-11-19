@@ -97,6 +97,21 @@ async function decidable(tx: DbTransaction, actor: Actor, id: string) {
   return { row, doc, space };
 }
 
+/**
+ * Whether `actor` may decide the suggestion now, without throwing: the reason in a sentence when not
+ * (someone else decides it, a reviewer is needed, it is gone).
+ */
+export async function suggestionDecidable(tx: DbTransaction, actor: Actor, id: string): Promise<{ ok: true } | { ok: false; why: string }> {
+  try {
+    await decidable(tx, actor, id);
+    return { ok: true };
+  } catch (err) {
+    if (!(err instanceof AppError)) throw err;
+    if (err.code === 'forbidden') return { ok: false, why: 'A reviewer of this space decides it.' };
+    return { ok: false, why: err.message };
+  }
+}
+
 /** Sets the status only while the suggestion is still open; 409 `suggestion_not_open` otherwise. */
 async function close(tx: DbTransaction, actor: Actor, id: string, status: 'accepted' | 'declined'): Promise<SuggestionRow> {
   const [row] = await tx

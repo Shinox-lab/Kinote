@@ -99,6 +99,7 @@ export const AuditEventTypeSchema = z.enum([
   'thread.deleted',
   'suggestion.accepted',
   'suggestion.declined',
+  'review.decided_in_client',
   'version.created',
   'version.approved',
   'version.rejected',
