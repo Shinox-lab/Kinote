@@ -135,7 +135,8 @@ export function approvableInBundle(items: ReviewItem[], captureId: string): { ap
 }
 
 /** The button that accepts a suggestion: a removal (a block, or clearing a field) is approved, anything else accepted. */
-export function suggestionAction(s: Pick<SuggestionSummary, 'kind' | 'proposedMarkdown'>): 'Approve removal' | 'Accept' {
+export function suggestionAction(s: Pick<SuggestionSummary, 'kind' | 'proposedMarkdown'>): 'Approve removal' | 'Delete page' | 'Accept' {
+  if (s.kind === 'archive') return 'Delete page';
   return s.kind === 'remove' || (s.kind === 'set_field' && s.proposedMarkdown === 'null') ? 'Approve removal' : 'Accept';
 }
 

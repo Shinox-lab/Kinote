@@ -5,6 +5,7 @@ import { and, desc, eq, inArray, isNull } from 'drizzle-orm';
 import {
   withTenantTx,
   documents,
+  suggestions,
   pages,
   spaces,
   versions,
@@ -1455,7 +1456,8 @@ export async function archivePage(actor: Actor, pageId: string): Promise<Documen
 /**
  * Archives a locked page as `actor` without a role check (the caller
  * decided who may): 409 `has_children` while a live child exists; its live
- * versions are withdrawn. Shared by archivePage and capture undo.
+ * versions are withdrawn and its open suggestions go stale. Shared by archivePage, capture undo and an
+ * accepted delete request.
  */
 export async function archivePageTx(tx: DbTransaction, actor: Actor, doc: DocumentRow): Promise<DocumentRow> {
   const pageId = doc.id;
@@ -1469,6 +1471,10 @@ export async function archivePageTx(tx: DbTransaction, actor: Actor, doc: Docume
   }
 
   await withdrawLiveVersions(tx, actor.tenantId, pageId);
+  await tx
+    .update(suggestions)
+    .set({ status: 'stale' })
+    .where(and(eq(suggestions.tenantId, actor.tenantId), eq(suggestions.documentId, pageId), eq(suggestions.status, 'open')));
 
   const [updated] = await tx
     .update(documents)

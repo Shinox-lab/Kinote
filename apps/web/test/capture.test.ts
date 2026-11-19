@@ -142,6 +142,7 @@ describe('capture helpers', () => {
 
   test('suggestionAction', () => {
     expect(suggestionAction(suggestion({ kind: 'remove' }))).toBe('Approve removal');
+    expect(suggestionAction(suggestion({ kind: 'archive' }))).toBe('Delete page');
     expect(suggestionAction(suggestion({ kind: 'replace' }))).toBe('Accept');
     expect(suggestionAction(suggestion({ kind: 'insert' }))).toBe('Accept');
   });
