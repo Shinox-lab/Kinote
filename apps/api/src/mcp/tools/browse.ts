@@ -1,8 +1,9 @@
 import { and, eq, inArray } from 'drizzle-orm';
 import { z } from 'zod';
-import { pageCards, spaces, withTenantTx } from '@kinote/db';
+import { documents, pageCards, spaces, withTenantTx } from '@kinote/db';
+import { AppError } from '@kinote/contracts';
 import type { TreeNode } from '@kinote/contracts';
-import { getSpaceTree } from '../../routes/foundations.js';
+import { getSpaceArchived, getSpaceTree } from '../../routes/foundations.js';
 import { dataBlock, MAX_RESULT_TOKENS, shortId } from '../format.js';
 import { namedSpaces, resolvePageRef, resolveSpaceRef } from '../refs.js';
 import { defineTool, type ToolContext } from '../tool.js';
@@ -103,6 +104,44 @@ async function sectionsFor(ctx: ToolContext, space: string | undefined, under: s
   return out;
 }
 
+/** The deleted (archived) pages of the chosen spaces, flat by title, with when each was deleted. */
+async function archivedMap(ctx: ToolContext, space: string | undefined): Promise<string> {
+  const { actor } = ctx;
+  const chosen = await withTenantTx(actor.tenantId, async (tx) =>
+    space !== undefined ? [await resolveSpaceRef(tx, actor, space)] : namedSpaces(tx, actor)
+  );
+  if (chosen.length === 0) return 'This agent cannot read any space yet. Ask a workspace admin to grant it one.';
+  const lines: string[] = [];
+  for (const s of chosen) {
+    lines.push(`# ${s.name} — deleted pages`);
+    let nodes: TreeNode[];
+    try {
+      nodes = (await getSpaceArchived(actor, s.id)).nodes;
+    } catch (err) {
+      if (err instanceof AppError && err.code === 'forbidden') {
+        lines.push('(this agent can only read this space, so it cannot list deleted pages)');
+        continue;
+      }
+      throw err;
+    }
+    if (nodes.length === 0) {
+      lines.push('(none)');
+      continue;
+    }
+    const rows = await withTenantTx(actor.tenantId, (tx) =>
+      tx
+        .select({ id: documents.id, archivedAt: documents.archivedAt })
+        .from(documents)
+        .where(and(eq(documents.tenantId, actor.tenantId), inArray(documents.id, nodes.map((n) => n.id))))
+    );
+    const when = new Map(rows.map((r) => [r.id, r.archivedAt?.toISOString().slice(0, 10) ?? '']));
+    for (const n of nodes) lines.push(`- ${n.title} (${shortId(n.id)})${n.kind === 'file' ? ' [file]' : ''} — archived ${when.get(n.id)}`);
+  }
+  const text = lines.join('\n');
+  const budget = MAX_RESULT_TOKENS * 4 - CUT_NOTE.length - 100;
+  return text.length <= budget ? dataBlock('map', text) : `${dataBlock('map', text.slice(0, text.lastIndexOf('\n', budget)))}\n${CUT_NOTE}`;
+}
+
 export const browseTool = defineTool({
   name: 'kinote_browse',
   scope: 'read',
@@ -113,8 +152,10 @@ export const browseTool = defineTool({
     space: z.string().max(200).optional().describe('A space name or ID'),
     under: z.string().max(64).optional().describe('A page ID: show the tree below it'),
     depth: z.number().int().min(1).max(4).optional(),
+    archived: z.boolean().optional().describe('List the deleted (archived) pages instead, for kinote_restore'),
   },
   async run(args, ctx) {
+    if (args.archived) return archivedMap(ctx, args.space);
     const depth = args.depth ?? 2;
     const sections = await sectionsFor(ctx, args.space, args.under);
     if (sections.length === 0) return 'This agent cannot read any space yet. Ask a workspace admin to grant it one.';

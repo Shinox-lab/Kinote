@@ -8,12 +8,13 @@ import { editTool } from './edit.js';
 import { readTool } from './read.js';
 import { relatedTool } from './related.js';
 import { searchTool } from './search.js';
+import { TREE_TOOLS } from './tree.js';
 
 /** The tools `/mcp` serves, in `tools/list` order. Each needs the `read` scope. */
 export const READ_TOOLS: readonly ToolDef[] = [browseTool, searchTool, readTool, relatedTool, askTool];
 /** The tools that file into the wiki; each needs the `capture` scope. */
 export const CAPTURE_TOOLS: readonly ToolDef[] = [captureTool, captureActionTool, ...UPLOAD_TOOLS];
 /** The tools that change pages directly; each needs the `edit` scope. */
-export const EDIT_TOOLS: readonly ToolDef[] = [editTool, deleteTool];
+export const EDIT_TOOLS: readonly ToolDef[] = [editTool, ...TREE_TOOLS, deleteTool];
 /** Everything `/mcp` serves, in `tools/list` order. */
 export const ALL_TOOLS: readonly ToolDef[] = [...READ_TOOLS, ...CAPTURE_TOOLS, ...EDIT_TOOLS];

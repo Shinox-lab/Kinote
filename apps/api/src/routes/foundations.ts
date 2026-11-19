@@ -425,7 +425,7 @@ export function getSpaceTree(actor: Actor, spaceId: string): Promise<TreeRespons
 }
 
 /**
- * `GET /spaces/:id/archived`: the archived documents of a space (space admin),
+ * `GET /spaces/:id/archived`: the archived documents of a space (editor and up),
  * or in the Inbox the actor's own archived documents (viewer and up).
  */
 export function getSpaceArchived(actor: Actor, spaceId: string): Promise<TreeResponse> {
