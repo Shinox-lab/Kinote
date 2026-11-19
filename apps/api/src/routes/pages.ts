@@ -1436,7 +1436,7 @@ export async function movePage(
 }
 
 /**
- * Archives a page (space admin): refused with 409 `has_children` while any
+ * Archives a page (editor or above): refused with 409 `has_children` while any
  * non-archived child document exists; otherwise every indexed, indexing or
  * pending version is withdrawn, the chunks are deleted and `archived_at` set,
  * all in one transaction under the document lock.
@@ -1447,7 +1447,7 @@ export async function archivePage(actor: Actor, pageId: string): Promise<Documen
   return withTenantTx(actor.tenantId, async (tx) => {
     const doc = await lockPage(tx, actor.tenantId, pageId);
 
-    await requireDocumentRole(tx, actor, doc, 'admin', { notFound: 'page_not_found' });
+    await requireDocumentRole(tx, actor, doc, 'editor', { notFound: 'page_not_found' });
     return toDocumentSummary(await archivePageTx(tx, actor, doc));
   });
 }
@@ -1489,8 +1489,8 @@ export async function archivePageTx(tx: DbTransaction, actor: Actor, doc: Docume
 }
 
 /**
- * Restores an archived page: a space admin on the page's space, or in the
- * Inbox its creator. Clears `archived_at`; the page's versions stay
+ * Restores an archived page: an editor or above on the page's space (in the
+ * Inbox, only its creator can see it). Clears `archived_at`; the page's versions stay
  * `withdrawn` (it comes back with the `Withdrawn` badge and goes through
  * review and indexing like any page). A parent that is archived, or no longer
  * a page in the same space, is dropped: the page returns at the root.
@@ -1512,11 +1512,8 @@ export async function restorePage(actor: Actor, pageId: string): Promise<Documen
     if (access.space.archivedAt) {
       throw new AppError('space_archived', 'Space is archived.');
     }
-    // In the Inbox `requireDocumentRole` already limited the actor to the creator.
-    if (
-      access.effectiveRole !== 'admin' &&
-      !(access.space.kind === 'inbox' && access.effectiveRole !== 'viewer')
-    ) {
+    // Editor or above; in the Inbox `requireDocumentRole` already limited the actor to the creator.
+    if (access.effectiveRole === 'viewer') {
       throw new AppError('forbidden', 'You do not have permission to perform this action.');
     }
 

@@ -563,12 +563,12 @@ export async function withdrawFile(actor: Actor, fileId: string): Promise<Docume
   });
 }
 
-/** Archives a file (space admin): withdrawn from the index, chunks deleted, `archived_at` set. */
+/** Archives a file (editor or above): withdrawn from the index, chunks deleted, `archived_at` set. */
 export async function archiveFile(actor: Actor, fileId: string): Promise<DocumentSummary> {
   assertValidUuid(fileId, 'document_not_found');
   return withTenantTx(actor.tenantId, async (tx) => {
     const doc = await lockFile(tx, actor.tenantId, fileId);
-    await requireDocumentRole(tx, actor, doc, 'admin', { notFound: 'document_not_found' });
+    await requireDocumentRole(tx, actor, doc, 'editor', { notFound: 'document_not_found' });
     const [liveChild] = await tx
       .select({ id: documents.id })
       .from(documents)
@@ -649,11 +649,8 @@ export async function restoreFile(actor: Actor, fileId: string): Promise<Documen
     if (access.space.archivedAt) {
       throw new AppError('space_archived', 'Space is archived.');
     }
-    // In the Inbox `requireDocumentRole` already limited the actor to the creator.
-    if (
-      access.effectiveRole !== 'admin' &&
-      !(access.space.kind === 'inbox' && access.effectiveRole !== 'viewer')
-    ) {
+    // Editor or above; in the Inbox `requireDocumentRole` already limited the actor to the creator.
+    if (access.effectiveRole === 'viewer') {
       throw new AppError('forbidden', 'You do not have permission to perform this action.');
     }
     if (!doc.archivedAt) return toDocumentSummary(doc);
