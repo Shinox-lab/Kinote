@@ -300,9 +300,9 @@ async function listTreeNodes(
       allowArchived: true,
     });
     const { space } = access;
-    // The archived list is for space admins, except in the Inbox: there each
-    // person lists only their own documents (the query filters to the creator).
-    if (archived && space.kind !== 'inbox' && access.effectiveRole !== 'admin') {
+    // The archived list is for editors and above (who may restore), except in the
+    // Inbox: there each person lists only their own documents (the query filters to the creator).
+    if (archived && space.kind !== 'inbox' && access.effectiveRole === 'viewer') {
       throw new AppError('forbidden', 'You do not have permission to perform this action.');
     }
 

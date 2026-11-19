@@ -74,7 +74,7 @@ export function useSpaceTree(
   });
 }
 
-/** A space's archived documents; the API answers space admins only, so `enabled` follows the role. */
+/** A space's archived documents; the API answers editors and above only, so `enabled` follows the role. */
 export function useArchivedTree(spaceId: string | undefined, enabled: boolean) {
   return useQuery({
     queryKey: useTenantKey('archived', spaceId),
