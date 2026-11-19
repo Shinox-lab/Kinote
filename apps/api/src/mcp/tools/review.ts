@@ -2,7 +2,7 @@ import { and, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { agents, withTenantTx } from '@kinote/db';
 import { AppError } from '@kinote/contracts';
-import { ownerActorOf, type Actor } from '@kinote/core';
+import { getReadableSpaceIds, ownerActorOf, type Actor } from '@kinote/core';
 import { decideReviewItem, reviewItems, type ReviewPanelItem } from '../review/items.js';
 import { resolvePageRef } from '../refs.js';
 import { defineTool, type ToolContext } from '../tool.js';
@@ -40,11 +40,18 @@ async function approveInClient(ctx: ToolContext): Promise<boolean> {
   return row?.on ?? false;
 }
 
+/** The spaces the agent itself can read, the Inbox left out: the panel never reaches past the agent's grants. */
+async function agentSpaces(ctx: ToolContext): Promise<string[]> {
+  const { readableSpaceIds, inboxSpaceId } = await withTenantTx(ctx.actor.tenantId, (tx) => getReadableSpaceIds(tx, ctx.actor));
+  return readableSpaceIds.filter((id) => id !== inboxSpaceId);
+}
+
 async function listFor(ctx: ToolContext, args: { page_id?: string; mine_only?: boolean }) {
   const pageId = args.page_id ? (await withTenantTx(ctx.actor.tenantId, (tx) => resolvePageRef(tx, ctx.actor, args.page_id!))).id : undefined;
   const items = await reviewItems(ownerOf(ctx.actor), {
     ...(pageId ? { pageId } : {}),
     ...(args.mine_only ? { agentId: ctx.agent.agentId } : {}),
+    spaceIds: await agentSpaces(ctx),
   });
   return { pageId: pageId ?? null, items };
 }
@@ -111,7 +118,7 @@ export const reviewDecideTool = defineTool({
       ownerOf(ctx.actor),
       { type: args.type, id: args.id, decision: args.decision, ...(args.note ? { note: args.note } : {}) },
       ctx.deps.collab,
-      { agentId: ctx.agent.agentId }
+      { agentId: ctx.agent.agentId, spaceIds: await agentSpaces(ctx) }
     );
     const text = res.ok ? `${args.decision === 'approve' ? 'Approved' : 'Rejected'}.` : res.message;
     return { text, structured: res };

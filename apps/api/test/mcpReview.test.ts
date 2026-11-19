@@ -1,9 +1,9 @@
 import { describe, test, expect } from 'vitest';
 import { and, desc, eq } from 'drizzle-orm';
-import { agents, auditEvents, versions, withTenantTx } from '@kinote/db';
+import { agents, auditEvents, suggestions, versions, withTenantTx } from '@kinote/db';
 import { useCaptureKit, type CaptureWorld } from './support/capturekit.js';
 import { callToolFull, issueAgentToken, listToolNames, mcpRequest } from './support/mcpkit.js';
-import { createAgent } from './support/testkit.js';
+import { createAgent, signUpMember } from './support/testkit.js';
 
 const short = (id: string) => id.replaceAll('-', '').slice(0, 8);
 
@@ -83,5 +83,54 @@ describe('kinote_review', () => {
     expect(meta('kinote_review')).toEqual({ ui: { resourceUri: 'ui://kinote/review' } });
     expect(meta('kinote_review_list')).toEqual({ ui: { visibility: ['app'] } });
     expect(meta('kinote_review_decide')).toEqual({ ui: { visibility: ['app'] } });
+  });
+
+  /** An open suggestion on `pageId`, proposed by a bot that has no grant. */
+  async function strayRequest(w: CaptureWorld, pageId: string, spaceId: string) {
+    const other = await createAgent(w.tenant.id, w.owner.userId, { name: 'Other bot' });
+    const [row] = await withTenantTx(w.tenant.id, (tx) =>
+      tx
+        .insert(suggestions)
+        .values({ tenantId: w.tenant.id, documentId: pageId, spaceId, kind: 'archive', reason: 'Secret reason.', blockedBy: 'no_edit_access', proposedByType: 'agent', proposedBy: other })
+        .returning()
+    );
+    return row!;
+  }
+
+  test("the panel shows only what the agent itself can read: no other space, no one's Inbox", async () => {
+    const w = await k.world();
+    const s = await setup(w);
+    const hr = (await k.post(w.headers, '/api/v1/spaces', { name: 'HR', slug: 'hr' })).json().id as string;
+    const salaries = (await k.post(w.headers, '/api/v1/pages', { space_id: hr, title: 'Salaries', slug: 'salaries', markdown: 'Pay.' })).json().id as string;
+    const hidden = await strayRequest(w, salaries, hr);
+    const member = await signUpMember(k.app, w.tenant.id, 'member');
+    const note = (await k.post(member.headers, '/api/v1/pages', { space_id: w.inbox, title: 'Private note', slug: 'private-note', markdown: 'Mine.' })).json().id as string;
+    const inboxed = await strayRequest(w, note, w.inbox);
+
+    const list = await s.call('kinote_review_list', {});
+    const ids = (list.structured as { items: Array<{ id: string }> }).items.map((i) => i.id);
+    expect(ids).not.toContain(hidden.id);
+    expect(ids).not.toContain(inboxed.id);
+    expect(ids).toHaveLength(2);
+    const text = (await s.call('kinote_review')).text;
+    expect(text).not.toContain('Salaries');
+    expect(text).not.toContain('Private note');
+    const decide = await s.call('kinote_review_decide', { type: 'suggestion', id: hidden.id, decision: 'approve' });
+    expect(decide.structured).toMatchObject({ ok: false });
+    expect((await withTenantTx(w.tenant.id, (tx) => tx.select().from(suggestions).where(eq(suggestions.id, hidden.id))))[0]!.status).toBe('open');
+  });
+
+  test("in a space that requires review, the owner cannot approve their own agent's version from the panel", async () => {
+    const w = await k.world();
+    expect((await k.patch(w.headers, `/api/v1/spaces/${w.clients}`, { review_required: true })).statusCode).toBe(200);
+    const s = await setup(w);
+    const list = await s.call('kinote_review_list', {});
+    const item = (list.structured as { items: Array<{ id: string; decidable: boolean; why_not?: string }> }).items.find((i) => i.id === s.version.id)!;
+    expect(item.decidable).toBe(false);
+    expect(item.why_not).toBe('Your agent proposed this, so someone else decides it.');
+    const res = await s.call('kinote_review_decide', { type: 'version', id: s.version.id, decision: 'approve' });
+    expect(res.structured).toEqual({ ok: false, message: 'Your agent proposed this, so someone else decides it.' });
+    const [v] = await withTenantTx(w.tenant.id, (tx) => tx.select().from(versions).where(eq(versions.id, s.version.id)));
+    expect(v!.status).toBe('pending_review');
   });
 });
