@@ -1,7 +1,8 @@
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 
-const ENTRY = fileURLToPath(new URL('./capturePanel.ts', import.meta.url));
+const UPLOAD_ENTRY = fileURLToPath(new URL('./capturePanel.ts', import.meta.url));
+const REVIEW_ENTRY = fileURLToPath(new URL('./reviewPanel.ts', import.meta.url));
 
 /** Follows the host's theme (applyDocumentTheme sets color-scheme) and its style variables when it sends them. */
 const CSS = `
@@ -25,22 +26,47 @@ progress { width: 100%; height: 8px; accent-color: var(--accent); }
 .error { color: var(--error); }
 .receipt { white-space: pre-wrap; overflow-wrap: anywhere; border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
 .receipt a { color: var(--accent); }
+.card { border: 1px solid var(--line); border-radius: 10px; padding: 12px; margin: 0 0 10px; }
+.card h2 { font-size: 14px; margin: 0 0 4px; }
+.meta { color: var(--muted); font-size: 12px; margin: 0 0 6px; }
+.diff { font-family: var(--font-mono, ui-monospace, monospace); font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere;
+  border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; max-height: 260px; overflow: auto; margin: 6px 0; }
+.diff .del { color: var(--error); background: light-dark(#fdecea, #3a1d1b); text-decoration: line-through; }
+.diff .ins { color: light-dark(#1a7f37, #7ee2a0); background: light-dark(#e6f4ea, #16301f); }
+.diff span { display: block; }
+.note { width: 100%; font: inherit; padding: 4px 8px; border-radius: 8px; border: 1px solid var(--line); background: transparent; color: var(--fg); margin-top: 6px; }
+.done { color: light-dark(#1a7f37, #7ee2a0); }
+.toolbar { display: flex; justify-content: space-between; align-items: baseline; margin: 0 0 8px; }
 `;
 
-let cached: Promise<string> | null = null;
+const cached = new Map<string, Promise<string>>();
 
-/** The panel as one self-contained HTML page, bundled on first use and kept in memory. */
-export function capturePanelHtml(): Promise<string> {
-  cached ??= bundle().catch((err) => {
-    cached = null;
-    throw err;
-  });
-  return cached;
+/** One panel as a self-contained HTML page, bundled on first use and kept in memory. */
+function panelHtml(entry: string, title: string): Promise<string> {
+  let html = cached.get(entry);
+  if (!html) {
+    html = bundle(entry, title).catch((err) => {
+      cached.delete(entry);
+      throw err;
+    });
+    cached.set(entry, html);
+  }
+  return html;
 }
 
-async function bundle(): Promise<string> {
+/** The file panel (`ui://kinote/upload`). */
+export function capturePanelHtml(): Promise<string> {
+  return panelHtml(UPLOAD_ENTRY, 'Kinote file panel');
+}
+
+/** The review panel (`ui://kinote/review`). */
+export function reviewPanelHtml(): Promise<string> {
+  return panelHtml(REVIEW_ENTRY, 'Kinote review panel');
+}
+
+async function bundle(entry: string, title: string): Promise<string> {
   const out = await build({
-    entryPoints: [ENTRY],
+    entryPoints: [entry],
     bundle: true,
     write: false,
     format: 'iife',
@@ -54,7 +80,7 @@ async function bundle(): Promise<string> {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Kinote file panel</title>
+<title>${title}</title>
 <style>${CSS}</style>
 </head>
 <body>
