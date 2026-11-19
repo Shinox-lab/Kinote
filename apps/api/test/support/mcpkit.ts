@@ -113,6 +113,19 @@ export async function callTool(
   return { text: content.map((c) => c.text).join('\n'), isError: res.body.result.isError === true };
 }
 
+/** Calls a tool and also returns its `structuredContent` (what an MCP App panel reads). */
+export async function callToolFull(
+  app: FastifyInstance,
+  token: string,
+  name: string,
+  args: object = {}
+): Promise<{ text: string; isError: boolean; structured: Record<string, unknown> | undefined }> {
+  const res = await mcpRequest(app, token, 'tools/call', { name, arguments: args });
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  const content = res.body.result.content as Array<{ type: string; text: string }>;
+  return { text: content.map((c) => c.text).join('\n'), isError: res.body.result.isError === true, structured: res.body.result.structuredContent };
+}
+
 /** The tool names `tools/list` shows this token. */
 export async function listToolNames(app: FastifyInstance, token: string, path = '/mcp'): Promise<string[]> {
   const res = await mcpRequest(app, token, 'tools/list', undefined, path);

@@ -204,16 +204,26 @@ describe('the /mcp endpoint', () => {
     assert.equal((await callTool(limited, second.token, 'kinote_echo', { text: '4' }, TEST_PATH)).isError, true);
   });
 
-  test('a read token lists exactly the five read tools', async () => {
+  test('a read token lists exactly the read tools', async () => {
     const w = await agentWorld(app, 'mcp-five');
-    assert.deepEqual(await listToolNames(app, w.token), ['kinote_ask', 'kinote_browse', 'kinote_read', 'kinote_related', 'kinote_search']);
+    assert.deepEqual(await listToolNames(app, w.token), [
+      'kinote_ask',
+      'kinote_browse',
+      'kinote_read',
+      'kinote_related',
+      'kinote_review',
+      'kinote_review_list',
+      'kinote_search',
+    ]);
   });
 
   test('combined tool definitions stay under 2,000 tokens', async () => {
     const w = await agentWorld(app, 'mcp-budget');
     const res = await mcpRequest(app, w.token, 'tools/list');
-    const tools = res.body.result.tools as object[];
-    assert.equal(tools.length, 5);
+    const all = res.body.result.tools as Array<{ _meta?: { ui?: { visibility?: string[] } } }>;
+    // The review panel's own tool is app-only: an MCP Apps host does not show it to the model.
+    const tools = all.filter((t) => !(t._meta?.ui?.visibility && !t._meta.ui.visibility.includes('model')));
+    assert.equal(tools.length, 6);
     const total = tools.reduce((n, t) => n + estimateTokens(JSON.stringify(t)), 0);
     assert.ok(total < 2000, `tool definitions use ${total} tokens`);
   });
