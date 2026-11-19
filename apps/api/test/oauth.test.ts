@@ -425,7 +425,15 @@ describe('OAuth tokens', () => {
     assert.equal(listed.find((x) => x.id === agent.id)!.tokens[0]!.expiresAt, row!.refreshExpiresAt!.toISOString());
 
     // The token works on /mcp, and its agent reads only what it was given.
-    assert.deepEqual(await listToolNames(app, res.body.access_token), ['kinote_ask', 'kinote_browse', 'kinote_read', 'kinote_related', 'kinote_search']);
+    assert.deepEqual(await listToolNames(app, res.body.access_token), [
+      'kinote_ask',
+      'kinote_browse',
+      'kinote_read',
+      'kinote_related',
+      'kinote_review',
+      'kinote_review_list',
+      'kinote_search',
+    ]);
     const init = await mcpRequest(app, res.body.access_token, 'initialize', {
       protocolVersion: '2025-06-18',
       capabilities: {},

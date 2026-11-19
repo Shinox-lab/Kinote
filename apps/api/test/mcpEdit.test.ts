@@ -336,6 +336,10 @@ describe('kinote_edit', () => {
     const line =
       'Use kinote_edit for precise fixes: read the section first and quote the exact words to change. Check kinote_related so a fact written on several pages is fixed everywhere.';
     expect(serverInstructions(['Docs'], ['read', 'edit'])).toContain(line);
+    expect(serverInstructions(['Docs'], ['read', 'edit'])).toContain(
+      'To put a new page at an exact place, call kinote_create; to move one, kinote_move; to remove one, kinote_delete with why (it may wait for a person); kinote_restore brings a deleted page back (kinote_browse with archived lists them).'
+    );
+    expect(serverInstructions(['Docs'], ['read'])).toContain('When your user wants to see or decide what is waiting for review, call kinote_review.');
     expect(serverInstructions(['Docs'], ['read', 'capture'])).not.toContain('kinote_edit');
   });
 });

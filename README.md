@@ -43,7 +43,8 @@ questions from your pages with citations.
 <p align="center"><img src="docs/assets/clips/co-edit.gif" alt="Two people edit the same page at the same time" width="880"></p>
 
 - **Review where it matters.** Turn on review for a space and changes wait for a reviewer. Every page shows its state,
-  from "awaiting approval" to "Indexed · v7", and any version can be restored.
+  from "awaiting approval" to "Indexed · v7", and any version can be restored. Anyone who can edit a space can archive
+  a page in it and restore it later.
 
 <p align="center"><img src="docs/assets/clips/review.gif" alt="A change waits for approval; a reviewer approves it and the page is indexed" width="880"></p>
 
@@ -115,7 +116,7 @@ renews it by itself for up to 90 days after it was last used.
    Any MCP client that supports Streamable HTTP works the same way: the endpoint is `/mcp` and the token is a
    Bearer header.
 
-A Read token gets five tools, a Capture token three more, and an Edit token one more:
+A Read token gets six tools, a Capture token three more, and an Edit token five more:
 
 | Tool | What it does |
 | --- | --- |
@@ -124,10 +125,15 @@ A Read token gets five tools, a Capture token three more, and an Edit token one 
 | `kinote_read` | A page's outline, one section, or the whole page, with a cursor for long pages. |
 | `kinote_related` | What connects to a page or a named thing: relationships, mentions, links in. |
 | `kinote_ask` | An answer written from the wiki with its sources (costs an AI action). |
+| `kinote_review` | Shows a Kinote review panel in clients with MCP Apps: what is waiting for your review (new versions, suggested edits, delete requests), each with Approve and Reject. The agent gets the list too. |
 | `kinote_capture` | Files new information through routing, with a receipt; `preview: true` shows where it would go first. |
 | `kinote_capture_action` | Status, answer a routing question, undo, move, or apply/cancel a preview. |
 | `kinote_upload` | Shows a Kinote panel in clients with MCP Apps (claude.ai, Claude Desktop, VS Code Copilot…): your user drops the original file, and Kinote files it on its own under the page or space the agent named, or where its description fits. No page is made and the file needs no readable text. |
 | `kinote_edit` | Replaces exact words in a block, adds blocks after one, sets a collection field, or renames the page, as the agent. Removals, blocks a person edited within the space's protection window, and spaces it can only read become suggestions on the page. |
+| `kinote_create` | Creates a page exactly where the agent says: under a page, or at the top of a space. |
+| `kinote_move` | Moves a page under another page or to the top of a space. A move into a space with review sends it back to review. |
+| `kinote_delete` | Archives a page, saying why. Where the agent always reviews, or the space has review, it becomes a delete request a person accepts. |
+| `kinote_restore` | Brings an archived page back; `kinote_browse` with `archived: true` lists them. |
 
 Tokens expire after 90 days unless you choose otherwise (1 to 365), and an admin can revoke one or disable an agent at
 any time. Each agent has its own rate limits and a daily limit of AI actions (100 unless you set another), and every
@@ -153,6 +159,13 @@ where each fact belongs, explains why, skips what is already known, and every ch
   agent writes it with `kinote_capture`. The panel needs a client that shows MCP Apps; in others, attach the file on
   the Capture page. Capture tokens also list four
   `kinote_upload_*` tools that only the panel uses.
+- **Review in the conversation.** `kinote_review` opens a panel listing what waits for you: new versions, suggested
+  edits and delete requests, each with its change. **Approve** and **Reject** act as you, by the same rules as the
+  Reviews page (a reviewer where the space has review; never your own work unless the space allows it). The panel's
+  buttons travel over the agent's connection and Kinote cannot tell your click from the agent's, so it relies on the
+  client to keep those tools from the model. To decide an agent's changes only in Kinote, switch off **Approve in your
+  AI client** for it in **Settings → Agents**. Read tokens list `kinote_review_list` and Edit tokens
+  `kinote_review_decide`, which only the panel uses.
 
 Notes typed into a capture, by a person or an agent, can say how to file it: "make a new page for this", "only update
 the pages", "put it under Clients/George", "keep the file as a copy" or "don't keep the file". Text inside an attached
