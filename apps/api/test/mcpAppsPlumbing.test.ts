@@ -11,6 +11,7 @@ const PATH = '/test/mcp-apps';
 
 const panelTool = defineTool({
   name: 'kinote_panel',
+  annotations: { title: 'Test tool', readOnlyHint: false, openWorldHint: false },
   scope: 'read',
   limit: 'search',
   meta: { ui: { resourceUri: 'ui://t/x', visibility: ['app'] } },
@@ -22,6 +23,7 @@ const panelTool = defineTool({
 });
 const plainTool = defineTool({
   name: 'kinote_plain',
+  annotations: { title: 'Test tool', readOnlyHint: false, openWorldHint: false },
   scope: 'read',
   limit: 'upload',
   description: 'Plain.',

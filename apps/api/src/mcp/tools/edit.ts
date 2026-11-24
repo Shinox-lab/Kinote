@@ -29,6 +29,7 @@ function line(o: EditOutcome): string {
 
 export const editTool = defineTool({
   name: 'kinote_edit',
+  annotations: { title: 'Edit a page', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   scope: 'edit',
   limit: 'edit',
   writes: true,

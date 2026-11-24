@@ -32,6 +32,7 @@ async function livePage(tx: DbTransaction, actor: Actor, ref: string): Promise<D
  */
 export const deleteTool = defineTool({
   name: 'kinote_delete',
+  annotations: { title: 'Delete a page', readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
   scope: 'edit',
   limit: 'edit',
   writes: true,

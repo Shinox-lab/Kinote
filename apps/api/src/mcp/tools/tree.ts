@@ -63,6 +63,7 @@ function refusal(err: unknown, forbidden: string): never {
 
 export const createTool = defineTool({
   name: 'kinote_create',
+  annotations: { title: 'Create a page', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   scope: 'edit',
   limit: 'edit',
   writes: true,
@@ -103,6 +104,7 @@ export const createTool = defineTool({
 
 export const moveTool = defineTool({
   name: 'kinote_move',
+  annotations: { title: 'Move a page', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   scope: 'edit',
   limit: 'edit',
   writes: true,
@@ -129,6 +131,7 @@ export const moveTool = defineTool({
 
 export const restoreTool = defineTool({
   name: 'kinote_restore',
+  annotations: { title: 'Restore a page', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   scope: 'edit',
   limit: 'edit',
   writes: true,

@@ -176,6 +176,7 @@ function outline(head: string[], title: string, docId: string, blocks: BlockLike
 
 export const readTool = defineTool({
   name: 'kinote_read',
+  annotations: { title: 'Read a page', readOnlyHint: true, openWorldHint: false },
   scope: 'read',
   limit: 'search',
   description:

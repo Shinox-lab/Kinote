@@ -13,6 +13,7 @@ const TEST_PATH = '/test/mcp-writes';
 
 const write = defineTool({
   name: 'kinote_write_echo',
+  annotations: { title: 'Test tool', readOnlyHint: false, openWorldHint: false },
   scope: 'capture',
   limit: 'capture',
   writes: true,
@@ -24,6 +25,7 @@ const write = defineTool({
 });
 const partly = defineTool({
   name: 'kinote_partly',
+  annotations: { title: 'Test tool', readOnlyHint: false, openWorldHint: false },
   scope: 'capture',
   limit: 'capture',
   description: 'Writes only for some actions.',
@@ -35,6 +37,7 @@ const partly = defineTool({
 });
 const read = defineTool({
   name: 'kinote_read_echo',
+  annotations: { title: 'Test tool', readOnlyHint: false, openWorldHint: false },
   scope: 'read',
   limit: 'search',
   description: 'A read, for tests.',

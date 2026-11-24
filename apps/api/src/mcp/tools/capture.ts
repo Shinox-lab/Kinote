@@ -72,6 +72,7 @@ export async function scopeOf(actor: Actor, ref: string): Promise<{ scope_space_
 
 export const captureTool = defineTool({
   name: 'kinote_capture',
+  annotations: { title: 'File new information', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   scope: 'capture',
   limit: 'capture',
   writes: true,
@@ -149,6 +150,7 @@ const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
 export const captureActionTool = defineTool({
   name: 'kinote_capture_action',
+  annotations: { title: 'Act on a capture', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   scope: 'capture',
   limit: 'capture',
   // Checking status reads only: it counts like a search, so polling never uses up the capture limit.

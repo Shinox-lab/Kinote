@@ -118,6 +118,7 @@ async function findPages(ctx: ToolContext, query: string, spaceRef: string | und
 
 export const searchTool = defineTool({
   name: 'kinote_search',
+  annotations: { title: 'Search the wiki', readOnlyHint: true, openWorldHint: false },
   scope: 'read',
   limit: 'search',
   description:

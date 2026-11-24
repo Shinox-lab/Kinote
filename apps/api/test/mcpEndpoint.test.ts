@@ -16,6 +16,7 @@ const TEST_PATH = '/test/mcp';
 
 const echo = defineTool({
   name: 'kinote_echo',
+  annotations: { title: 'Test tool', readOnlyHint: false, openWorldHint: false },
   scope: 'read',
   limit: 'search',
   description: 'Echo the text back.',
@@ -30,6 +31,7 @@ const echo = defineTool({
 });
 const captureEcho = defineTool({
   name: 'kinote_capture_echo',
+  annotations: { title: 'Test tool', readOnlyHint: false, openWorldHint: false },
   scope: 'capture',
   limit: 'search',
   description: 'Echo, for capture tokens.',

@@ -32,6 +32,7 @@ async function assertCanCapture(ctx: ToolContext): Promise<void> {
 
 export const uploadTool = defineTool({
   name: 'kinote_upload',
+  annotations: { title: 'Add a file', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   scope: 'capture',
   limit: 'capture',
   writes: true,
@@ -59,6 +60,7 @@ export const uploadTool = defineTool({
 
 export const uploadBeginTool = defineTool({
   name: 'kinote_upload_begin',
+  annotations: { title: 'Start a file upload', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   scope: 'capture',
   limit: 'upload',
   writes: true,
@@ -74,6 +76,7 @@ export const uploadBeginTool = defineTool({
 
 export const uploadChunkTool = defineTool({
   name: 'kinote_upload_chunk',
+  annotations: { title: 'Send part of a file', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   scope: 'capture',
   limit: 'upload',
   writes: true,
@@ -88,6 +91,7 @@ export const uploadChunkTool = defineTool({
 
 export const uploadFinishTool = defineTool({
   name: 'kinote_upload_finish',
+  annotations: { title: 'Finish a file upload', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   scope: 'capture',
   limit: 'capture',
   writes: true,
@@ -122,6 +126,7 @@ export const uploadFinishTool = defineTool({
 
 export const uploadCancelTool = defineTool({
   name: 'kinote_upload_cancel',
+  annotations: { title: 'Cancel a file upload', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   scope: 'capture',
   limit: 'upload',
   writes: true,

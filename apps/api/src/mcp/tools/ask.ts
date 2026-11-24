@@ -12,6 +12,7 @@ const DAY_MS = 86_400_000;
 
 export const askTool = defineTool({
   name: 'kinote_ask',
+  annotations: { title: 'Ask the wiki', readOnlyHint: true, openWorldHint: false },
   scope: 'read',
   limit: 'ask',
   description:

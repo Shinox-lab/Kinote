@@ -35,6 +35,8 @@ export interface ToolDef<S extends ZodRawShape = ZodRawShape> {
   meta?: ToolMeta;
   /** Every call writes: refused while the workspace is suspended. */
   writes?: boolean;
+  /** MCP tool annotations, so clients can tell read tools from write tools. Required so every tool states it. */
+  annotations: ToolAnnotations;
   description: string;
   input: S;
   /**
@@ -44,6 +46,14 @@ export interface ToolDef<S extends ZodRawShape = ZodRawShape> {
   run(args: z.infer<z.ZodObject<S>>, ctx: ToolContext): Promise<ToolOutput>;
 }
 
+/** MCP `annotations`: every Kinote tool acts only on this workspace, so `openWorldHint` is always false. */
+export interface ToolAnnotations {
+  title: string;
+  readOnlyHint: boolean;
+  destructiveHint?: boolean;
+  idempotentHint?: boolean;
+  openWorldHint: false;
+}
 export type ToolLimit = 'search' | 'ask' | 'capture' | 'edit' | 'upload';
 export interface ToolMeta {
   ui?: { resourceUri?: string; visibility?: Array<'model' | 'app'> };
@@ -73,6 +83,7 @@ export function listTools(tools: readonly ToolDef[], agent: AgentAuth): Tool[] {
       name: t.name,
       description: t.description,
       inputSchema: toJsonSchemaCompat(z.object(t.input), { strictUnions: true, pipeStrategy: 'input' }) as Tool['inputSchema'],
+      annotations: { ...t.annotations },
       ...(t.meta ? { _meta: { ...t.meta } } : {}),
     }));
 }

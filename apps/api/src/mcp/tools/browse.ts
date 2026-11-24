@@ -144,6 +144,7 @@ async function archivedMap(ctx: ToolContext, space: string | undefined): Promise
 
 export const browseTool = defineTool({
   name: 'kinote_browse',
+  annotations: { title: 'Browse the wiki', readOnlyHint: true, openWorldHint: false },
   scope: 'read',
   limit: 'search',
   description:

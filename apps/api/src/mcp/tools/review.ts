@@ -63,6 +63,7 @@ function line(i: ReviewPanelItem): string {
 
 export const reviewTool = defineTool({
   name: 'kinote_review',
+  annotations: { title: 'Show the review panel', readOnlyHint: true, openWorldHint: false },
   scope: 'read',
   limit: 'search',
   meta: { ui: { resourceUri: REVIEW_RESOURCE } },
@@ -83,6 +84,7 @@ export const reviewTool = defineTool({
 
 export const reviewListTool = defineTool({
   name: 'kinote_review_list',
+  annotations: { title: 'List waiting reviews', readOnlyHint: true, openWorldHint: false },
   scope: 'read',
   limit: 'search',
   meta: APP_ONLY,
@@ -97,6 +99,7 @@ export const reviewListTool = defineTool({
 
 export const reviewDecideTool = defineTool({
   name: 'kinote_review_decide',
+  annotations: { title: 'Decide a review', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   scope: 'edit',
   limit: 'edit',
   writes: true,
