@@ -10,12 +10,15 @@ import { ToolError } from '../refs.js';
 export const UPLOAD_CHUNK_BYTES = 1_048_576;
 /** An unfinished upload is forgotten after an hour. */
 export const UPLOAD_TTL_MS = 3_600_000;
+/** A replace upload lives as long as its link. */
+const LINK_TTL_MS = 15 * 60_000;
 /** Uploads one agent may have open at once. */
 export const MAX_OPEN_UPLOADS = 3;
 const DEFAULT_MAX_UPLOAD_BYTES = 52_428_800;
 const AUDIO_VIDEO_EXT = new Set(['mp3', 'm4a', 'wav', 'ogg', 'flac', 'aac', 'mp4', 'm4v', 'mov', 'webm', 'mkv', 'avi']);
 
 const NOT_FOUND = 'Upload not found';
+const NOTHING_SENT = 'Nothing has been sent to the upload link yet. Send the file with the curl line, then call again.';
 const NO_STORAGE = 'File uploads are not set up on this Kinote server.';
 
 export interface UploadDeps {
@@ -124,7 +127,7 @@ async function openUpload(
         purpose: input.purpose,
         documentId: input.documentId,
         createdAt: now,
-        expiresAt: new Date(now.getTime() + UPLOAD_TTL_MS),
+        expiresAt: new Date(now.getTime() + (input.purpose === 'replace' ? LINK_TTL_MS : UPLOAD_TTL_MS)),
       })
       .returning({ id: mcpUploads.id });
     return row!.id;
@@ -143,6 +146,20 @@ export async function beginLinkUpload(
   now: Date = new Date()
 ): Promise<{ uploadId: string }> {
   const storage = storageOf(deps);
+  // Asking again for the same file (a curl that failed, say) replaces the link nothing was sent to.
+  await withTenantTx(actor.tenantId, (tx) =>
+    tx
+      .delete(mcpUploads)
+      .where(
+        and(
+          eq(mcpUploads.tenantId, actor.tenantId),
+          eq(mcpUploads.agentId, agentId),
+          eq(mcpUploads.purpose, 'replace'),
+          eq(mcpUploads.documentId, input.documentId),
+          eq(mcpUploads.nextIndex, 0)
+        )
+      )
+  );
   return { uploadId: await openUpload(storage, actor, agentId, { ...input, size: 0, purpose: 'replace' }, now) };
 }
 
@@ -288,7 +305,9 @@ export async function takeUpload(
   const storage = storageOf(deps);
   const row = await liveUpload(actor, agentId, uploadId, now, opts.purpose);
   // A replace upload finishes only the file it was made for; one still being PUT has nothing to take yet.
-  if (opts.purpose === 'replace' && (row.documentId !== opts.documentId || row.nextIndex < 0)) throw new ToolError(NOT_FOUND);
+  if (opts.purpose === 'replace' && row.documentId !== opts.documentId) throw new ToolError(NOT_FOUND);
+  // Nothing PUT yet (or the PUT is still arriving): the link stays usable.
+  if (opts.purpose === 'replace' && row.nextIndex <= 0) throw new ToolError(NOTHING_SENT);
   if (row.receivedBytes !== row.size) throw new ToolError(`The upload is incomplete: ${row.receivedBytes} of ${row.size} bytes.`);
 
   const stream = new PassThrough();

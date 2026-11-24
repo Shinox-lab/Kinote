@@ -98,6 +98,19 @@ describe('published file versions', () => {
     if (search.statusCode === 200) assert.ok(!search.body.includes(up.document.id), search.body);
   });
 
+  test('an older version still indexing cannot overtake a newer published no-text version', async () => {
+    const c = await setup();
+    const up = await upload(c, 'report.pdf', PDF_TEXT);
+    await settle(c.tenant.id);
+    const v2 = await replace(c, up.document.id, 'report.pdf', `${PDF_TEXT}More.\n`);
+    // v2 has been read and waits for its embedding job when v3 arrives.
+    await withTenantTx(c.tenant.id, (tx) => tx.update(versions).set({ status: 'indexing' }).where(eq(versions.id, v2)));
+    const v3 = await replace(c, up.document.id, 'report.png', PNG_NO_TEXT);
+    await settle(c.tenant.id);
+    assert.equal((await doc(c, up.document.id)).publishedVersionId, v3);
+    assert.equal((await ver(c, v2)).status, 'superseded');
+  });
+
   test('withdraw and archive clear the published version', async () => {
     const c = await setup();
     const a = await upload(c, 'a.png', PNG_NO_TEXT);

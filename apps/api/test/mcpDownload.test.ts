@@ -1,6 +1,8 @@
 import { describe, test } from 'vitest';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
+import { and, eq } from 'drizzle-orm';
+import { versions, withTenantTx } from '@kinote/db';
 import { FakeExtractor } from '@kinote/core';
 import { InMemoryObjectStorage } from '@kinote/shared';
 import { runPendingJobsForTenant } from '../../worker/src/runner.js';
@@ -105,6 +107,32 @@ describe('kinote_download', () => {
     const none = await download(w, { page_id: up.document.id, version: 9 });
     assert.equal(none.isError, true);
     assert.equal(none.text, 'No version 9. Read level "versions" to see them.');
+  });
+
+  test('an editor downloads the current version; Replace with names only the version handed out', async () => {
+    const w = await world('dl-current');
+    const up = await upload(w, 'notes.txt', 'one');
+    for (const data of ['two', 'three']) {
+      const r = await app.inject(uploadRequest(`/api/v1/files/${up.document.id}/versions`, w.ownerHeaders, { name: 'notes.txt', data }));
+      assert.equal(r.statusCode, 201, r.body);
+    }
+    await withTenantTx(w.tenant.id, (tx) =>
+      tx.update(versions).set({ status: 'rejected' }).where(and(eq(versions.documentId, up.document.id), eq(versions.number, 3)))
+    );
+    const latest = await download(w, { page_id: up.document.id });
+    assert.equal(latest.parts[1]!.resource!.text, 'two', 'a rejected latest is not what an editor builds on');
+    assert.match(latest.text, /Replace with: kinote_replace page_id \S+ base_version 2/);
+    const older = await download(w, { page_id: up.document.id, version: 1 });
+    assert.ok(!older.text.includes('Replace with'), older.text);
+    assert.match(older.text, /This is v1; the current version is v2\. Download that one to change the file\./);
+  });
+
+  test('a page title with a slash or dots prints a curl line that stays in the folder', async () => {
+    const w = await world('dl-slash');
+    const id = await publishPage(app, w.ownerHeaders, w.open.id, '../Q3/Q4 plan', 'Words.');
+    const res = await download(w, { page_id: id });
+    assert.ok(res.text.includes(`curl -fL -o '___Q3_Q4 plan.md' '`), res.text);
+    assert.ok(!/-o '[^']*\//.test(res.text), res.text);
   });
 
   test('a view-only agent gets the published version only', async () => {

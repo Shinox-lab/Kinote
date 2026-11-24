@@ -54,8 +54,8 @@ export function serializeError(err: unknown, depth = 0): SerializedError {
   return out;
 }
 
-/** A media link carries its credential in the path: logged, it would work for anyone reading the log. */
-const SECRET_PATHS = /^(\/api\/v1\/media\/)[^/?#]+/;
+/** Media and agent links carry their credential in the path: logged, it would work for anyone reading the log. */
+const SECRET_PATHS = /^(\/api\/v1\/(?:media|agent-files|agent-uploads)\/)[^/?#]+/;
 
 /** A request URL as logged, with any secret path segment replaced. */
 export function loggableUrl(url: string): string {

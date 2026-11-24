@@ -1,4 +1,4 @@
-import { and, desc, eq, notInArray } from 'drizzle-orm';
+import { and, desc, eq, lt, notInArray } from 'drizzle-orm';
 import { chunks, documents, versions, type DbTransaction, type DocumentRow } from '@kinote/db';
 import { deletePlacementIndex } from '../placement/derived.js';
 import type { VersionRow } from './versions.js';
@@ -7,7 +7,8 @@ import type { VersionRow } from './versions.js';
  * Settles a file version with no readable text as `stored` and makes it the one readers below editor open.
  * The file no longer says the words of an older indexed version, so that version is superseded and its text
  * leaves search (chunks and placement rows), as indexing a newer version would replace them. A previously
- * published no-text version gives way too. The caller holds the document lock.
+ * published no-text version gives way too, and so does an older version still indexing. The caller holds
+ * the document lock.
  */
 export async function publishStoredVersion(
   tx: DbTransaction,
@@ -26,6 +27,14 @@ export async function publishStoredVersion(
         .set({ status: 'superseded' })
         .where(and(eq(versions.tenantId, tenantId), eq(versions.id, old)));
     }
+  }
+  // An older version still waiting for its embedding job would otherwise index over this one later.
+  const [self] = await tx.select({ number: versions.number }).from(versions).where(and(eq(versions.tenantId, tenantId), eq(versions.id, versionId)));
+  if (self) {
+    await tx
+      .update(versions)
+      .set({ status: 'superseded' })
+      .where(and(eq(versions.tenantId, tenantId), eq(versions.documentId, doc.id), eq(versions.status, 'indexing'), lt(versions.number, self.number)));
   }
   if (doc.indexedVersionId && doc.indexedVersionId !== versionId) {
     await tx.delete(chunks).where(and(eq(chunks.tenantId, tenantId), eq(chunks.documentId, doc.id)));

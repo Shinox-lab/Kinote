@@ -39,9 +39,15 @@ function utf8(bytes: Uint8Array): string | null {
   }
 }
 
+/** A name safe to save under in the current folder: no path separators, control characters or leading dot. */
+export function saveName(name: string): string {
+  const clean = name.replace(/[\/\\\x00-\x1f\x7f]/g, '_').replace(/^\.+/, (dots) => '_'.repeat(dots.length));
+  return clean.trim() === '' ? 'download' : clean;
+}
+
 function linkLines(link: { url: string } | null, name: string): string[] {
   if (!link) return [NO_URL];
-  return [`Link (15 minutes, this agent only): ${link.url}`, `Fetch with: curl -fL -o ${shellQuote(name)} ${shellQuote(link.url)}`];
+  return [`Link (15 minutes, this agent only): ${link.url}`, `Fetch with: curl -fL -o ${shellQuote(saveName(name))} ${shellQuote(link.url)}`];
 }
 
 async function downloadFile(ctx: ToolContext, doc: DocumentRow, args: { version?: number; inline: boolean }): Promise<ToolOutput> {
@@ -57,8 +63,8 @@ async function downloadFile(ctx: ToolContext, doc: DocumentRow, args: { version?
         .where(and(eq(versions.tenantId, actor.tenantId), eq(versions.documentId, doc.id), eq(versions.number, args.version)));
       id = row?.id ?? null;
     } else {
-      // The same rule as the web: an editor opens the latest version, everyone else the published one.
-      id = editor ? doc.latestVersionId : doc.publishedVersionId;
+      // An editor gets the current version (what a replace builds on), everyone else the published one.
+      id = editor ? ((await currentFileVersion(tx, actor.tenantId, doc.id))?.id ?? null) : doc.publishedVersionId;
     }
     if (id === null) {
       throw new ToolError(args.version !== undefined ? noVersion(args.version) : 'Nothing is published for this file yet, so there is nothing to download.');
@@ -97,7 +103,11 @@ async function downloadFile(ctx: ToolContext, doc: DocumentRow, args: { version?
     `${name} · v${ver.number} · ${formatSize(size)} · ${mime}`,
     `sha256 ${ver.contentHash}`,
     ...linkLines(link, name),
-    ...(canEdit && current ? [`Replace with: kinote_replace page_id ${shortId(doc.id)} base_version ${current.number}`] : []),
+    ...(canEdit && current
+      ? current.id === ver.id
+        ? [`Replace with: kinote_replace page_id ${shortId(doc.id)} base_version ${current.number}`]
+        : [`This is v${ver.number}; the current version is v${current.number}. Download that one to change the file.`]
+      : []),
     ...(content.some((c) => c.type === 'resource') ? [DATA_NOTE] : []),
   ];
   return {

@@ -94,6 +94,25 @@ describe('kinote_replace upload links', () => {
     assert.equal((await put(l.path, 'ten bytes\n')).statusCode, 200);
   });
 
+  test('asking again for the same file replaces the unsent link, which lives 15 minutes', async () => {
+    const w = await world('rl-again');
+    for (let i = 0; i < 5; i++) await link(w);
+    const rows = await withTenantTx(w.tenant.id, (tx) => tx.select().from(mcpUploads));
+    assert.equal(rows.length, 1);
+    assert.ok(rows[0]!.expiresAt.getTime() - rows[0]!.createdAt.getTime() <= 15 * 60_000);
+  });
+
+  test('a commit before the PUT keeps the link and says nothing was sent', async () => {
+    const w = await world('rl-early');
+    const l = await link(w);
+    const early = await replace(w, { page_id: w.fileId, base_version: 1, upload_id: l.uploadId });
+    assert.equal(early.isError, true);
+    assert.equal(early.text, 'Nothing has been sent to the upload link yet. Send the file with the curl line, then call again.');
+    assert.equal((await put(l.path, 'a,b\n9,9\n')).statusCode, 200);
+    const done = await replace(w, { page_id: w.fileId, base_version: 1, upload_id: l.uploadId });
+    assert.match(done.text, /^Replaced/);
+  });
+
   test('an empty PUT is refused at commit', async () => {
     const w = await world('rl-empty');
     const l = await link(w);
@@ -134,8 +153,10 @@ describe('kinote_replace upload links', () => {
     const begin = await callTool(app, w.token, 'kinote_upload_begin', { name: 'a.txt', size: 3, mime: 'text/plain' });
     assert.equal(begin.isError, false, begin.text);
     await link(w);
-    await link(w);
-    const fourth = await replace(w, { page_id: w.fileId, base_version: 1 });
+    const other = await app.inject(uploadRequest('/api/v1/files', w.ownerHeaders, { name: 'b.csv', data: 'b\n' }, { space_id: w.open.id }));
+    await link({ ...w, fileId: other.json().document.id });
+    const third = await app.inject(uploadRequest('/api/v1/files', w.ownerHeaders, { name: 'c.csv', data: 'c\n' }, { space_id: w.open.id }));
+    const fourth = await replace(w, { page_id: third.json().document.id, base_version: 1 });
     assert.equal(fourth.isError, true);
     assert.match(fourth.text, /Finish or cancel another upload first/);
   });
