@@ -1,13 +1,23 @@
-import { and, asc, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 import { z } from 'zod';
-import { chunks, spaces, versions, withTenantTx, type DocumentRow } from '@kinote/db';
-import { blockMarkdown, blockText, pageFieldEntries, readLiveBlocks } from '@kinote/core';
+import { chunks, documents, sources, spaces, versions, withTenantTx, type DbTransaction, type DocumentRow } from '@kinote/db';
+import {
+  blockMarkdown,
+  blockText,
+  currentFileVersion,
+  pageFieldEntries,
+  readLiveBlocks,
+  requireDocumentRole,
+  type VersionRow,
+} from '@kinote/core';
+import { resolveActorNames } from '../../people.js';
+import { editHintFor } from '../editHint.js';
 import { documentName, flattenBlocks, type BlockLike } from '@kinote/shared';
 import { contentBlock, decodeCursor, encodeCursor, idMatches as sameId, MAX_RESULT_TOKENS, pageLink, shortId } from '../format.js';
 import { resolvePageRef, ToolError } from '../refs.js';
 import { defineTool, type ToolContext } from '../tool.js';
 
-type Level = 'outline' | 'section' | 'full';
+type Level = 'outline' | 'section' | 'full' | 'info' | 'versions';
 interface ReadCursor {
   p: string;
   l: Level | 'file';
@@ -18,6 +28,8 @@ interface ReadCursor {
 }
 
 const BAD_CURSOR = 'This cursor belongs to another read. Start again without a cursor.';
+const NO_SECTIONS = 'A file has no sections. Read level "full" for its text.';
+const VERSIONS_PER_CALL = 20;
 const OUTLINE_HINT = 'Read level "outline" to find section IDs.';
 /** Room kept for the content tags, the cursor line and escaping. */
 const RESERVE_CHARS = 400;
@@ -39,36 +51,183 @@ function sectionEnd(blocks: BlockLike[], start: number): number {
   return end;
 }
 
-/**
- * The server's own lines: `Page <id> · <space> · <status>` and the link. The title is the page's own text and
- * goes inside the content block (`# <title>`), with everything else the page says.
- */
-async function header(ctx: ToolContext, doc: DocumentRow): Promise<string[]> {
+/** What the header and the info level say about a page or file, loaded once per read. */
+interface ReadFacts {
+  spaceName: string;
+  spaceArchived: boolean;
+  role: 'viewer' | 'editor';
+  latest: VersionRow | null;
+  indexedNumber: number | undefined;
+  /** Files: the version a replace builds on (see `currentFileVersion`). */
+  current: VersionRow | null;
+  sourceName: string | null;
+}
+
+async function factsOf(ctx: ToolContext, doc: DocumentRow): Promise<ReadFacts> {
   const { actor } = ctx;
-  const { space, numbers } = await withTenantTx(actor.tenantId, async (tx) => {
-    const [s] = await tx
-      .select({ name: spaces.name })
-      .from(spaces)
-      .where(and(eq(spaces.tenantId, actor.tenantId), eq(spaces.id, doc.spaceId)));
+  return withTenantTx(actor.tenantId, async (tx) => {
+    const access = await requireDocumentRole(tx, actor, doc, 'viewer');
+    const canEdit = access.effectiveRole !== 'viewer' && !access.space.archivedAt && ctx.agent.scopes.includes('edit');
     const ids = [doc.indexedVersionId, doc.latestVersionId].filter((v): v is string => v !== null);
     const rows = ids.length
-      ? await tx
-          .select({ id: versions.id, number: versions.number })
-          .from(versions)
-          .where(and(eq(versions.tenantId, actor.tenantId), inArray(versions.id, ids)))
+      ? await tx.select().from(versions).where(and(eq(versions.tenantId, actor.tenantId), inArray(versions.id, ids)))
       : [];
-    return { space: s?.name ?? '', numbers: new Map(rows.map((r) => [r.id, r.number])) };
+    const byId = new Map(rows.map((r) => [r.id, r]));
+    let sourceName: string | null = null;
+    if (doc.sourceId) {
+      const [src] = await tx
+        .select({ name: sources.name })
+        .from(sources)
+        .where(and(eq(sources.tenantId, actor.tenantId), eq(sources.id, doc.sourceId)));
+      sourceName = src?.name ?? null;
+    }
+    return {
+      spaceName: access.space.name,
+      spaceArchived: access.space.archivedAt !== null,
+      role: canEdit ? 'editor' : 'viewer',
+      latest: doc.latestVersionId ? (byId.get(doc.latestVersionId) ?? null) : null,
+      indexedNumber: doc.indexedVersionId ? byId.get(doc.indexedVersionId)?.number : undefined,
+      current: doc.kind === 'file' ? await currentFileVersion(tx, actor.tenantId, doc.id) : null,
+      sourceName,
+    };
   });
-  const indexed = doc.indexedVersionId ? numbers.get(doc.indexedVersionId) : undefined;
-  const latest = doc.latestVersionId ? numbers.get(doc.latestVersionId) : undefined;
+}
+
+/** A version's status in words a person would use. */
+const STATUS_WORDS: Record<VersionRow['status'], string> = {
+  extracting: 'being read',
+  pending_review: 'waiting for review',
+  indexing: 'being indexed',
+  indexed: 'indexed',
+  superseded: 'superseded',
+  rejected: 'rejected',
+  withdrawn: 'withdrawn',
+  failed: 'failed',
+  stored: 'stored (no text)',
+};
+
+/**
+ * The server's own lines: `Page <id> · <space> · <status>`, the link, and how it changes (`Edit with: …`). The
+ * title is the page's own text and goes inside the content block (`# <title>`), with everything else it says.
+ */
+function header(ctx: ToolContext, doc: DocumentRow, f: ReadFacts): string[] {
+  const indexed = f.indexedNumber;
+  const latest = f.latest?.number;
   const status =
     indexed === undefined
       ? 'not indexed yet'
       : latest === undefined || latest === indexed
         ? `indexed v${indexed}`
-        : `live page ahead of the index (indexed v${indexed}, latest v${latest})`;
+        : doc.kind === 'file'
+          ? `indexed v${indexed}, latest v${latest} ${STATUS_WORDS[f.latest!.status]}`
+          : `live page ahead of the index (indexed v${indexed}, latest v${latest})`;
   const link = pageLink(ctx.agent, ctx.deps.publicUrl, doc.id, doc.kind);
-  return [`Page ${shortId(doc.id)} · ${space} · ${status}`, ...(link ? [link] : [])];
+  return [
+    `Page ${shortId(doc.id)} · ${f.spaceName} · ${status}`,
+    ...(link ? [link] : []),
+    editHintFor(doc, f.role, f.current, f.sourceName),
+  ];
+}
+
+/** `48 KB`, `1.2 MB`, `310 B`. */
+export function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+const when = (d: Date) => d.toISOString().slice(0, 16).replace('T', ' ');
+const typeOf = (fileName: string | null) => (fileName?.includes('.') ? fileName.split('.').pop()!.toLowerCase() : 'file');
+
+/** Display names for version authors: a person's name, `Agent "<name>"`, or a source's name. */
+async function authorNames(tx: DbTransaction, tenantId: string, rows: Pick<VersionRow, 'createdByType' | 'createdBy'>[]) {
+  const names = await resolveActorNames(tx, tenantId, rows.map((v) => ({ type: v.createdByType, id: v.createdBy })));
+  return (v: Pick<VersionRow, 'createdByType' | 'createdBy'>) => {
+    const name = names.get(`${v.createdByType}:${v.createdBy}`) ?? '';
+    return v.createdByType === 'agent' ? `Agent "${name}"` : name;
+  };
+}
+
+/** `Open › Plans › Q3`: the space and the titles of the pages above. */
+async function locationOf(tx: DbTransaction, tenantId: string, doc: DocumentRow, spaceName: string): Promise<string> {
+  const titles: string[] = [];
+  let parentId = doc.parentId;
+  for (let depth = 0; parentId && depth < 20; depth++) {
+    const [parent] = await tx
+      .select({ title: documents.title, parentId: documents.parentId })
+      .from(documents)
+      .where(and(eq(documents.tenantId, tenantId), eq(documents.id, parentId)));
+    if (!parent) break;
+    titles.unshift(parent.title);
+    parentId = parent.parentId;
+  }
+  return [spaceName, ...titles].join(' › ');
+}
+
+/** Why a file has no readable text, from its latest version's status. */
+function noTextReason(latest: VersionRow | null): string {
+  switch (latest?.status) {
+    case 'extracting':
+    case 'indexing':
+      return 'still being read';
+    case 'pending_review':
+      return 'waiting for review';
+    case 'stored':
+      return 'an image without words, audio or video';
+    case 'failed':
+      return 'Kinote could not read it';
+    default:
+      return 'none readable';
+  }
+}
+
+async function readInfo(ctx: ToolContext, doc: DocumentRow, f: ReadFacts, page?: { blocks: BlockLike[]; fieldsLine: string | null }): Promise<string> {
+  const { tenantId } = ctx.actor;
+  const head = header(ctx, doc, f);
+  const lines = await withTenantTx(tenantId, async (tx) => {
+    const shown = doc.kind === 'file' ? (f.current ?? f.latest) : f.latest;
+    const by = shown ? await authorNames(tx, tenantId, [shown]) : null;
+    const versionLine = shown
+      ? `Version: v${shown.number} (${shown.id === f.latest?.id ? (doc.kind === 'file' ? 'latest' : 'latest saved') : `latest v${f.latest?.number}`}) · ${STATUS_WORDS[shown.status]} · by ${by!(shown)}, ${when(shown.createdAt)}`
+      : 'Version: none saved yet';
+    const location = `Location: ${await locationOf(tx, tenantId, doc, f.spaceName)}`;
+    if (doc.kind === 'file') {
+      const file = shown;
+      return [
+        `Type: ${typeOf(file?.fileName ?? doc.title)} · ${formatSize(file?.sizeBytes ?? 0)} · ${file?.fileName ?? doc.title}`,
+        versionLine,
+        `Readable text: ${f.indexedNumber !== undefined ? `v${f.indexedNumber}` : `none, ${noTextReason(f.latest)}`}`,
+        location,
+      ];
+    }
+    const words = page!.blocks.reduce((n, b) => n + blockWords(b), 0);
+    return [`# ${doc.title}`, 'Kind: page', ...(page!.fieldsLine ? [page!.fieldsLine] : []), `Words: ${words}`, versionLine, location];
+  });
+  return `${head.join('\n')}\n${contentBlock(shortId(doc.id), lines.join('\n'))}`;
+}
+
+async function readVersions(ctx: ToolContext, doc: DocumentRow, f: ReadFacts, start: number): Promise<string> {
+  const { tenantId } = ctx.actor;
+  const head = header(ctx, doc, f);
+  const { lines, more } = await withTenantTx(tenantId, async (tx) => {
+    const rows = await tx
+      .select()
+      .from(versions)
+      .where(and(eq(versions.tenantId, tenantId), eq(versions.documentId, doc.id)))
+      .orderBy(desc(versions.number))
+      .offset(start)
+      .limit(VERSIONS_PER_CALL + 1);
+    const page = rows.slice(0, VERSIONS_PER_CALL);
+    const by = await authorNames(tx, tenantId, page);
+    return {
+      more: rows.length > VERSIONS_PER_CALL,
+      lines: page.map((v) =>
+        [`v${v.number}`, STATUS_WORDS[v.status], by(v), when(v.createdAt), ...(v.sizeBytes !== null ? [formatSize(v.sizeBytes)] : [])].join(' · ')
+      ),
+    };
+  });
+  const body = lines.length > 0 ? lines.join('\n') : '(No versions yet.)';
+  const next = more ? `\nMore: call kinote_read with cursor "${encodeCursor({ p: doc.id, l: 'versions', i: start + VERSIONS_PER_CALL } satisfies ReadCursor)}".` : '';
+  return `${head.join('\n')}\n${contentBlock(shortId(doc.id), body)}${next}`;
 }
 
 /** The longest head of `text` within `max` characters, cut after a line break or a space when there is one. */
@@ -127,9 +286,29 @@ function paged(
   return `${top}\n${contentBlock(shortId(docId), `${titleLine}\n\n${body}`)}${more}`;
 }
 
-async function readFile(ctx: ToolContext, doc: DocumentRow, start: number, offset: number): Promise<string> {
-  const head = await header(ctx, doc);
-  if (!doc.indexedVersionId) return `${head.join('\n')}\nThis file has no extracted text yet. Try again after it is indexed.`;
+/** No indexed text: what to tell the agent, from the latest version's status. */
+function noTextMessage(latest: VersionRow | null): string {
+  switch (latest?.status) {
+    case 'extracting':
+    case 'indexing':
+      return 'Kinote is still reading this file. Try again in a minute.';
+    case 'pending_review':
+      return 'This version is waiting for review; its text is readable once a person approves it.';
+    case 'stored':
+      return 'This file has no text Kinote can read (an image without words, audio or video). kinote_download gets the file itself.';
+    case 'failed':
+      return `Kinote could not read this file: ${(latest.error ?? 'unknown error').replace(/\.$/, '')}. kinote_download gets the file itself.`;
+    case 'rejected':
+    case 'withdrawn':
+      return `The latest version was ${latest.status}; no other version has readable text.`;
+    default:
+      return 'This file has no extracted text yet.';
+  }
+}
+
+async function readFile(ctx: ToolContext, doc: DocumentRow, f: ReadFacts, start: number, offset: number): Promise<string> {
+  const head = header(ctx, doc, f);
+  if (!doc.indexedVersionId) return `${head.join('\n')}\n${noTextMessage(f.latest)}`;
   const rows = await withTenantTx(ctx.actor.tenantId, (tx) =>
     tx
       .select({ text: chunks.text })
@@ -180,10 +359,10 @@ export const readTool = defineTool({
   scope: 'read',
   limit: 'search',
   description:
-    'Read a page. Start with level "outline" (headings with their IDs and sizes), then read one section with level "section" and its section_id, or the whole page with "full". Long results end with a cursor.',
+    'Read a page or file. Start with level "outline" (headings with their IDs and sizes), then read one section with level "section" and its section_id, or the whole page with "full". Level "info" gives what it is, its size, its current version and how to change it; "versions" lists its versions, newest first. A file has no sections: with no level, or "full", it returns its extracted text; "outline" is the same as "info". Text extracted from a file can be incomplete for large files and its layout can change; don\'t rely on its structure. Long results end with a cursor.',
   input: {
     page_id: z.string().min(1).max(64),
-    level: z.enum(['outline', 'section', 'full']).optional(),
+    level: z.enum(['outline', 'section', 'full', 'info', 'versions']).optional(),
     section_id: z.string().min(1).max(64).optional(),
     cursor: z.string().max(2000).optional(),
   },
@@ -201,10 +380,19 @@ export const readTool = defineTool({
         Number.isInteger(cursor.i) &&
         cursor.i >= 0 &&
         (cursor.o === undefined || (Number.isInteger(cursor.o) && cursor.o > 0)) &&
-        (doc.kind === 'file' ? cursor.l === 'file' : cursor.l !== 'file' && (args.level === undefined || args.level === cursor.l));
+        (cursor.l === 'versions'
+          ? args.level === 'versions'
+          : args.level !== 'versions' &&
+            (doc.kind === 'file' ? cursor.l === 'file' && (args.level === undefined || args.level === 'full') : cursor.l !== 'file' && (args.level === undefined || args.level === cursor.l)));
       if (!fits) throw new ToolError(BAD_CURSOR);
     }
-    if (doc.kind === 'file') return readFile(ctx, doc, cursor?.i ?? 0, cursor?.o ?? 0);
+    const facts = await factsOf(ctx, doc);
+    if (args.level === 'versions') return readVersions(ctx, doc, facts, cursor?.i ?? 0);
+    if (doc.kind === 'file') {
+      if (args.level === 'section') throw new ToolError(NO_SECTIONS);
+      if (args.level === 'info' || args.level === 'outline') return readInfo(ctx, doc, facts);
+      return readFile(ctx, doc, facts, cursor?.i ?? 0, cursor?.o ?? 0);
+    }
 
     const level: Level = (cursor?.l as Level | undefined) ?? args.level ?? 'outline';
     if (level !== 'outline' && deps.collab) {
@@ -215,8 +403,9 @@ export const readTool = defineTool({
       }
     }
     const { title, blocks, fields } = await liveBlocksOf(ctx, doc);
-    const head = await header(ctx, doc);
+    const head = header(ctx, doc, facts);
     const fieldsLine = await fieldsLineOf(ctx, doc, fields);
+    if (level === 'info') return readInfo(ctx, { ...doc, title }, facts, { blocks, fieldsLine });
     if (level === 'outline') return outline(head, title, doc.id, blocks, fieldsLine);
 
     let from = 0;

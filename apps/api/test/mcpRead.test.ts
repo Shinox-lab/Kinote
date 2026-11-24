@@ -47,6 +47,7 @@ describe('kinote_read', () => {
       res.text,
       [
         `Page ${short(id)} · Open · indexed v1`,
+        'Edit with: kinote_edit',
         `<kinote:content page="${short(id)}">`,
         '# Tool guide',
         'Intro: 6 words',
@@ -177,9 +178,10 @@ describe('kinote_read', () => {
     assert.equal(up.statusCode, 201, up.body);
     const fileId = up.json().document.id as string;
     await index(w);
-    const res = await read(w, { page_id: fileId, level: 'outline' });
+    const res = await read(w, { page_id: fileId, level: 'full' });
     assert.equal(res.isError, false, res.text);
-    assert.match(res.text, new RegExp(`^Page ${short(fileId)} · Open · indexed v1\\n<kinote:content page="${short(fileId)}">\\n# memo\\.pdf\\n`));
+    // The agent's token has no edit scope: it may read the file, not change it.
+    assert.match(res.text, new RegExp(`^Page ${short(fileId)} · Open · indexed v1\\nView only: a person with edit access can change it\\.\\n<kinote:content page="${short(fileId)}">\\n# memo\\.pdf\\n`));
     assert.ok(res.text.indexOf('Page one says hello.') < res.text.indexOf('Page two says goodbye.'));
     assert.ok(res.text.includes(`<kinote:content page="${short(fileId)}">`));
   });
