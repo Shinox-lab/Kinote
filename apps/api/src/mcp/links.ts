@@ -13,6 +13,8 @@ import {
   type ObjectStorage,
 } from '@kinote/shared';
 import { agentActorByTokenId } from '../auth/actor.js';
+import { tenantSuspended } from '../usageLimits.js';
+import { liveLinkUpload, putWhole, UploadAlreadySent, UploadTooLarge } from './upload/store.js';
 import { encodeHeaderName, readableFileVersion } from '../routes/files.js';
 import type { ToolContext } from './tool.js';
 
@@ -61,6 +63,17 @@ export async function pageMarkdown(
   });
   const parts = await Promise.all(blocks.map((b) => blockMarkdown(b)));
   return { title, markdown: `# ${title}\n\n${parts.join('\n\n')}\n` };
+}
+
+/** A 15-minute link this agent PUTs one file to, for the staged upload `uploadId`; null without PUBLIC_URL. */
+export function uploadLink(ctx: Pick<ToolContext, 'actor' | 'agent' | 'deps'>, uploadId: string): { url: string; expiresAt: Date } | null {
+  if (!ctx.deps.publicUrl) return null;
+  const { token, expiresAt } = signAgentLink(
+    'agent-upload',
+    { tenantId: ctx.actor.tenantId, agentId: ctx.agent.agentId, tokenId: ctx.agent.tokenId, kind: 'upload', uploadId },
+    getCollabTokenSecret()
+  );
+  return { url: linkUrl(ctx.deps.publicUrl, 'agent-uploads', token), expiresAt };
 }
 
 /** Thrown for every refusal of a link route: the answer is the same 404 whatever the reason. */
@@ -143,4 +156,56 @@ export async function audit(actor: Actor, tokenId: string, payload: Record<strin
       payload: { tokenId, ...payload },
     })
   );
+}
+
+/** A refusal of the upload route that is not "not found": its HTTP status and error word. */
+export class LinkRefused extends Error {
+  constructor(readonly status: 403 | 409 | 413, readonly error: 'suspended' | 'already_sent' | 'file_too_large') {
+    super(error);
+  }
+}
+
+/**
+ * PUT /api/v1/agent-uploads/:token: stages one file for a kinote_replace that comes after. Re-checks the token
+ * row, the agent and its edit access to the file; refuses a suspended workspace, a second PUT and a body past
+ * the cap. It changes nothing else: the write is the next tool call.
+ */
+export async function receiveAgentUpload(
+  token: string,
+  body: Readable,
+  declaredLength: number | null,
+  deps: { storage: ObjectStorage; maxUploadBytes: number; uploadTmpDir?: string }
+): Promise<{ upload_id: string; bytes: number; sha256: string }> {
+  const claims = verifyAgentLink('agent-upload', token, getCollabTokenSecret());
+  if (!claims || claims.kind !== 'upload') throw new LinkNotFound();
+  const who = await agentActorByTokenId(claims.tenantId, claims.tokenId);
+  if (!who || who.agent.agentId !== claims.agentId) throw new LinkNotFound();
+  const { actor } = who;
+  const row = await liveLinkUpload(actor.tenantId, claims.agentId, claims.uploadId);
+  if (!row || !row.documentId) throw new LinkNotFound();
+  try {
+    await withTenantTx(actor.tenantId, async (tx) => {
+      const [doc] = await tx
+        .select()
+        .from(documents)
+        .where(and(eq(documents.tenantId, actor.tenantId), eq(documents.id, row.documentId!)));
+      if (!doc || doc.kind !== 'file' || doc.archivedAt) throw new AppError('document_not_found');
+      await requireDocumentRole(tx, actor, doc, 'editor');
+    });
+  } catch (err) {
+    if (err instanceof AppError) throw new LinkNotFound();
+    throw err;
+  }
+  if (await tenantSuspended(actor.tenantId)) throw new LinkRefused(403, 'suspended');
+  if (declaredLength !== null && declaredLength > deps.maxUploadBytes) throw new LinkRefused(413, 'file_too_large');
+  let out: { bytes: number; sha256: string };
+  try {
+    out = await putWhole(deps, actor.tenantId, row.id, body, deps.maxUploadBytes, deps.uploadTmpDir);
+  } catch (err) {
+    if (err instanceof UploadAlreadySent) throw new LinkRefused(409, 'already_sent');
+    if (err instanceof UploadTooLarge) throw new LinkRefused(413, 'file_too_large');
+    throw err;
+  }
+  await audit(actor, claims.tokenId, { uploadId: row.id, documentId: row.documentId, bytes: out.bytes }, 'mcp.link_upload');
+  return { upload_id: row.id, ...out };
 }

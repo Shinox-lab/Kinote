@@ -3,17 +3,22 @@ import { z } from 'zod';
 import { spaces, withTenantTx, type DocumentRow } from '@kinote/db';
 import { AppError } from '@kinote/contracts';
 import { currentFileVersion, fileReviewDecision, requireDocumentRole, type VersionRow } from '@kinote/core';
-import { detect, replaceFile } from '../../routes/files.js';
-import { bytesFile } from '../../uploadedFile.js';
-import { pageLink } from '../format.js';
+import { baseConflictMessage, detect, replaceFile } from '../../routes/files.js';
+import { bytesFile, type UploadedFile } from '../../uploadedFile.js';
+import { pageLink, shortId } from '../format.js';
+import { uploadLink } from '../links.js';
+import { beginLinkUpload, cancelUpload, takeUpload } from '../upload/store.js';
+import { shellQuote } from './download.js';
 import { resolvePageRef, ToolError } from '../refs.js';
 import { defineTool, type ToolContext, type ToolOutput } from '../tool.js';
 import { INLINE_BYTES } from './download.js';
+import { formatSize } from './read.js';
 
 const EMPTY = 'The file is empty.';
 const TOO_BIG =
   'This is over 256 KiB, too big to send inline. Call kinote_replace with page_id and base_version only to get an upload link.';
 const NO_AV = "Kinote can't take audio or video from an agent; a person can replace it in Kinote.";
+const NO_STORAGE = 'This server has no file storage configured.';
 
 /** A file's type word (`csv`, `png`) from its name, as detection keys it. */
 const typeOfName = (name: string) => (name.includes('.') ? name.split('.').pop()!.toLowerCase() : 'file');
@@ -40,14 +45,12 @@ export async function replaceTarget(ctx: ToolContext, pageId: string): Promise<{
 export async function commitReplace(
   ctx: ToolContext,
   target: { doc: DocumentRow; current: VersionRow | null; spaceName: string },
-  bytes: Uint8Array,
-  fileName: string,
+  file: UploadedFile,
   baseVersion: number
 ): Promise<ToolOutput> {
   const { actor, deps } = ctx;
-  if (bytes.byteLength === 0) throw new ToolError(EMPTY);
-  if (!deps.storage) throw new ToolError('This server has no file storage configured.');
-  const file = bytesFile(fileName, bytes);
+  if (file.sizeBytes === 0) throw new ToolError(EMPTY);
+  if (!deps.storage) throw new ToolError(NO_STORAGE);
   const detected = detect(file);
   if (detected.handling === 'stored') throw new ToolError(NO_AV);
   const { doc, current } = target;
@@ -66,6 +69,43 @@ export async function commitReplace(
   return {
     text: [`Replaced: ${ver.fileName} is now v${ver.number} (was v${baseVersion}) · ${next}`, ...(link ? [link] : [])].join('\n'),
     structured: { page_id: doc.id, version: ver.number, status: ver.status },
+  };
+}
+
+/**
+ * The no-content call: checks the base now (so a stale agent learns before uploading), then stages an upload
+ * row for this file and answers a 15-minute PUT link. Nothing is written until the call with upload_id.
+ */
+async function uploadLinkFor(
+  ctx: ToolContext,
+  target: { doc: DocumentRow; current: VersionRow | null },
+  fileName: string,
+  baseVersion: number
+): Promise<ToolOutput> {
+  const { actor, deps } = ctx;
+  if ((target.current?.number ?? 0) !== baseVersion) {
+    throw new ToolError(await withTenantTx(actor.tenantId, (tx) => baseConflictMessage(tx, actor.tenantId, target.current, baseVersion)));
+  }
+  if (!deps.publicUrl) throw new ToolError('This server has no PUBLIC_URL, so it cannot give upload links. Send content_text or content_base64 (up to 256 KiB).');
+  if (!deps.storage) throw new ToolError(NO_STORAGE);
+  const { uploadId } = await beginLinkUpload(deps, actor, ctx.agent.agentId, {
+    documentId: target.doc.id,
+    name: fileName,
+    mime: target.current?.mimeType ?? 'application/octet-stream',
+  });
+  const link = uploadLink(ctx, uploadId);
+  if (!link) {
+    await cancelUpload(deps, actor, ctx.agent.agentId, uploadId);
+    throw new ToolError(NO_STORAGE);
+  }
+  const max = deps.maxUploadBytes ?? 52_428_800;
+  return {
+    text: [
+      `Upload link (15 minutes, one file up to ${formatSize(max)}): ${link.url}`,
+      `Send with: curl -fT ${shellQuote(fileName)} ${shellQuote(link.url)}`,
+      `Then call kinote_replace with page_id ${shortId(target.doc.id)}, base_version ${baseVersion} and upload_id ${uploadId}.`,
+    ].join('\n'),
+    structured: { page_id: target.doc.id, upload_id: uploadId, url: link.url, expires_at: link.expiresAt.toISOString() },
   };
 }
 
@@ -93,13 +133,21 @@ export const replaceTool = defineTool({
     if (args.content_text !== undefined) {
       const bytes = new TextEncoder().encode(args.content_text);
       if (bytes.byteLength > INLINE_BYTES) throw new ToolError(TOO_BIG);
-      return commitReplace(ctx, target, bytes, fileName, args.base_version);
+      return commitReplace(ctx, target, bytesFile(fileName, bytes), args.base_version);
     }
     if (args.content_base64 !== undefined) {
       const bytes = Buffer.from(args.content_base64, 'base64');
       if (bytes.byteLength > INLINE_BYTES) throw new ToolError(TOO_BIG);
-      return commitReplace(ctx, target, new Uint8Array(bytes), fileName, args.base_version);
+      return commitReplace(ctx, target, bytesFile(fileName, new Uint8Array(bytes)), args.base_version);
     }
-    throw new ToolError('Send content_text or content_base64 (up to 256 KiB).');
+    if (args.upload_id !== undefined) {
+      const { file } = await takeUpload(ctx.deps, ctx.actor, ctx.agent.agentId, args.upload_id, { purpose: 'replace', documentId: target.doc.id });
+      try {
+        return await commitReplace(ctx, { ...target }, { ...file, name: fileName }, args.base_version);
+      } finally {
+        await file.dispose();
+      }
+    }
+    return uploadLinkFor(ctx, target, fileName, args.base_version);
   },
 });

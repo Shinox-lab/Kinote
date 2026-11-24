@@ -313,6 +313,16 @@ async function loadReplaceable(
 const sameAsLatest = (latest: VersionRow | null, hash: string) =>
   latest !== null && latest.contentHash === hash && latest.status !== 'withdrawn';
 
+/** What an agent whose copy came from `base` is told when the file's current version is another one. */
+export async function baseConflictMessage(tx: DbTransaction, tenantId: string, current: VersionRow | null, base: number): Promise<string> {
+  if (!current) return 'This file has no current version. Ask a person to replace it in Kinote.';
+  const names = await resolveActorNames(tx, tenantId, [{ type: current.createdByType, id: current.createdBy }]);
+  const name = names.get(`${current.createdByType}:${current.createdBy}`) ?? 'someone';
+  const by = current.createdByType === 'agent' ? `Agent "${name}"` : name;
+  const at = current.createdAt.toISOString().slice(0, 16).replace('T', ' ');
+  return `This file changed since v${base}: v${current.number} by ${by} at ${at}. Download it again, redo your change on v${current.number}, and send base_version ${current.number}.`;
+}
+
 /**
  * Adds a version to an existing file (editor or higher). The same bytes as the
  * latest version, unless it was withdrawn, answer `unchanged`.
@@ -340,16 +350,7 @@ export async function replaceFile(
     if (!guarded) return latest && sameAsLatest(latest, contentHash) ? unchanged(doc, latest) : null;
     const current = await currentFileVersion(tx, actor.tenantId, doc.id);
     if (current && current.contentHash === contentHash) return unchanged(doc, current);
-    if ((current?.number ?? 0) !== opts.baseVersion) {
-      if (!current) throw new AppError('version_conflict', 'This file has no current version. Ask a person to replace it in Kinote.');
-      const names = await resolveActorNames(tx, actor.tenantId, [{ type: current.createdByType, id: current.createdBy }]);
-      const by = names.get(`${current.createdByType}:${current.createdBy}`) ?? 'someone';
-      const at = current.createdAt.toISOString().slice(0, 16).replace('T', ' ');
-      throw new AppError(
-        'version_conflict',
-        `This file changed since v${opts.baseVersion}: v${current.number} by ${current.createdByType === 'agent' ? `Agent "${by}"` : by} at ${at}. Download it again, redo your change on v${current.number}, and send base_version ${current.number}.`
-      );
-    }
+    if ((current?.number ?? 0) !== opts.baseVersion) throw new AppError('version_conflict', await baseConflictMessage(tx, actor.tenantId, current, opts.baseVersion!));
     return null;
   };
 

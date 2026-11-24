@@ -297,6 +297,10 @@ export const mcpUploads = pgTable(
     nextIndex: integer('next_index').notNull().default(0),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    /** `panel`: the file panel's chunked upload of a new file; `replace`: a kinote_replace upload link for one file. */
+    purpose: text('purpose', { enum: ['panel', 'replace'] }).notNull().default('panel'),
+    /** The file a `replace` upload is for. */
+    documentId: uuid('document_id').references(() => documents.id, { onDelete: 'cascade' }),
   },
   (t) => [index('mcp_uploads_tenant_agent_idx').on(t.tenantId, t.agentId)]
 );

@@ -1,4 +1,4 @@
-import { PassThrough } from 'node:stream';
+import { PassThrough, Readable } from 'node:stream';
 import { and, count, eq, gt, lte, sql } from 'drizzle-orm';
 import { mcpUploads, withTenantTx, type McpUploadRow } from '@kinote/db';
 import type { Actor } from '@kinote/core';
@@ -40,7 +40,13 @@ async function deleteParts(storage: ObjectStorage, tenantId: string, row: Pick<M
 }
 
 /** The agent's live upload, or "Upload not found" (another agent's, unknown, or expired). */
-async function liveUpload(actor: Actor, agentId: string, uploadId: string, now: Date): Promise<McpUploadRow> {
+async function liveUpload(
+  actor: Actor,
+  agentId: string,
+  uploadId: string,
+  now: Date,
+  purpose: McpUploadRow['purpose'] | null = 'panel'
+): Promise<McpUploadRow> {
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(uploadId)) throw new ToolError(NOT_FOUND);
   const [row] = await withTenantTx(actor.tenantId, (tx) =>
     tx
@@ -48,7 +54,7 @@ async function liveUpload(actor: Actor, agentId: string, uploadId: string, now: 
       .from(mcpUploads)
       .where(and(eq(mcpUploads.tenantId, actor.tenantId), eq(mcpUploads.id, uploadId), eq(mcpUploads.agentId, agentId), gt(mcpUploads.expiresAt, now)))
   );
-  if (!row) throw new ToolError(NOT_FOUND);
+  if (!row || (purpose !== null && row.purpose !== purpose)) throw new ToolError(NOT_FOUND);
   return row;
 }
 
@@ -76,6 +82,21 @@ export async function beginUpload(
     throw new ToolError("Audio and video can't be read yet.");
   }
 
+  const uploadId = await openUpload(storage, actor, agentId, { name: input.name, mime: input.mime, size: input.size, purpose: 'panel', documentId: null }, now);
+  return { uploadId, chunkBytes: UPLOAD_CHUNK_BYTES };
+}
+
+/**
+ * Deletes the tenant's expired uploads (there is no periodic job), then adds one for the agent unless it has
+ * MAX_OPEN_UPLOADS open already (panel uploads and replace links count together).
+ */
+async function openUpload(
+  storage: ObjectStorage,
+  actor: Actor,
+  agentId: string,
+  input: { name: string; mime: string; size: number; purpose: McpUploadRow['purpose']; documentId: string | null },
+  now: Date
+): Promise<string> {
   const expired = await withTenantTx(actor.tenantId, (tx) =>
     tx
       .delete(mcpUploads)
@@ -84,7 +105,7 @@ export async function beginUpload(
   );
   for (const row of expired) await deleteParts(storage, actor.tenantId, row);
 
-  const uploadId = await withTenantTx(actor.tenantId, async (tx) => {
+  return withTenantTx(actor.tenantId, async (tx) => {
     // One agent's begins are serialised so two at once cannot both pass the open-upload count.
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${'mcp-upload:' + agentId}))`);
     const [open] = await tx
@@ -100,13 +121,103 @@ export async function beginUpload(
         name: input.name,
         mime: input.mime,
         size: input.size,
+        purpose: input.purpose,
+        documentId: input.documentId,
         createdAt: now,
         expiresAt: new Date(now.getTime() + UPLOAD_TTL_MS),
       })
       .returning({ id: mcpUploads.id });
     return row!.id;
   });
-  return { uploadId, chunkBytes: UPLOAD_CHUNK_BYTES };
+}
+
+/**
+ * Starts a kinote_replace upload link's staging row for one file: the size is unknown until the PUT. Same
+ * expiry sweep and open-upload cap as the panel.
+ */
+export async function beginLinkUpload(
+  deps: UploadDeps,
+  actor: Actor,
+  agentId: string,
+  input: { documentId: string; name: string; mime: string },
+  now: Date = new Date()
+): Promise<{ uploadId: string }> {
+  const storage = storageOf(deps);
+  return { uploadId: await openUpload(storage, actor, agentId, { ...input, size: 0, purpose: 'replace' }, now) };
+}
+
+/** A link upload that is live (not expired), for `putWhole`'s caller: null when unknown, expired or not a replace. */
+export async function liveLinkUpload(tenantId: string, agentId: string, uploadId: string, now: Date = new Date()): Promise<McpUploadRow | null> {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(uploadId)) return null;
+  const [row] = await withTenantTx(tenantId, (tx) =>
+    tx
+      .select()
+      .from(mcpUploads)
+      .where(and(eq(mcpUploads.tenantId, tenantId), eq(mcpUploads.id, uploadId), eq(mcpUploads.agentId, agentId), gt(mcpUploads.expiresAt, now)))
+  );
+  return row && row.purpose === 'replace' ? row : null;
+}
+
+/** Thrown by `putWhole` when the upload already has its bytes (a second PUT). */
+export class UploadAlreadySent extends Error {}
+/** Thrown by `putWhole` when the body passes the size cap; nothing is kept and the link may be used again. */
+export class UploadTooLarge extends Error {}
+
+/**
+ * Streams one PUT body into the upload's single part, counting bytes as they arrive: past `maxBytes` the
+ * stream is cut off (`UploadTooLarge`), whatever the request said its length was, and nothing is staged.
+ * The upload is claimed first (`next_index` 0 → -1), so a second PUT, even a concurrent one, is
+ * `UploadAlreadySent` and cannot overwrite the first. Changes nothing but the staging row and part.
+ */
+export async function putWhole(
+  deps: UploadDeps,
+  tenantId: string,
+  uploadId: string,
+  body: Readable,
+  maxBytes: number,
+  tmpDir?: string
+): Promise<{ bytes: number; sha256: string }> {
+  const storage = storageOf(deps);
+  const claim = (from: number, to: number, extra: Partial<McpUploadRow> = {}) =>
+    withTenantTx(tenantId, (tx) =>
+      tx
+        .update(mcpUploads)
+        .set({ nextIndex: to, ...extra })
+        .where(and(eq(mcpUploads.tenantId, tenantId), eq(mcpUploads.id, uploadId), eq(mcpUploads.nextIndex, from)))
+        .returning({ id: mcpUploads.id })
+    );
+  if ((await claim(0, -1)).length === 0) {
+    body.resume();
+    throw new UploadAlreadySent();
+  }
+  // Counted as it streams: past the cap the generator throws, which ends the spool and destroys the body.
+  let tooLarge = false;
+  async function* counted() {
+    let seen = 0;
+    // Leave the request open when cut off, so the 413 still reaches the client; the rest is drained unread.
+    for await (const chunk of body.iterator({ destroyOnReturn: false })) {
+      seen += (chunk as Buffer).byteLength;
+      if (seen > maxBytes) {
+        tooLarge = true;
+        throw new UploadTooLarge();
+      }
+      yield chunk as Buffer;
+    }
+  }
+  let file: UploadedFile | null = null;
+  try {
+    file = await spoolUpload('upload', Readable.from(counted()), tmpDir);
+    await storage.put(tenantId, partPath(uploadId, 0), file.open(), 'application/octet-stream');
+    await claim(-1, 1, { size: file.sizeBytes, receivedBytes: file.sizeBytes });
+    return { bytes: file.sizeBytes, sha256: file.contentHash };
+  } catch (err) {
+    body.resume();
+    await claim(-1, 0);
+    // The pipeline may report the cut-off as an abort: the flag says what happened.
+    throw tooLarge ? new UploadTooLarge() : err;
+  } finally {
+    await file?.dispose();
+  }
 }
 
 function decodeBase64(data: string): Buffer {
@@ -162,18 +273,22 @@ export async function putChunk(
 }
 
 /**
- * Takes a complete upload: streams its chunks in order into one spooled file (hashed on the way), then
- * deletes the chunks and the row. The caller disposes of the file.
+ * Takes a complete upload of this purpose (a panel upload never finishes as a replace, nor the reverse):
+ * streams its chunks in order into one spooled file (hashed on the way), then deletes the chunks and the
+ * row. The caller disposes of the file.
  */
 export async function takeUpload(
   deps: UploadDeps,
   actor: Actor,
   agentId: string,
   uploadId: string,
+  opts: { purpose: McpUploadRow['purpose']; documentId?: string },
   now: Date = new Date()
 ): Promise<{ file: UploadedFile; row: McpUploadRow }> {
   const storage = storageOf(deps);
-  const row = await liveUpload(actor, agentId, uploadId, now);
+  const row = await liveUpload(actor, agentId, uploadId, now, opts.purpose);
+  // A replace upload finishes only the file it was made for; one still being PUT has nothing to take yet.
+  if (opts.purpose === 'replace' && (row.documentId !== opts.documentId || row.nextIndex < 0)) throw new ToolError(NOT_FOUND);
   if (row.receivedBytes !== row.size) throw new ToolError(`The upload is incomplete: ${row.receivedBytes} of ${row.size} bytes.`);
 
   const stream = new PassThrough();
@@ -201,7 +316,7 @@ export async function cancelUpload(deps: UploadDeps, actor: Actor, agentId: stri
   const storage = storageOf(deps);
   let row: McpUploadRow;
   try {
-    row = await liveUpload(actor, agentId, uploadId, new Date(0));
+    row = await liveUpload(actor, agentId, uploadId, new Date(0), null);
   } catch {
     return;
   }

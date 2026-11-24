@@ -1,3 +1,4 @@
+import { Readable } from 'node:stream';
 import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 import rateLimit from '@fastify/rate-limit';
 import multipart from '@fastify/multipart';
@@ -142,7 +143,7 @@ import {
   updateAgentSettings,
 } from './routes/agents.js';
 import { registerMcpRoute } from './mcp/route.js';
-import { LinkNotFound, serveAgentFile } from './mcp/links.js';
+import { LinkNotFound, LinkRefused, receiveAgentUpload, serveAgentFile } from './mcp/links.js';
 import { oauthRoutes } from './oauth/routes.js';
 import { oauthBase, protectedResourceUrl } from './oauth/request.js';
 import { askWiki } from './search/askWiki.js';
@@ -1012,6 +1013,29 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
       if (err instanceof LinkNotFound) return reply.status(404).send({ error: 'not_found' });
       throw err;
     }
+  });
+
+  // An agent's upload link for kinote_replace: the body is streamed (any content type, never parsed or held
+  // whole) into staging, and nothing else changes until the agent's next tool call commits it.
+  app.register(async (scope) => {
+    scope.removeAllContentTypeParsers();
+    scope.addContentTypeParser('*', (_req, payload, done) => done(null, payload));
+    scope.put('/api/v1/agent-uploads/:token', { config: { auth: 'public', whenSuspended: 'allow' } }, async (req, reply) => {
+      const length = req.headers['content-length'] !== undefined ? Number(req.headers['content-length']) : null;
+      const body = (req.body as Readable | undefined) ?? Readable.from([]);
+      try {
+        const out = await receiveAgentUpload((req.params as any).token, body, Number.isFinite(length) ? length : null, {
+          ...fileDeps(),
+          maxUploadBytes: opts.maxUploadBytes ?? DEFAULT_MAX_UPLOAD_BYTES,
+          ...(opts.uploadTmpDir ? { uploadTmpDir: opts.uploadTmpDir } : {}),
+        });
+        return reply.send(out);
+      } catch (err) {
+        if (err instanceof LinkNotFound) return reply.status(404).send({ error: 'not_found' });
+        if (err instanceof LinkRefused) return reply.status(err.status).send({ error: err.error });
+        throw err;
+      }
+    });
   });
 
   app.get('/api/v1/versions/:id/text', async (req, reply) => {

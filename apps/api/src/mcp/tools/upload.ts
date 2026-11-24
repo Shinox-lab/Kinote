@@ -104,7 +104,7 @@ export const uploadFinishTool = defineTool({
     if (!owner || !deps.storage) throw new ToolError('File uploads are not set up on this Kinote server.');
     await assertCanCapture(ctx);
     const scope = args.place_under ? await scopeOf(actor, args.place_under) : {};
-    const { file } = await takeUpload(deps, actor, ctx.agent.agentId, args.upload_id);
+    const { file } = await takeUpload(deps, actor, ctx.agent.agentId, args.upload_id, { purpose: 'panel' });
     let fileId: string;
     try {
       // Stored as the owner's upload: they dropped it, and an Inbox file is visible only to its creator. Always a
