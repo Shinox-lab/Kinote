@@ -42,7 +42,8 @@ describe('kinote_capture_action', () => {
       'kinote_capture_action',
       'kinote_upload',
     ]);
-    const total = tools.reduce((n, t) => n + estimateTokens(JSON.stringify(t)), 0);
+    // Annotations are for the host's approval defaults, not the model's prompt: not counted.
+    const total = tools.reduce((n, t) => n + estimateTokens(JSON.stringify({ ...t, annotations: undefined })), 0);
     expect(total).toBeLessThan(2000);
   });
 
