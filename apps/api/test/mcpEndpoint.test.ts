@@ -1,3 +1,4 @@
+import { serverInstructions } from '../src/mcp/instructions.js';
 import { describe, test, beforeEach } from 'vitest';
 import assert from 'node:assert/strict';
 import { and, eq } from 'drizzle-orm';
@@ -108,6 +109,19 @@ describe('the /mcp endpoint', () => {
     assert.ok(!text.includes('Hidden'));
     assert.ok(!text.includes('Inbox'));
     assert.equal(res.body.result.serverInfo.name, 'kinote');
+  });
+
+  test('the instructions say how to work on a file', () => {
+    const edit = serverInstructions(['Docs'], ['read', 'edit']);
+    assert.ok(
+      edit.includes(
+        'To work on a file, read it with level "info" first: it says which tools change it. kinote_download gives a link to the file (and small text or images inline); after changing it, kinote_replace with the base_version you started from. A refused replace means someone changed the file: download it again and redo the change.'
+      ),
+      edit
+    );
+    const read = serverInstructions(['Docs'], ['read']);
+    assert.ok(read.includes('kinote_download gives a link to the file (and small text or images inline).'), read);
+    assert.ok(!read.includes('base_version'));
   });
 
   test('a bad token gets 401 before the SDK runs', async () => {

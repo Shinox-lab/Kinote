@@ -359,7 +359,7 @@ export const readTool = defineTool({
   scope: 'read',
   limit: 'search',
   description:
-    'Read a page or file. Start with level "outline" (headings with IDs and sizes), then "section" with its section_id, or "full". "info": type, size, current version and how to change it; "versions": its versions, newest first. A file returns its extracted text (outline = info); that text can be incomplete and its layout can change. Long results end with a cursor.',
+    'Read a page or file. Start with level "outline" (headings with IDs and sizes), then "section" with its section_id, or "full". "info": type, size, current version and how to change it; "versions": its versions, newest first. A file returns its extracted text (outline = info), which can be incomplete. Long results end with a cursor.',
   input: {
     page_id: z.string().min(1).max(64),
     level: z.enum(['outline', 'section', 'full', 'info', 'versions']).optional(),

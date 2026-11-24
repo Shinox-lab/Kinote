@@ -428,6 +428,7 @@ describe('OAuth tokens', () => {
     assert.deepEqual(await listToolNames(app, res.body.access_token), [
       'kinote_ask',
       'kinote_browse',
+      'kinote_download',
       'kinote_read',
       'kinote_related',
       'kinote_review',

@@ -41,3 +41,23 @@ Viewers, and older versions of a file, open read-only. If you try to leave with 
 
 Upload a file again to add a new version. The file's page lists every version with its status, who added it, its size
 and when. While a new version waits for review, the previous one keeps answering search.
+
+Viewers see the version that was last approved. A file with no text to read, such as a photo, a recording or a video,
+opens for viewers too once it's approved.
+
+## Agents and files
+
+An AI agent connected to Kinote works with files the way it works with pages, and only in the spaces it was given.
+
+- **Look before it changes anything.** The agent reads a file's info first: its type, size, current version and
+  which tools can change it. A viewer agent is told the file is view only.
+- **Download.** The agent gets a link to the file that works for 15 minutes and only for that agent, with a ready
+  `curl` line. Small text files and images also come back in the reply itself.
+- **Replace.** After changing its copy, the agent sends it back as a new version and names the version it started
+  from. If someone changed the file in the meantime, Kinote refuses and says who changed it and when, so the agent
+  downloads it again and redoes the change. A large file goes up through a one-time upload link; nothing changes until
+  the agent confirms it.
+- **Review.** A new version from an agent waits for review like a page edit, and you can approve it in Kinote or in
+  the review panel of your AI client, which shows the two versions' sizes, their text or a preview of an image.
+
+An agent can't replace audio or video, change a file's type, or change a file a connected source manages.

@@ -3,6 +3,7 @@ import { corruptDocx, docx, pptx, realPdf, XLSX_MIME, xlsx } from './fixtures.js
 import {
   addMember,
   approveAll,
+  call,
   expandSpace,
   fakePdf,
   fakePng,
@@ -210,6 +211,25 @@ test('a viewer sees only what is published: nothing while the file waits for rev
   await expect(page.getByRole('note')).toHaveCount(0);
   await expect(page.getByRole('region', { name: 'Search chunks' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Download', exact: true })).toBeVisible();
+});
+
+test('a viewer opens an image without words', async ({ browser, request }) => {
+  const world = await seedWorld(request, { reviewRequired: false });
+  const viewer = await addMember(request, world, 'Vera Viewer', 'viewer');
+  const png = fakePng('Photo.png', world.suffix, '');
+  // No words in it: Kinote stores it without text, and publishes it all the same.
+  const blank = { ...png, buffer: Buffer.concat([png.buffer.subarray(0, png.buffer.indexOf('\nFAKE-EXTRACT')), Buffer.from('\nFAKE-EXTRACT-EMPTY\n')]) };
+  const id = await uploadViaApi(request, world, world.owner, blank);
+  await expect
+    .poll(async () => (await call<{ publishedVersion: { number: number } | null }>(request, `/files/${id}`, { account: world.owner, tenantId: world.tenantId })).publishedVersion?.number ?? 0, { timeout: 30_000 })
+    .toBe(1);
+
+  const page = await openAs(browser, world, viewer);
+  await page.goto(`/w/${world.slug}/f/${id}`);
+  const img = page.getByRole('img', { name: 'Photo.png' });
+  await expect(img).toBeVisible();
+  await expect.poll(() => img.evaluate((el: HTMLImageElement) => el.naturalWidth)).toBeGreaterThan(0);
+  await expect(page.getByRole('note')).toHaveCount(0);
 });
 
 test('a hostile Markdown file is shown as text and runs nothing', async ({ browser, request }) => {

@@ -172,7 +172,7 @@ export const downloadTool = defineTool({
   scope: 'read',
   limit: 'search',
   description:
-    'Get a page as Markdown or a file itself: a 15-minute link with a curl line, plus inline a page or text file up to 256 KiB, an image up to 1 MiB, or with inline: true any file up to 256 KiB. version: a number from level "versions".',
+    'Get a page as Markdown or a file itself: a 15-minute link with a curl line, plus inline a page or text file up to 256 KiB, an image up to 1 MiB, or with inline: true any file up to 256 KiB. version: from level "versions".',
   input: {
     page_id: z.string().min(1).max(64),
     version: z.number().int().min(1).optional(),

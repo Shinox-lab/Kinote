@@ -148,7 +148,7 @@ export const browseTool = defineTool({
   scope: 'read',
   limit: 'search',
   description:
-    'The map of the wiki: spaces and their page trees with a one-line summary per page. Call this first. Narrow with space or under; depth 1 to 4 (default 2).',
+    'The map of the wiki: spaces and page trees with a one-line summary per page. Call this first. Narrow with space or under; depth 1 to 4 (default 2).',
   input: {
     space: z.string().max(200).optional().describe('A space name or ID'),
     under: z.string().max(64).optional().describe('A page ID: show the tree below it'),
