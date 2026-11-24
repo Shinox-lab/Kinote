@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { applyOutcome, cardsFrom, contextLine, kindLabel, lineDiff, type CardState } from '../src/mcp/app/reviewLogic.js';
+import { applyOutcome, cardsFrom, contextLine, fileSummary, kindLabel, lineDiff, type CardState } from '../src/mcp/app/reviewLogic.js';
 import { reviewPanelHtml } from '../src/mcp/app/panelHtml.js';
 import type { ReviewPanelItem } from '../src/mcp/review/items.js';
 
@@ -54,6 +54,25 @@ describe('the review panel logic', () => {
     expect(kindLabel(item({ kind: 'archive' }))).toBe('Delete this page');
     expect(kindLabel(item({ kind: 'version', type: 'version' }))).toBe('New version');
     expect(kindLabel(item({ kind: 'set_field' }))).toBe('Change a field');
+  });
+
+  test('a file item is labelled New version of <name> and its card shows sizes', () => {
+    const file = item({
+      type: 'version',
+      kind: 'version',
+      before: null,
+      after: null,
+      file: {
+        name: 'budget.xlsx',
+        mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        after: { version: 2, size: 48 * 1024, url: null },
+        before: { version: 1, size: 47 * 1024, url: null },
+        preview: { before: null, after: null },
+      },
+    });
+    expect(kindLabel(file)).toBe('New version of budget.xlsx');
+    expect(fileSummary(file)).toBe('v1 · 47 KB → v2 · 48 KB');
+    expect(fileSummary(item({ file: { ...file.file!, before: null } }))).toBe('v2 · 48 KB');
   });
 
   test('the panel is one self-contained page', async () => {

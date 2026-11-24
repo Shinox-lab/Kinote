@@ -1,8 +1,9 @@
 import { and, asc, count, eq, inArray, isNull } from 'drizzle-orm';
 import { agents, documents, spaces, suggestions, versions, withTenantTx, writeAuditEvent } from '@kinote/db';
 import { AppError } from '@kinote/contracts';
-import { senderAccess, type Actor } from '@kinote/core';
-import type { CollabClient } from '@kinote/shared';
+import { senderAccess, type Actor, type VersionRow } from '@kinote/core';
+import type { CollabClient, ObjectStorage } from '@kinote/shared';
+import { loadFileChunks } from '@kinote/core';
 import { approveVersion, rejectVersion } from '../../routes/pages.js';
 import { listReviewQueue } from '../../routes/reviews.js';
 import { acceptSuggestion, declineSuggestion, suggestionDecidable } from '../../routes/suggestions.js';
@@ -23,12 +24,36 @@ export interface ReviewPanelItem {
   after: string | null;
   /** A delete request only: the page's live sub-pages. */
   sub_pages?: number;
+  /** A file version: its name, sizes and links (and image previews); `before`/`after` hold its text when both versions have some. */
+  file?: ReviewFileInfo;
   /** False: the owner may see it but someone else decides it (`why_not` says why). */
   decidable: boolean;
   why_not?: string;
 }
 
+export interface ReviewFileSide {
+  version: number;
+  size: number;
+  url: string | null;
+}
+export interface ReviewFileInfo {
+  name: string;
+  mime: string;
+  after: ReviewFileSide;
+  /** The published version it would replace; null for a file's first version. */
+  before: ReviewFileSide | null;
+  /** `data:` URLs, for images of at most 256 KiB only. */
+  preview: { before: string | null; after: string | null };
+}
+/** What file items need: storage for text and previews, and a download link per version (null: none). */
+export interface ReviewFileDeps {
+  storage?: ObjectStorage;
+  link?: (versionId: string) => string | null;
+}
+
 export const MAX_ITEMS = 50;
+const PREVIEW_BYTES = 256 * 1024;
+const PREVIEW_MIME = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif']);
 const CLIP = 20_000;
 const NOT_YOURS = 'You worked on this, so someone else approves it.';
 const YOUR_AGENT = 'Your agent proposed this, so someone else decides it.';
@@ -48,14 +73,16 @@ function clip(text: string | null): string | null {
  * In a space that requires review (without self-approval), what the owner's own agents wrote is someone
  * else's to decide, versions as suggestions.
  */
-export async function reviewItems(owner: Actor, opts: { pageId?: string; agentId?: string; spaceIds?: readonly string[] }): Promise<ReviewPanelItem[]> {
+export async function reviewItems(
+  owner: Actor,
+  opts: { pageId?: string; agentId?: string; spaceIds?: readonly string[]; files?: ReviewFileDeps }
+): Promise<ReviewPanelItem[]> {
   const queue = await listReviewQueue(owner, {});
   const inScope = (spaceId: string) => opts.spaceIds === undefined || opts.spaceIds.includes(spaceId);
   const out: ReviewPanelItem[] = [];
 
   const waiting = queue.filter(
     (q) =>
-      q.document.kind === 'page' &&
       inScope(q.document.spaceId) &&
       (opts.pageId === undefined || q.document.id === opts.pageId) &&
       (opts.agentId === undefined ||
@@ -69,20 +96,18 @@ export async function reviewItems(owner: Actor, opts: { pageId?: string; agentId
       const indexedOf = new Map(
         (
           await tx
-            .select({ id: documents.id, indexed: documents.indexedVersionId })
+            .select({ id: documents.id, kind: documents.kind, indexed: documents.indexedVersionId, published: documents.publishedVersionId })
             .from(documents)
             .where(and(eq(documents.tenantId, owner.tenantId), inArray(documents.id, docIds)))
-        ).map((d) => [d.id, d.indexed])
+        ).map((d) => [d.id, d.kind === 'file' ? d.published : d.indexed])
       );
       const versionIds = [...waiting.map((q) => q.version.id), ...[...indexedOf.values()].filter((v): v is string => v !== null)];
-      const markdownOf = new Map(
-        (
-          await tx
-            .select({ id: versions.id, markdown: versions.markdown })
-            .from(versions)
-            .where(and(eq(versions.tenantId, owner.tenantId), inArray(versions.id, versionIds)))
-        ).map((v) => [v.id, v.markdown ?? ''])
-      );
+      const versionRows = await tx
+        .select()
+        .from(versions)
+        .where(and(eq(versions.tenantId, owner.tenantId), inArray(versions.id, versionIds)));
+      const rowOf = new Map(versionRows.map((v) => [v.id, v]));
+      const markdownOf = new Map(versionRows.map((v) => [v.id, v.markdown ?? '']));
       const strictSpaces = new Set(
         (
           await tx
@@ -113,6 +138,27 @@ export async function reviewItems(owner: Actor, opts: { pageId?: string; agentId
           ((q.version.createdByType === 'agent' && ownAgents.has(q.version.createdBy)) ||
             q.contributors.some((c) => c.type === 'agent' && ownAgents.has(c.id)));
         const why = !q.canApprove ? NOT_YOURS : byOwnAgent ? YOUR_AGENT : null;
+        if (q.document.kind === 'file') {
+          const after = rowOf.get(q.version.id);
+          if (!after) continue;
+          const before = indexed ? (rowOf.get(indexed) ?? null) : null;
+          const file = await fileItem(owner.tenantId, after, before, opts.files ?? {});
+          out.push({
+            type: 'version',
+            id: q.version.id,
+            page: { id: q.document.id, title: q.document.title, space: q.document.spaceName },
+            kind: 'version',
+            proposer: { type: q.version.createdByType === 'user' ? 'user' : 'agent', name: q.version.createdByName },
+            created_at: q.version.createdAt,
+            reason: null,
+            before: file.text.before,
+            after: file.text.after,
+            file: file.info,
+            decidable: why === null,
+            ...(why === null ? {} : { why_not: why }),
+          });
+          continue;
+        }
         out.push({
           type: 'version',
           id: q.version.id,
@@ -178,6 +224,50 @@ export async function reviewItems(owner: Actor, opts: { pageId?: string; agentId
   });
 
   return out.sort((a, b) => a.created_at.localeCompare(b.created_at)).slice(0, MAX_ITEMS);
+}
+
+/** A file version's extracted text (its chunks, in order), or null when it has none or it can't be read. */
+async function fileText(storage: ObjectStorage | undefined, tenantId: string, v: VersionRow): Promise<string | null> {
+  if (!storage || v.noText || !v.extractedKey) return null;
+  try {
+    const { chunks } = await loadFileChunks(storage, tenantId, { title: v.fileName ?? '', extractedKey: v.extractedKey });
+    return chunks.map((c) => c.text).join('\n\n');
+  } catch {
+    return null;
+  }
+}
+
+async function preview(storage: ObjectStorage | undefined, tenantId: string, v: VersionRow): Promise<string | null> {
+  if (!storage || !v.objectKey || !v.mimeType || !PREVIEW_MIME.has(v.mimeType) || (v.sizeBytes ?? Infinity) > PREVIEW_BYTES) return null;
+  try {
+    const { bytes } = await storage.get(tenantId, v.objectKey);
+    return `data:${v.mimeType};base64,${Buffer.from(bytes).toString('base64')}`;
+  } catch {
+    return null;
+  }
+}
+
+/** The file part of a waiting file version's item: the published version it would replace, sizes, links, previews, text. */
+async function fileItem(tenantId: string, after: VersionRow, before: VersionRow | null, deps: ReviewFileDeps) {
+  const side = (v: VersionRow): ReviewFileSide => ({ version: v.number, size: v.sizeBytes ?? 0, url: deps.link?.(v.id) ?? null });
+  const [textAfter, textBefore, previewAfter, previewBefore] = await Promise.all([
+    fileText(deps.storage, tenantId, after),
+    before ? fileText(deps.storage, tenantId, before) : Promise.resolve(null),
+    preview(deps.storage, tenantId, after),
+    before ? preview(deps.storage, tenantId, before) : Promise.resolve(null),
+  ]);
+  // Text is shown as a diff only when both sides have it (a first version: the new text against nothing).
+  const both = textAfter !== null && (before === null || textBefore !== null);
+  return {
+    info: {
+      name: after.fileName ?? 'file',
+      mime: after.mimeType ?? 'application/octet-stream',
+      after: side(after),
+      before: before ? side(before) : null,
+      preview: { before: previewBefore, after: previewAfter },
+    } satisfies ReviewFileInfo,
+    text: { before: both ? clip(textBefore ?? '') : null, after: both ? clip(textAfter) : null },
+  };
 }
 
 export type ReviewDecision = { type: 'version' | 'suggestion'; id: string; decision: 'approve' | 'reject'; note?: string };

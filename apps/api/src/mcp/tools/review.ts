@@ -4,6 +4,7 @@ import { agents, withTenantTx } from '@kinote/db';
 import { AppError } from '@kinote/contracts';
 import { getReadableSpaceIds, ownerActorOf, type Actor } from '@kinote/core';
 import { decideReviewItem, reviewItems, type ReviewPanelItem } from '../review/items.js';
+import { downloadLink } from '../links.js';
 import { resolvePageRef } from '../refs.js';
 import { defineTool, type ToolContext } from '../tool.js';
 
@@ -52,12 +53,16 @@ async function listFor(ctx: ToolContext, args: { page_id?: string; mine_only?: b
     ...(pageId ? { pageId } : {}),
     ...(args.mine_only ? { agentId: ctx.agent.agentId } : {}),
     spaceIds: await agentSpaces(ctx),
+    files: {
+      ...(ctx.deps.storage ? { storage: ctx.deps.storage } : {}),
+      link: (versionId: string) => downloadLink(ctx, { kind: 'file', versionId })?.url ?? null,
+    },
   });
   return { pageId: pageId ?? null, items };
 }
 
 function line(i: ReviewPanelItem): string {
-  const what = i.kind === 'archive' ? `${i.reason ?? ''}` : i.reason ? i.reason : i.type === 'version' ? 'a new version of the page' : '';
+  const what = i.kind === 'archive' ? `${i.reason ?? ''}` : i.reason ? i.reason : i.type === 'version' ? (i.file ? `v${i.file.after.version} of the file` : 'a new version of the page') : '';
   return `• ${i.kind} on "${i.page.title}" by ${i.proposer.name}${what ? ` — ${what}` : ''}${i.decidable ? '' : ` (${i.why_not})`}`;
 }
 

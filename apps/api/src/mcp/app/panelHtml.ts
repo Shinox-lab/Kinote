@@ -34,6 +34,8 @@ progress { width: 100%; height: 8px; accent-color: var(--accent); }
 .diff .del { color: var(--error); background: light-dark(#fdecea, #3a1d1b); text-decoration: line-through; }
 .diff .ins { color: light-dark(#1a7f37, #7ee2a0); background: light-dark(#e6f4ea, #16301f); }
 .diff span { display: block; }
+.previews { display: flex; gap: 8px; margin: 6px 0; }
+.previews img { max-width: 48%; max-height: 160px; object-fit: contain; border: 1px solid var(--line); border-radius: 8px; }
 .note { width: 100%; font: inherit; padding: 4px 8px; border-radius: 8px; border: 1px solid var(--line); background: transparent; color: var(--fg); margin-top: 6px; }
 .done { color: light-dark(#1a7f37, #7ee2a0); }
 .toolbar { display: flex; justify-content: space-between; align-items: baseline; margin: 0 0 8px; }

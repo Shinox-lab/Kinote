@@ -9,12 +9,14 @@ import {
   applyOutcome,
   cardsFrom,
   contextLine,
+  fileSummary,
   kindLabel,
   lineDiff,
   type CardState,
   type Decision,
   type DecideReply,
   type ReviewList,
+  type ReviewPanelItem,
 } from './reviewLogic.js';
 
 type ToolReply = { content?: Array<{ type: string; text?: string }>; structuredContent?: unknown; isError?: boolean };
@@ -98,18 +100,37 @@ function diffView(before: string | null, after: string | null): HTMLElement | nu
   return box;
 }
 
+/** A file version: its versions and sizes, image previews side by side, and links that open outside the panel. */
+function fileView(item: ReviewPanelItem): HTMLElement {
+  const f = item.file!;
+  const box = el('div', { class: 'file' }, el('p', { class: 'meta' }, fileSummary(item)));
+  const previews = [f.preview.before, f.preview.after].filter((p): p is string => p !== null);
+  if (previews.length > 0) {
+    const row = el('div', { class: 'previews' });
+    for (const p of previews) row.append(el('img', { src: p, alt: '' }));
+    box.append(row);
+  }
+  const links: HTMLElement[] = [];
+  if (f.before?.url) links.push(link(f.before.url, `Download v${f.before.version}`));
+  if (f.after.url) links.push(link(f.after.url, `Download v${f.after.version}`));
+  if (links.length > 0) box.append(el('div', { class: 'actions' }, ...links));
+  if (item.before === null && item.after === null) box.append(el('p', { class: 'muted' }, 'No text to compare: download the versions to see the change.'));
+  return box;
+}
+
 function cardView(card: CardState, index: number, canDecide: boolean, url: string | null): HTMLElement {
   const { item } = card;
   const out = el(
     'div',
     { class: 'card' },
-    el('h2', {}, `${kindLabel(item)} · ${item.page.title}`),
+    el('h2', {}, item.file ? kindLabel(item) : `${kindLabel(item)} · ${item.page.title}`),
     el('p', { class: 'meta' }, `${item.page.space} · by ${item.proposer.name} · ${age(item.created_at)}`)
   );
   if (item.reason) out.append(el('p', {}, el('strong', {}, 'Why: '), item.reason));
   if (item.kind === 'archive') {
     out.append(el('p', {}, item.sub_pages ? `It has ${item.sub_pages} sub-pages: they must be moved or deleted first.` : 'The page is archived: a person can restore it.'));
   } else {
+    if (item.file) out.append(fileView(item));
     const diff = diffView(item.before, item.after);
     if (diff) out.append(diff);
   }

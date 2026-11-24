@@ -6,6 +6,7 @@ import { decideReviewItem, reviewItems } from '../src/mcp/review/items.js';
 import { useCaptureKit, type CaptureWorld } from './support/capturekit.js';
 import { callTool, issueAgentToken } from './support/mcpkit.js';
 import { createAgent, signUpMember } from './support/testkit.js';
+import { uploadRequest } from './support/multipart.js';
 
 const short = (id: string) => id.replaceAll('-', '').slice(0, 8);
 
@@ -118,6 +119,96 @@ describe('review items', () => {
     const item = (await reviewItems(ownerActor(w), {})).find((i) => i.id === rm.id)!;
     expect(item.decidable).toBe(false);
     expect(item.why_not).toBe('Your agent proposed this, so someone else decides it.');
+  });
+
+  const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
+  const blankPng = (extra: string) => Buffer.concat([PNG, Buffer.from(`\n${extra}\nFAKE-EXTRACT-EMPTY\n`)]);
+  const pdf = (text: string) => `%PDF-1.7\nFAKE-EXTRACT\n${text}\n`;
+  const fileOpts = { files: { storage: k.storage, link: (versionId: string) => `https://x.example/f/${versionId}` } };
+
+  /** The owner's v1 of a file in Clients, then the agent's v2 waiting for review. */
+  async function waitingFile(w: CaptureWorld, call: (n: string, a: object) => Promise<{ text: string; isError?: boolean }>, name: string, v1: string | Uint8Array, v2: string | Uint8Array) {
+    const res = await k.app.inject(uploadRequest('/api/v1/files', w.headers, { name, data: v1 }, { space_id: w.clients }));
+    expect(res.statusCode).toBe(201);
+    const fileId = res.json().document.id as string;
+    await w.run();
+    const v2b = typeof v2 === 'string' ? { content_text: v2 } : { content_base64: Buffer.from(v2).toString('base64') };
+    const rep = await call('kinote_replace', { page_id: fileId, base_version: 1, ...v2b });
+    expect(rep.text).toMatch(/^Replaced: .* is now v2/);
+    await w.run();
+    const [v] = await withTenantTx(w.tenant.id, (tx) => tx.select().from(versions).where(and(eq(versions.documentId, fileId), eq(versions.number, 2))));
+    expect(v!.status).toBe('pending_review');
+    return { fileId, version: v! };
+  }
+
+  test('lists a waiting file version with sizes, links and text before/after', async () => {
+    const w = await k.world();
+    const a = await agentOf(w, w.owner.userId);
+    const f = await waitingFile(w, a.call, 'memo.pdf', pdf('The launch is in November.'), pdf('The launch is in December.'));
+    const item = (await reviewItems(ownerActor(w), fileOpts)).find((i) => i.id === f.version.id)!;
+    expect(item).toMatchObject({ type: 'version', kind: 'version', page: { id: f.fileId, title: 'memo.pdf' }, decidable: true });
+    expect(item.file).toMatchObject({
+      name: 'memo.pdf',
+      mime: 'application/pdf',
+      after: { version: 2, size: pdf('The launch is in December.').length, url: `https://x.example/f/${f.version.id}` },
+      before: { version: 1, size: pdf('The launch is in November.').length },
+      preview: { before: null, after: null },
+    });
+    expect(item.before).toContain('November');
+    expect(item.after).toContain('December');
+  });
+
+  test('a no-text file item has sizes and links, no text', async () => {
+    const w = await k.world();
+    const a = await agentOf(w, w.owner.userId);
+    const f = await waitingFile(w, a.call, 'scan.bin.png', blankPng('one'), blankPng('two'));
+    const item = (await reviewItems(ownerActor(w), fileOpts)).find((i) => i.id === f.version.id)!;
+    expect(item.before).toBeNull();
+    expect(item.after).toBeNull();
+    expect(item.file!.after.version).toBe(2);
+    expect(item.file!.before!.version).toBe(1);
+  });
+
+  test('an image item has data URL previews', async () => {
+    const w = await k.world();
+    const a = await agentOf(w, w.owner.userId);
+    const f = await waitingFile(w, a.call, 'dot.png', blankPng('one'), blankPng('two'));
+    const item = (await reviewItems(ownerActor(w), fileOpts)).find((i) => i.id === f.version.id)!;
+    expect(item.file!.preview.after).toBe(`data:image/png;base64,${blankPng('two').toString('base64')}`);
+    expect(item.file!.preview.before).toBe(`data:image/png;base64,${blankPng('one').toString('base64')}`);
+  });
+
+  test("the owner's own agent's file version in a review space is not decidable", async () => {
+    const w = await k.world();
+    expect((await k.patch(w.headers, `/api/v1/spaces/${w.clients}`, { review_required: true })).statusCode).toBe(200);
+    const a = await agentOf(w, w.owner.userId);
+    const f = await waitingFile(w, a.call, 'memo.pdf', pdf('One.'), pdf('Two.'));
+    const item = (await reviewItems(ownerActor(w), fileOpts)).find((i) => i.id === f.version.id)!;
+    expect(item.decidable).toBe(false);
+    expect(item.why_not).toBe('Your agent proposed this, so someone else decides it.');
+  });
+
+  test('approving a file version from the panel publishes it', async () => {
+    const w = await k.world();
+    const a = await agentOf(w, w.owner.userId);
+    const docOf = async (id: string) => (await withTenantTx(w.tenant.id, (tx) => tx.select().from(documents).where(eq(documents.id, id))))[0]!;
+    const statusOf = async (id: string) => (await withTenantTx(w.tenant.id, (tx) => tx.select().from(versions).where(eq(versions.id, id))))[0]!.status;
+
+    const text = await waitingFile(w, a.call, 'memo.pdf', pdf('One.'), pdf('Two.'));
+    expect((await decideReviewItem(ownerActor(w), { type: 'version', id: text.version.id, decision: 'approve' }, k.collab)).ok).toBe(true);
+    await w.run();
+    expect(await statusOf(text.version.id)).toBe('indexed');
+    expect((await docOf(text.fileId)).publishedVersionId).toBe(text.version.id);
+
+    const blank = await waitingFile(w, a.call, 'dot.png', blankPng('one'), blankPng('two'));
+    expect(await decideReviewItem(ownerActor(w), { type: 'version', id: blank.version.id, decision: 'approve' }, k.collab)).toEqual({ ok: true, status: 'stored' });
+    expect((await docOf(blank.fileId)).publishedVersionId).toBe(blank.version.id);
+
+    const no = await waitingFile(w, a.call, 'other.pdf', pdf('Keep.'), pdf('Drop.'));
+    const before = (await docOf(no.fileId)).publishedVersionId;
+    expect((await decideReviewItem(ownerActor(w), { type: 'version', id: no.version.id, decision: 'reject' }, k.collab)).ok).toBe(true);
+    expect((await docOf(no.fileId)).publishedVersionId).toBe(before);
+    expect(before).not.toBeNull();
   });
 
   test('approve and reject a version', async () => {

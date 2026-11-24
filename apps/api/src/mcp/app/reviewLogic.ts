@@ -37,7 +37,22 @@ const KIND: Record<ReviewPanelItem['kind'], string> = {
 };
 
 export function kindLabel(item: ReviewPanelItem): string {
-  return KIND[item.kind];
+  return item.file ? `New version of ${item.file.name}` : KIND[item.kind];
+}
+
+/** A size as the panel shows it: B, KB or MB. */
+function size(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/** A file item's versions and sizes: `v1 · 47 KB → v2 · 48 KB`, or `v2 · 48 KB` for a first version. */
+export function fileSummary(item: ReviewPanelItem): string {
+  const f = item.file;
+  if (!f) return '';
+  const after = `v${f.after.version} · ${size(f.after.size)}`;
+  return f.before ? `v${f.before.version} · ${size(f.before.size)} → ${after}` : after;
 }
 
 const linesOf = (text: string) => (text === '' ? [] : text.split('\n'));
