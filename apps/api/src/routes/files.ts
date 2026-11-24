@@ -40,6 +40,7 @@ import {
   type DetectedFile,
   type VersionRow,
   relocateFile,
+  currentFileVersion,
 } from '@kinote/core';
 import { signMediaToken, verifyMediaToken, type ObjectStorage } from '@kinote/shared';
 import { actorForUser } from '../auth/actor.js';
@@ -315,26 +316,55 @@ const sameAsLatest = (latest: VersionRow | null, hash: string) =>
 /**
  * Adds a version to an existing file (editor or higher). The same bytes as the
  * latest version, unless it was withdrawn, answer `unchanged`.
+ *
+ * With `baseVersion` (an agent's replace): "the same bytes" means the file's current version (the newest that
+ * is not rejected, withdrawn or failed), checked before the base so a retry answers `unchanged`; then a base
+ * other than the current version's number is 409 `version_conflict`, naming who made the current version and
+ * when. Both are checked again under the document lock, so of two replaces on one base only one is added.
  */
 export async function replaceFile(
   actor: Actor,
   fileId: string,
   file: UploadedFile,
-  deps: FileDeps
+  deps: FileDeps,
+  opts: { baseVersion?: number } = {}
 ): Promise<UploadOutcome> {
   assertValidUuid(fileId, 'document_not_found');
   const detected = detect(file);
   const name = cleanFileName(file.name);
   const { contentHash } = file;
+  const guarded = opts.baseVersion !== undefined;
 
-  const gate = await withTenantTx(actor.tenantId, (tx) => loadReplaceable(tx, actor, fileId, false));
-  if (gate.latest && sameAsLatest(gate.latest, contentHash)) return unchanged(gate.doc, gate.latest);
+  /** The guard of an agent's replace: unchanged, a conflict, or go on. */
+  const check = async (tx: DbTransaction, doc: DocumentRow, latest: VersionRow | null): Promise<UploadOutcome | null> => {
+    if (!guarded) return latest && sameAsLatest(latest, contentHash) ? unchanged(doc, latest) : null;
+    const current = await currentFileVersion(tx, actor.tenantId, doc.id);
+    if (current && current.contentHash === contentHash) return unchanged(doc, current);
+    if ((current?.number ?? 0) !== opts.baseVersion) {
+      if (!current) throw new AppError('version_conflict', 'This file has no current version. Ask a person to replace it in Kinote.');
+      const names = await resolveActorNames(tx, actor.tenantId, [{ type: current.createdByType, id: current.createdBy }]);
+      const by = names.get(`${current.createdByType}:${current.createdBy}`) ?? 'someone';
+      const at = current.createdAt.toISOString().slice(0, 16).replace('T', ' ');
+      throw new AppError(
+        'version_conflict',
+        `This file changed since v${opts.baseVersion}: v${current.number} by ${current.createdByType === 'agent' ? `Agent "${by}"` : by} at ${at}. Download it again, redo your change on v${current.number}, and send base_version ${current.number}.`
+      );
+    }
+    return null;
+  };
+
+  const early = await withTenantTx(actor.tenantId, async (tx) => {
+    const gate = await loadReplaceable(tx, actor, fileId, false);
+    return check(tx, gate.doc, gate.latest);
+  });
+  if (early) return early;
 
   const versionId = randomUUID();
   return withStoredBytes(deps, actor.tenantId, fileId, versionId, file, detected, (objectKey) =>
     withTenantTx(actor.tenantId, async (tx) => {
       const { doc, latest } = await loadReplaceable(tx, actor, fileId, true);
-      if (latest && sameAsLatest(latest, contentHash)) return { result: unchanged(doc, latest), keep: false };
+      const settled = await check(tx, doc, latest);
+      if (settled) return { result: settled, keep: false };
       if (doc.sourceDeletedAt) {
         // A pinned file whose source removed it: the person's replacement takes it over, so the removal
         // mark goes (a worker settles every version of a removed file as withdrawn). The source can
