@@ -18,11 +18,12 @@ import { deletePlacementIndex, movePlacementIndex } from '../placement/derived.j
  * | `indexed`          | `superseded`         | `pending_review` if newest live, else `superseded` |
  * | `indexing`         | `superseded`         | `pending_review` if newest live, else `superseded` |
  * | `failed`           | `superseded`         | `pending_review` if newest live, else `superseded` |
+ * | `stored` (no text) | `superseded`         | `pending_review` if newest live, else `superseded` |
  * | anything else      | unchanged            | unchanged                                |
  *
  * A failed version sent back to review loses its error text (Retry, which
  * only accepts `failed`, then refuses it). The caller holds the document lock
- * and clears `indexed_version_id`.
+ * and clears `indexed_version_id` and `published_version_id`.
  */
 export async function returnToReview(tx: DbTransaction, tenantId: string, doc: DocumentRow) {
   const candidates = await tx
@@ -32,7 +33,7 @@ export async function returnToReview(tx: DbTransaction, tenantId: string, doc: D
       and(
         eq(versions.tenantId, tenantId),
         eq(versions.documentId, doc.id),
-        inArray(versions.status, ['indexed', 'indexing', 'failed', 'pending_review'])
+        inArray(versions.status, ['indexed', 'indexing', 'failed', 'pending_review', 'stored'])
       )
     )
     .orderBy(desc(versions.number));
@@ -40,7 +41,7 @@ export async function returnToReview(tx: DbTransaction, tenantId: string, doc: D
   const latestPending = candidates.find(
     (v) => v.id === doc.latestVersionId && v.status === 'pending_review' && v.id !== doc.indexedVersionId
   );
-  const live = candidates.filter((v) => v.status === 'indexed' || v.status === 'indexing' || v.status === 'failed');
+  const live = candidates.filter((v) => v.status === 'indexed' || v.status === 'indexing' || v.status === 'failed' || v.status === 'stored');
   const keep = latestPending ? null : live[0] ?? null;
   const supersede = live.filter((v) => v.id !== keep?.id).map((v) => v.id);
 
@@ -78,10 +79,12 @@ export interface RelocateTarget {
  */
 export async function relocateFile(tx: DbTransaction, tenantId: string, doc: DocumentRow, target: RelocateTarget): Promise<DocumentRow> {
   let indexedVersionId = doc.indexedVersionId;
+  let publishedVersionId = doc.publishedVersionId;
   if (doc.spaceId !== target.spaceId) {
     if (target.reviewRequired && !target.moverReviews) {
       await returnToReview(tx, tenantId, doc);
       indexedVersionId = null;
+      publishedVersionId = null;
     } else {
       await tx
         .update(chunks)
@@ -98,6 +101,7 @@ export async function relocateFile(tx: DbTransaction, tenantId: string, doc: Doc
       ...(target.position !== undefined ? { position: target.position } : {}),
       placement: 'pinned',
       indexedVersionId,
+      publishedVersionId,
     })
     .where(and(eq(documents.tenantId, tenantId), eq(documents.id, doc.id)))
     .returning();

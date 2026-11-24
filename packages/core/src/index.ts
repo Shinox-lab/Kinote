@@ -69,6 +69,7 @@ export {
   type InsertFileVersionParams,
   type VersionRow,
 } from './files/versions.js';
+export { publishStoredVersion, currentFileVersion } from './files/publish.js';
 export {
   extractVersion,
   type ExtractDeps,

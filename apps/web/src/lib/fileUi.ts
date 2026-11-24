@@ -90,8 +90,8 @@ export function fileBanner({ badge, sourceDeleted, placement, hasPublished, role
 }
 
 /** The version the screen opens on: editors the latest, everyone else only the published one. */
-export function publishedVersionId(details: Pick<FileDetails, 'latestVersion' | 'indexedVersion'>, role: SpaceRole | null): string | null {
-  return rankOf(role) >= RANK.editor ? (details.latestVersion?.id ?? null) : (details.indexedVersion?.id ?? null);
+export function publishedVersionId(details: Pick<FileDetails, 'latestVersion' | 'publishedVersion'>, role: SpaceRole | null): string | null {
+  return rankOf(role) >= RANK.editor ? (details.latestVersion?.id ?? null) : (details.publishedVersion?.id ?? null);
 }
 
 /** A name safe to hand to the browser's save dialog: no path separators, no control characters. */

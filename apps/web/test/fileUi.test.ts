@@ -145,10 +145,10 @@ function ver(id: string, number: number): FileVersion {
 }
 
 describe('publishedVersionId', () => {
-  const details = (latest: FileVersion | null, indexed: FileVersion | null) =>
-    ({ latestVersion: latest, indexedVersion: indexed }) as unknown as FileDetails;
+  const details = (latest: FileVersion | null, published: FileVersion | null) =>
+    ({ latestVersion: latest, publishedVersion: published }) as unknown as FileDetails;
 
-  test('editors read the latest version, viewers only the indexed one', () => {
+  test('editors read the latest version, viewers only the published one', () => {
     const d = details(ver('v2', 2), ver('v1', 1));
     expect(publishedVersionId(d, 'editor')).toBe('v2');
     expect(publishedVersionId(d, 'admin')).toBe('v2');

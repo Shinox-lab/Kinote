@@ -72,6 +72,8 @@ export const documents = pgTable('documents', {
   placement: text('placement', { enum: ['pinned', 'synced'] }).notNull().default('pinned'),
   latestVersionId: uuid('latest_version_id'),
   indexedVersionId: uuid('indexed_version_id'),
+  /** Files: the version readers below editor may open (the indexed one, or a no-text version once settled). */
+  publishedVersionId: uuid('published_version_id'),
   sourceDeletedAt: timestamp('source_deleted_at', { withTimezone: true }),
   archivedAt: timestamp('archived_at', { withTimezone: true }),
   createdByType: text('created_by_type', { enum: ['user', 'agent', 'connector'] }).notNull(),
@@ -163,6 +165,8 @@ export const versions = pgTable(
     sizeBytes: bigint('size_bytes', { mode: 'number' }),
     sourceRevision: text('source_revision'),
     extractedKey: text('extracted_key'),
+    /** File versions: no readable text (an image without words, audio, video). */
+    noText: boolean('no_text').notNull().default(false),
   },
   (t) => [
     uniqueIndex('versions_doc_number_idx').on(t.tenantId, t.documentId, t.number),

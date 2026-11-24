@@ -548,7 +548,7 @@ export async function withdrawFile(actor: Actor, fileId: string): Promise<Docume
     await withdrawLiveVersions(tx, actor.tenantId, fileId);
     const [updated] = await tx
       .update(documents)
-      .set({ indexedVersionId: null })
+      .set({ indexedVersionId: null, publishedVersionId: null })
       .where(and(eq(documents.tenantId, actor.tenantId), eq(documents.id, fileId)))
       .returning();
     await writeAuditEvent(tx, {
@@ -584,7 +584,7 @@ export async function archiveFile(actor: Actor, fileId: string): Promise<Documen
     await withdrawLiveVersions(tx, actor.tenantId, fileId);
     const [updated] = await tx
       .update(documents)
-      .set({ archivedAt: new Date(), indexedVersionId: null })
+      .set({ archivedAt: new Date(), indexedVersionId: null, publishedVersionId: null })
       .where(and(eq(documents.tenantId, actor.tenantId), eq(documents.id, fileId)))
       .returning();
     await writeAuditEvent(tx, {
@@ -616,7 +616,7 @@ export async function dismissRemoval(actor: Actor, fileId: string): Promise<Docu
     await withdrawLiveVersions(tx, actor.tenantId, fileId);
     const [updated] = await tx
       .update(documents)
-      .set({ archivedAt: new Date(), indexedVersionId: null })
+      .set({ archivedAt: new Date(), indexedVersionId: null, publishedVersionId: null })
       .where(and(eq(documents.tenantId, actor.tenantId), eq(documents.id, fileId)))
       .returning();
     await writeAuditEvent(tx, {
@@ -709,6 +709,7 @@ export async function getFileDetails(actor: Actor, fileId: string): Promise<File
     const all = await fileVersionsOf(tx, actor.tenantId, fileId);
     const latest = all[0] ?? null;
     const indexed = doc.indexedVersionId ? (all.find((v) => v.id === doc.indexedVersionId) ?? null) : null;
+    const published = doc.publishedVersionId ? (all.find((v) => v.id === doc.publishedVersionId) ?? null) : null;
     return {
       id: doc.id,
       spaceId: doc.spaceId,
@@ -728,6 +729,7 @@ export async function getFileDetails(actor: Actor, fileId: string): Promise<File
       }),
       latestVersion: latest ? toFileVersion(latest) : null,
       indexedVersion: indexed ? toFileVersion(indexed) : null,
+      publishedVersion: published ? toFileVersion(published) : null,
     };
   });
 }
@@ -773,7 +775,7 @@ async function readableFileVersion(
   const access = await requireDocumentRole(tx, actor, doc, minimumRole, { notFound: 'version_not_found' });
   // Below editor, only what has been published is readable: another version (waiting, rejected,
   // withdrawn, older, newer) is indistinguishable from one that does not exist.
-  if (access.effectiveRole === 'viewer' && doc.indexedVersionId !== ver.id) {
+  if (access.effectiveRole === 'viewer' && doc.publishedVersionId !== ver.id) {
     throw new AppError('version_not_found');
   }
   return { ver, doc };

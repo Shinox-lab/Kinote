@@ -10,6 +10,7 @@ import {
 } from '@kinote/db';
 import type { FileHandling } from './detect.js';
 import { assertStorageFor } from '../usage/capacity.js';
+import { publishStoredVersion } from './publish.js';
 
 export type VersionRow = typeof versions.$inferSelect;
 
@@ -87,6 +88,7 @@ export async function insertFileVersion(
       number: (latest?.number ?? 0) + 1,
       title: file.name,
       status: stored ? 'stored' : 'extracting',
+      noText: stored,
       contentHash: file.contentHash,
       reason: p.reason,
       createdByType: actor.type,
@@ -124,6 +126,7 @@ export async function insertFileVersion(
     payload: { documentId: doc.id, number: version!.number, reason: p.reason, fileName: file.name },
   });
 
+  if (stored) await publishStoredVersion(tx, tenantId, doc, version!.id);
   if (!stored) {
     await enqueueJob(tx, {
       tenantId,

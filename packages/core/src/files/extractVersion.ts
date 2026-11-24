@@ -15,6 +15,7 @@ import { DETECT_HEAD_BYTES, detectFileTypeOf, listZipEntriesAsync, type Detected
 import type { Extractor } from './extractor.js';
 import { readTextNative, type TextNativeType } from './textNative.js';
 import { fileObjectPath } from './versions.js';
+import { publishStoredVersion } from './publish.js';
 
 export type ExtractVersionResult =
   | { outcome: 'extracted'; status: 'pending_review' | 'indexing' | 'stored' }
@@ -189,8 +190,9 @@ export async function extractVersion(
 
     await tx
       .update(versions)
-      .set({ status, extractedKey, error: status === 'stored' ? NO_TEXT : null })
+      .set({ status, extractedKey, error: status === 'stored' ? NO_TEXT : null, noText: !hasText })
       .where(and(eq(versions.tenantId, tenantId), eq(versions.id, ver.id)));
+    if (status === 'stored') await publishStoredVersion(tx, tenantId, doc, ver.id);
     if (status === 'pending_review') {
       // A reviewer reviews the newest state: another version still waiting (one a move into a
       // review space sent back) gives way to this one.

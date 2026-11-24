@@ -92,7 +92,7 @@ function useShownVersion(file: FileDetails | undefined, wanted: string | undefin
   if (!file) return { role, shown: null as FileVersion | null };
   const asked = editor && wanted !== undefined ? versions?.find((v) => v.id === wanted) : undefined;
   const id = asked?.id ?? publishedVersionId(file, role);
-  const shown = [asked, file.latestVersion, file.indexedVersion].find((v) => v && v.id === id) ?? null;
+  const shown = [asked, file.latestVersion, file.publishedVersion, file.indexedVersion].find((v) => v && v.id === id) ?? null;
   return { role, shown };
 }
 
@@ -234,7 +234,7 @@ export function FilePage() {
     badge: file.badge,
     sourceDeleted: file.sourceDeletedAt !== null,
     placement: file.placement,
-    hasPublished: file.indexedVersion !== null,
+    hasPublished: file.publishedVersion !== null,
     role,
   });
   const canEditSpreadsheet =

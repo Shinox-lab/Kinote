@@ -197,15 +197,17 @@ describe('files pipeline', () => {
     assert.equal(inspector.json().ready, false);
   });
 
-  test('a replacement with no text leaves the old version answering and the badge says so', async () => {
+  test('a replacement with no text is published and the old text leaves search', async () => {
     const c = await setup();
     const up = await upload(c, c.open.id, 'rules.pdf', pdf('The old rule about quinces stays in force.'));
     await settle(c.tenant.id);
     const v2 = await replace(c, up.document.id, 'rules.pdf', '%PDF-1.7\nFAKE-EXTRACT-EMPTY\n');
     await settle(c.tenant.id);
-    assert.equal(await badge(c, up.document.id), 'Indexed · v1, v2 has no searchable text');
-    assert.equal((await answering(c, 'old rule quinces', up.document.id)).length, 1);
+    // The file no longer says those words: v2 is what readers open, and search stops answering with v1.
+    assert.equal(await badge(c, up.document.id), 'Stored · no searchable text');
+    assert.equal((await answering(c, 'old rule quinces', up.document.id)).length, 0);
     assert.equal((await withTenantTx(c.tenant.id, (tx) => tx.select().from(versions).where(eq(versions.id, v2.version.id))))[0]!.status, 'stored');
+    assert.equal((await withTenantTx(c.tenant.id, (tx) => tx.select().from(versions).where(eq(versions.id, up.version.id))))[0]!.status, 'superseded');
   });
 
   test('withdrawing a stored file says Withdrawn', async () => {

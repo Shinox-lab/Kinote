@@ -1179,7 +1179,7 @@ export type FileVersion = z.infer<typeof FileVersionSchema>;
 export const FileVersionListSchema = z.array(FileVersionSchema.extend({ createdByName: z.string() }));
 export type FileVersionList = z.infer<typeof FileVersionListSchema>;
 
-/** Reply of GET /api/v1/files/:id: the file, its server-computed badge and its latest and indexed versions. */
+/** Reply of GET /api/v1/files/:id: the file, its server-computed badge and its latest, indexed and published versions. */
 export const FileDetailsSchema = z.object({
   id: z.string().uuid(),
   spaceId: z.string().uuid(),
@@ -1191,6 +1191,8 @@ export const FileDetailsSchema = z.object({
   badge: z.string(),
   latestVersion: FileVersionSchema.nullable(),
   indexedVersion: FileVersionSchema.nullable(),
+  /** What readers below editor open: the indexed version, or a version with no text once settled. */
+  publishedVersion: FileVersionSchema.nullable(),
 });
 export type FileDetails = z.infer<typeof FileDetailsSchema>;
 
