@@ -45,6 +45,7 @@ describe('a real MCP client over HTTP', () => {
     assert.deepEqual(tools.map((t) => t.name).sort(), [
       'kinote_ask',
       'kinote_browse',
+      'kinote_download',
       'kinote_read',
       'kinote_related',
       'kinote_review',
@@ -90,7 +91,7 @@ describe('a real MCP client files a capture', () => {
       client = new Client({ name: 'kinote-test', version: '1.0.0' });
       await client.connect(new StreamableHTTPClientTransport(new URL(`${address}/mcp`), { requestInit: { headers: { authorization: `Bearer ${token}` } } }));
       assert.match(client.getInstructions() ?? '', /Use kinote_capture to file new information/);
-      assert.equal((await client.listTools()).tools.length, 14);
+      assert.equal((await client.listTools()).tools.length, 15);
 
       setTimeout(() => void w.run(), 100);
       const previewed = textOf(

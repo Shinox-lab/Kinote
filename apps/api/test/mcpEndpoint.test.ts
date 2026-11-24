@@ -211,6 +211,7 @@ describe('the /mcp endpoint', () => {
     assert.deepEqual(await listToolNames(app, w.token), [
       'kinote_ask',
       'kinote_browse',
+      'kinote_download',
       'kinote_read',
       'kinote_related',
       'kinote_review',
@@ -225,8 +226,9 @@ describe('the /mcp endpoint', () => {
     const all = res.body.result.tools as Array<{ _meta?: { ui?: { visibility?: string[] } } }>;
     // The review panel's own tool is app-only: an MCP Apps host does not show it to the model.
     const tools = all.filter((t) => !(t._meta?.ui?.visibility && !t._meta.ui.visibility.includes('model')));
-    assert.equal(tools.length, 6);
-    const total = tools.reduce((n, t) => n + estimateTokens(JSON.stringify(t)), 0);
+    assert.equal(tools.length, 7);
+    // Annotations are for the host's approval defaults, not the model's prompt: not counted.
+    const total = tools.reduce((n, t) => n + estimateTokens(JSON.stringify({ ...t, annotations: undefined })), 0);
     assert.ok(total < 2000, `tool definitions use ${total} tokens`);
   });
 });

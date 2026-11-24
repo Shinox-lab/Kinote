@@ -24,7 +24,7 @@ describe('kinote_capture_action', () => {
   const factsOf = (tenantId: string, captureId: string) =>
     withTenantTx(tenantId, (tx) => tx.select().from(captureFacts).where(eq(captureFacts.captureId, captureId)).orderBy(captureFacts.ordinal));
 
-  test('a read and capture token shows the model nine tools within 2,000 tokens', async () => {
+  test('a read and capture token shows the model ten tools within 2,000 tokens', async () => {
     const w = await k.world();
     const a = await agentWith(w);
     const res = await mcpRequest(k.app, a.token, 'tools/list');
@@ -35,6 +35,7 @@ describe('kinote_capture_action', () => {
       'kinote_browse',
       'kinote_search',
       'kinote_read',
+      'kinote_download',
       'kinote_related',
       'kinote_ask',
       'kinote_review',
