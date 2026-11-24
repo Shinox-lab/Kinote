@@ -62,6 +62,7 @@ import {
   versionDrawings,
   withDrawingText,
   withoutDrawingText,
+  publishStoredVersion,
 } from '@kinote/core';
 import {
   signCollabToken,
@@ -980,10 +981,12 @@ export async function approveVersion(
     }
 
     const reviewedAt = new Date();
+    // A file version with no text has nothing to index: approval settles it as stored and publishes it.
+    const noText = doc.kind === 'file' && ver.noText;
     const updatedRows = await tx
       .update(versions)
       .set({
-        status: 'indexing',
+        status: noText ? 'stored' : 'indexing',
         reviewedBy: actor.principalId,
         reviewedAt,
         reviewNote: parsed.review_note ?? null,
@@ -1016,12 +1019,16 @@ export async function approveVersion(
       }
     }
 
-    await enqueueJob(tx, {
-      tenantId: actor.tenantId,
-      queue: 'version.index',
-      idempotencyKey: `index:${ver.id}`,
-      payload: { versionId: ver.id },
-    });
+    if (noText) {
+      await publishStoredVersion(tx, actor.tenantId, doc, ver.id);
+    } else {
+      await enqueueJob(tx, {
+        tenantId: actor.tenantId,
+        queue: 'version.index',
+        idempotencyKey: `index:${ver.id}`,
+        payload: { versionId: ver.id },
+      });
+    }
 
     await notifyContributors(tx, actor, ver, doc.id, 'review_approved', parsed.review_note ?? null);
     await writeAuditEvent(tx, {

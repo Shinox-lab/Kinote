@@ -70,6 +70,7 @@ export {
   type VersionRow,
 } from './files/versions.js';
 export { publishStoredVersion, currentFileVersion } from './files/publish.js';
+export { fileReviewDecision } from './files/review.js';
 export {
   extractVersion,
   type ExtractDeps,

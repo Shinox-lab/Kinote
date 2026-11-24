@@ -1,10 +1,8 @@
 import { and, eq, ne } from 'drizzle-orm';
 import {
   documents,
-  sources,
   enqueueJob,
   lockDocument,
-  spaces,
   versions,
   withTenantTx,
   writeAuditEvent,
@@ -16,6 +14,7 @@ import type { Extractor } from './extractor.js';
 import { readTextNative, type TextNativeType } from './textNative.js';
 import { fileObjectPath } from './versions.js';
 import { publishStoredVersion } from './publish.js';
+import { fileReviewDecision } from './review.js';
 
 export type ExtractVersionResult =
   | { outcome: 'extracted'; status: 'pending_review' | 'indexing' | 'stored' }
@@ -103,10 +102,11 @@ function withoutNul(document: ExtractedDocument): ExtractedDocument {
  * B. (no transaction) read the file (the worker for TXT, MD and CSV; the
  *    extractor for the rest, streamed from storage) and store `extracted.json`;
  * C. (transaction, document locked) re-check the version is still `extracting`
- *    and the document live; then no text means `stored`; a space with review
- *    on, an agent author or a connector whose source is not trusted means
- *    `pending_review` (and supersedes any other waiting version); anything else
- *    `indexing` with its `version.index` job.
+ *    and the document live; then `fileReviewDecision` (a space with review on,
+ *    an "always review" agent, or a connector whose source is not trusted)
+ *    means `pending_review`, with or without text (and supersedes any other
+ *    waiting version); otherwise no text means `stored` and published, and
+ *    text means `indexing` with its `version.index` job.
  *
  * Failures are thrown and the version stays `extracting`: `extractor_unavailable`
  * is retried by the queue; `file_unreadable` and `file_text_too_large` are final
@@ -168,29 +168,18 @@ export async function extractVersion(
       return { outcome: 'skipped', reason: 'superseded' };
     }
 
-    const [space] = await tx
-      .select({ reviewRequired: spaces.reviewRequired })
-      .from(spaces)
-      .where(and(eq(spaces.tenantId, tenantId), eq(spaces.id, doc.spaceId)));
-    if (!space) throw new AppError('space_not_found');
-
-    // A connector's version is held unless its source is trusted (a source that cannot be found is
-    // not); an agent's never skips review; either way a review-required space holds it.
-    let trusted = false;
-    if (ver.createdByType === 'connector') {
-      const [source] = await tx
-        .select({ trusted: sources.trusted })
-        .from(sources)
-        .where(and(eq(sources.tenantId, tenantId), eq(sources.id, ver.createdBy)));
-      trusted = source?.trusted === true;
-    }
-    const needsReview =
-      space.reviewRequired || (ver.createdByType === 'connector' && !trusted);
-    const status = !hasText ? 'stored' : needsReview ? 'pending_review' : 'indexing';
+    const needsReview = await fileReviewDecision(tx, {
+      tenantId,
+      spaceId: doc.spaceId,
+      createdByType: ver.createdByType,
+      createdBy: ver.createdBy,
+    });
+    // No text and no review: settled as stored and published. No text but review: it waits like any version.
+    const status = !hasText && !needsReview ? 'stored' : needsReview ? 'pending_review' : 'indexing';
 
     await tx
       .update(versions)
-      .set({ status, extractedKey, error: status === 'stored' ? NO_TEXT : null, noText: !hasText })
+      .set({ status, extractedKey, error: hasText ? null : NO_TEXT, noText: !hasText })
       .where(and(eq(versions.tenantId, tenantId), eq(versions.id, ver.id)));
     if (status === 'stored') await publishStoredVersion(tx, tenantId, doc, ver.id);
     if (status === 'pending_review') {

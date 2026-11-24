@@ -178,10 +178,11 @@ describe('files pipeline', () => {
     assert.equal(visible[0]!.n, '0');
   });
 
-  test('audio is stored for download: no reading, no review, no search', async () => {
+  test('audio in a space without review is stored for download: no reading, no review, no search', async () => {
     const c = await setup();
     const mp3 = new Uint8Array([0x49, 0x44, 0x33, 4, 0, 0, 0, 0, 0, 0, 1, 2, 3]);
-    const up = await upload(c, c.strict.id, 'song.mp3', mp3);
+    // In a review space it waits for review like any version (fileReviewDecision.test.ts).
+    const up = await upload(c, c.open.id, 'song.mp3', mp3);
     await settle(c.tenant.id);
     assert.equal(await badge(c, up.document.id), 'Stored · no searchable text');
     const queue = await app.inject({ method: 'GET', url: '/api/v1/reviews', headers: c.reviewer.headers });
@@ -222,7 +223,7 @@ describe('files pipeline', () => {
 
   test('a file whose text cannot be read is stored with its reason, never indexed or queued', async () => {
     const c = await setup();
-    const up = await upload(c, c.strict.id, 'blank.pdf', '%PDF-1.7\nFAKE-EXTRACT-EMPTY\n');
+    const up = await upload(c, c.open.id, 'blank.pdf', '%PDF-1.7\nFAKE-EXTRACT-EMPTY\n');
     await settle(c.tenant.id);
     assert.equal(await badge(c, up.document.id), 'Stored · no searchable text');
     const [row] = await withTenantTx(c.tenant.id, (tx) => tx.select().from(versions).where(and(eq(versions.id, up.version.id))));
