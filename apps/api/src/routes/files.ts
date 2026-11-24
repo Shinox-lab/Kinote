@@ -755,7 +755,7 @@ export async function listFileVersions(actor: Actor, fileId: string): Promise<Fi
  * A file version and its document, readable by the actor. A version that is
  * unknown, of a page, or of a hidden file is the same 404 `version_not_found`.
  */
-async function readableFileVersion(
+export async function readableFileVersion(
   tx: DbTransaction,
   actor: Actor,
   versionId: string,
@@ -784,7 +784,7 @@ async function readableFileVersion(
 const INLINE_MIME = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif']);
 
 /** RFC 5987 value: everything outside the attribute characters is percent-encoded. */
-const encodeHeaderName = (name: string) =>
+export const encodeHeaderName = (name: string) =>
   encodeURIComponent(name).replace(/['()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
 
 /**

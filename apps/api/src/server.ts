@@ -142,6 +142,7 @@ import {
   updateAgentSettings,
 } from './routes/agents.js';
 import { registerMcpRoute } from './mcp/route.js';
+import { LinkNotFound, serveAgentFile } from './mcp/links.js';
 import { oauthRoutes } from './oauth/routes.js';
 import { oauthBase, protectedResourceUrl } from './oauth/request.js';
 import { askWiki } from './search/askWiki.js';
@@ -999,6 +1000,18 @@ export function buildApiServer(opts: ApiServerOptions = {}) {
       fileDeps()
     );
     return reply.status(out.status).headers(out.headers).send(Buffer.from(out.bytes));
+  });
+
+  // An agent's signed download link: the token is the credential, re-checked on every fetch. Every refusal is
+  // the same 404, so a link says nothing about why it stopped working.
+  app.get('/api/v1/agent-files/:token', { config: { auth: 'public', whenSuspended: 'allow' } }, async (req, reply) => {
+    try {
+      const out = await serveAgentFile((req.params as any).token, { ...fileDeps(), ...(opts.collab ? { collab: opts.collab } : {}) });
+      return reply.headers(out.headers).send(out.stream);
+    } catch (err) {
+      if (err instanceof LinkNotFound) return reply.status(404).send({ error: 'not_found' });
+      throw err;
+    }
   });
 
   app.get('/api/v1/versions/:id/text', async (req, reply) => {

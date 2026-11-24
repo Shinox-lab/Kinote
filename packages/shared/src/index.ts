@@ -14,6 +14,13 @@ export {
   verifyMediaToken,
   type MediaClaims,
 } from './mediaToken.js';
+export {
+  AGENT_LINK_TTL_SECONDS,
+  signAgentLink,
+  verifyAgentLink,
+  type AgentLinkClaims,
+  type AgentLinkPurpose,
+} from './agentLinkToken.js';
 export { ConfigSchema, DEFAULT_AUTH_RATE_LIMIT_MAX, DEFAULT_COLLAB_MAX_MESSAGE_BYTES, DEFAULT_USAGE_LIMITS, loadConfig, routerProviderProblem, type Config, type UsageLimits, usageLimitsOf } from './config.js';
 export {
   InMemoryObjectStorage,

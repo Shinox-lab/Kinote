@@ -1,5 +1,5 @@
 import type { FastifyRequest } from 'fastify';
-import { and, eq, isNull, lt, or } from 'drizzle-orm';
+import { and, eq, isNull, lt, or, type SQL } from 'drizzle-orm';
 import { withTenantTx, agents, agentTokens, memberships, sources, sourceTokens, tenants } from '@kinote/db';
 import { AppError, AGENT_SCOPES, type AgentScope } from '@kinote/contracts';
 import type { Actor } from '@kinote/core';
@@ -226,21 +226,39 @@ export async function resolveAgentActor(req: FastifyRequest): Promise<{ actor: A
   const raw = bearerToken(req);
   const parsed = raw ? parseAgentToken(raw) : null;
   if (!parsed) throw new AppError('unauthenticated');
-  const now = new Date();
-  const found = await withTenantTx(parsed.tenantId, async (tx) => {
+  const found = await agentActorWhere(parsed.tenantId, eq(agentTokens.tokenHash, parsed.hash), new Date());
+  if (!found) throw new AppError('unauthenticated');
+  return found;
+}
+
+/**
+ * The agent behind an agent token row, by its id: what a signed agent link carries. The same checks as a
+ * bearer token (not revoked or expired, agent not disabled, owner still a member, tenant not deleted); null
+ * when any fails.
+ */
+export async function agentActorByTokenId(
+  tenantId: string,
+  tokenId: string,
+  now: Date = new Date()
+): Promise<{ actor: Actor; agent: AgentAuth } | null> {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tokenId)) return null;
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tenantId)) return null;
+  return agentActorWhere(tenantId, eq(agentTokens.id, tokenId), now);
+}
+
+async function agentActorWhere(
+  tenantId: string,
+  which: SQL,
+  now: Date
+): Promise<{ actor: Actor; agent: AgentAuth } | null> {
+  const found = await withTenantTx(tenantId, async (tx) => {
     const [row] = await tx
       .select({ token: agentTokens, agent: agents, slug: tenants.slug, ownerRole: memberships.role })
       .from(agentTokens)
       .innerJoin(agents, and(eq(agents.tenantId, agentTokens.tenantId), eq(agents.id, agentTokens.agentId)))
       .innerJoin(tenants, eq(tenants.id, agentTokens.tenantId))
       .leftJoin(memberships, and(eq(memberships.tenantId, agents.tenantId), eq(memberships.userId, agents.createdBy)))
-      .where(
-        and(
-          eq(agentTokens.tenantId, parsed.tenantId),
-          eq(agentTokens.tokenHash, parsed.hash),
-          isNull(tenants.deletedAt)
-        )
-      );
+      .where(and(eq(agentTokens.tenantId, tenantId), which, isNull(tenants.deletedAt)));
     if (!row) return null;
     const { token, agent, ownerRole } = row;
     if (token.revokedAt || (token.expiresAt && token.expiresAt <= now) || agent.disabledAt || !ownerRole) {
@@ -251,18 +269,18 @@ export async function resolveAgentActor(req: FastifyRequest): Promise<{ actor: A
       .set({ lastUsedAt: now })
       .where(
         and(
-          eq(agentTokens.tenantId, parsed.tenantId),
+          eq(agentTokens.tenantId, tenantId),
           eq(agentTokens.id, token.id),
           or(isNull(agentTokens.lastUsedAt), lt(agentTokens.lastUsedAt, new Date(now.getTime() - LAST_USED_EVERY_MS)))
         )
       );
     return { ...row, ownerRole };
   });
-  if (!found) throw new AppError('unauthenticated');
+  if (!found) return null;
   const known = new Set<string>(AGENT_SCOPES);
   return {
     actor: {
-      tenantId: parsed.tenantId,
+      tenantId,
       principalType: 'agent',
       principalId: found.agent.id,
       owner: { userId: found.agent.createdBy, tenantRole: found.ownerRole },

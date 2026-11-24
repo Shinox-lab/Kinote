@@ -63,6 +63,8 @@ export const AuditEventTypeSchema = z.enum([
   'agent.token_revoked',
   'agent.tool_called',
   'mcp.tool_call',
+  'mcp.link_fetch',
+  'mcp.link_upload',
   'space.created',
   'space.settings_changed',
   'space.grant_changed',
