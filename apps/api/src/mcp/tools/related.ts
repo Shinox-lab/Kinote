@@ -138,6 +138,7 @@ async function byPage(ctx: ToolContext, ref: string): Promise<string> {
 
 export const relatedTool = defineTool({
   name: 'kinote_related',
+  annotations: { title: 'Find related pages', readOnlyHint: true, openWorldHint: false },
   scope: 'read',
   limit: 'search',
   description:

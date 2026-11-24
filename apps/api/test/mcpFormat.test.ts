@@ -143,6 +143,19 @@ describe('MCP references', () => {
     }
   });
 
+  test('with archived, only an archived page resolves', async () => {
+    const w = await agentWorld(app, 'ref-archived');
+    const live = await page(w, w.open.id, 'Live');
+    const old = await page(w, w.open.id, 'Old');
+    await withTenantTx(w.tenant.id, (tx) => tx.update(documents).set({ archivedAt: new Date() }).where(eq(documents.id, old.id)));
+    const found = await withTenantTx(w.tenant.id, (tx) => resolvePageRef(tx, actorOf(w), old.id.slice(0, 8), { archived: true }));
+    assert.equal(found.id, old.id);
+    await assert.rejects(
+      withTenantTx(w.tenant.id, (tx) => resolvePageRef(tx, actorOf(w), live.id, { archived: true })),
+      (e: unknown) => e instanceof ToolError
+    );
+  });
+
   test('resolveSpaceRef matches a readable space by name or id prefix, and lists the names otherwise', async () => {
     const w = await agentWorld(app, 'ref-space');
     const actor = actorOf(w);

@@ -4,7 +4,7 @@ import { hitLimit, withTenantTx, writeAuditEvent } from '@kinote/db';
 import { AppError, type AgentScope } from '@kinote/contracts';
 import { estimateTokens, type Actor } from '@kinote/core';
 import { toJsonSchemaCompat } from '@modelcontextprotocol/sdk/server/zod-json-schema-compat.js';
-import type { CallToolResult, Tool } from '@modelcontextprotocol/sdk/types.js';
+import type { CallToolResult, EmbeddedResource, ImageContent, Tool } from '@modelcontextprotocol/sdk/types.js';
 import type { AgentAuth } from '../auth/actor.js';
 import { tenantSuspended } from '../usageLimits.js';
 import { capResult } from './format.js';
@@ -35,6 +35,8 @@ export interface ToolDef<S extends ZodRawShape = ZodRawShape> {
   meta?: ToolMeta;
   /** Every call writes: refused while the workspace is suspended. */
   writes?: boolean;
+  /** MCP tool annotations, so clients can tell read tools from write tools. Required so every tool states it. */
+  annotations: ToolAnnotations;
   description: string;
   input: S;
   /**
@@ -44,11 +46,25 @@ export interface ToolDef<S extends ZodRawShape = ZodRawShape> {
   run(args: z.infer<z.ZodObject<S>>, ctx: ToolContext): Promise<ToolOutput>;
 }
 
+/** MCP `annotations`: every Kinote tool acts only on this workspace, so `openWorldHint` is always false. */
+export interface ToolAnnotations {
+  title: string;
+  readOnlyHint: boolean;
+  destructiveHint?: boolean;
+  idempotentHint?: boolean;
+  openWorldHint: false;
+}
 export type ToolLimit = 'search' | 'ask' | 'capture' | 'edit' | 'upload';
 export interface ToolMeta {
   ui?: { resourceUri?: string; visibility?: Array<'model' | 'app'> };
 }
-export type ToolOutput = string | { text: string; structured: Record<string, unknown> };
+/**
+ * A tool's result: text, or text plus `structuredContent` and extra content parts (an image the model sees,
+ * an embedded text or blob resource). The text part is always first; only it is capped.
+ */
+export type ToolOutput =
+  | string
+  | { text: string; structured?: Record<string, unknown>; content?: Array<ImageContent | EmbeddedResource> };
 
 /** Declares a tool (typing only: the route lists and calls it). */
 export function defineTool<S extends ZodRawShape>(def: ToolDef<S>): ToolDef<S> {
@@ -73,6 +89,7 @@ export function listTools(tools: readonly ToolDef[], agent: AgentAuth): Tool[] {
       name: t.name,
       description: t.description,
       inputSchema: toJsonSchemaCompat(z.object(t.input), { strictUnions: true, pipeStrategy: 'input' }) as Tool['inputSchema'],
+      annotations: { ...t.annotations },
       ...(t.meta ? { _meta: { ...t.meta } } : {}),
     }));
 }
@@ -179,7 +196,13 @@ async function runCall(
       tool.run(parsed.data, { ...ctx, touch: (ids) => ids.forEach((id) => pages.add(id)), assertWritable })
     );
     if (typeof out === 'string') return { result: text(capResult(out)), error: null };
-    return { result: { ...text(capResult(out.text)), structuredContent: out.structured }, error: null };
+    return {
+      result: {
+        content: [{ type: 'text', text: capResult(out.text) }, ...(out.content ?? [])],
+        ...(out.structured ? { structuredContent: out.structured } : {}),
+      },
+      error: null,
+    };
   } catch (err) {
     if (err instanceof ToolError || err instanceof AppError) return refuse(err.message);
     log.error({ err, tool: tool.name }, 'mcp tool failed');

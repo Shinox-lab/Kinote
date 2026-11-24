@@ -923,14 +923,15 @@ async function recordChanges(
   });
 }
 
-function slugFor(title: string, id: string): string {
+/** A page's slug: its title in lowercase words joined by dashes (at most 60 characters, else "page"), then the suffix. */
+export function pageSlug(title: string, suffix: string): string {
   const base = title
     .toLowerCase()
     .normalize('NFKD')
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, 60);
-  return `${base || 'page'}-${id.slice(0, 8)}`;
+  return `${base || 'page'}-${suffix}`;
 }
 
 /** A new page the engine created for a fact nothing else fits (R9: needs the higher threshold). */
@@ -999,7 +1000,7 @@ export async function createEnginePage(
       documentId: doc!.id,
       tenantId,
       spaceId: page.spaceId,
-      slug: slugFor(page.title, doc!.id),
+      slug: pageSlug(page.title, doc!.id.slice(0, 8)),
       ydocState: encodeBlocksYDoc(page.title, blocks, page.fields),
       liveChangedSinceSnapshot: true,
       agentChangedAt: new Date(),

@@ -63,6 +63,8 @@ export const AuditEventTypeSchema = z.enum([
   'agent.token_revoked',
   'agent.tool_called',
   'mcp.tool_call',
+  'mcp.link_fetch',
+  'mcp.link_upload',
   'space.created',
   'space.settings_changed',
   'space.grant_changed',
@@ -99,6 +101,7 @@ export const AuditEventTypeSchema = z.enum([
   'thread.deleted',
   'suggestion.accepted',
   'suggestion.declined',
+  'review.decided_in_client',
   'version.created',
   'version.approved',
   'version.rejected',
@@ -607,7 +610,7 @@ export const ReviewQuerySchema = z.object({
 export const SuggestionSummarySchema = z.object({
   id: z.string().uuid(),
   documentId: z.string().uuid(),
-  kind: z.enum(['remove', 'replace', 'insert', 'set_field']),
+  kind: z.enum(['remove', 'replace', 'insert', 'set_field', 'archive']),
   blockId: z.string().nullable(),
   afterBlockId: z.string().nullable(),
   proposedMarkdown: z.string().nullable(),
@@ -1178,7 +1181,7 @@ export type FileVersion = z.infer<typeof FileVersionSchema>;
 export const FileVersionListSchema = z.array(FileVersionSchema.extend({ createdByName: z.string() }));
 export type FileVersionList = z.infer<typeof FileVersionListSchema>;
 
-/** Reply of GET /api/v1/files/:id: the file, its server-computed badge and its latest and indexed versions. */
+/** Reply of GET /api/v1/files/:id: the file, its server-computed badge and its latest, indexed and published versions. */
 export const FileDetailsSchema = z.object({
   id: z.string().uuid(),
   spaceId: z.string().uuid(),
@@ -1190,6 +1193,8 @@ export const FileDetailsSchema = z.object({
   badge: z.string(),
   latestVersion: FileVersionSchema.nullable(),
   indexedVersion: FileVersionSchema.nullable(),
+  /** What readers below editor open: the indexed version, or a version with no text once settled. */
+  publishedVersion: FileVersionSchema.nullable(),
 });
 export type FileDetails = z.infer<typeof FileDetailsSchema>;
 
@@ -1350,6 +1355,7 @@ export const AgentSchema = z.object({
   dailyAiLimit: z.number().int().nullable(),
   /** Its routed changes wait for review even in a space without review. */
   alwaysReview: z.boolean(),
+  approveInClient: z.boolean(),
   grants: z.array(z.object({ spaceId: z.string().uuid(), spaceName: z.string(), role: z.enum(['viewer', 'editor']) })),
   tokens: z.array(AgentTokenSchema),
 });
@@ -1368,6 +1374,7 @@ export const UpdateAgentRequestSchema = z
     disabled: z.boolean().optional(),
     daily_ai_limit: DailyAiLimitSchema.nullable().optional(),
     always_review: z.boolean().optional(),
+    approve_in_client: z.boolean().optional(),
   })
   .refine((v) => Object.values(v).some((x) => x !== undefined), 'nothing to change');
 export type UpdateAgentRequest = z.input<typeof UpdateAgentRequestSchema>;

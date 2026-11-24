@@ -116,6 +116,8 @@ export const agents = pgTable('agents', {
   dailyAiLimit: integer('daily_ai_limit'),
   /** "Always review this agent": its routed changes wait for review even in a space without review. */
   alwaysReview: boolean('always_review').notNull().default(true),
+  /** The owner may approve and reject this agent's changes in the AI client's review panel. */
+  approveInClient: boolean('approve_in_client').notNull().default(true),
 });
 
 export const agentTokens = pgTable(

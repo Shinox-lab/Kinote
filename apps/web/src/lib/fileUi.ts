@@ -38,7 +38,7 @@ const READ_FAILED = /^Extraction failed$| could not be read$/;
 const INDEX_FAILED = /^Index failed$| failed to index$/;
 const STORED = /^Stored · no searchable text$| has no searchable text$/;
 
-export function fileControls({ role, spaceArchived, archived, inbox, placement, sourceDeleted, badge }: FileControlsInput): FileControls {
+export function fileControls({ role, spaceArchived, archived, placement, sourceDeleted, badge }: FileControlsInput): FileControls {
   const rank = rankOf(role);
   const live = !archived && !spaceArchived;
   const editor = live && rank >= RANK.editor;
@@ -46,8 +46,8 @@ export function fileControls({ role, spaceArchived, archived, inbox, placement, 
     replace: editor && placement !== 'synced',
     move: editor,
     withdraw: live && rank >= RANK.reviewer,
-    archive: live && rank >= RANK.admin,
-    restore: archived && !spaceArchived && (rank >= RANK.admin || (inbox && rank >= RANK.editor)),
+    archive: live && rank >= RANK.editor,
+    restore: archived && !spaceArchived && rank >= RANK.editor,
     retry: editor && (READ_FAILED.test(badge) || INDEX_FAILED.test(badge)),
     dismissRemoval: editor && placement === 'synced' && sourceDeleted,
     download: true,
@@ -90,8 +90,8 @@ export function fileBanner({ badge, sourceDeleted, placement, hasPublished, role
 }
 
 /** The version the screen opens on: editors the latest, everyone else only the published one. */
-export function publishedVersionId(details: Pick<FileDetails, 'latestVersion' | 'indexedVersion'>, role: SpaceRole | null): string | null {
-  return rankOf(role) >= RANK.editor ? (details.latestVersion?.id ?? null) : (details.indexedVersion?.id ?? null);
+export function publishedVersionId(details: Pick<FileDetails, 'latestVersion' | 'publishedVersion'>, role: SpaceRole | null): string | null {
+  return rankOf(role) >= RANK.editor ? (details.latestVersion?.id ?? null) : (details.publishedVersion?.id ?? null);
 }
 
 /** A name safe to hand to the browser's save dialog: no path separators, no control characters. */

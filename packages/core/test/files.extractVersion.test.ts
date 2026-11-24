@@ -202,7 +202,7 @@ describe('extractVersion', () => {
       expect((await reload(seed, v2.id)).status).toBe('pending_review');
     });
 
-    it('leaves the older waiting version waiting when the newer one ends up stored', async () => {
+    it('a newer version with no text in a review space waits too, and the older waiting one gives way', async () => {
       const seed = await seedFileDocument({ title: 'notes.txt', reviewRequired: true });
       const v1 = await upload(seed, 'notes.txt', 'first');
       const v2 = await upload(seed, 'scan.pdf', enc('%PDF-1.7\nblank scan'));
@@ -218,9 +218,10 @@ describe('extractVersion', () => {
       };
       expect(await extractVersion({ tenantId: seed.tenantId, versionId: v2.id }, deps({ extractor: blank }))).toEqual({
         outcome: 'extracted',
-        status: 'stored',
+        status: 'pending_review',
       });
-      expect((await reload(seed, v1.id)).status).toBe('pending_review');
+      expect((await reload(seed, v1.id)).status).toBe('superseded');
+      expect((await reload(seed, v2.id)).noText).toBe(true);
     });
   });
 

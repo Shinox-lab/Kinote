@@ -228,6 +228,8 @@ function AgentPanel({ agent, spaces, onIssued }: { agent: Agent; spaces: readonl
   // Shown at once when ticked; the saved value takes over when the agent is loaded again.
   const [alwaysReview, setAlwaysReview] = useState(agent.alwaysReview);
   useEffect(() => setAlwaysReview(agent.alwaysReview), [agent.alwaysReview]);
+  const [approveInClient, setApproveInClient] = useState(agent.approveInClient);
+  useEffect(() => setApproveInClient(agent.approveInClient), [agent.approveInClient]);
   const update = useMutation({
     mutationFn: (body: Parameters<typeof api.updateAgent>[1]) => api.updateAgent(agent.id, body),
     onSuccess: () => refresh('agents'),
@@ -280,6 +282,16 @@ function AgentPanel({ agent, spaces, onIssued }: { agent: Agent; spaces: readonl
         onChange={(checked) => {
           setAlwaysReview(checked);
           update.mutate({ always_review: checked }, { onError: () => setAlwaysReview(agent.alwaysReview) });
+        }}
+      />
+      <Checkbox
+        label="Approve in your AI client"
+        hint="Your AI client's review panel can approve and reject this agent's changes. Turn off to decide only in Kinote."
+        checked={approveInClient}
+        disabled={update.isPending}
+        onChange={(checked) => {
+          setApproveInClient(checked);
+          update.mutate({ approve_in_client: checked }, { onError: () => setApproveInClient(agent.approveInClient) });
         }}
       />
 

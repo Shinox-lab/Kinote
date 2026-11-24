@@ -221,9 +221,9 @@ describe('pageControls', () => {
     }
   });
 
-  test('lifecycle items follow the role: move for editors, withdraw for reviewers, archive for admins', () => {
-    expect(controls({ role: 'editor' })).toMatchObject({ move: true, withdraw: false, archive: false });
-    expect(controls({ role: 'reviewer' })).toMatchObject({ move: true, withdraw: true, archive: false });
+  test('lifecycle items follow the role: move and archive for editors, withdraw for reviewers', () => {
+    expect(controls({ role: 'editor' })).toMatchObject({ move: true, withdraw: false, archive: true });
+    expect(controls({ role: 'reviewer' })).toMatchObject({ move: true, withdraw: true, archive: true });
     expect(controls({ role: 'admin' })).toMatchObject({ move: true, withdraw: true, archive: true });
   });
 
@@ -250,7 +250,7 @@ describe('pageControls', () => {
     expect(controls({ badge: 'Not indexed' }).restoreIndexed).toBe(false);
   });
 
-  test('an archived page offers only restore: an admin anywhere, or its creator in the Inbox', () => {
+  test('an archived page offers only restore, to an editor or above', () => {
     expect(controls({ archived: true, role: 'admin', badge: 'Index failed' })).toEqual({
       primary: null,
       retry: false,
@@ -263,8 +263,9 @@ describe('pageControls', () => {
     });
     expect(controls({ archived: true, role: 'editor', inbox: true }).restorePage).toBe(true);
     expect(controls({ archived: true, role: 'reviewer', inbox: true }).restorePage).toBe(true);
-    expect(controls({ archived: true, role: 'editor' }).restorePage).toBe(false);
-    expect(controls({ archived: true, role: 'reviewer' }).restorePage).toBe(false);
+    expect(controls({ archived: true, role: 'editor' }).restorePage).toBe(true);
+    expect(controls({ archived: true, role: 'reviewer' }).restorePage).toBe(true);
+    expect(controls({ archived: true, role: 'viewer' }).restorePage).toBe(false);
     expect(controls({ archived: true, role: 'viewer', inbox: true }).restorePage).toBe(false);
     expect(controls({ archived: false, role: 'admin' }).restorePage).toBe(false);
   });

@@ -302,6 +302,7 @@ describe('error model', () => {
       'suggestion_not_open',
       'fact_not_open',
       'block_changed',
+      'version_conflict',
     ]) {
       expected[code] = 409;
     }

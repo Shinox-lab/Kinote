@@ -24,7 +24,7 @@ import {
 } from '@kinote/core';
 import { documentName, type BlockLike, type CollabClient } from '@kinote/shared';
 import { conflictNames, proposerNames, suggestionField, toSuggestionSummary } from './captures.js';
-import { approveVersion } from './pages.js';
+import { approveVersion, archivePageTx, lockPage } from './pages.js';
 
 type SuggestionRow = typeof suggestions.$inferSelect;
 
@@ -97,6 +97,21 @@ async function decidable(tx: DbTransaction, actor: Actor, id: string) {
   return { row, doc, space };
 }
 
+/**
+ * Whether `actor` may decide the suggestion now, without throwing: the reason in a sentence when not
+ * (someone else decides it, a reviewer is needed, it is gone).
+ */
+export async function suggestionDecidable(tx: DbTransaction, actor: Actor, id: string): Promise<{ ok: true } | { ok: false; why: string }> {
+  try {
+    await decidable(tx, actor, id);
+    return { ok: true };
+  } catch (err) {
+    if (!(err instanceof AppError)) throw err;
+    if (err.code === 'forbidden') return { ok: false, why: 'A reviewer of this space decides it.' };
+    return { ok: false, why: err.message };
+  }
+}
+
 /** Sets the status only while the suggestion is still open; 409 `suggestion_not_open` otherwise. */
 async function close(tx: DbTransaction, actor: Actor, id: string, status: 'accepted' | 'declined'): Promise<SuggestionRow> {
   const [row] = await tx
@@ -157,6 +172,8 @@ async function opsFor(tenantId: string, row: SuggestionRow): Promise<{ ops: Para
  * no longer fits it.
  */
 export async function acceptSuggestion(actor: Actor, id: string, collab?: CollabClient): Promise<SuggestionSummary> {
+  const deleted = await acceptArchive(actor, id);
+  if (deleted) return deleted;
   if (!collab) throw new AppError('internal_error');
   const { row, space, routerId, hadWaiting } = await withTenantTx(actor.tenantId, async (tx) => {
     const { doc, space } = await decidable(tx, actor, id);
@@ -243,6 +260,32 @@ export async function acceptSuggestion(actor: Actor, id: string, collab?: Collab
       payload: { documentId: row.documentId, kind: row.kind, captureId: row.captureId, versionId: version?.id ?? null },
     });
     return toSuggestionSummary(row, null, await suggestionField(tx, actor.tenantId, row), await proposerNames(tx, actor.tenantId, [row]));
+  });
+}
+
+/**
+ * Accepting a delete request (kind `archive`) archives the page as the accepter, in one transaction: a page
+ * already archived answers 409 `suggestion_not_open`; a live child, 409 `has_children` with the request left
+ * open. Null for any other kind.
+ */
+async function acceptArchive(actor: Actor, id: string): Promise<SuggestionSummary | null> {
+  return withTenantTx(actor.tenantId, async (tx) => {
+    const { row: peek } = await decidable(tx, actor, id);
+    if (peek.kind !== 'archive') return null;
+    const doc = await lockPage(tx, actor.tenantId, peek.documentId);
+    if (doc.archivedAt) throw new AppError('suggestion_not_open', 'The page is already deleted.');
+    const row = await close(tx, actor, id, 'accepted');
+    await archivePageTx(tx, actor, doc);
+    await writeAuditEvent(tx, {
+      tenantId: actor.tenantId,
+      type: 'suggestion.accepted',
+      actorType: actor.principalType,
+      actorId: actor.principalId,
+      subjectType: 'suggestion',
+      subjectId: id,
+      payload: { documentId: row.documentId, kind: row.kind, captureId: null, versionId: null },
+    });
+    return toSuggestionSummary(row, null, null, await proposerNames(tx, actor.tenantId, [row]));
   });
 }
 

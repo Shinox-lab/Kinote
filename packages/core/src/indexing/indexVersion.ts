@@ -277,7 +277,7 @@ export async function indexVersion(
 
     await tx
       .update(documents)
-      .set({ indexedVersionId: ver.id, title: ver.title })
+      .set({ indexedVersionId: ver.id, title: ver.title, ...(doc.kind === 'file' ? { publishedVersionId: ver.id } : {}) })
       .where(and(eq(documents.tenantId, tenantId), eq(documents.id, doc.id)));
 
     // The routing engine's card and entity graph follow the index (never in the Inbox, R17).

@@ -97,7 +97,7 @@ export function FileEmbedView({ documentId, name, error }: { documentId: string;
 
   const role = spaces.find((s) => s.id === file.spaceId)?.myRole ?? null;
   const shown = publishedVersionId(file, role);
-  const version = [file.latestVersion, file.indexedVersion].find((v) => v?.id === shown) ?? null;
+  const version = [file.latestVersion, file.publishedVersion, file.indexedVersion].find((v) => v?.id === shown) ?? null;
   const preview = version ? inlineViewerFor(version.mimeType, version.sizeBytes) : null;
 
   if (!version) {

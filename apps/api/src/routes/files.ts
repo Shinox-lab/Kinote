@@ -40,6 +40,7 @@ import {
   type DetectedFile,
   type VersionRow,
   relocateFile,
+  currentFileVersion,
 } from '@kinote/core';
 import { signMediaToken, verifyMediaToken, type ObjectStorage } from '@kinote/shared';
 import { actorForUser } from '../auth/actor.js';
@@ -312,29 +313,59 @@ async function loadReplaceable(
 const sameAsLatest = (latest: VersionRow | null, hash: string) =>
   latest !== null && latest.contentHash === hash && latest.status !== 'withdrawn';
 
+/** What an agent whose copy came from `base` is told when the file's current version is another one. */
+export async function baseConflictMessage(tx: DbTransaction, tenantId: string, current: VersionRow | null, base: number): Promise<string> {
+  if (!current) return 'This file has no current version. Ask a person to replace it in Kinote.';
+  const names = await resolveActorNames(tx, tenantId, [{ type: current.createdByType, id: current.createdBy }]);
+  const name = names.get(`${current.createdByType}:${current.createdBy}`) ?? 'someone';
+  const by = current.createdByType === 'agent' ? `Agent "${name}"` : name;
+  const at = current.createdAt.toISOString().slice(0, 16).replace('T', ' ');
+  return `This file changed since v${base}: v${current.number} by ${by} at ${at}. Download it again, redo your change on v${current.number}, and send base_version ${current.number}.`;
+}
+
 /**
  * Adds a version to an existing file (editor or higher). The same bytes as the
  * latest version, unless it was withdrawn, answer `unchanged`.
+ *
+ * With `baseVersion` (an agent's replace): "the same bytes" means the file's current version (the newest that
+ * is not rejected, withdrawn or failed), checked before the base so a retry answers `unchanged`; then a base
+ * other than the current version's number is 409 `version_conflict`, naming who made the current version and
+ * when. Both are checked again under the document lock, so of two replaces on one base only one is added.
  */
 export async function replaceFile(
   actor: Actor,
   fileId: string,
   file: UploadedFile,
-  deps: FileDeps
+  deps: FileDeps,
+  opts: { baseVersion?: number } = {}
 ): Promise<UploadOutcome> {
   assertValidUuid(fileId, 'document_not_found');
   const detected = detect(file);
   const name = cleanFileName(file.name);
   const { contentHash } = file;
+  const guarded = opts.baseVersion !== undefined;
 
-  const gate = await withTenantTx(actor.tenantId, (tx) => loadReplaceable(tx, actor, fileId, false));
-  if (gate.latest && sameAsLatest(gate.latest, contentHash)) return unchanged(gate.doc, gate.latest);
+  /** The guard of an agent's replace: unchanged, a conflict, or go on. */
+  const check = async (tx: DbTransaction, doc: DocumentRow, latest: VersionRow | null): Promise<UploadOutcome | null> => {
+    if (!guarded) return latest && sameAsLatest(latest, contentHash) ? unchanged(doc, latest) : null;
+    const current = await currentFileVersion(tx, actor.tenantId, doc.id);
+    if (current && current.contentHash === contentHash) return unchanged(doc, current);
+    if ((current?.number ?? 0) !== opts.baseVersion) throw new AppError('version_conflict', await baseConflictMessage(tx, actor.tenantId, current, opts.baseVersion!));
+    return null;
+  };
+
+  const early = await withTenantTx(actor.tenantId, async (tx) => {
+    const gate = await loadReplaceable(tx, actor, fileId, false);
+    return check(tx, gate.doc, gate.latest);
+  });
+  if (early) return early;
 
   const versionId = randomUUID();
   return withStoredBytes(deps, actor.tenantId, fileId, versionId, file, detected, (objectKey) =>
     withTenantTx(actor.tenantId, async (tx) => {
       const { doc, latest } = await loadReplaceable(tx, actor, fileId, true);
-      if (latest && sameAsLatest(latest, contentHash)) return { result: unchanged(doc, latest), keep: false };
+      const settled = await check(tx, doc, latest);
+      if (settled) return { result: settled, keep: false };
       if (doc.sourceDeletedAt) {
         // A pinned file whose source removed it: the person's replacement takes it over, so the removal
         // mark goes (a worker settles every version of a removed file as withdrawn). The source can
@@ -548,7 +579,7 @@ export async function withdrawFile(actor: Actor, fileId: string): Promise<Docume
     await withdrawLiveVersions(tx, actor.tenantId, fileId);
     const [updated] = await tx
       .update(documents)
-      .set({ indexedVersionId: null })
+      .set({ indexedVersionId: null, publishedVersionId: null })
       .where(and(eq(documents.tenantId, actor.tenantId), eq(documents.id, fileId)))
       .returning();
     await writeAuditEvent(tx, {
@@ -563,12 +594,12 @@ export async function withdrawFile(actor: Actor, fileId: string): Promise<Docume
   });
 }
 
-/** Archives a file (space admin): withdrawn from the index, chunks deleted, `archived_at` set. */
+/** Archives a file (editor or above): withdrawn from the index, chunks deleted, `archived_at` set. */
 export async function archiveFile(actor: Actor, fileId: string): Promise<DocumentSummary> {
   assertValidUuid(fileId, 'document_not_found');
   return withTenantTx(actor.tenantId, async (tx) => {
     const doc = await lockFile(tx, actor.tenantId, fileId);
-    await requireDocumentRole(tx, actor, doc, 'admin', { notFound: 'document_not_found' });
+    await requireDocumentRole(tx, actor, doc, 'editor', { notFound: 'document_not_found' });
     const [liveChild] = await tx
       .select({ id: documents.id })
       .from(documents)
@@ -584,7 +615,7 @@ export async function archiveFile(actor: Actor, fileId: string): Promise<Documen
     await withdrawLiveVersions(tx, actor.tenantId, fileId);
     const [updated] = await tx
       .update(documents)
-      .set({ archivedAt: new Date(), indexedVersionId: null })
+      .set({ archivedAt: new Date(), indexedVersionId: null, publishedVersionId: null })
       .where(and(eq(documents.tenantId, actor.tenantId), eq(documents.id, fileId)))
       .returning();
     await writeAuditEvent(tx, {
@@ -616,7 +647,7 @@ export async function dismissRemoval(actor: Actor, fileId: string): Promise<Docu
     await withdrawLiveVersions(tx, actor.tenantId, fileId);
     const [updated] = await tx
       .update(documents)
-      .set({ archivedAt: new Date(), indexedVersionId: null })
+      .set({ archivedAt: new Date(), indexedVersionId: null, publishedVersionId: null })
       .where(and(eq(documents.tenantId, actor.tenantId), eq(documents.id, fileId)))
       .returning();
     await writeAuditEvent(tx, {
@@ -649,11 +680,8 @@ export async function restoreFile(actor: Actor, fileId: string): Promise<Documen
     if (access.space.archivedAt) {
       throw new AppError('space_archived', 'Space is archived.');
     }
-    // In the Inbox `requireDocumentRole` already limited the actor to the creator.
-    if (
-      access.effectiveRole !== 'admin' &&
-      !(access.space.kind === 'inbox' && access.effectiveRole !== 'viewer')
-    ) {
+    // Editor or above; in the Inbox `requireDocumentRole` already limited the actor to the creator.
+    if (access.effectiveRole === 'viewer') {
       throw new AppError('forbidden', 'You do not have permission to perform this action.');
     }
     if (!doc.archivedAt) return toDocumentSummary(doc);
@@ -712,6 +740,7 @@ export async function getFileDetails(actor: Actor, fileId: string): Promise<File
     const all = await fileVersionsOf(tx, actor.tenantId, fileId);
     const latest = all[0] ?? null;
     const indexed = doc.indexedVersionId ? (all.find((v) => v.id === doc.indexedVersionId) ?? null) : null;
+    const published = doc.publishedVersionId ? (all.find((v) => v.id === doc.publishedVersionId) ?? null) : null;
     return {
       id: doc.id,
       spaceId: doc.spaceId,
@@ -731,6 +760,7 @@ export async function getFileDetails(actor: Actor, fileId: string): Promise<File
       }),
       latestVersion: latest ? toFileVersion(latest) : null,
       indexedVersion: indexed ? toFileVersion(indexed) : null,
+      publishedVersion: published ? toFileVersion(published) : null,
     };
   });
 }
@@ -756,7 +786,7 @@ export async function listFileVersions(actor: Actor, fileId: string): Promise<Fi
  * A file version and its document, readable by the actor. A version that is
  * unknown, of a page, or of a hidden file is the same 404 `version_not_found`.
  */
-async function readableFileVersion(
+export async function readableFileVersion(
   tx: DbTransaction,
   actor: Actor,
   versionId: string,
@@ -776,7 +806,7 @@ async function readableFileVersion(
   const access = await requireDocumentRole(tx, actor, doc, minimumRole, { notFound: 'version_not_found' });
   // Below editor, only what has been published is readable: another version (waiting, rejected,
   // withdrawn, older, newer) is indistinguishable from one that does not exist.
-  if (access.effectiveRole === 'viewer' && doc.indexedVersionId !== ver.id) {
+  if (access.effectiveRole === 'viewer' && doc.publishedVersionId !== ver.id) {
     throw new AppError('version_not_found');
   }
   return { ver, doc };
@@ -785,7 +815,7 @@ async function readableFileVersion(
 const INLINE_MIME = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif']);
 
 /** RFC 5987 value: everything outside the attribute characters is percent-encoded. */
-const encodeHeaderName = (name: string) =>
+export const encodeHeaderName = (name: string) =>
   encodeURIComponent(name).replace(/['()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
 
 /**

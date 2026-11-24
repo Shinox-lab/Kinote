@@ -10,6 +10,8 @@ import {
 } from '@kinote/db';
 import type { FileHandling } from './detect.js';
 import { assertStorageFor } from '../usage/capacity.js';
+import { publishStoredVersion } from './publish.js';
+import { fileReviewDecision } from './review.js';
 
 export type VersionRow = typeof versions.$inferSelect;
 
@@ -47,8 +49,8 @@ const STORED_REASON = 'Kept for download. No text is read from audio or video.';
  * Adds a version to a file document under the caller's document lock: the next
  * number; a version still `extracting` or waiting for review is superseded
  * (a reviewer always reviews the newest upload; an indexed version stays until
- * its successor is indexed); audio and video are `stored` at once, everything
- * else is `extracting` with its `file.extract` job. A person or agent is
+ * its successor is indexed); audio and video are `stored` and published at once,
+ * or `pending_review` when `fileReviewDecision` holds them; everything else is `extracting` with its `file.extract` job. A person or agent is
  * recorded as a contributor. The document's title is not changed here: it
  * follows the version that gets indexed.
  */
@@ -78,6 +80,8 @@ export async function insertFileVersion(
     );
 
   const stored = file.handling === 'stored';
+  // Audio and video have no text to read: settled now, or held for review by the same rule as every version.
+  const held = stored && (await fileReviewDecision(tx, { tenantId, spaceId: doc.spaceId, createdByType: actor.type, createdBy: actor.id }));
   const [version] = await tx
     .insert(versions)
     .values({
@@ -86,7 +90,8 @@ export async function insertFileVersion(
       documentId: doc.id,
       number: (latest?.number ?? 0) + 1,
       title: file.name,
-      status: stored ? 'stored' : 'extracting',
+      status: held ? 'pending_review' : stored ? 'stored' : 'extracting',
+      noText: stored,
       contentHash: file.contentHash,
       reason: p.reason,
       createdByType: actor.type,
@@ -124,6 +129,7 @@ export async function insertFileVersion(
     payload: { documentId: doc.id, number: version!.number, reason: p.reason, fileName: file.name },
   });
 
+  if (stored && !held) await publishStoredVersion(tx, tenantId, doc, version!.id);
   if (!stored) {
     await enqueueJob(tx, {
       tenantId,

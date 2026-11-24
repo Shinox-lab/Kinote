@@ -175,6 +175,14 @@ describe('tree, archived list, space archive, page restore', () => {
       assert.equal(list[0].slug, 'gone');
     });
 
+    test('an editor lists the archived pages; a viewer cannot', async () => {
+      const gone = await createPage(ctx.editor.headers, ctx.docs.id, 'gone', 'Gone');
+      assert.equal((await archivePage(ctx.editor.headers, gone)).statusCode, 200);
+      assert.deepEqual((await archivedList(ctx.editor.headers, ctx.docs.id)).map((n) => n.id), [gone]);
+      const viewer = await app.inject({ method: 'GET', url: `/api/v1/spaces/${ctx.docs.id}/archived`, headers: ctx.viewer.headers });
+      assert.equal(viewer.statusCode, 403, viewer.body);
+    });
+
     test('creating and archiving a page invalidates a cached tree', async () => {
       const keep = await createPage(ctx.editor.headers, ctx.docs.id, 'keep', 'Keep');
       assert.deepEqual((await tree(ctx.viewer.headers, ctx.docs.id)).map((n) => n.id), [keep]);
@@ -366,14 +374,14 @@ describe('tree, archived list, space archive, page restore', () => {
   });
 
   describe('GET /spaces/:id/archived', () => {
-    test('requires space admin: an editor gets 403, an outsider 404', async () => {
-      const editor = await app.inject({
+    test('requires an editor: a viewer gets 403, an outsider 404', async () => {
+      const viewer = await app.inject({
         method: 'GET',
         url: `/api/v1/spaces/${ctx.docs.id}/archived`,
-        headers: ctx.editor.headers,
+        headers: ctx.viewer.headers,
       });
-      assert.equal(editor.statusCode, 403, editor.body);
-      assert.equal(editor.json().error, 'forbidden');
+      assert.equal(viewer.statusCode, 403, viewer.body);
+      assert.equal(viewer.json().error, 'forbidden');
       const outsider = await app.inject({
         method: 'GET',
         url: `/api/v1/spaces/${ctx.docs.id}/archived`,
@@ -628,10 +636,10 @@ describe('tree, archived list, space archive, page restore', () => {
       assert.equal(res.json().parentId, null);
     });
 
-    test('a space editor gets 403 forbidden', async () => {
+    test('a space viewer gets 403 forbidden', async () => {
       const page = await createPage(ctx.editor.headers, ctx.docs.id, 'p');
       assert.equal((await archivePage(ctx.spaceAdmin.headers, page)).statusCode, 200);
-      const res = await post(ctx.editor.headers, `/api/v1/pages/${page}/restore`);
+      const res = await post(ctx.viewer.headers, `/api/v1/pages/${page}/restore`);
       assert.equal(res.statusCode, 403, res.body);
       assert.equal(res.json().error, 'forbidden');
       assert.notEqual((await pageBadge(ctx.spaceAdmin.headers, page)).archivedAt, null);

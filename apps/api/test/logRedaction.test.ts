@@ -7,6 +7,8 @@ describe('secrets in request URLs never reach the log', () => {
     expect(loggableUrl('/api/v1/media/eyJ0ZW5hbnQ.c2lnbmF0dXJl')).toBe('/api/v1/media/[redacted]');
     expect(loggableUrl('/api/v1/media/abc.def?x=1')).toBe('/api/v1/media/[redacted]?x=1');
     expect(loggableUrl('/api/v1/files/123')).toBe('/api/v1/files/123');
+    expect(loggableUrl('/api/v1/agent-files/eyJ0.c2ln')).toBe('/api/v1/agent-files/[redacted]');
+    expect(loggableUrl('/api/v1/agent-uploads/eyJ0.c2ln?x=1')).toBe('/api/v1/agent-uploads/[redacted]?x=1');
   });
 
   test('the request log line of a media request has no token', async () => {

@@ -85,7 +85,7 @@ function CreatePageForm({ space }: { space: SpaceResponse }) {
  * person lists their own. Each links to the document, where it can be restored.
  */
 function ArchivedPages({ space, tenantSlug }: { space: SpaceResponse; tenantSlug: string }) {
-  const canList = space.myRole === 'admin' || space.kind === 'inbox';
+  const canList = (space.myRole !== null && space.myRole !== 'viewer') || space.kind === 'inbox';
   const { data, error } = useArchivedTree(space.id, canList);
   if (!canList) return null;
   return (

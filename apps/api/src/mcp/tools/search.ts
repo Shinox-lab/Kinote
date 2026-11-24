@@ -118,10 +118,11 @@ async function findPages(ctx: ToolContext, query: string, spaceRef: string | und
 
 export const searchTool = defineTool({
   name: 'kinote_search',
+  annotations: { title: 'Search the wiki', readOnlyHint: true, openWorldHint: false },
   scope: 'read',
   limit: 'search',
   description:
-    'Search the wiki. find "passages" (default) returns the matching text with its page, section and block IDs; find "pages" returns the pages that are about the query. Only approved, indexed content.',
+    'Search the wiki. find "passages" (default) returns matching text with its page, section and block IDs; find "pages" returns pages about the query. Only approved, indexed content. Don\'t put pdf, sheet or deck in the query; read each result\'s type.',
   input: {
     query: z.string().trim().min(1).max(500),
     find: z.enum(['passages', 'pages']).optional(),

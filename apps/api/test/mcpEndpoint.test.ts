@@ -1,3 +1,4 @@
+import { serverInstructions } from '../src/mcp/instructions.js';
 import { describe, test, beforeEach } from 'vitest';
 import assert from 'node:assert/strict';
 import { and, eq } from 'drizzle-orm';
@@ -16,6 +17,7 @@ const TEST_PATH = '/test/mcp';
 
 const echo = defineTool({
   name: 'kinote_echo',
+  annotations: { title: 'Test tool', readOnlyHint: false, openWorldHint: false },
   scope: 'read',
   limit: 'search',
   description: 'Echo the text back.',
@@ -30,6 +32,7 @@ const echo = defineTool({
 });
 const captureEcho = defineTool({
   name: 'kinote_capture_echo',
+  annotations: { title: 'Test tool', readOnlyHint: false, openWorldHint: false },
   scope: 'capture',
   limit: 'search',
   description: 'Echo, for capture tokens.',
@@ -106,6 +109,19 @@ describe('the /mcp endpoint', () => {
     assert.ok(!text.includes('Hidden'));
     assert.ok(!text.includes('Inbox'));
     assert.equal(res.body.result.serverInfo.name, 'kinote');
+  });
+
+  test('the instructions say how to work on a file', () => {
+    const edit = serverInstructions(['Docs'], ['read', 'edit']);
+    assert.ok(
+      edit.includes(
+        'To work on a file, read it with level "info" first: it says which tools change it. kinote_download gives a link to the file (and small text or images inline); after changing it, kinote_replace with the base_version you started from. A refused replace means someone changed the file: download it again and redo the change.'
+      ),
+      edit
+    );
+    const read = serverInstructions(['Docs'], ['read']);
+    assert.ok(read.includes('kinote_download gives a link to the file (and small text or images inline).'), read);
+    assert.ok(!read.includes('base_version'));
   });
 
   test('a bad token gets 401 before the SDK runs', async () => {
@@ -204,17 +220,29 @@ describe('the /mcp endpoint', () => {
     assert.equal((await callTool(limited, second.token, 'kinote_echo', { text: '4' }, TEST_PATH)).isError, true);
   });
 
-  test('a read token lists exactly the five read tools', async () => {
+  test('a read token lists exactly the read tools', async () => {
     const w = await agentWorld(app, 'mcp-five');
-    assert.deepEqual(await listToolNames(app, w.token), ['kinote_ask', 'kinote_browse', 'kinote_read', 'kinote_related', 'kinote_search']);
+    assert.deepEqual(await listToolNames(app, w.token), [
+      'kinote_ask',
+      'kinote_browse',
+      'kinote_download',
+      'kinote_read',
+      'kinote_related',
+      'kinote_review',
+      'kinote_review_list',
+      'kinote_search',
+    ]);
   });
 
   test('combined tool definitions stay under 2,000 tokens', async () => {
     const w = await agentWorld(app, 'mcp-budget');
     const res = await mcpRequest(app, w.token, 'tools/list');
-    const tools = res.body.result.tools as object[];
-    assert.equal(tools.length, 5);
-    const total = tools.reduce((n, t) => n + estimateTokens(JSON.stringify(t)), 0);
+    const all = res.body.result.tools as Array<{ _meta?: { ui?: { visibility?: string[] } } }>;
+    // The review panel's own tool is app-only: an MCP Apps host does not show it to the model.
+    const tools = all.filter((t) => !(t._meta?.ui?.visibility && !t._meta.ui.visibility.includes('model')));
+    assert.equal(tools.length, 7);
+    // Annotations are for the host's approval defaults, not the model's prompt: not counted.
+    const total = tools.reduce((n, t) => n + estimateTokens(JSON.stringify({ ...t, annotations: undefined })), 0);
     assert.ok(total < 2000, `tool definitions use ${total} tokens`);
   });
 });

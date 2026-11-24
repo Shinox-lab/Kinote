@@ -60,6 +60,7 @@ describe('file contracts', () => {
     const details = {
       id, spaceId: id, parentId: null, title: 'a.pdf', archivedAt: null, placement: 'pinned',
       sourceDeletedAt: null, badge: 'Indexed · v1', latestVersion: version, indexedVersion: version,
+      publishedVersion: version,
     };
     expect(FileDetailsSchema.parse(details).badge).toBe('Indexed · v1');
   });

@@ -1,5 +1,6 @@
 import { ErrorCode, McpError, type ReadResourceResult, type Resource } from '@modelcontextprotocol/sdk/types.js';
-import { capturePanelHtml } from './app/panelHtml.js';
+import { capturePanelHtml, reviewPanelHtml } from './app/panelHtml.js';
+import { REVIEW_RESOURCE } from './tools/review.js';
 import { UPLOAD_RESOURCE } from './tools/upload.js';
 
 /** The MCP Apps mime type of a `ui://` panel. */
@@ -20,6 +21,12 @@ export const APP_RESOURCES: readonly AppResource[] = [
     name: 'Kinote file panel',
     description: 'Where your user drops a file for kinote_upload; it uploads the original and shows where it was filed.',
     html: capturePanelHtml,
+  },
+  {
+    uri: REVIEW_RESOURCE,
+    name: 'Kinote review panel',
+    description: 'Where your user approves or rejects what is waiting for review.',
+    html: reviewPanelHtml,
   },
 ];
 

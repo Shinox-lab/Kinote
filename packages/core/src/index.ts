@@ -69,6 +69,8 @@ export {
   type InsertFileVersionParams,
   type VersionRow,
 } from './files/versions.js';
+export { publishStoredVersion, currentFileVersion } from './files/publish.js';
+export { fileReviewDecision } from './files/review.js';
 export {
   extractVersion,
   type ExtractDeps,
@@ -156,6 +158,7 @@ export {
   failCapture,
   ROUTING_LEASE_SECONDS,
   QUESTION_TTL_DAYS,
+  pageSlug,
   type RouteDeps,
 } from './routing/apply.js';
 export { placeFact, recordRoutingExample } from './routing/place.js';

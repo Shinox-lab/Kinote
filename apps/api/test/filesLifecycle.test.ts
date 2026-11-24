@@ -190,12 +190,12 @@ describe('file lifecycle', () => {
     assert.deepEqual(indexJobs, []);
   });
 
-  test('archive (space admin) removes it from the index; restore brings it back withdrawn', async () => {
+  test('archive (an editor) removes it from the index; restore brings it back withdrawn', async () => {
     const c = await setup();
     const up = await indexedFile(c);
-    const denied = await post(c.editor.headers, `/api/v1/files/${up.document.id}/archive`);
+    const denied = await post(c.viewer.headers, `/api/v1/files/${up.document.id}/archive`);
     assert.equal(denied.statusCode, 403);
-    const archived = await post(c.ownerHeaders, `/api/v1/files/${up.document.id}/archive`);
+    const archived = await post(c.editor.headers, `/api/v1/files/${up.document.id}/archive`);
     assert.equal(archived.statusCode, 200, archived.body);
     assert.notEqual(archived.json().archivedAt, null);
     assert.deepEqual(await chunkRows(c.tenant.id, up.document.id), []);
@@ -204,7 +204,9 @@ describe('file lifecycle', () => {
     );
     assert.equal(replaceArchived.statusCode, 409);
 
-    const restored = await post(c.ownerHeaders, `/api/v1/files/${up.document.id}/restore`);
+    const viewerRestore = await post(c.viewer.headers, `/api/v1/files/${up.document.id}/restore`);
+    assert.equal(viewerRestore.statusCode, 403);
+    const restored = await post(c.editor.headers, `/api/v1/files/${up.document.id}/restore`);
     assert.equal(restored.statusCode, 200, restored.body);
     assert.equal(restored.json().archivedAt, null);
     assert.equal((await versionRow(c.tenant.id, up.version.id)).status, 'withdrawn');

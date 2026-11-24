@@ -119,7 +119,10 @@ describe('the file panel resource', () => {
     const list = await mcpRequest(app, w.token, 'resources/list');
     assert.deepEqual(
       (list.body.result.resources as Array<{ uri: string; mimeType: string }>).map((r) => [r.uri, r.mimeType]),
-      [['ui://kinote/upload', 'text/html;profile=mcp-app']]
+      [
+        ['ui://kinote/upload', 'text/html;profile=mcp-app'],
+        ['ui://kinote/review', 'text/html;profile=mcp-app'],
+      ]
     );
     const read = await mcpRequest(app, w.token, 'resources/read', { uri: 'ui://kinote/upload' });
     const content = read.body.result.contents[0];

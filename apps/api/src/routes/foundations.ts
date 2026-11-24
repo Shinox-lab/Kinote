@@ -300,9 +300,9 @@ async function listTreeNodes(
       allowArchived: true,
     });
     const { space } = access;
-    // The archived list is for space admins, except in the Inbox: there each
-    // person lists only their own documents (the query filters to the creator).
-    if (archived && space.kind !== 'inbox' && access.effectiveRole !== 'admin') {
+    // The archived list is for editors and above (who may restore), except in the
+    // Inbox: there each person lists only their own documents (the query filters to the creator).
+    if (archived && space.kind !== 'inbox' && access.effectiveRole === 'viewer') {
       throw new AppError('forbidden', 'You do not have permission to perform this action.');
     }
 
@@ -425,7 +425,7 @@ export function getSpaceTree(actor: Actor, spaceId: string): Promise<TreeRespons
 }
 
 /**
- * `GET /spaces/:id/archived`: the archived documents of a space (space admin),
+ * `GET /spaces/:id/archived`: the archived documents of a space (editor and up),
  * or in the Inbox the actor's own archived documents (viewer and up).
  */
 export function getSpaceArchived(actor: Actor, spaceId: string): Promise<TreeResponse> {

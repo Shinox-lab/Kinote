@@ -429,6 +429,27 @@ describe('page lifecycle: withdraw, archive, move', () => {
     assert.equal((await documentRow(parent)).archivedAt, null);
   });
 
+  test('an editor archives and restores a page', async () => {
+    const pageId = await createPage(ctx.editor.headers, ctx.open.id, 'editor-archives');
+    const archived = await app.inject({ method: 'POST', url: `/api/v1/pages/${pageId}/archive`, headers: ctx.editor.headers });
+    assert.equal(archived.statusCode, 200, archived.body);
+    assert.ok((await documentRow(pageId)).archivedAt);
+    const restored = await app.inject({ method: 'POST', url: `/api/v1/pages/${pageId}/restore`, headers: ctx.editor.headers });
+    assert.equal(restored.statusCode, 200, restored.body);
+    assert.equal((await documentRow(pageId)).archivedAt, null);
+  });
+
+  test('a viewer cannot archive or restore a page', async () => {
+    const pageId = await createPage(ctx.editor.headers, ctx.open.id, 'viewer-archives');
+    const archive = await app.inject({ method: 'POST', url: `/api/v1/pages/${pageId}/archive`, headers: ctx.openReader.headers });
+    assert.equal(archive.statusCode, 403, archive.body);
+    assert.equal(archive.json().error, 'forbidden');
+    await app.inject({ method: 'POST', url: `/api/v1/pages/${pageId}/archive`, headers: ctx.editor.headers });
+    const restore = await app.inject({ method: 'POST', url: `/api/v1/pages/${pageId}/restore`, headers: ctx.openReader.headers });
+    assert.equal(restore.statusCode, 403, restore.body);
+    assert.equal(restore.json().error, 'forbidden');
+  });
+
   test('move into a review space by an editor with only v1 indexed returns v1 to pending_review', async () => {
     const { pageId, v1 } = await indexedV1InOpenSpace('move-to-review');
 

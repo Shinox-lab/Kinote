@@ -29,20 +29,20 @@ describe('fileControls', () => {
     });
   });
 
-  test('an editor replaces, moves, retries a failure and inspects chunks', () => {
-    expect(controls()).toMatchObject({ replace: true, move: true, withdraw: false, archive: false, chunks: true, retry: false });
+  test('an editor replaces, moves, archives, retries a failure and inspects chunks', () => {
+    expect(controls()).toMatchObject({ replace: true, move: true, withdraw: false, archive: true, chunks: true, retry: false });
     expect(controls({ badge: 'Extraction failed' }).retry).toBe(true);
     expect(controls({ badge: 'Index failed' }).retry).toBe(true);
     expect(controls({ badge: 'Indexed · v1, v2 could not be read' }).retry).toBe(true);
     expect(controls({ badge: 'Indexed · v1, v2 failed to index' }).retry).toBe(true);
   });
 
-  test('a reviewer may also withdraw, an admin also archive', () => {
-    expect(controls({ role: 'reviewer' })).toMatchObject({ withdraw: true, archive: false });
+  test('a reviewer may also withdraw', () => {
+    expect(controls({ role: 'reviewer' })).toMatchObject({ withdraw: true, archive: true });
     expect(controls({ role: 'admin' })).toMatchObject({ withdraw: true, archive: true, restore: false });
   });
 
-  test('an archived file (or space) is read-only; an admin, or its creator in the Inbox, may restore it', () => {
+  test('an archived file (or space) is read-only; an editor or above may restore it', () => {
     expect(controls({ archived: true, role: 'admin' })).toMatchObject({
       replace: false,
       move: false,
@@ -52,7 +52,8 @@ describe('fileControls', () => {
       retry: false,
       download: true,
     });
-    expect(controls({ archived: true, role: 'editor' }).restore).toBe(false);
+    expect(controls({ archived: true, role: 'editor' }).restore).toBe(true);
+    expect(controls({ archived: true, role: 'viewer' }).restore).toBe(false);
     expect(controls({ archived: true, role: 'editor', inbox: true }).restore).toBe(true);
     expect(controls({ archived: true, role: 'viewer', inbox: true }).restore).toBe(false);
     expect(controls({ spaceArchived: true, role: 'admin' })).toMatchObject({ replace: false, restore: false });
@@ -144,10 +145,10 @@ function ver(id: string, number: number): FileVersion {
 }
 
 describe('publishedVersionId', () => {
-  const details = (latest: FileVersion | null, indexed: FileVersion | null) =>
-    ({ latestVersion: latest, indexedVersion: indexed }) as unknown as FileDetails;
+  const details = (latest: FileVersion | null, published: FileVersion | null) =>
+    ({ latestVersion: latest, publishedVersion: published }) as unknown as FileDetails;
 
-  test('editors read the latest version, viewers only the indexed one', () => {
+  test('editors read the latest version, viewers only the published one', () => {
     const d = details(ver('v2', 2), ver('v1', 1));
     expect(publishedVersionId(d, 'editor')).toBe('v2');
     expect(publishedVersionId(d, 'admin')).toBe('v2');

@@ -310,7 +310,7 @@ export async function deleteSourceFile(source: SourceActor, rawExternalId: strin
     await withdrawLiveVersions(tx, tenantId, item.documentId);
     await tx
       .update(documents)
-      .set({ sourceDeletedAt: now, indexedVersionId: null })
+      .set({ sourceDeletedAt: now, indexedVersionId: null, publishedVersionId: null })
       .where(and(eq(documents.tenantId, tenantId), eq(documents.id, item.documentId)));
     await touch(tx, source, null);
     await writeAuditEvent(tx, {

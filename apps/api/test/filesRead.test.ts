@@ -75,7 +75,7 @@ describe('reading files', () => {
     assert.equal(body.latestVersion?.id, up.version.id);
     assert.equal(body.indexedVersion?.id, up.version.id);
     assert.equal(body.indexedVersion?.hasText, true);
-    assert.deepEqual(Object.keys(body).sort(), ['archivedAt', 'badge', 'id', 'indexedVersion', 'latestVersion', 'parentId', 'placement', 'sourceDeletedAt', 'spaceId', 'title']);
+    assert.deepEqual(Object.keys(body).sort(), ['archivedAt', 'badge', 'id', 'indexedVersion', 'latestVersion', 'parentId', 'placement', 'publishedVersion', 'sourceDeletedAt', 'spaceId', 'title']);
   });
 
   test('a file nobody here may see is a plain 404 on every read route, whoever asks', async () => {

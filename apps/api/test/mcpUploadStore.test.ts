@@ -77,7 +77,7 @@ describe('the MCP upload store', () => {
   test('three chunks with a short last one assemble into the file, and the parts and row are removed', async () => {
     const bytes = randomBytes(2 * MiB + 10);
     const id = await uploadAll(bytes);
-    const { file, row } = await takeUpload(deps, actor, agentId, id);
+    const { file, row } = await takeUpload(deps, actor, agentId, id, { purpose: 'panel' });
     try {
       assert.equal(row.name, 'notes.bin');
       assert.equal(file.sizeBytes, 2 * MiB + 10);
@@ -93,7 +93,7 @@ describe('the MCP upload store', () => {
 
   test('a file of exactly two chunks finishes', async () => {
     const bytes = randomBytes(2 * MiB);
-    const { file } = await takeUpload(deps, actor, agentId, await uploadAll(bytes));
+    const { file } = await takeUpload(deps, actor, agentId, await uploadAll(bytes), { purpose: 'panel' });
     assert.equal(file.contentHash, sha(bytes));
     await file.dispose();
   });
@@ -105,7 +105,7 @@ describe('the MCP upload store', () => {
     assert.deepEqual(await putChunk(deps, actor, agentId, uploadId, 0, b64(bytes.subarray(0, MiB))), { receivedBytes: MiB });
     assert.deepEqual(await putChunk(deps, actor, agentId, uploadId, 1, b64(bytes.subarray(MiB))), { receivedBytes: MiB + 5 });
     assert.deepEqual(await putChunk(deps, actor, agentId, uploadId, 1, b64(bytes.subarray(MiB))), { receivedBytes: MiB + 5 });
-    const { file } = await takeUpload(deps, actor, agentId, uploadId);
+    const { file } = await takeUpload(deps, actor, agentId, uploadId, { purpose: 'panel' });
     assert.equal(file.contentHash, sha(bytes));
     await file.dispose();
   });
@@ -125,13 +125,13 @@ describe('the MCP upload store', () => {
   test('finishing an incomplete upload is refused with the byte counts', async () => {
     const { uploadId } = await beginUpload(deps, actor, agentId, { name: 'a.bin', size: 2 * MiB + 10, mime: 'application/octet-stream' });
     await putChunk(deps, actor, agentId, uploadId, 0, b64(randomBytes(MiB)));
-    assert.equal(await refusal(takeUpload(deps, actor, agentId, uploadId)), 'The upload is incomplete: 1048576 of 2097162 bytes.');
+    assert.equal(await refusal(takeUpload(deps, actor, agentId, uploadId, { purpose: 'panel' })), 'The upload is incomplete: 1048576 of 2097162 bytes.');
   });
 
   test("another agent's upload, an unknown id and an expired upload are not found", async () => {
     const { uploadId } = await beginUpload(deps, actor, agentId, { name: 'a.bin', size: 10, mime: 'text/plain' });
     assert.equal(await refusal(putChunk(deps, actor, otherAgent, uploadId, 0, b64(randomBytes(10)))), 'Upload not found');
-    assert.equal(await refusal(takeUpload(deps, actor, agentId, '11111111-1111-4111-8111-111111111111')), 'Upload not found');
+    assert.equal(await refusal(takeUpload(deps, actor, agentId, '11111111-1111-4111-8111-111111111111', { purpose: 'panel' })), 'Upload not found');
     const later = new Date(Date.now() + 61 * 60_000);
     assert.equal(await refusal(putChunk(deps, actor, agentId, uploadId, 0, b64(randomBytes(10)), later)), 'Upload not found');
   });
